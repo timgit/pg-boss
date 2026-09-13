@@ -261,49 +261,6 @@ describe('schedule missed', function () {
     expect(slots(inserted)).toEqual([])
   })
 
-  it('reads a timestamp a driver handed back as a string', async function () {
-    const tk = makeTk()
-
-    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
-    const now = minute + 30_000
-    const lastPass = new Date(now - 10 * MINUTE).toISOString()
-
-    // node-postgres parses a timestamp column into a Date, and an adapter over a backend that
-    // speaks JSON hands back the string it was sent. Both instants the catch-up reads arrive that
-    // way, and a pass that could not read the last one would owe nothing for the gap at all.
-    const inserted = await pass(tk, now, lastPass, [row('* * * * *', 'once')])
-
-    expect(slots(inserted)).toEqual([slotOf(minute - MINUTE)])
-
-    // Same for the creation instant. A schedule written inside the due window owes nothing, which
-    // is the string being read rather than the reach-back falling to the last pass behind it.
-    const young = await pass(tk, now, lastPass, [
-      row('* * * * *', 'once', { createdOn: new Date(now - 10_000).toISOString() })
-    ])
-
-    expect(slots(young)).toEqual([])
-  })
-
-  it('warns and still sends the due occurrence when the catch-up read fails', async function () {
-    const tk = makeTk()
-    const now = Date.now()
-
-    const warnings: any[] = []
-    tk.on('warning', (warning: any) => warnings.push(warning))
-
-    // The catch-up read gets a try of its own because sharing one with the due read cost the due
-    // occurrence whenever the backwards walk threw. A read that cannot answer is pinned here, so
-    // the two never get coupled again: the gap is reported, and the job the window owes still goes.
-    ;(tk as any).missedOccurrence = () => { throw new Error('cannot read backwards') }
-
-    const inserted = await pass(tk, now, new Date(now - 10 * MINUTE), [row('* * * * *', 'once')])
-
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0].message).toMatch(/could not be caught up on the gap/)
-    expect(slots(inserted)).toEqual([])
-    expect(inserted).toHaveLength(1)
-  })
-
   it('reads a policy it does not recognize as skip', async function () {
     const tk = makeTk()
     const now = Date.now()

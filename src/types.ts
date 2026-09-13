@@ -534,6 +534,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @internal
    */
   __test__noTransactionalHeartbeat?: boolean;
+  /**
+   * How long a refused transaction timeout probe is remembered before the next transactional batch
+   * asks again, in milliseconds. Defaults to a minute; tests set it to 0 to watch the retry.
+   * @internal
+   */
+  __test__transactionTimeoutProbeCooldownMs?: number;
   /** @internal */
   migrations?: Migration[];
 }

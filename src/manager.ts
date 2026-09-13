@@ -30,6 +30,12 @@ const WARNING_TYPES = {
 
 const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
+// The same refusal from inside a batch, where the queue passed work()'s check and the heartbeat
+// arrived afterwards: on the job itself (heartbeatSeconds on send()) or through updateQueue() once
+// the worker was already registered. Pointing at the queue's configuration there would send the
+// user to a setting that is not the one they need to drop.
+const TRANSACTIONAL_HEARTBEAT_ON_BATCH = 'this backend cannot run a transactional handler over a job with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. The queue carried no heartbeat when this worker registered, so it came from the job (heartbeatSeconds on send()) or from updateQueue() after registration. Drop it there and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
+
 // Candidates for bounding a transactional handler's transaction from the database side, best
 // first. transaction_timeout covers the whole transaction; idle_in_transaction_session_timeout only
 // covers the gaps between statements, which still catches a handler that stops issuing them.
@@ -44,17 +50,34 @@ const TRANSACTION_TIMEOUT_GUCS = ['transaction_timeout', 'idle_in_transaction_se
 // 13-16 any other way is a hard error.
 const TRANSACTION_TIMEOUT_PROBE = `SELECT ${TRANSACTION_TIMEOUT_GUCS.map(name => `current_setting('${name}', true) AS ${name}`).join(', ')}`
 
-// Applies pg-boss's bound without widening one the connection already carries. A role, a managed
-// provider or a pooler that sets idle_in_transaction_session_timeout means it, and the transactions
-// this runs on are the longest ones pg-boss opens, so overwriting it is exactly the wrong place to
-// do so. pg_settings reports both GUCs unitless in milliseconds on every backend that has them,
-// which current_setting does not, so the comparison needs no parsing and no second round trip.
-// LEAST ignores nulls, which covers both cases where there is nothing to be tighter than: 0 is how
-// either GUC spells "no bound" (NULLIF turns it into one of them), and a backend that recognises
-// the parameter without listing it in pg_settings is the other. Read per transaction rather than
-// cached, since the value belongs to the connection and not to the process.
-const TRANSACTION_TIMEOUT_APPLY = `SELECT set_config($1,
-  LEAST($2::bigint, NULLIF((SELECT s.setting::bigint FROM pg_settings s WHERE s.name = $1), 0))::text, true)`
+// The tighter of pg-boss's bound ($2, milliseconds) and the one the connection already carries for
+// GUC $1. A role, a managed provider or a pooler that sets idle_in_transaction_session_timeout means
+// it, and the transactions this runs on are the longest ones pg-boss opens, so overwriting it is
+// exactly the wrong place to do so. pg_settings reports both GUCs unitless in milliseconds on every
+// backend that has them, which current_setting does not, so the comparison needs no parsing and no
+// second round trip. LEAST ignores nulls, which covers both cases where there is nothing to be
+// tighter than: 0 is how either GUC spells "no bound" (NULLIF turns it into one of them), and a
+// backend that recognises the parameter without listing it in pg_settings is the other. Read per
+// transaction rather than cached, since the value belongs to the connection and not to the process.
+const TRANSACTION_TIMEOUT_TIGHTEST = 'LEAST($2::bigint, NULLIF((SELECT s.setting::bigint FROM pg_settings s WHERE s.name = $1), 0))'
+
+// Applies the bound. This is the first statement of the handler's transaction, so it must not be
+// the first place a statement can fail: the read half is rehearsed by the probe below, on the
+// pooled connection, and only set_config is new here. Sharing the expression is what keeps the two
+// from drifting apart.
+const TRANSACTION_TIMEOUT_APPLY = `SELECT set_config($1, ${TRANSACTION_TIMEOUT_TIGHTEST}::text, true)`
+
+// The read half of the apply, run once by the probe with a bound of 0 so it can set nothing. A
+// backend or a db adapter that answers current_setting but has no pg_settings view fails here,
+// where failing costs the bound, rather than inside the transaction, where it would cost the batch.
+// set_config is left out on purpose: a custom adapter's executeSql may sit inside the caller's own
+// open transaction, and a rehearsal must not be able to change anything there.
+const TRANSACTION_TIMEOUT_REHEARSE = `SELECT ${TRANSACTION_TIMEOUT_TIGHTEST}`
+
+// How long a refused probe is remembered before the next transactional batch asks again. The bound
+// is a backstop, so the retry has to stay; a backend that will never answer does not need to be
+// asked on every batch for the life of the process either.
+const TRANSACTION_TIMEOUT_PROBE_COOLDOWN_MS = 60_000
 
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
 // fields must be coerced back to numbers when backend === 'cockroachdb'.
@@ -156,10 +179,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #handlerSettledJobs: WeakMap<types.IDatabase, Set<string>>
   // Which GUC this server bounds a transaction with, resolved on the first transactional batch and
   // kept for the life of the process. Resolving to null means neither is recognised, or the probe
-  // itself failed; a failed probe clears the memo so the next batch asks again.
+  // itself failed; a failed probe clears the memo and sets the instant before which no batch asks
+  // again.
   #transactionTimeoutGuc: Promise<string | null> | null
-  // One warning per process for a probe the server will not answer, matching the other episodic
-  // warnings. The probe itself is retried every batch; the message does not need repeating.
+  #transactionTimeoutProbeRetryAt: number
+  #transactionTimeoutProbeCooldownMs: number
+  // One warning per process for a probe the server will not answer. A backend or adapter that
+  // cannot answer it today will not answer it tomorrow, so there is no episode to report twice.
   #warnedTransactionTimeoutProbe: boolean
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
@@ -177,6 +203,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#spies = new Map()
     this.#handlerSettledJobs = new WeakMap()
     this.#transactionTimeoutGuc = null
+    this.#transactionTimeoutProbeRetryAt = 0
+    this.#transactionTimeoutProbeCooldownMs = config.__test__transactionTimeoutProbeCooldownMs ?? TRANSACTION_TIMEOUT_PROBE_COOLDOWN_MS
     this.#warnedTransactionTimeoutProbe = false
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
@@ -567,10 +595,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     let transaction: types.TransactionHandle | null = null
 
     try {
-      // A per-job heartbeatSeconds can put a heartbeat on a batch whose queue carries none, which
-      // the work() check cannot see. Thrown before the begin so the batch takes the ordinary
-      // failure path rather than the backend's raw write conflict.
-      assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_UNSUPPORTED)
+      // A per-job heartbeatSeconds, or updateQueue() after the worker registered, can put a
+      // heartbeat on a batch whose queue carried none at work(), which that check cannot see. Thrown
+      // before the begin so the batch takes the ordinary failure path rather than the backend's raw
+      // write conflict.
+      assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_ON_BATCH)
 
       if (transactional) {
         transaction = await this.db.beginTransaction!()
@@ -706,21 +735,35 @@ class Manager extends EventEmitter implements types.EventsMixin {
    * every handler statement after it would come back 25P02 blaming the handler for a SQL error it
    * never raised. Off the transaction, a failed probe costs the bound and nothing else.
    *
+   * The apply statement also reads pg_settings, and it runs as the first statement of the handler's
+   * transaction, so the probe rehearses that read here as well. Otherwise a backend with the GUC but
+   * without the catalog view would fail every batch, silently as far as the warning system goes,
+   * which is the failure the probe exists to keep out of the transaction.
+   *
    * The bound is a backstop against a process that has already failed, so losing it degrades rather
-   * than fails the batch: warn once, run this batch unbounded, and leave the memo empty so the next
-   * batch asks again instead of running unbounded for the life of the process.
+   * than fails the batch: warn once, run this batch unbounded, and ask again once the cooldown has
+   * passed instead of running unbounded for the life of the process, or asking on every batch.
    */
   #resolveTransactionTimeoutGuc (): Promise<string | null> {
+    if (!this.#transactionTimeoutGuc && Date.now() < this.#transactionTimeoutProbeRetryAt) {
+      return Promise.resolve(null)
+    }
+
     this.#transactionTimeoutGuc ??= this.db.executeSql(TRANSACTION_TIMEOUT_PROBE)
       .then(({ rows }) => TRANSACTION_TIMEOUT_GUCS.find(name => rows[0][name] !== null) ?? null)
+      .then(async guc => {
+        if (guc) await this.db.executeSql(TRANSACTION_TIMEOUT_REHEARSE, [guc, '0'])
+        return guc
+      })
       .catch((err: any) => {
         this.#transactionTimeoutGuc = null
+        this.#transactionTimeoutProbeRetryAt = Date.now() + this.#transactionTimeoutProbeCooldownMs
 
         if (!this.#warnedTransactionTimeoutProbe) {
           this.#warnedTransactionTimeoutProbe = true
 
           this.emit(events.warning, {
-            message: `could not ask this server which transaction timeout it supports, so transactional handlers run with no database-side bound: ${err.message}`,
+            message: `could not ask this server which transaction timeout it supports, or read the bound it already carries, so transactional handlers run with no database-side bound until the next probe: ${err.message}`,
             data: { type: WARNING_TYPES.TRANSACTION_TIMEOUT_PROBE }
           })
         }

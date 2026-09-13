@@ -97,7 +97,7 @@ The default options for `work()` is 1 job every 2 seconds.
 
   The default leaves the handler's own timeout and its rollback the whole window they need, so the server only gives up once neither ran. Applied as `transaction_timeout` where the server has it (PostgreSQL 17+, CockroachDB) and `idle_in_transaction_session_timeout` otherwise, which bounds the gaps between the handler's statements rather than the transaction as a whole. Either way the connection is dropped, so the batch ends on the rolled-back path, and the job is retried under its own retry policy.
 
-  A bound the connection already carries is never widened. Where a role, a managed provider, or a pooler has already set the GUC to something stricter, that value stands and this option cannot raise it. These are the longest transactions pg-boss opens, so they are the last place to relax someone else's limit. If pg-boss cannot ask the server which GUC it recognises, it emits a [`transaction_timeout_probe`](./events.md#warning) warning once, runs the batch with no database-side bound, and asks again on the next one.
+  A bound the connection already carries is never widened. Where a role, a managed provider, or a pooler has already set the GUC to something stricter, that value stands and this option cannot raise it. These are the longest transactions pg-boss opens, so they are the last place to relax someone else's limit. If pg-boss cannot ask the server which GUC it recognises, or cannot read the bound the connection already carries from `pg_settings`, it emits a [`transaction_timeout_probe`](./events.md#warning) warning once, runs its batches with no database-side bound, and asks again a minute later.
 
 * **priority**, bool — **deprecated, ignored since 12.30.0**
 

@@ -273,9 +273,11 @@ describeTransactional('transactional work', function () {
     helper.assertTruthy(job)
 
     // Refused before the handler and before the begin, so there is no transaction to conflict with
-    // and no raw write conflict in the output.
+    // and no raw write conflict in the output. The message names the job and updateQueue() rather
+    // than the queue's own configuration, which is correct here and has nothing to drop.
     expect(handled).toBe(false)
-    expect(JSON.stringify(job.output)).toContain('cannot run a transactional worker on a queue with heartbeatSeconds')
+    expect(JSON.stringify(job.output)).toContain('cannot run a transactional handler over a job with heartbeatSeconds')
+    expect(JSON.stringify(job.output)).toContain('came from the job (heartbeatSeconds on send()) or from updateQueue()')
   })
 
   it('should work with localGroupConcurrency', async function () {
@@ -731,7 +733,8 @@ describeTransactional('transactional work', function () {
     // Refuses the GUC probe once. The batch that hits it still has to run: the database-side bound
     // is a backstop against a process that has already failed, so losing it is worth a warning and
     // nothing more. The batch after it has to ask again, since a remembered rejection would leave
-    // every transaction from then on unbounded for the life of the process.
+    // every transaction from then on unbounded for the life of the process. The cooldown between
+    // the two is switched off here so the second batch is the one that asks.
     const db = {
       executeSql: (text: string, values?: unknown[]) => {
         if (text.includes("current_setting('transaction_timeout'")) {
@@ -747,7 +750,7 @@ describeTransactional('transactional work', function () {
       beginTransaction: () => inner.beginTransaction!()
     }
 
-    const boss2 = new PgBoss({ ...ctx.bossConfig, db, createSchema: false, migrate: false })
+    const boss2 = new PgBoss({ ...ctx.bossConfig, db, createSchema: false, migrate: false, __test__transactionTimeoutProbeCooldownMs: 0 })
 
     const warnings: any[] = []
     boss2.on('warning', warning => warnings.push(warning))
@@ -785,18 +788,139 @@ describeTransactional('transactional work', function () {
     }
   })
 
-  // Both GUCs, since which one pg-boss picks depends on the server: transaction_timeout where it
-  // exists (PostgreSQL 17+, CockroachDB), the idle one on 13-16. -c applies them to every
-  // connection in the pool, which is how a role, a managed provider or a pooler sets them.
-  const withOperatorBound = (ms: number) => ({
-    ...ctx.bossConfig,
-    options: `-c transaction_timeout=${ms} -c idle_in_transaction_session_timeout=${ms}`
+  it('should not repeat a refused probe until the cooldown has passed', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const inner = ctx.boss.getDb()
+    let probes = 0
+
+    // A server that never answers. Not remembering the rejection is what keeps the retry alive, but
+    // asking on every batch for the life of the process is a round trip spent on a question whose
+    // answer is not going to change in the next few seconds. The default cooldown holds it to one
+    // probe across both batches; the warning is once per process either way.
+    const db = {
+      executeSql: (text: string, values?: unknown[]) => {
+        if (text.includes("current_setting('transaction_timeout'")) {
+          probes++
+          return Promise.reject(new Error('probe refused'))
+        }
+
+        return inner.executeSql(text, values)
+      },
+      beginTransaction: () => inner.beginTransaction!()
+    }
+
+    const boss2 = new PgBoss({ ...ctx.bossConfig, db, createSchema: false, migrate: false })
+
+    const warnings: any[] = []
+    boss2.on('warning', warning => warnings.push(warning))
+
+    await boss2.start()
+
+    try {
+      const first = await boss2.send(ctx.schema, { work: true }, { retryLimit: 0, expireInSeconds: 30 })
+      const second = await boss2.send(ctx.schema, { work: true }, { retryLimit: 0, expireInSeconds: 30 })
+      helper.assertTruthy(first)
+      helper.assertTruthy(second)
+
+      const bounds: Array<number | null> = []
+
+      await boss2.work(ctx.schema, { transactional: true, batchSize: 1 }, async (jobs, tx) => {
+        bounds.push(await readTransactionBound(tx))
+      })
+
+      await until(async () => {
+        const jobs = await Promise.all([first, second].map(id => boss2.getJobById(ctx.schema, id)))
+        return jobs.every(job => job?.state === 'completed')
+      })
+
+      expect(probes).toBe(1)
+      expect(bounds.length).toBe(2)
+      expect(bounds.every(bound => bound === null || bound === 0)).toBe(true)
+      expect(warnings.filter(w => w.data?.type === 'transaction_timeout_probe').length).toBe(1)
+    } finally {
+      await boss2.stop({ graceful: false })
+    }
   })
+
+  it('should run unbounded rather than fail the batch when pg_settings cannot be read', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const inner = ctx.boss.getDb()
+    let rehearsals = 0
+
+    // A backend, or a db adapter, with the GUC but without the catalog view: current_setting is
+    // answered and the probe picks a GUC, then anything reading pg_settings is refused. Applying the
+    // bound reads pg_settings as the first statement of the handler's transaction, so without the
+    // rehearsal on the pooled connection this would fail every batch, with nothing said to the
+    // warning system. The rehearsal takes the failure where it costs the bound and nothing else.
+    // Only the pooled connection is wrapped; the handler's transaction comes from the real pool, so
+    // the refusal reaches the rehearsal and not the test's own read from inside the handler.
+    const db = {
+      executeSql: (text: string, values?: unknown[]) => {
+        if (text.includes('pg_settings')) {
+          rehearsals++
+          return Promise.reject(new Error('pg_settings unavailable'))
+        }
+
+        return inner.executeSql(text, values)
+      },
+      beginTransaction: () => inner.beginTransaction!()
+    }
+
+    const boss2 = new PgBoss({ ...ctx.bossConfig, db, createSchema: false, migrate: false })
+
+    const warnings: any[] = []
+    boss2.on('warning', warning => warnings.push(warning))
+
+    await boss2.start()
+
+    try {
+      const jobId = await boss2.send(ctx.schema, { work: true }, { retryLimit: 0, expireInSeconds: 30 })
+      helper.assertTruthy(jobId)
+
+      let handled = false
+      let bound: number | null | undefined
+
+      await boss2.work(ctx.schema, { transactional: true }, async (jobs, tx) => {
+        handled = true
+        bound = await readTransactionBound(tx)
+      })
+
+      await until(async () => {
+        const job = await boss2.getJobById(ctx.schema, jobId)
+        return job?.state === 'completed'
+      })
+
+      expect(handled).toBe(true)
+      expect(rehearsals).toBe(1)
+      expect(bound === null || bound === 0).toBe(true)
+      expect(warnings.filter(w => w.data?.type === 'transaction_timeout_probe').length).toBe(1)
+      expect(warnings[0].message).toContain('pg_settings unavailable')
+    } finally {
+      await boss2.stop({ graceful: false })
+    }
+  })
+
+  // Only the GUC this server has, asked the same way pg-boss asks: transaction_timeout where it
+  // exists (PostgreSQL 17+, CockroachDB), the idle one on 13-16 and YugabyteDB. -c on a parameter
+  // the server does not recognise is refused at connect, so naming both would take the whole pool
+  // down on exactly the servers where the fallback matters. -c applies the value to every
+  // connection in the pool, which is how a role, a managed provider or a pooler sets it.
+  const withOperatorBound = async (ms: number) => {
+    const db = await helper.getDb()
+    const { rows } = await db.executeSql("SELECT current_setting('transaction_timeout', true) AS tt")
+    await db.close()
+
+    const guc = rows[0].tt !== null ? 'transaction_timeout' : 'idle_in_transaction_session_timeout'
+
+    return { ...ctx.bossConfig, options: `-c ${guc}=${ms}` }
+  }
 
   it('should keep an operator bound that is tighter than the derived one', async function () {
     // 3 seconds the DBA set against 35 derived from expireInSeconds. Widening it would happen on
     // exactly the longest transactions pg-boss opens, which is the worst place to do it.
-    ctx.boss = await helper.start(withOperatorBound(3000))
+    ctx.boss = await helper.start(await withOperatorBound(3000))
 
     const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 30 })
     helper.assertTruthy(jobId)
@@ -816,7 +940,7 @@ describeTransactional('transactional work', function () {
   })
 
   it('should apply the derived bound over an operator bound that is looser', async function () {
-    ctx.boss = await helper.start(withOperatorBound(600000))
+    ctx.boss = await helper.start(await withOperatorBound(600000))
 
     const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 30 })
     helper.assertTruthy(jobId)
