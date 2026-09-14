@@ -31,10 +31,10 @@ const WARNING_TYPES = {
 const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
 // The same refusal from inside a batch, where the queue passed work()'s check and the heartbeat
-// arrived afterwards: on the job itself (heartbeatSeconds on send()) or through updateQueue() once
-// the worker was already registered. Pointing at the queue's configuration there would send the
-// user to a setting that is not the one they need to drop.
-const TRANSACTIONAL_HEARTBEAT_ON_BATCH = 'this backend cannot run a transactional handler over a job with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. The queue carried no heartbeat when this worker registered, so it came from the job (heartbeatSeconds on send()) or from updateQueue() after registration. Drop it there and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
+// arrived afterwards: on the job itself (heartbeatSeconds on send()), or on the queue, through
+// updateQueue() or through a createQueue() that work() ran ahead of. Pointing at the queue's
+// configuration there would send the user to a setting that is not the one they need to drop.
+const TRANSACTIONAL_HEARTBEAT_ON_BATCH = 'this backend cannot run a transactional handler over a job with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. The queue carried no heartbeat when this worker registered, so it came from the job (heartbeatSeconds on send()) or from the queue after registration. Drop it there and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
 // Candidates for bounding a transactional handler's transaction from the database side, best
 // first. transaction_timeout covers the whole transaction; idle_in_transaction_session_timeout only
@@ -602,11 +602,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
       assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_ON_BATCH)
 
       if (transactional) {
+        const timeoutMs = transactionTimeoutSeconds !== undefined
+          ? transactionTimeoutSeconds * 1000
+          : maxExpiration * 1000 + TRANSACTION_ROLLBACK_TIMEOUT_MS
+
+        // Asked before the begin. The probe runs on a pooled connection, and a pool whose
+        // connections the handlers in flight are already holding has none to hand it: the wait
+        // would then be connectionTimeoutMillis long, with this transaction open across it, and
+        // the bound lost for the whole cooldown after. Memoized after the first batch either way.
+        const timeoutGuc = timeoutMs > 0 ? await this.#resolveTransactionTimeoutGuc() : null
+
         transaction = await this.db.beginTransaction!()
         this.#handlerSettledJobs.set(transaction.db, new Set())
-        await this.#setTransactionTimeout(transaction, transactionTimeoutSeconds !== undefined
-          ? transactionTimeoutSeconds * 1000
-          : maxExpiration * 1000 + TRANSACTION_ROLLBACK_TIMEOUT_MS)
+
+        if (timeoutGuc) {
+          await this.#applyTransactionTimeout(transaction, timeoutGuc, timeoutMs)
+        }
       }
 
       const handling = transaction
@@ -715,13 +726,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
    * `set_config` with the value bound rather than a built `SET LOCAL` string, so it is one
    * parameterized statement and portable to drivers that reject multi-statement queries.
    */
-  async #setTransactionTimeout (transaction: types.TransactionHandle, timeoutMs: number) {
-    if (timeoutMs <= 0) return
-
-    const guc = await this.#resolveTransactionTimeoutGuc()
-
-    if (!guc) return
-
+  async #applyTransactionTimeout (transaction: types.TransactionHandle, guc: string, timeoutMs: number) {
     await transaction.db.executeSql(TRANSACTION_TIMEOUT_APPLY, [guc, `${Math.round(timeoutMs)}`])
   }
 
@@ -734,6 +739,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
    * or a `db` adapter cannot answer would poison the very transaction it was meant to protect and
    * every handler statement after it would come back 25P02 blaming the handler for a SQL error it
    * never raised. Off the transaction, a failed probe costs the bound and nothing else.
+   *
+   * Asked before the begin for the same reason it is asked off the transaction: a pool whose
+   * connections the handlers in flight are holding has none left for the probe, so a probe issued
+   * after the begin waits out `connectionTimeoutMillis` with that transaction open and then loses
+   * the bound for the whole cooldown. Only the first batch of a process pays anything here.
    *
    * The apply statement also reads pg_settings, and it runs as the first statement of the handler's
    * transaction, so the probe rehearses that read here as well. Otherwise a backend with the GUC but

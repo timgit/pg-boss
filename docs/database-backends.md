@@ -184,10 +184,10 @@ Internally that enables atomic-`UPDATE` fetch (`noSkipLocked`), split-statement 
   is then refused, so `work()` rejects the combination rather than shipping a worker that fails
   every batch. Drop `heartbeatSeconds` and let `expireInSeconds` bound the job, or drop
   `transactional` and settle with `complete({ db })`. A heartbeat that arrives after `work()` has
-  checked the queue, from `heartbeatSeconds` on the job itself or from `updateQueue()` on a queue
-  that already has a transactional worker, gets past that check; each batch carrying one then fails
-  before its transaction opens, with an error naming those two routes rather than the queue's
-  configuration.
+  checked the queue, from `heartbeatSeconds` on the job itself or on the queue (`updateQueue()`, or a
+  `createQueue()` that `work()` ran ahead of), gets past that check; each batch carrying one then
+  fails before its transaction opens, with an error naming where it came from rather than the
+  queue's configuration.
 - When something takes the claim away mid-handler and the handler then settles the job itself
   through `tx`, that settle comes back as a raw `40001` retry error rather than `affected: 0`. The
   transaction rolls back either way, so the handler's writes never land beside a job that is about

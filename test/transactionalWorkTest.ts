@@ -277,7 +277,7 @@ describeTransactional('transactional work', function () {
     // than the queue's own configuration, which is correct here and has nothing to drop.
     expect(handled).toBe(false)
     expect(JSON.stringify(job.output)).toContain('cannot run a transactional handler over a job with heartbeatSeconds')
-    expect(JSON.stringify(job.output)).toContain('came from the job (heartbeatSeconds on send()) or from updateQueue()')
+    expect(JSON.stringify(job.output)).toContain('came from the job (heartbeatSeconds on send()) or from the queue after registration')
   })
 
   it('should work with localGroupConcurrency', async function () {
@@ -492,10 +492,13 @@ describeTransactional('transactional work', function () {
     const { rows } = await db.executeSql(`SELECT id FROM ${ledger}`)
 
     expect(attempts).toBe(2)
-    // CockroachDB answers the handler's own settle on a row a peer just moved with a 40001 retry
-    // error rather than affected: 0, so the first attempt throws before it reaches the reading.
-    // Either way the batch rolls back, which is what the one ledger row asserts.
-    expect(selfSettled).toEqual(helper.isCockroachDb ? [1] : [0, 1])
+    // The attempt that kept its claim settles one row. Every attempt before it settled none, and on
+    // CockroachDB may not have reached the reading at all: the handler's own settle on a row a peer
+    // just moved comes back either as affected: 0 or as a raw 40001, depending on whether the
+    // transaction can refresh its timestamp over the peer's write. Both roll the batch back, which
+    // is what the single ledger row asserts, so the count of readings is not the thing to pin.
+    expect(selfSettled.at(-1)).toBe(1)
+    expect(selfSettled.slice(0, -1).every(affected => affected === 0)).toBe(true)
     expect(rows.length).toBe(1)
   })
 
