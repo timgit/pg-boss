@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
+import { serverOverlay } from '~pro-server'
 import pkg from '../package.json' with { type: 'json' }
 
 // The React Router server build is emitted by `react-router build` as a sibling of this
@@ -13,7 +14,9 @@ const build = (await import(buildModulePath)) as unknown as ServerBuild
 const port = Number(process.env.PORT) || 3000
 const hostname = process.env.HOST || '0.0.0.0'
 
-const app = createHonoApp({ build, mode: 'production', serveStaticAssets: true })
+// `~pro-server` is the empty stub in every build but a Pro one, so this is the
+// free dashboard unchanged: an object with no hooks on it.
+const app = createHonoApp({ build, mode: 'production', serveStaticAssets: true, overlay: serverOverlay })
 
 serve({ fetch: app.fetch, port, hostname }, (info) => {
   // Named from the manifest rather than hardcoded: this bundle is repackaged under

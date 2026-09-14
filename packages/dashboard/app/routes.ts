@@ -1,7 +1,12 @@
 import { type RouteConfig, index, route } from '@react-router/dev/routes'
 import { proRoutes } from './lib/pro-overlay'
 
-export default [
+/**
+ * Passed to the overlay rather than concatenated with it: a Pro build may nest
+ * these under a layout route that carries authorisation middleware, which is
+ * not something an appended array can do.
+ */
+const freeRoutes = [
   index('routes/_index.tsx'),
   route('jobs', 'routes/jobs.tsx'),
   route('queues', 'routes/queues._index.tsx'),
@@ -15,5 +20,6 @@ export default [
   route('send', 'routes/send.tsx'),
   route('migrations', 'routes/migrations.tsx'),
   route('warnings', 'routes/warnings.tsx'),
-  ...await proRoutes(),
-] satisfies RouteConfig
+]
+
+export default (await proRoutes(freeRoutes)) satisfies RouteConfig

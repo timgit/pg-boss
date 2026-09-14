@@ -6,12 +6,16 @@ import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
 import { getDatabaseConfigs, findDatabaseById } from './lib/config.server'
 import { dbContext } from './lib/db-context'
+import type { ProServerOverlay } from './lib/pro-contract'
 
 // Resolve the per-request load context the loaders/actions rely on. The selected
 // database comes from the `?db=` query param or the `pgboss_db` cookie, falling back
 // to the first configured database. With `v8_middleware` on, loaders read these
 // values via `context.get(dbContext)`.
-function getLoadContext (c: Context): RouterContextProvider {
+//
+// Exported for the tests, which assert the overlay hook runs last. Nothing else
+// should call it.
+export function getLoadContext (c: Context, overlay: ProServerOverlay | null = null): RouterContextProvider {
   const databases = getDatabaseConfigs()
 
   const url = new URL(c.req.url)
@@ -26,6 +30,12 @@ function getLoadContext (c: Context): RouterContextProvider {
     DB_URL: currentDb?.url || 'postgres://localhost/pgboss',
     SCHEMA: currentDb?.schema || 'pgboss',
   })
+
+  // Last, so the overlay can narrow what was just chosen as well as add to it —
+  // a viewer scoped to one database has to be able to override `currentDb`, not
+  // merely to observe that the free default disagreed with them.
+  overlay?.loadContext?.(c, context)
+
   return context
 }
 
@@ -42,14 +52,42 @@ export interface CreateHonoAppOptions {
    * the Vite dev server middleware serves assets instead.
    */
   serveStaticAssets?: boolean;
+  /**
+   * The Pro overlay's server half, from `loadProServer()`. `null` in every free
+   * build, which is the only shape this package is ever tested against on its own.
+   */
+  overlay?: ProServerOverlay | null;
 }
 
-export function createHonoApp ({ build, mode, serveStaticAssets = false }: CreateHonoAppOptions): Hono {
+export function createHonoApp ({ build, mode, serveStaticAssets = false, overlay = null }: CreateHonoAppOptions): Hono {
   const app = new Hono()
 
-  // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs first so static
-  // assets and SSR responses are both gated.
-  configureAuth(app)
+  // Precedence between the two authentication schemes, decided once.
+  //
+  // Hono dispatches in registration order, so this ordering *is* the rule: a
+  // route registered before `app.use(basicAuth)` answers without ever reaching
+  // it. An overlay that does not authenticate must therefore be registered
+  // after the gate, or mounting Pro would quietly open a hole in a dashboard
+  // that was password-protected the day before.
+  if (overlay?.ownsAuth) {
+    // An overlay that authenticates replaces the shared credential rather than
+    // sitting behind it: stacking them prompts twice for two unrelated logins,
+    // and the browser's Basic dialog is the one with no way to sign out. It goes
+    // first because its own login route has to answer someone who is by
+    // definition not authenticated yet. Said out loud, because dropping a
+    // credential an operator deliberately configured is not a silent act.
+    if (process.env.PGBOSS_DASHBOARD_AUTH_USERNAME || process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD) {
+      console.log('PGBOSS_DASHBOARD_AUTH_* ignored: the Pro overlay provides authentication.')
+    }
+
+    overlay.server?.(app)
+  } else {
+    // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs before the
+    // handler so static assets and SSR responses are both gated — and before the
+    // overlay, so anything it adds is gated too.
+    configureAuth(app)
+    overlay?.server?.(app)
+  }
 
   // Read-only mode (no-op unless PGBOSS_DASHBOARD_READ_ONLY=1). Runs after auth so a
   // rejected mutation still requires credentials to provoke, and before the SSR
@@ -76,7 +114,7 @@ export function createHonoApp ({ build, mode, serveStaticAssets = false }: Creat
   app.all('*', async (c) => {
     const resolvedBuild = typeof build === 'function' ? await build() : build
     const handler = createRequestHandler(resolvedBuild, mode)
-    return handler(c.req.raw, getLoadContext(c))
+    return handler(c.req.raw, getLoadContext(c, overlay))
   })
 
   return app

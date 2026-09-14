@@ -24,6 +24,7 @@
     "paths": {
       "~/*": ["./app/*"],
       "~pro": ["./app/lib/pro-stub.ts"],
+      "~pro-server": ["./app/lib/pro-server-stub.ts"],
       "pg-boss": ["../../src"]
     }
   }
