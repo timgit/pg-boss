@@ -13,7 +13,7 @@ The default options for `work()` is 1 job every 2 seconds.
 **Arguments**
 - `name`: string, *required*
 - `options`: object
-- `handler`: function(jobs): `Promise<any>`, *required*
+- `handler`: function(jobs): `Promise<any>`, *required*. Takes a second argument, function(jobs, tx), under the `transactional` option below.
 
 **Options**
 
@@ -50,6 +50,54 @@ The default options for `work()` is 1 job every 2 seconds.
   - Any job in the batch the handler omits from the array is **failed** with a descriptive error so it retries (or dead-letters) per the queue config — a returned result is never assumed.
   - **Throwing** from the handler still fails the entire batch, exactly as without `perJobResults`. Use the returned array to express per-job failures; reserve throwing for batch-wide errors.
   - Resolving with anything other than an array is treated as a contract violation and fails the whole batch.
+
+* **transactional**, bool, *(default=false)*
+
+  Run the handler and the job's completion inside one database transaction. The handler receives a second argument: a `db` for that transaction, with the same `executeSql` interface every pg-boss `db` option takes.
+
+  ```js
+  await boss.work('charge-customer', { transactional: true }, async (jobs, tx) => {
+    const [job] = jobs
+
+    await tx.executeSql('INSERT INTO ledger (customer, amount) VALUES ($1, $2)', [job.data.customer, job.data.amount])
+
+    // a job created here commits with the ledger row and with this job's completion
+    await boss.send('send-receipt', { customer: job.data.customer }, { db: tx })
+  })
+  ```
+
+  Everything written through `tx` commits with the job's completion, so the handler cannot leave its side effects committed and the job unfinished, or the reverse. Without this, the same guarantee means giving up `work()` and reimplementing its polling, batching, and error handling around a manual `fetch()` / `complete()` pair.
+
+  On a throw, the handler's writes and the completion roll back together, and the job is then failed on a pooled connection, so retry counts, retry delays, and dead lettering behave exactly as they do for a non-transactional worker.
+
+  The job is claimed before the transaction opens, so it is `active` for as long as the handler runs and behaves like any other job while it is: `expireInSeconds` bounds it, heartbeats refresh it, and a crashed process leaves it to be reclaimed by the timeout rather than lost. The option changes what the handler can commit atomically, and nothing about how jobs are fetched, batched, retried, or supervised.
+
+  A commit needs the claim the handler started with. If something takes the job away while the handler runs, whether that is `expireInSeconds`, a heartbeat the database stopped seeing, an operator's `cancel()` or `fail()`, or another instance's supervisor, the transaction rolls back instead of committing under a job that is about to run again. A shutdown that abandons a handler mid-flight is the same: whatever it had written by then is rolled back, and the job carries the shutdown failure.
+
+  A handler settling its own jobs is not affected, since that settlement is part of the transaction being committed. What the check recognises is `complete()`, `fail()`, `cancel()` and `deleteJob()` called with `{ db: tx }`. A handler that settles a job by writing the job table directly is read as a lost claim and rolled back, because nothing about a raw `UPDATE` is distinguishable from one.
+
+  **Requirements and limits**
+
+  - Needs a database connection pg-boss can open a transaction on: the built-in pool, or a `db` adapter implementing `beginTransaction`. Passing `transactional: true` without one throws from `work()`.
+  - Cannot be combined with `perJobResults`: one transaction has a single outcome, so per-job settlement has nothing to commit separately. Rejected rather than silently degraded.
+  - **Every handler in flight holds a pool connection for its own duration.** Size `max` above `localConcurrency` (summed over your transactional queues) with room to spare for fetches, failures, and maintenance, or those queries wait out `connectionTimeoutMillis` and reject. pg-boss emits a `warning` at `work()` time when the pool has no room left.
+  - **The transaction is open for as long as the handler runs.** A long transaction holds its snapshot and blocks vacuum from reclaiming dead rows database-wide, so this suits handlers that finish in seconds. For long work, keep the default worker and use the `db` option on `complete()` instead. The database bounds it either way: see `transactionTimeoutSeconds` below.
+  - **Some backends cannot carry a transactional worker and heartbeats at once.** The heartbeat refreshes the claimed row from a pooled connection so the job stays visibly `active`, and an engine that refuses the handler's transaction a write to a row another session wrote after it began (CockroachDB, under serializable isolation) then fails the completion. `work()` rejects the combination on those backends rather than shipping a worker that fails every batch; `expireInSeconds` is the liveness bound there. See [database backends](../database-backends.md#compatibility-flags).
+  - **A SQL error the handler catches leaves the transaction aborted.** Postgres then rejects every later statement in it, including the completion pg-boss runs there, so the job fails even though the handler returned. Either let such an error propagate out of the handler, or isolate the statement behind a `SAVEPOINT` of your own.
+
+* **transactionTimeoutSeconds**, int, *(default=`expireInSeconds` + 5)*
+
+  How long the database gives the handler's transaction before it kills the connection under it. Only valid alongside `transactional`; `0` removes the bound.
+
+  This is not the timer that ends a slow handler. `expireInSeconds` is, and it fires first by design. What this covers is the case no timer inside the process can: the process itself failing under an open transaction (a starved event loop, a driver wedged below the promise). That transaction goes on advertising `backend_xmin` and holding vacuum off every table in the database until something closes it, which is the condition [`monitorVacuum`](./constructor.md#monitorvacuum) reports as an `xmin_horizon` warning.
+
+  ```js
+  await boss.work('charge-customer', { transactional: true, transactionTimeoutSeconds: 60 }, handler)
+  ```
+
+  The default leaves the handler's own timeout and its rollback the whole window they need, so the server only gives up once neither ran. Applied as `transaction_timeout` where the server has it (PostgreSQL 17+, CockroachDB) and `idle_in_transaction_session_timeout` otherwise, which bounds the gaps between the handler's statements rather than the transaction as a whole. Either way the connection is dropped, so the batch ends on the rolled-back path, and the job is retried under its own retry policy.
+
+  A bound the connection already carries is never widened. Where a role, a managed provider, or a pooler has already set the GUC to something stricter, that value stands and this option cannot raise it. These are the longest transactions pg-boss opens, so they are the last place to relax someone else's limit. If pg-boss cannot ask the server which GUC it recognises, or cannot read the bound the connection already carries from `pg_settings`, it emits a [`transaction_timeout_probe`](./events.md#warning) warning once, runs its batches with no database-side bound, and asks again a minute later.
 
 * **priority**, bool — **deprecated, ignored since 12.30.0**
 

@@ -163,6 +163,19 @@ jobs:
       with:
         node-version: 24
 
+    - name: Pull CockroachDB image
+      # Every compose service shares this one image, so warming the local cache here keeps
+      # `up -d` off the registry entirely. Docker Hub resets the connection often enough
+      # that a single unattended pull makes the whole job flaky.
+      run: |
+        for attempt in 1 2 3; do
+          docker pull cockroachdb/cockroach:latest && exit 0
+          echo "pull attempt $attempt failed, retrying in $(( attempt * 10 ))s"
+          sleep $(( attempt * 10 ))
+        done
+        echo "could not pull cockroachdb/cockroach after 3 attempts"
+        exit 1
+
     - name: Start CockroachDB cluster
       run: |
         docker compose -f docker-compose.cockroach.yaml up -d

@@ -1,6 +1,7 @@
 import EventEmitter from 'node:events'
 import pg from 'pg'
 import assert from 'node:assert'
+import { delay } from './tools.ts'
 import type * as types from './types.ts'
 
 // Keep silent network failures below the default 30-second notify polling backstop: in the
@@ -9,6 +10,11 @@ import type * as types from './types.ts'
 const DEFAULT_LISTEN_HEARTBEAT_INTERVAL_MS = 10000
 const DEFAULT_LISTEN_HEARTBEAT_TIMEOUT_MS = 5000
 const DEFAULT_LISTEN_KEEP_ALIVE_INITIAL_DELAY_MS = 10000
+
+// How long rollback() waits for its ROLLBACK before giving up on the connection instead. A ROLLBACK
+// on a responsive connection returns in well under a millisecond, so this bounds the case where it
+// cannot get through at all, not the case where it is slow.
+export const TRANSACTION_ROLLBACK_TIMEOUT_MS = 5000
 
 class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   private pool!: pg.Pool
@@ -217,23 +223,111 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     }
   }
 
-  async withTransaction<T> (fn: (db: types.IDatabase) => Promise<T>): Promise<T> {
+  // Pins a client, opens a transaction, and hands back the controls. Callers that can express their
+  // work as a single function should use withTransaction(); this exists for the cases where the
+  // settle path has to pick how the transaction ends, which is what a transactional worker does
+  // when it rolls back a failed handler and then records the failure on a pooled connection.
+  //
+  // The handle owns the client and releases it exactly once. Every way this can end badly releases
+  // with the error, so the pool discards a client left in an unknown state rather than handing it
+  // to the next caller mid-transaction: a failed COMMIT, a connection that errors while checked
+  // out, and a ROLLBACK that cannot get through.
+  async beginTransaction (): Promise<types.TransactionHandle> {
     assert(this.opened, 'Database not opened. Call open() before executing SQL.')
 
     const client = await this.pool.connect()
+
+    let released = false
+    // Why the connection died, when it died on its own rather than through commit() or rollback().
+    // Later calls on the handle report it instead of the generic settled message, which on its own
+    // would describe a dropped connection as a caller mistake.
+    let connectionError: Error | null = null
+
+    // pg-pool takes its own idle 'error' listener off a client for as long as it is checked out, so
+    // a connection that drops while the transaction is open emits 'error' with nothing listening,
+    // which ends the process. The transaction is lost either way, so record the reason and release
+    // with it: the pool discards the client, and the handle stops accepting statements.
+    const onClientError = (err: Error) => {
+      connectionError ??= err
+      release(err)
+    }
+
+    const release = (err?: Error) => {
+      if (released) return
+      released = true
+      client.removeListener('error', onClientError)
+      client.release(err)
+    }
+
+    const settledError = () => connectionError ?? new Error('Transaction is already settled')
+
+    client.on('error', onClientError)
+
     try {
       await client.query('BEGIN')
-      const txDb: types.IDatabase = {
-        executeSql: (text: string, values?: unknown[]) => client.query(text, values)
+    } catch (err) {
+      release(err as Error)
+      throw err
+    }
+
+    return {
+      db: {
+        // Refuses to run once the transaction is settled. Without this, a statement issued late by
+        // a handler that outlived its timeout would land on a client the pool has already handed
+        // to someone else, running outside any transaction and inside a stranger's session.
+        executeSql: (text: string, values?: unknown[]) => released
+          ? Promise.reject(settledError())
+          : client.query(text, values)
+      },
+      commit: async () => {
+        // A second settle would otherwise send COMMIT down a client the pool has already reused.
+        if (released) throw settledError()
+
+        try {
+          await client.query('COMMIT')
+        } catch (err) {
+          release(err as Error)
+          throw err
+        }
+
+        release()
+      },
+      // Idempotent, and it deliberately swallows its own failure: a rollback is already the error
+      // path, and the caller has an original error worth more than "ROLLBACK failed".
+      //
+      // Bounded, too. Statements queue per connection, so a ROLLBACK issued while the caller's own
+      // statement is still in flight (a handler abandoned at its expiration, say) waits exactly as
+      // long as that statement does, which is unbounded. Past the deadline the client is released
+      // with the error instead: that drops the connection, and the server aborts the transaction
+      // with it.
+      rollback: async () => {
+        if (released) return
+
+        const rollback = client.query('ROLLBACK')
+        const deadline = delay(TRANSACTION_ROLLBACK_TIMEOUT_MS, 'ROLLBACK did not complete in time')
+
+        try {
+          await Promise.race([rollback, deadline])
+          release()
+        } catch (err) {
+          release(err as Error)
+        } finally {
+          deadline.abort()
+        }
       }
-      const result = await fn(txDb)
-      await client.query('COMMIT')
+    }
+  }
+
+  async withTransaction<T> (fn: (db: types.IDatabase) => Promise<T>): Promise<T> {
+    const tx = await this.beginTransaction()
+
+    try {
+      const result = await fn(tx.db)
+      await tx.commit()
       return result
     } catch (err) {
-      await client.query('ROLLBACK')
+      await tx.rollback()
       throw err
-    } finally {
-      client.release()
     }
   }
 }

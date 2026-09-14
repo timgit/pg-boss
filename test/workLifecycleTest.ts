@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
+import { PgBoss } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 describe('work lifecycle', function () {
@@ -304,6 +305,151 @@ describe('work lifecycle', function () {
       assertTruthy(job)
       expect(job.state).toBe('failed')
       expect(job.output).toBeTruthy()
+    }
+  })
+})
+
+describe('work lifecycle shutdown errors', function () {
+  it('should report a wip failure and still abort the rest of the workers', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const first = ctx.schema
+    const second = `${ctx.schema}_second`
+    await ctx.boss.createQueue(second)
+
+    // A db that refuses any statement carrying the first queue's job id once armed, which is the
+    // shutdown fail() arriving on a database that will not take it.
+    const inner = ctx.boss.getDb()
+    let refuseId: string | null = null
+
+    const db = {
+      executeSql: (text: string, values?: unknown[]) => {
+        if (refuseId && values?.some(value => Array.isArray(value) && value.includes(refuseId))) {
+          return Promise.reject(new Error('fail is unavailable'))
+        }
+
+        return inner.executeSql(text, values)
+      }
+    }
+
+    const boss = new PgBoss({ ...ctx.bossConfig, db, createSchema: false, migrate: false })
+    const errors: any[] = []
+    boss.on('error', err => errors.push(err))
+
+    await boss.start()
+
+    try {
+      const firstId = await boss.send(first, null, { retryLimit: 0 })
+      const secondId = await boss.send(second, null, { retryLimit: 0 })
+      assertTruthy(firstId)
+      assertTruthy(secondId)
+
+      const started = new Set<string>()
+      const aborted: string[] = []
+      const finished: string[] = []
+
+      for (const queue of [first, second]) {
+        await boss.work(queue, { pollingIntervalSeconds: 1 }, async ([job]) => {
+          started.add(queue)
+          await delay(2000)
+          if (job.signal.aborted) aborted.push(queue)
+          finished.push(queue)
+        })
+      }
+
+      // Both handlers have to be in flight, so both workers hold a job the shutdown has to fail.
+      while (started.size < 2) {
+        await delay(100)
+      }
+
+      refuseId = firstId
+      await boss.stop({ graceful: false, close: false })
+      refuseId = null
+
+      while (finished.length < 2) {
+        await delay(100)
+      }
+
+      expect(errors.some(err => err.queue === first && err.message === 'fail is unavailable')).toBe(true)
+
+      // The second worker was reached even though the first one's fail threw: its job carries the
+      // shutdown failure, and both handlers saw the abort.
+      const secondJob = await ctx.boss.getJobById(second, secondId)
+      assertTruthy(secondJob)
+      expect(secondJob.state).toBe('failed')
+      // @ts-expect-error untyped object
+      expect(secondJob.output?.value).toBe('pg-boss shut down while active')
+      expect(aborted.sort()).toEqual([first, second].sort())
+    } finally {
+      await boss.stop({ graceful: false, close: false })
+    }
+  })
+
+  it('should finish the shutdown when a wip failure has no error listener', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const first = ctx.schema
+    const second = `${ctx.schema}_second`
+    await ctx.boss.createQueue(second)
+
+    const inner = ctx.boss.getDb()
+    let refuseId: string | null = null
+
+    const db = {
+      executeSql: (text: string, values?: unknown[]) => {
+        if (refuseId && values?.some(value => Array.isArray(value) && value.includes(refuseId))) {
+          return Promise.reject(new Error('fail is unavailable'))
+        }
+
+        return inner.executeSql(text, values)
+      }
+    }
+
+    // No `error` listener anywhere, which is the point: an unhandled `error` event throws
+    // ERR_UNHANDLED_ERROR out of emit(), and reporting the wip failure that way would abandon the
+    // shutdown at the worker it happened on.
+    const boss = new PgBoss({ ...ctx.bossConfig, db, createSchema: false, migrate: false })
+
+    await boss.start()
+
+    try {
+      const firstId = await boss.send(first, null, { retryLimit: 0 })
+      const secondId = await boss.send(second, null, { retryLimit: 0 })
+      assertTruthy(firstId)
+      assertTruthy(secondId)
+
+      const started = new Set<string>()
+      const finished: string[] = []
+
+      for (const queue of [first, second]) {
+        await boss.work(queue, { pollingIntervalSeconds: 1 }, async () => {
+          started.add(queue)
+          await delay(2000)
+          finished.push(queue)
+        })
+      }
+
+      while (started.size < 2) {
+        await delay(100)
+      }
+
+      refuseId = firstId
+      await boss.stop({ graceful: false, close: false })
+      refuseId = null
+
+      while (finished.length < 2) {
+        await delay(100)
+      }
+
+      // The stop got past the worker whose fail threw, so the second worker's job carries the
+      // shutdown failure.
+      const secondJob = await ctx.boss.getJobById(second, secondId)
+      assertTruthy(secondJob)
+      expect(secondJob.state).toBe('failed')
+      // @ts-expect-error untyped object
+      expect(secondJob.output?.value).toBe('pg-boss shut down while active')
+    } finally {
+      await boss.stop({ graceful: false, close: false })
     }
   })
 })

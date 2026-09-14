@@ -22,7 +22,8 @@ const COMPATIBILITY_FLAGS = [
   'noListenNotify',
   'noIndexProgressView',
   'noReindex',
-  'noMonitorVacuum'
+  'noMonitorVacuum',
+  'noTransactionalHeartbeat'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -62,7 +63,12 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       // there is no pg_relation_size(), and reltuples / relpages is an "unsupported binary
       // operator: <float4> / <int4>".
       noReindex: true,
-      noMonitorVacuum: true
+      noMonitorVacuum: true,
+      // The heartbeat writes heartbeat_on on the claimed row from a pooled connection, which under
+      // serializable lands at a timestamp above the handler transaction's. The completion pg-boss
+      // runs inside that transaction then cannot write the same row and the batch dies with a
+      // WriteTooOldError. YugabyteDB's snapshot isolation waits instead, so it does NOT set this.
+      noTransactionalHeartbeat: true
     }
   },
   yugabytedb: {
@@ -447,11 +453,32 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('localConcurrency' in options) || (Number.isInteger(options.localConcurrency) && options.localConcurrency >= 1), 'localConcurrency must be an integer >= 1')
   assert(!('perJobResults' in options) || typeof options.perJobResults === 'boolean', 'perJobResults must be a boolean')
+  assert(!('transactional' in options) || typeof options.transactional === 'boolean', 'transactional must be a boolean')
   validatePriorityRangeConfig(options)
   validateGroupConcurrencyConfig(options)
   validateHeartbeatRefreshConfig(options)
+  validateTransactionalConfig(options)
 
   return { options, callback }
+}
+
+// Rejects the one combination a transactional worker cannot honour, rather than quietly degrading
+// one of the two features. Everything else about a worker (fetching, batching, concurrency, group
+// limits, heartbeats) is untouched by the option, because the transaction covers only the handler
+// and the completion.
+function validateTransactionalConfig (options: any) {
+  assert(!('transactionTimeoutSeconds' in options) || (Number.isInteger(options.transactionTimeoutSeconds) && options.transactionTimeoutSeconds >= 0),
+    'transactionTimeoutSeconds must be an integer >= 0')
+
+  if (!options.transactional) {
+    // Rejected rather than ignored: the bound only exists for a transaction pg-boss opened.
+    assert(!('transactionTimeoutSeconds' in options), 'transactionTimeoutSeconds requires transactional')
+    return
+  }
+
+  // Per-job settlement partitions a batch into separate outcomes; one transaction can only commit
+  // or roll back as a whole, so the two contradict each other.
+  assert(!options.perJobResults, 'transactional cannot be combined with perJobResults')
 }
 
 function checkFetchArgs (name: string, options: any) {
@@ -546,6 +573,11 @@ function resolveBackend (config: any) {
   // used by CockroachDB/YugabyteDB, on a plain Postgres instance.
   if (config.__test__noIndexProgressView) {
     config.noIndexProgressView = true
+  }
+
+  // Test hook: exercise the transactional-heartbeat rejection (CockroachDB) on plain Postgres.
+  if (config.__test__noTransactionalHeartbeat) {
+    config.noTransactionalHeartbeat = true
   }
 
   // Test hook: exercise the detection-only reindex path (bloat is reported, never rebuilt) used by

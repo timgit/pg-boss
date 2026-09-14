@@ -26,10 +26,33 @@ export interface IDatabase {
    * can be recovered. Returns a handle whose `close()` tears down the listener.
    */
   listen?(channel: string, onNotification: (payload: string) => void, onReconnect: () => void): Promise<ListenHandle>;
+  /**
+   * Optional capability for pg-boss-owned transactions. When present, pg-boss can open a
+   * transaction and settle it from a different call frame, which is what
+   * `work(name, { transactional: true }, ...)` needs. The built-in pool-based Db implements it;
+   * a custom adapter may implement it to enable transactional workers.
+   */
+  beginTransaction?(): Promise<TransactionHandle>;
 }
 
 export interface ListenHandle {
   close(): Promise<void>;
+}
+
+export interface TransactionHandle {
+  /** Runs statements inside the transaction. Pass it as the `db` option on any pg-boss call. */
+  db: IDatabase;
+  /**
+   * Commits and releases the underlying connection. Rejects if the commit fails, or if the
+   * transaction has already been settled.
+   */
+  commit(): Promise<void>;
+  /**
+   * Rolls back and releases the underlying connection. Never rejects, and safe to call more than
+   * once. Implementations must not wait indefinitely: a rollback that cannot get through has to
+   * drop the connection instead, so the caller's error path always makes progress.
+   */
+  rollback(): Promise<void>;
 }
 
 export interface DatabaseOptions {
@@ -42,6 +65,11 @@ export interface DatabaseOptions {
   schema?: string;
   ssl?: any;
   connectionString?: string;
+  /**
+   * Command-line options sent to the server on connect, e.g. `-c statement_timeout=5000`. Applied
+   * to every connection in the pool. Passed through to `pg`.
+   */
+  options?: string;
   max?: number;
   db?: IDatabase;
   connectionTimeoutMillis?: number;
@@ -352,6 +380,19 @@ export interface CompatibilityFlags {
    * `autovacuum_disabled` checks entirely.
    */
   noMonitorVacuum?: boolean;
+  /**
+   * The engine will not let a transaction write a row another session wrote after that transaction
+   * began. A transactional worker's heartbeat is exactly that shape: `touch()` refreshes
+   * `heartbeat_on` on the claimed row from a pooled connection, by design, so the job stays visibly
+   * `active` while the handler runs. Under CockroachDB's serializable isolation that write lands
+   * above the handler transaction's timestamp, and the completion pg-boss runs inside the
+   * transaction then fails with a `40001` WriteTooOldError. The transaction has already returned
+   * rows to the client, so there is nothing left to refresh and the batch cannot be retried in
+   * place. When set, `work()` rejects `transactional` on a queue that configures `heartbeatSeconds`
+   * rather than shipping a worker that fails every batch. (YugabyteDB's snapshot isolation makes the
+   * second write wait rather than abort, so it does NOT set this flag.)
+   */
+  noTransactionalHeartbeat?: boolean;
 }
 
 export interface Migration {
@@ -487,6 +528,18 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @internal
    */
   __test__noReindex?: boolean;
+  /**
+   * Force `noTransactionalHeartbeat` on top of the current backend, so the rejection of a
+   * transactional worker on a heartbeat queue (CockroachDB) can be exercised on plain Postgres.
+   * @internal
+   */
+  __test__noTransactionalHeartbeat?: boolean;
+  /**
+   * How long a refused transaction timeout probe is remembered before the next transactional batch
+   * asks again, in milliseconds. Defaults to a minute; tests set it to 0 to watch the retry.
+   * @internal
+   */
+  __test__transactionTimeoutProbeCooldownMs?: number;
   /** @internal */
   migrations?: Migration[];
 }
@@ -940,6 +993,45 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
    * error. Throwing from the handler still fails the whole batch. Defaults to false.
    */
   perJobResults?: boolean;
+  /**
+   * Run the handler and the job's completion inside one database transaction.
+   *
+   * The handler receives a second argument, a `db` for that transaction. Anything written through
+   * it commits atomically with the job's completion, so a handler cannot leave its side effects
+   * committed and the job unfinished, or the reverse. Throwing rolls back the handler's writes and
+   * the completion, and the job is then failed on a pooled connection, so retry counts, retry
+   * delays, and dead lettering work exactly as they do without this option.
+   *
+   * The job is claimed before the transaction opens, so it stays `active` for as long as the
+   * handler runs and every supervision path (`expireInSeconds`, heartbeats, another instance's
+   * monitor) sees it.
+   *
+   * Requires a database connection pg-boss can open a transaction on: the built-in pool, or a `db`
+   * adapter implementing `beginTransaction`. Cannot be combined with `perJobResults`, which
+   * settles each job in a batch separately while one transaction has a single outcome.
+   *
+   * Each handler in flight holds a connection for its own duration, so the pool needs room for
+   * `localConcurrency` connections on top of what the rest of pg-boss uses. Long transactions also
+   * hold back vacuum, so this suits handlers that finish in seconds.
+   * @default false
+   */
+  transactional?: boolean;
+  /**
+   * How long the database gives the handler's transaction before it kills the connection under it,
+   * in seconds. Only valid with `transactional`. `0` removes the bound.
+   *
+   * Backstop for the case the in-process timers cannot cover: not a handler that hangs, which
+   * `expireInSeconds` already ends, but the process failing under it, where an open transaction
+   * goes on holding vacuum off the whole database. Applied as `transaction_timeout` where the
+   * server has it (PostgreSQL 17+, CockroachDB) and `idle_in_transaction_session_timeout`
+   * otherwise, which bounds the gaps between the handler's statements instead of the whole
+   * transaction.
+   *
+   * Defaults to `expireInSeconds` plus the 5 seconds pg-boss allows its own rollback, so the
+   * handler's own timeout and clean rollback always land first and this only fires when they did
+   * not run at all.
+   */
+  transactionTimeoutSeconds?: number;
 }
 export interface FetchGroupConcurrencyOptions {
   groupConcurrency?: number | GroupConcurrencyConfig;
@@ -986,19 +1078,35 @@ export interface PerJobWorkWithMetadataHandler<ReqData> {
 }
 
 /**
+ * Handler for a `transactional: true` worker. `tx` runs statements inside the transaction pg-boss
+ * commits the batch in, so pass it as the `db` option on any pg-boss call, or hand it to your own
+ * SQL, to have that work commit with the job's completion.
+ */
+export interface TransactionalWorkHandler<ReqData, ResData = any> {
+  (jobs: Job<ReqData>[], tx: IDatabase): Promise<ResData>;
+}
+
+export interface TransactionalWorkWithMetadataHandler<ReqData, ResData = any> {
+  (jobs: JobWithMetadata<ReqData>[], tx: IDatabase): Promise<ResData>;
+}
+
+/**
  * Resolves the handler signature a `work` call must satisfy from the *inferred* options type `O`.
- * A literal `perJobResults: true` (optionally with `includeMetadata: true`) demands a per-job handler
- * that resolves with a `JobResult[]`; anything else keeps the permissive single-output handler.
+ * A literal `transactional: true` adds the transaction `db` as a second parameter. A literal
+ * `perJobResults: true` (optionally with `includeMetadata: true`) demands a per-job handler that
+ * resolves with a `JobResult[]`; anything else keeps the permissive single-output handler.
  *
- * Because the branch is driven by `O extends { perJobResults: true }`, only a statically-known `true`
- * selects the strict handler. Options whose `perJobResults` is a plain `boolean` (e.g. a value typed
- * as `WorkOptions`, or `{ perJobResults: someFlag }`) do not match the literal and fall through to the
+ * Because each branch is driven by `O extends { flag: true }`, only a statically-known `true`
+ * selects the stricter handler. Options whose flag is a plain `boolean` (e.g. a value typed as
+ * `WorkOptions`, or `{ perJobResults: someFlag }`) do not match the literal and fall through to the
  * permissive handler, so dynamically-built options keep compiling exactly as before.
  */
 export type WorkHandlerFor<O extends WorkOptions, ReqData, ResData = any> =
-  O extends { perJobResults: true }
-    ? (O extends { includeMetadata: true } ? PerJobWorkWithMetadataHandler<ReqData> : PerJobWorkHandler<ReqData>)
-    : (O extends { includeMetadata: true } ? WorkWithMetadataHandler<ReqData, ResData> : WorkHandler<ReqData, ResData>)
+  O extends { transactional: true }
+    ? (O extends { includeMetadata: true } ? TransactionalWorkWithMetadataHandler<ReqData, ResData> : TransactionalWorkHandler<ReqData, ResData>)
+    : O extends { perJobResults: true }
+      ? (O extends { includeMetadata: true } ? PerJobWorkWithMetadataHandler<ReqData> : PerJobWorkHandler<ReqData>)
+      : (O extends { includeMetadata: true } ? WorkWithMetadataHandler<ReqData, ResData> : WorkHandler<ReqData, ResData>)
 
 export interface Request {
   name: string;
@@ -1173,7 +1281,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe'
 
 export interface PersistedWarning {
   id: number;
@@ -1190,6 +1298,12 @@ export interface CommandResponse {
   requested: number;
   /** @internal */
   affected: number;
+  /**
+   * The ids the statement actually settled, where it reports them. `jobs` is the list that was
+   * asked about; this is the subset that landed.
+   * @internal
+   */
+  settled?: string[];
 }
 
 /**

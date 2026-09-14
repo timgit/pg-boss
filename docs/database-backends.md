@@ -81,11 +81,13 @@ in the source.
 | Lock-free schema setup | Disable `pg_advisory_xact_lock` (used to coordinate schema creation/migration). | Concurrent instances may occasionally do redundant maintenance — a performance, not correctness, concern. | `noAdvisoryLocks` |
 | Plain indexes | Omit the `INCLUDE` clause on covering indexes. | Slightly less efficient index-only scans during fetch; minimal for most workloads. | `noCoveringIndexes` |
 | Default-only column adds | Leave out the `UPDATE` that seeds a column the same migration added, for engines that refuse to write a column in the transaction that added it. | Rows carry the column's default until something rewrites them: after v41, a schedule holding an RRULE reads as `cron` from `getSchedules()` until the next scheduling pass relabels it. | `noAddColumnBackfill` |
+| No transactional heartbeat | Refuse a [`transactional`](./api/workers.md#workname-options-handler) worker on a queue configuring `heartbeatSeconds`, for engines that will not let a transaction write a row another session wrote after it began. | The two cannot be combined on that engine; `expireInSeconds` is the liveness bound for a transactional worker there. | `noTransactionalHeartbeat` |
 
-Lock-free fetch and split-statement writes are **runtime** behaviors; the other five are **schema**
-choices applied at install/migration time. CockroachDB needs all seven; other distributed engines need
-only a subset (see below). One further CockroachDB adjustment — coercing text-encoded integers back
-to numbers — is keyed on `backend === 'cockroachdb'` directly (see below).
+Lock-free fetch, split-statement writes, and the transactional-heartbeat refusal are **runtime**
+behaviors; the other five are **schema** choices applied at install/migration time. CockroachDB needs
+all eight; other distributed engines need only a subset (see below). One further CockroachDB
+adjustment is keyed on `backend === 'cockroachdb'` directly rather than on a flag: coercing
+text-encoded integers back to numbers (see below).
 
 ### Why fetch and mutation strategy are tracked separately
 
@@ -172,6 +174,24 @@ Internally that enables atomic-`UPDATE` fetch (`noSkipLocked`), split-statement 
 (`noDeferrableConstraints`), no advisory locks (`noAdvisoryLocks`), no covering-index `INCLUDE`
 (`noCoveringIndexes`), and numeric coercion on read — see
 [compatibility flags](#compatibility-flags).
+
+**Transactional workers on CockroachDB** work, with two differences from PostgreSQL:
+
+- A queue configuring `heartbeatSeconds` cannot carry one (`noTransactionalHeartbeat`). The
+  heartbeat refreshes `heartbeat_on` on the claimed row from a pooled connection, by design, so the
+  job stays visibly `active` while the handler runs. Under serializable isolation that write lands
+  above the handler transaction's timestamp and the completion pg-boss runs inside the transaction
+  is then refused, so `work()` rejects the combination rather than shipping a worker that fails
+  every batch. Drop `heartbeatSeconds` and let `expireInSeconds` bound the job, or drop
+  `transactional` and settle with `complete({ db })`. A heartbeat that arrives after `work()` has
+  checked the queue, from `heartbeatSeconds` on the job itself or from `updateQueue()` on a queue
+  that already has a transactional worker, gets past that check; each batch carrying one then fails
+  before its transaction opens, with an error naming those two routes rather than the queue's
+  configuration.
+- When something takes the claim away mid-handler and the handler then settles the job itself
+  through `tx`, that settle comes back as a raw `40001` retry error rather than `affected: 0`. The
+  transaction rolls back either way, so the handler's writes never land beside a job that is about
+  to run again; only the error the job records differs from the message PostgreSQL produces.
 
 **Because `cockroachdb` disables table partitioning:**
 - Queue-level partitioning (`partition: true` on `createQueue`) is not supported

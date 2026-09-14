@@ -201,6 +201,7 @@ export const commandResponseSchema = z.object({
   jobs: z.array(z.string()),
   requested: z.number(),
   affected: z.number(),
+  settled: z.array(z.string()).optional(),
 }) satisfies z.ZodType<types.HttpCommandResponse>
 
 export const updateResultSchema = z.object({

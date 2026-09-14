@@ -4,6 +4,7 @@ import EventEmitter from 'node:events'
 import { serializeError as stringify } from 'serialize-error'
 import * as Attorney from './attorney.ts'
 import type Db from './db.ts'
+import { TRANSACTION_ROLLBACK_TIMEOUT_MS } from './db.ts'
 import type Notifier from './notifier.ts'
 import * as plans from './plans.ts'
 import type Timekeeper from './timekeeper.ts'
@@ -14,6 +15,69 @@ import Worker from './worker.ts'
 import { JobSpy, type JobSpyInterface } from './spy.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
+
+// postgres: current transaction is aborted, commands ignored until end of transaction block
+const TRANSACTION_ABORTED = '25P02'
+
+// pg's own default when the pool size is not configured. Used to tell a transactional worker how
+// much room it actually has, since each handler in flight holds a connection of its own.
+const DEFAULT_POOL_MAX = 10
+
+const WARNING_TYPES = {
+  TRANSACTIONAL_POOL_HEADROOM: 'transactional_pool_headroom',
+  TRANSACTION_TIMEOUT_PROBE: 'transaction_timeout_probe'
+} as const
+
+const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
+
+// The same refusal from inside a batch, where the queue passed work()'s check and the heartbeat
+// arrived afterwards: on the job itself (heartbeatSeconds on send()) or through updateQueue() once
+// the worker was already registered. Pointing at the queue's configuration there would send the
+// user to a setting that is not the one they need to drop.
+const TRANSACTIONAL_HEARTBEAT_ON_BATCH = 'this backend cannot run a transactional handler over a job with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. The queue carried no heartbeat when this worker registered, so it came from the job (heartbeatSeconds on send()) or from updateQueue() after registration. Drop it there and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
+
+// Candidates for bounding a transactional handler's transaction from the database side, best
+// first. transaction_timeout covers the whole transaction; idle_in_transaction_session_timeout only
+// covers the gaps between statements, which still catches a handler that stops issuing them.
+// statement_timeout is deliberately absent: it bounds one statement, and leaves the next one with
+// 25P02, which would have the aborted-transaction message blame the handler for a SQL error it
+// never swallowed.
+const TRANSACTION_TIMEOUT_GUCS = ['transaction_timeout', 'idle_in_transaction_session_timeout'] as const
+
+// current_setting(name, true) answers NULL for a parameter the server does not recognise, on every
+// backend pg-boss supports, so which of the two is available takes one statement and no version
+// parsing. transaction_timeout arrived in PostgreSQL 17 and exists on CockroachDB; asking for it on
+// 13-16 any other way is a hard error.
+const TRANSACTION_TIMEOUT_PROBE = `SELECT ${TRANSACTION_TIMEOUT_GUCS.map(name => `current_setting('${name}', true) AS ${name}`).join(', ')}`
+
+// The tighter of pg-boss's bound ($2, milliseconds) and the one the connection already carries for
+// GUC $1. A role, a managed provider or a pooler that sets idle_in_transaction_session_timeout means
+// it, and the transactions this runs on are the longest ones pg-boss opens, so overwriting it is
+// exactly the wrong place to do so. pg_settings reports both GUCs unitless in milliseconds on every
+// backend that has them, which current_setting does not, so the comparison needs no parsing and no
+// second round trip. LEAST ignores nulls, which covers both cases where there is nothing to be
+// tighter than: 0 is how either GUC spells "no bound" (NULLIF turns it into one of them), and a
+// backend that recognises the parameter without listing it in pg_settings is the other. Read per
+// transaction rather than cached, since the value belongs to the connection and not to the process.
+const TRANSACTION_TIMEOUT_TIGHTEST = 'LEAST($2::bigint, NULLIF((SELECT s.setting::bigint FROM pg_settings s WHERE s.name = $1), 0))'
+
+// Applies the bound. This is the first statement of the handler's transaction, so it must not be
+// the first place a statement can fail: the read half is rehearsed by the probe below, on the
+// pooled connection, and only set_config is new here. Sharing the expression is what keeps the two
+// from drifting apart.
+const TRANSACTION_TIMEOUT_APPLY = `SELECT set_config($1, ${TRANSACTION_TIMEOUT_TIGHTEST}::text, true)`
+
+// The read half of the apply, run once by the probe with a bound of 0 so it can set nothing. A
+// backend or a db adapter that answers current_setting but has no pg_settings view fails here,
+// where failing costs the bound, rather than inside the transaction, where it would cost the batch.
+// set_config is left out on purpose: a custom adapter's executeSql may sit inside the caller's own
+// open transaction, and a rehearsal must not be able to change anything there.
+const TRANSACTION_TIMEOUT_REHEARSE = `SELECT ${TRANSACTION_TIMEOUT_TIGHTEST}`
+
+// How long a refused probe is remembered before the next transactional batch asks again. The bound
+// is a backstop, so the retry has to stay; a backend that will never answer does not need to be
+// asked on every batch for the life of the process either.
+const TRANSACTION_TIMEOUT_PROBE_COOLDOWN_MS = 60_000
 
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
 // fields must be coerced back to numbers when backend === 'cockroachdb'.
@@ -68,6 +132,7 @@ const QUEUE_STATS_FORCE_TTL_SECONDS = 60
 
 const events = {
   error: 'error',
+  warning: 'warning',
   wip: 'wip'
 }
 
@@ -108,6 +173,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
+  // Job ids a transactional handler settled itself through the transaction it was handed, keyed on
+  // that transaction's db. #processJobs reads it to interpret its own completion; see the check
+  // there. Weak because the key is the transaction, so an entry goes away with it.
+  #handlerSettledJobs: WeakMap<types.IDatabase, Set<string>>
+  // Which GUC this server bounds a transaction with, resolved on the first transactional batch and
+  // kept for the life of the process. Resolving to null means neither is recognised, or the probe
+  // itself failed; a failed probe clears the memo and sets the instant before which no batch asks
+  // again.
+  #transactionTimeoutGuc: Promise<string | null> | null
+  #transactionTimeoutProbeRetryAt: number
+  #transactionTimeoutProbeCooldownMs: number
+  // One warning per process for a probe the server will not answer. A backend or adapter that
+  // cannot answer it today will not answer it tomorrow, so there is no episode to report twice.
+  #warnedTransactionTimeoutProbe: boolean
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
   #localGroupMaxLimit: Map<string, number>
@@ -122,6 +201,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.queues = {}
     this.pendingOffWorkCleanups = new Set()
     this.#spies = new Map()
+    this.#handlerSettledJobs = new WeakMap()
+    this.#transactionTimeoutGuc = null
+    this.#transactionTimeoutProbeRetryAt = 0
+    this.#transactionTimeoutProbeCooldownMs = config.__test__transactionTimeoutProbeCooldownMs ?? TRANSACTION_TIMEOUT_PROBE_COOLDOWN_MS
+    this.#warnedTransactionTimeoutProbe = false
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
     this.#localGroupMaxLimit = new Map()
@@ -449,13 +533,26 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  /**
+   * Runs a batch through its handler and settles it.
+   *
+   * With `transactional`, the handler and the completion run in one transaction of their own. The
+   * batch is already claimed by the time this is called, so the transaction covers the handler's
+   * writes and the completion and nothing else: success commits them together, and a throw rolls
+   * both back and then fails the jobs on a pooled connection, where the retry accounting is the
+   * same as any other worker's. Because the claim is outside the transaction, the jobs stay
+   * visibly `active` throughout, which is what keeps heartbeats, `expireInSeconds`, and another
+   * instance's supervisor working on them as usual.
+   */
   async #processJobs<T> (
     name: string,
     jobs: types.Job<T>[],
     callback: types.WorkHandler<T>,
     worker?: Worker<T>,
     heartbeatRefreshSeconds?: number,
-    perJobResults = false
+    perJobResults = false,
+    transactional = false,
+    transactionTimeoutSeconds?: number
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -471,6 +568,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Store AbortController on worker so it can be aborted after graceful shutdown
     if (worker) {
       worker.abortController = ac
+      worker.aborted = false
     }
 
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -491,20 +589,81 @@ class Manager extends EventEmitter implements types.EventsMixin {
     let completedAffected = 0
     let failedError: any
     let didFail = false
+    // Only for a transactional worker, and only from the begin below until it settles. rollback()
+    // is idempotent, so the catch can settle it without tracking whether the commit got there
+    // first.
+    let transaction: types.TransactionHandle | null = null
 
     try {
-      const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+      // A per-job heartbeatSeconds, or updateQueue() after the worker registered, can put a
+      // heartbeat on a batch whose queue carried none at work(), which that check cannot see. Thrown
+      // before the begin so the batch takes the ordinary failure path rather than the backend's raw
+      // write conflict.
+      assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_ON_BATCH)
+
+      if (transactional) {
+        transaction = await this.db.beginTransaction!()
+        this.#handlerSettledJobs.set(transaction.db, new Set())
+        await this.#setTransactionTimeout(transaction, transactionTimeoutSeconds !== undefined
+          ? transactionTimeoutSeconds * 1000
+          : maxExpiration * 1000 + TRANSACTION_ROLLBACK_TIMEOUT_MS)
+      }
+
+      const handling = transaction
+        ? (callback as unknown as types.TransactionalWorkHandler<T>)(jobs, transaction.db)
+        : callback(jobs)
+
+      const result = await resolveWithinSeconds(handling, maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+
+      // An abort resolves the race rather than rejecting it, so on this line an abandoned handler
+      // looks exactly like one that returned. failWip() aborts after failing the batch, so
+      // committing here would leave whatever the handler had written by then in the database
+      // beside a job that is already failed: the split a transactional worker exists to prevent.
+      // Rolling back instead takes the same path a throw takes, and the fail that follows finds
+      // the jobs already settled and does nothing. The worker's flag rather than the signal,
+      // because resolveWithinSeconds cancels its own timeout through the same controller and so
+      // leaves the signal aborted on every ordinary completion too.
+      if (transaction && worker?.aborted) {
+        throw new Error('pg-boss shut down while the handler was still running')
+      }
+
       if (perJobResults) {
         // #settlePerJob settles each job individually and does its own (synchronous,
         // lookup-free) spy tracking via #trackJobsSettled, so the deferred tracker below
         // is skipped for this path.
         await this.#settlePerJob(name, jobs, result)
       } else {
-        const completion = await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+        // Read out before the completion below, which goes through the same complete() and would
+        // otherwise record pg-boss's own settle as one the handler made.
+        const settledByHandler = transaction ? this.#takeHandlerSettles(transaction) : null
+
+        const completion = await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined, transaction ? { db: transaction.db } : undefined)
         completedResult = result
         completedAffected = completion.affected
+
+        if (settledByHandler) {
+          this.#assertClaimHeld(jobIds, completion.affected, settledByHandler)
+        }
+      }
+
+      if (transaction) {
+        await transaction.commit()
       }
     } catch (err: any) {
+      if (transaction) {
+        // Before the fail, not after: fail() runs on a pooled connection and would otherwise wait
+        // on the job rows this transaction still holds locked.
+        await transaction.rollback()
+
+        // A handler that catches a SQL error it raised through the transaction leaves that
+        // transaction aborted, and postgres then rejects every later statement in it with 25P02,
+        // including the completion pg-boss runs there. Name the cause, since the raw message
+        // arrives with nothing to connect it to the handler.
+        if (err?.code === TRANSACTION_ABORTED) {
+          err.message = `${err.message} (the handler left its transaction aborted: let a SQL error raised through tx propagate out of the handler, or isolate the statement with a SAVEPOINT)`
+        }
+      }
+
       await this.fail(name, jobIds, err)
       failedError = err
       didFail = true
@@ -529,6 +688,149 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // double-record (and overwrite per-job outputs with the batch's slow-path lookup).
         await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
       }
+    }
+  }
+
+  /**
+   * Gives the handler's transaction a deadline the database enforces.
+   *
+   * Everything else bounding it lives in this process: `resolveWithinSeconds` and the deadline
+   * `rollback()` races its ROLLBACK against. Those cover a handler that hangs. They do not cover
+   * the process itself failing under it (a starved event loop, a driver wedged below the promise),
+   * which is the case that matters most. An open transaction keeps advertising `backend_xmin` and
+   * holds vacuum off the whole database for as long as it lasts, which is the condition
+   * `monitorVacuum` and the `xmin_horizon` warning exist to report, and this option is what makes a
+   * long-lived transaction reachable from user code in the first place.
+   *
+   * The default is derived from `expireInSeconds` rather than matched to it. Matching would make
+   * the diagnosis a coin flip between `handler execution exceeded Ns` with a clean rollback and a
+   * killed connection, and the transaction is open wider than the handler anyway (BEGIN precedes
+   * it, the completion and COMMIT follow it), so an equal bound would kill a batch that had already
+   * succeeded at its commit. `expireInSeconds` is also the supervisor's reclaim bound, and a third
+   * actor on that instant helps nobody. With the rollback deadline added on top, this only fires
+   * once the whole Node path has failed, which is when the server should be the one to give up.
+   *
+   * Issued here on `tx.db` rather than as a `beginTransaction()` argument: that method is public
+   * `IDatabase` surface, so an adapter that ignored a new parameter would drop the bound silently.
+   * `set_config` with the value bound rather than a built `SET LOCAL` string, so it is one
+   * parameterized statement and portable to drivers that reject multi-statement queries.
+   */
+  async #setTransactionTimeout (transaction: types.TransactionHandle, timeoutMs: number) {
+    if (timeoutMs <= 0) return
+
+    const guc = await this.#resolveTransactionTimeoutGuc()
+
+    if (!guc) return
+
+    await transaction.db.executeSql(TRANSACTION_TIMEOUT_APPLY, [guc, `${Math.round(timeoutMs)}`])
+  }
+
+  /**
+   * Which GUC this server bounds a transaction with, or null if neither is available and the
+   * transaction runs unbounded.
+   *
+   * Asked on the pooled connection rather than the handler's, even though the bound is applied on
+   * the handler's. A statement that errors leaves its transaction aborted, so a probe the backend
+   * or a `db` adapter cannot answer would poison the very transaction it was meant to protect and
+   * every handler statement after it would come back 25P02 blaming the handler for a SQL error it
+   * never raised. Off the transaction, a failed probe costs the bound and nothing else.
+   *
+   * The apply statement also reads pg_settings, and it runs as the first statement of the handler's
+   * transaction, so the probe rehearses that read here as well. Otherwise a backend with the GUC but
+   * without the catalog view would fail every batch, silently as far as the warning system goes,
+   * which is the failure the probe exists to keep out of the transaction.
+   *
+   * The bound is a backstop against a process that has already failed, so losing it degrades rather
+   * than fails the batch: warn once, run this batch unbounded, and ask again once the cooldown has
+   * passed instead of running unbounded for the life of the process, or asking on every batch.
+   */
+  #resolveTransactionTimeoutGuc (): Promise<string | null> {
+    if (!this.#transactionTimeoutGuc && Date.now() < this.#transactionTimeoutProbeRetryAt) {
+      return Promise.resolve(null)
+    }
+
+    this.#transactionTimeoutGuc ??= this.db.executeSql(TRANSACTION_TIMEOUT_PROBE)
+      .then(({ rows }) => TRANSACTION_TIMEOUT_GUCS.find(name => rows[0][name] !== null) ?? null)
+      .then(async guc => {
+        if (guc) await this.db.executeSql(TRANSACTION_TIMEOUT_REHEARSE, [guc, '0'])
+        return guc
+      })
+      .catch((err: any) => {
+        this.#transactionTimeoutGuc = null
+        this.#transactionTimeoutProbeRetryAt = Date.now() + this.#transactionTimeoutProbeCooldownMs
+
+        if (!this.#warnedTransactionTimeoutProbe) {
+          this.#warnedTransactionTimeoutProbe = true
+
+          this.emit(events.warning, {
+            message: `could not ask this server which transaction timeout it supports, or read the bound it already carries, so transactional handlers run with no database-side bound until the next probe: ${err.message}`,
+            data: { type: WARNING_TYPES.TRANSACTION_TIMEOUT_PROBE }
+          })
+        }
+
+        return null
+      })
+
+    return this.#transactionTimeoutGuc
+  }
+
+  /**
+   * Guards the commit of a transactional batch on the worker still holding the claim it opened the
+   * transaction with.
+   *
+   * `complete()` only settles a job that is still `active`, so a short count means the rows were
+   * taken out of that state while the handler ran. Two things do that. The handler may have settled
+   * the jobs itself with `complete()`, `fail()`, `cancel()` or `deleteJob()` on `{ db: tx }`, which
+   * is a documented pattern and leaves pg-boss's own completion with nothing to update; those calls
+   * record their ids as they land, so they cost no round trip to recognise. Anything left over is a
+   * claim that went away: an operator's `cancel()` or `fail()`, a heartbeat the database stopped
+   * seeing, `expireInSeconds`, another instance's supervisor. That job is going to run again, so
+   * committing the handler's writes beside it produces exactly the duplicate side effect this
+   * option exists to prevent. Throwing rolls them back and takes the ordinary failure path, which
+   * records the failure against whatever state the job is in by then.
+   *
+   * A handler that settles its own jobs by writing the job table directly also lands here, since
+   * nothing about a raw `UPDATE` is recognisable as a settle. That is a narrowing rather than a
+   * regression: direct writes to the job table were never supported. The message has to offer that
+   * reading anyway, so the diagnosis is not sent after a claim that was never lost.
+   */
+  #assertClaimHeld (jobIds: string[], affected: number, settledByHandler: Set<string>) {
+    const accounted = affected + jobIds.filter(id => settledByHandler.has(id)).length
+
+    if (accounted < jobIds.length) {
+      throw new Error(`${jobIds.length - accounted} of ${jobIds.length} job(s) were no longer claimed by this worker when the handler returned, so the transaction was rolled back. Either something took the claim away (expireInSeconds, a heartbeat the database stopped seeing, an operator's cancel() or fail(), another instance's supervisor), or the handler settled the job with SQL of its own instead of complete(), fail(), cancel() or deleteJob() on { db: tx }`)
+    }
+  }
+
+  // The ids the handler settled through its transaction. Taken rather than read, so the completion
+  // pg-boss runs next on the same transaction does not add itself to the set.
+  #takeHandlerSettles (transaction: types.TransactionHandle): Set<string> {
+    const settled = this.#handlerSettledJobs.get(transaction.db) ?? new Set<string>()
+    this.#handlerSettledJobs.delete(transaction.db)
+    return settled
+  }
+
+  // Records a settle a transactional handler ran through the transaction it was handed. A no-op for
+  // every other caller: only a transaction #processJobs opened is in the map.
+  //
+  // Records the ids the statement touched rather than the ids it was asked about, because the two
+  // differ in both directions. complete() on a job a peer already moved out of `active` updates no
+  // rows, and recording that as the handler's settle would account for a job nobody settled and let
+  // the batch commit, which is the duplicate #assertClaimHeld exists to stop. A handler that
+  // settles part of its own batch first then asks about all of it lands short for the opposite
+  // reason, and reading that as a lost claim would throw away a batch that did what it was asked.
+  // The count alone cannot tell those apart; the ids can, and the statement already returns them.
+  #trackHandlerSettle (options: types.ConnectionOptions, response: types.CommandResponse) {
+    const settled = options.db && this.#handlerSettledJobs.get(options.db)
+
+    if (!settled) return
+
+    // Without the ids there is no way to attribute a short count, so fall back to the all-or-nothing
+    // reading: a full settle is the handler's, anything less is left for #assertClaimHeld to judge.
+    const landed = response.settled ?? (response.affected < response.requested ? [] : response.jobs)
+
+    for (const id of landed) {
+      settled.add(id)
     }
   }
 
@@ -602,12 +904,32 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#localGroupMaxLimit.clear()
   }
 
+  // Last step of a shutdown: closing the pool, marking the instance stopped, and emitting
+  // `stopped` all wait on this, so every worker has to be reached even when one of them cannot be
+  // failed.
   async failWip () {
     for (const worker of this.workers.values()) {
       const jobIds = worker.jobs.map(j => j.id)
+
       if (jobIds.length) {
-        await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
+        // The fail goes in before the abort, so it lands while the handler is still holding the
+        // jobs active and its completion finds nothing to settle. Its own failure is reported
+        // rather than thrown: the remaining workers still have to be aborted.
+        try {
+          await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
+        } catch (err: any) {
+          try {
+            this.emit(events.error, { ...err, message: err.message, stack: err.stack, queue: worker.name, worker: worker.id })
+          } catch {
+            // An `error` event nobody listens for throws ERR_UNHANDLED_ERROR straight back out of
+            // emit(). Counting listeners here would not see it: the PgBoss instance re-emits this
+            // event, so the throw comes from an application with no `error` handler, one frame
+            // further out than this emitter can measure. Reporting the failure matters less than
+            // reaching the workers after this one, the pool close, and the `stopped` event.
+          }
+        }
       }
+
       worker.abort()
     }
   }
@@ -637,7 +959,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
       minPriority,
       maxPriority,
       perJobResults = false,
+      transactional = false,
+      transactionTimeoutSeconds,
     } = options
+
+    // Capability check rather than a check for the built-in pool, so a db adapter that implements
+    // beginTransaction can serve transactional workers too. Asserted at work() time so the mistake
+    // surfaces on the call rather than on the first fetch.
+    if (transactional) {
+      assert(typeof this.db.beginTransaction === 'function',
+        'transactional workers require a database connection pg-boss can open a transaction on: the built-in pool, or a db adapter implementing beginTransaction')
+
+      await this.#assertTransactionalHeartbeatSupported(name)
+
+      this.#warnOnTransactionalPoolHeadroom(localConcurrency)
+    }
 
     if (localGroupConcurrency != null) {
       this.#storeLocalGroupConfig(name, localGroupConcurrency)
@@ -692,7 +1028,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
-          await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds, perJobResults)
+          await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds)
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
@@ -703,7 +1039,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
             }
 
             if (allowed.length > 0) {
-              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds, perJobResults)
+              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds)
             }
           } finally {
             this.#trackLocalGroupEnd(name, groupedJobs)
@@ -730,6 +1066,62 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return firstWorkerId
+  }
+
+  /**
+   * Refuses a transactional worker on a queue that configures heartbeats, where the backend cannot
+   * carry both.
+   *
+   * `touch()` refreshes `heartbeat_on` on the claimed row from a pooled connection so the job stays
+   * visibly `active` while the handler runs. Under CockroachDB's serializable isolation that write
+   * lands above the handler transaction's timestamp and the completion pg-boss runs inside the
+   * transaction then cannot write the same row: `40001` WriteTooOldError, every batch. The
+   * transaction has already returned rows to the handler, so there is no read timestamp left to
+   * refresh and no retry to make in place.
+   *
+   * Neither half survives being dropped quietly. Skipping the refresh would leave `heartbeat_on`
+   * to go stale under a live handler, and `failJobsByHeartbeat` would reclaim exactly the
+   * long-running jobs heartbeats exist for, so the batch would roll back and retry forever with
+   * nothing in the output to say why. Rejecting at registration says it once, where the
+   * configuration is.
+   *
+   * Only queried on a backend that sets the flag, so `work()` stays off the database everywhere
+   * else. A per-job `heartbeatSeconds` can still override a queue that has none, which this call
+   * cannot see; #processJobs catches that from the batch itself.
+   */
+  async #assertTransactionalHeartbeatSupported (name: string) {
+    if (!this.config.noTransactionalHeartbeat) return
+
+    // A queue that does not exist yet cannot be read, and work() has never required one. The batch
+    // check is the backstop either way.
+    const queue = await this.getQueue(name).catch(() => null)
+
+    assert(!queue?.heartbeatSeconds, TRANSACTIONAL_HEARTBEAT_UNSUPPORTED)
+  }
+
+  // Each transactional handler in flight holds a pool connection for its own duration, so a pool
+  // sized at or below the number of them has nothing left for the fetches, the failures, or
+  // maintenance: those wait out connectionTimeoutMillis and then reject. Only measurable for the
+  // built-in pool, and a warning rather than an assert, because the ceiling is the operator's call.
+  //
+  // Emitted only, never persisted. The `warning` table records episodes, and every type in it is
+  // deduped by a flag that clears when the condition does. This one is an assertion about static
+  // configuration with no episode behind it: `max` is fixed for the life of the process, so every
+  // later transactional work() call trips it again with a larger `pinned`, and every restart writes
+  // the same rows once more. Persisting it would bury the warnings someone actually needs.
+  #warnOnTransactionalPoolHeadroom (localConcurrency: number) {
+    if (!this.db._pgbdb) return
+
+    const max = this.config.max ?? DEFAULT_POOL_MAX
+    const running = [...this.workers.values()].filter(worker => worker.options.transactional).length
+    const pinned = running + localConcurrency
+
+    if (pinned < max) return
+
+    this.emit(events.warning, {
+      message: `transactional workers can hold ${pinned} of this pool's ${max} connections while their handlers run, leaving nothing for fetches, failures, or maintenance. Raise max above ${pinned}, or lower localConcurrency.`,
+      data: { type: WARNING_TYPES.TRANSACTIONAL_POOL_HEADROOM, max, transactionalWorkers: pinned }
+    })
   }
 
   private addWorker (worker: Worker<any>) {
@@ -1461,7 +1853,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return {
       jobs: ids,
       requested: ids.length,
-      affected: result && result.rows ? parseInt(result.rows[0].count) : 0
+      affected: result && result.rows ? parseInt(result.rows[0].count) : 0,
+      // The settle statements aggregate the ids they touched beside the count; the read-only
+      // mutators that share this mapper (resume, restore, retry, touch) do not, so it stays
+      // optional and #trackHandlerSettle falls back to the count when it is absent.
+      settled: result?.rows?.[0]?.ids
     }
   }
 
@@ -1472,15 +1868,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const outputData = this.mapCompletionDataArg(data)
 
+    let response: types.CommandResponse
+
     // noMultiMutationCte: split the dependency-unblocking into a separate statement to
     // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
     if (this.config.noMultiMutationCte) {
-      return this.completeDistributed(name, ids, outputData, table, db, options.includeQueued)
+      response = await this.completeDistributed(name, ids, outputData, table, db, options.includeQueued)
+    } else {
+      const sql = plans.completeJobs(this.config.schema, table, options.includeQueued)
+      const result = await db.executeSql(sql, [name, ids, outputData])
+      response = this.mapCommandResponse(ids, result)
     }
 
-    const sql = plans.completeJobs(this.config.schema, table, options.includeQueued)
-    const result = await db.executeSql(sql, [name, ids, outputData])
-    return this.mapCommandResponse(ids, result)
+    this.#trackHandlerSettle(options, response)
+
+    return response
   }
 
   // Distributed complete/fail need several statements run atomically. When we own the pooled
@@ -1500,7 +1902,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // completion is a single statement on every backend.
     const sql = plans.completeJobsDistributed(this.config.schema, table, includeQueued)
     const { rows } = await db.executeSql(sql, [name, ids, outputData])
-    return { jobs: ids, requested: ids.length, affected: rows.length }
+    return { jobs: ids, requested: ids.length, affected: rows.length, settled: rows.map(row => row.id) }
   }
 
   async fail (name: string, id: string | string[], data?: any, options: types.ConnectionOptions = {}) {
@@ -1510,16 +1912,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const outputData = this.mapCompletionDataArg(data)
 
+    let response: types.CommandResponse
+
     // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
     // The delete and re-insert run in a single transaction (see ensureTransaction) so the
     // job cannot be lost between the two statements.
     if (this.config.noMultiMutationCte) {
-      return this.failDistributed(name, ids, outputData, table, db)
+      response = await this.failDistributed(name, ids, outputData, table, db)
+    } else {
+      const sql = plans.failJobsById(this.config.schema, table)
+      const result = await db.executeSql(sql, [name, ids, outputData])
+      response = this.mapCommandResponse(ids, result)
     }
 
-    const sql = plans.failJobsById(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, ids, outputData])
-    return this.mapCommandResponse(ids, result)
+    this.#trackHandlerSettle(options, response)
+
+    return response
   }
 
   private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase): Promise<types.CommandResponse> {
@@ -1531,7 +1939,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
 
       if (jobs.length === 0) {
-        return { jobs: ids, requested: ids.length, affected: 0 }
+        return { jobs: ids, requested: ids.length, affected: 0, settled: [] }
       }
 
       // Step 2: Delete the jobs
@@ -1541,7 +1949,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // Step 3: Re-insert jobs with updated state
       const count = await this.reinsertFailedJobs(tx, table, jobs, outputData)
 
-      return { jobs: ids, requested: ids.length, affected: count }
+      return { jobs: ids, requested: ids.length, affected: count, settled: jobs.map(job => job.id) }
     })
   }
 
@@ -1693,9 +2101,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'deleteJob')
     const { table } = await this.getQueueCache(name)
+
     const sql = plans.deleteJobsById(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
-    return this.mapCommandResponse(ids, result)
+    const response = this.mapCommandResponse(ids, result)
+
+    this.#trackHandlerSettle(options, response)
+
+    return response
   }
 
   async redrive (name: string, options: types.RedriveOptions = {}): Promise<number> {
@@ -1725,9 +2138,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'cancel')
     const { table } = await this.getQueueCache(name)
+
     const sql = plans.cancelJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
-    return this.mapCommandResponse(ids, result)
+    const response = this.mapCommandResponse(ids, result)
+
+    this.#trackHandlerSettle(options, response)
+
+    return response
   }
 
   async resume (name: string, id: string | string[], options: types.ConnectionOptions = {}) {

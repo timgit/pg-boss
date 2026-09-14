@@ -41,6 +41,11 @@ class Worker<T = unknown> {
   stopping = false
   stopped = false
   abortController: AbortController | null = null
+  // Set when a shutdown abandons the batch in flight. Manager reads it to tell that apart from the
+  // handler finishing on its own: the abort resolves the handler race rather than rejecting it, so
+  // the signal alone says nothing, and the timeout wired into the same controller trips it on every
+  // ordinary completion. Reset per batch by the manager, beside abortController.
+  aborted = false
   private loopDelayPromise: AbortablePromise<void> | null = null
   private beenNotified = false
   private runPromise: Promise<void> | null = null
@@ -139,7 +144,11 @@ class Worker<T = unknown> {
   }
 
   abort (): void {
-    if (this.abortController && !this.abortController.signal.aborted) {
+    if (!this.abortController) return
+
+    this.aborted = true
+
+    if (!this.abortController.signal.aborted) {
       this.abortController.abort()
     }
   }
