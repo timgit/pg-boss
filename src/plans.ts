@@ -222,7 +222,7 @@ export function disableClockOverride () {
 export function createClockFunction (schema: string, options: { replace?: boolean, body?: string } = {}) {
   const { replace = false, body = CLOCK_FUNCTION_BODY } = options
   return `
-    CREATE ${replace ? 'OR REPLACE ' : ''}FUNCTION ${schema}.now()
+    CREATE ${replace ? 'OR REPLACE ' : ''}FUNCTION ${schema}.job_now()
     RETURNS timestamp with time zone AS
     $$
       ${body}
@@ -258,7 +258,7 @@ function createTableVersion (schema: string) {
 // the aggregate that wrote them (see cacheQueueStats). Splitting them is what lets a pass be claimed
 // and then skip the aggregate - because the vacuum backoff is in force, or because another instance
 // holds the stats try-lock - without capturedOn claiming a freshness the counts do not have.
-/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
+/* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
     CREATE TABLE ${schema}.queue (
@@ -304,7 +304,7 @@ function createTableQueue (schema: string) {
 // release can write a null during a rolling upgrade, which is what the read-side COALESCE covers.
 /* eslint-enable no-restricted-syntax */
 
-/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
+/* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableSchedule (schema: string) {
   return `
     CREATE TABLE ${schema}.schedule (
@@ -325,7 +325,7 @@ function createTableSchedule (schema: string) {
 
 /* eslint-enable no-restricted-syntax */
 
-/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
+/* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableSubscription (schema: string) {
   return `
     CREATE TABLE ${schema}.subscription (
@@ -338,7 +338,7 @@ function createTableSubscription (schema: string) {
   `
 }
 
-// created_on defaults to clock_timestamp(), not ${schema}.now(), so multiple job_table_run_async() enqueues
+// created_on defaults to clock_timestamp(), not ${schema}.job_now(), so multiple job_table_run_async() enqueues
 // within a single migration transaction keep their insertion order — BAM applies queued commands in
 // created_on order, and some migrations enqueue an ordered drop-then-rebuild pair (see v33).
 /* eslint-enable no-restricted-syntax */
@@ -363,7 +363,7 @@ function createTableBam (schema: string) {
 }
 /* eslint-enable no-restricted-syntax */
 
-/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
+/* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 export function createTableWarning (schema: string) {
   return `
     CREATE TABLE ${schema}.warning (
@@ -496,7 +496,7 @@ function jobTableRunAsyncFunction (schema: string) {
   `
 }
 
-/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
+/* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableJob (schema: string, noPartitioning = false) {
   // source_name / source_id / source_created_on / source_retry_count are dead-letter provenance:
   // where a job in a dead-letter queue came from, stamped at the transfer so the original queue,
@@ -963,10 +963,10 @@ export function trySetQueueMonitorTime (schema: string, queues: string[], second
   return {
     text: `
     UPDATE ${schema}.queue
-    SET monitor_claim_on = ${schema}.now()
+    SET monitor_claim_on = ${schema}.job_now()
     WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (${schema}.now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.now() - interval '1 week') ) ) > ${seconds}
-    RETURNING name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.now()) as "refreshStats"
+      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+    RETURNING name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats"
   `,
     values: [queues]
   }
@@ -1030,14 +1030,14 @@ export function setMonitorBackoff (schema: string, elapsedSeconds: number): SqlQ
     )
     UPDATE ${schema}.version v
     SET monitor_backoff_on = GREATEST(
-      COALESCE(v.monitor_backoff_on, ${schema}.now()),
-      ${schema}.now() + make_interval(secs => b.backoff)
+      COALESCE(v.monitor_backoff_on, ${schema}.job_now()),
+      ${schema}.job_now() + make_interval(secs => b.backoff)
     )
     FROM budget b
     WHERE $1::float8 > ${MONITOR_PIN_BUDGET_RATIO} * b.naptime
     RETURNING
       b.naptime  as "naptimeSeconds",
-      EXTRACT(EPOCH FROM (v.monitor_backoff_on - ${schema}.now()))::float8 as "backoffSeconds",
+      EXTRACT(EPOCH FROM (v.monitor_backoff_on - ${schema}.job_now()))::float8 as "backoffSeconds",
       v.monitor_backoff_on as "backoffUntil"
   `,
     values: [elapsedSeconds]
@@ -1083,8 +1083,8 @@ export function trySetReindexTime (schema: string, seconds: number) {
 function trySetTimestamp (schema: string, column: string, seconds: number) {
   return `
     UPDATE ${schema}.version
-    SET ${column} = ${schema}.now()
-    WHERE EXTRACT( EPOCH FROM (${schema}.now() - COALESCE(${column}, ${schema}.now() - interval '1 week') ) ) > ${seconds}
+    SET ${column} = ${schema}.job_now()
+    WHERE EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
     RETURNING true
   `
 }
@@ -1093,9 +1093,9 @@ function trySetQueueTimestamp (schema: string, queues: string[], column: string,
   return {
     text: `
     UPDATE ${schema}.queue
-    SET ${column} = ${schema}.now()
+    SET ${column} = ${schema}.job_now()
     WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (${schema}.now() - COALESCE(${column}, ${schema}.now() - interval '1 week') ) ) > ${seconds}
+      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
     RETURNING name
   `,
     values: [queues]
@@ -1123,7 +1123,7 @@ export function updateQueue (schema: string) {
       dead_letter = CASE WHEN jsonb_exists(o.data, 'deadLetter')
         THEN o.data->>'deadLetter'
         ELSE dead_letter END,
-      updated_on = ${schema}.now()
+      updated_on = ${schema}.job_now()
     FROM options o
     WHERE name = $1
   `
@@ -1271,14 +1271,14 @@ export function setScheduleKinds (schema: string) {
 export function schedule (schema: string) {
   return `
     INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, created_on, updated_on)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, ${schema}.now(), ${schema}.now())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, ${schema}.job_now(), ${schema}.job_now())
     ON CONFLICT (name, key) DO UPDATE SET
       kind = EXCLUDED.kind,
       cron = EXCLUDED.cron,
       timezone = EXCLUDED.timezone,
       data = EXCLUDED.data,
       options = EXCLUDED.options,
-      updated_on = ${schema}.now()
+      updated_on = ${schema}.job_now()
   `
 }
 
@@ -1297,7 +1297,7 @@ export function subscribe (schema: string) {
     ON CONFLICT (event, name) DO UPDATE SET
       event = EXCLUDED.event,
       name = EXCLUDED.name,
-      updated_on = ${schema}.now()
+      updated_on = ${schema}.job_now()
   `
 }
 
@@ -1316,13 +1316,13 @@ export function getQueuesForEvent (schema: string) {
 }
 
 export function getTime (schema: string) {
-  return `SELECT round(date_part('epoch', ${schema}.now()) * 1000) as time`
+  return `SELECT round(date_part('epoch', ${schema}.job_now()) * 1000) as time`
 }
 
 export function insertWarning (schema: string) {
   return `
     INSERT INTO ${schema}.warning (type, message, data, created_on)
-    VALUES ($1, $2, $3, ${schema}.now())
+    VALUES ($1, $2, $3, ${schema}.job_now())
   `
 }
 
@@ -1352,11 +1352,11 @@ export function getWarningsCount (schema: string): string {
 export function deleteOldWarnings (schema: string, days: number): string {
   return `
     DELETE FROM ${schema}.warning
-    WHERE created_on < ${schema}.now() - interval '${days} days'
+    WHERE created_on < ${schema}.job_now() - interval '${days} days'
   `
 }
 
-/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
+/* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 export function createTableQueueStats (schema: string, noPartitioning = false): string {
   return `
     CREATE TABLE ${schema}.queue_stats (
@@ -1399,7 +1399,7 @@ export function ensureQueueStatsPartitions (schema: string): string {
       part_name text;
     BEGIN
       FOR i IN 0..1 LOOP
-        d := (${schema}.now() AT TIME ZONE 'UTC')::date + i;
+        d := (${schema}.job_now() AT TIME ZONE 'UTC')::date + i;
         part_name := 'queue_stats_' || to_char(d, 'YYYYMMDD');
         IF NOT EXISTS (
           SELECT 1 FROM pg_class c
@@ -1424,7 +1424,7 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
     DO $$
     DECLARE
       r record;
-      cutoff date := (${schema}.now() AT TIME ZONE 'UTC')::date - ${days};
+      cutoff date := (${schema}.job_now() AT TIME ZONE 'UTC')::date - ${days};
       suffix text;
       part_date date;
     BEGIN
@@ -1452,7 +1452,7 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
 export function deleteOldQueueStats (schema: string, days: number): string {
   return `
     DELETE FROM ${schema}.queue_stats
-    WHERE captured_on < ${schema}.now() - interval '${days} days'
+    WHERE captured_on < ${schema}.job_now() - interval '${days} days'
   `
 }
 
@@ -1460,7 +1460,7 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
   const sql = `
     INSERT INTO ${schema}.queue_stats
       (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, captured_on)
-    SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, ${schema}.now()
+    SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, ${schema}.job_now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -1487,7 +1487,7 @@ export function getQueueStatsCache (schema: string): string {
       total_count    as "totalCount",
       table_name     as "table",
       monitor_on     as "capturedOn",
-      (SELECT monitor_backoff_on > ${schema}.now() FROM ${schema}.version) as "monitorBackoff"
+      (SELECT monitor_backoff_on > ${schema}.job_now() FROM ${schema}.version) as "monitorBackoff"
     FROM ${schema}.queue
     WHERE name = $1
   `
@@ -1814,7 +1814,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
           AND h.state < '${JOB_STATES.active}'
           AND NOT h.blocked
           AND h.policy = '${QUEUE_POLICIES.key_strict_fifo}'
-          ${!ignoreStartAfter ? `AND h.start_after <= ${schema}.now()` : ''}
+          ${!ignoreStartAfter ? `AND h.start_after <= ${schema}.job_now()` : ''}
         ORDER BY h.singleton_key, h.state DESC, h.created_on, h.id
       ), `
     : ''
@@ -1823,12 +1823,12 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,
     'NOT j.blocked',
-    // `<=` (not `<`) so a job inserted with start_after = ${schema}.now() is immediately
-    // fetchable in the next statement. `${schema}.now()` is transaction-scoped; on backends with coarse
+    // `<=` (not `<`) so a job inserted with start_after = ${schema}.job_now() is immediately
+    // fetchable in the next statement. `${schema}.job_now()` is transaction-scoped; on backends with coarse
     // clock resolution (notably PGlite) consecutive autocommit statements often share the same
     // timestamp, so `<` would leave freshly-inserted jobs invisible until the clock ticks.
-    // NOTIFY gating already uses `start_after <= ${schema}.now()` for the same reason.
-    !ignoreStartAfter ? `j.start_after <= ${schema}.now()` : '',
+    // NOTIFY gating already uses `start_after <= ${schema}.job_now()` for the same reason.
+    !ignoreStartAfter ? `j.start_after <= ${schema}.job_now()` : '',
     keyStrictFifo ? 'j.id IN (SELECT id FROM strict_fifo_heads)' : '',
     keyStrictFifo
       ? `NOT EXISTS (
@@ -1856,7 +1856,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   // manager.fetch(). Dropping them also deletes two branches from the hottest SQL builder here.
   //
   // `id` goes too. It is a random uuid, so it never provided creation order: a batch insert shares
-  // one ${schema}.now() and therefore ties on created_on, and those ties resolve today in random uuid order,
+  // one ${schema}.job_now() and therefore ties on created_on, and those ties resolve today in random uuid order,
   // not insertion order. Without it the index satisfies the ordering outright rather than through
   // an Incremental Sort — 0.097 -> 0.031 ms and 50 -> 5 buffers at limit=1 — and ties fall back to
   // index order, which tracks insertion order better than a uuid does.
@@ -1928,8 +1928,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       ${groupConcurrencyCtes}
       UPDATE ${schema}.${table} j SET
         state = '${JOB_STATES.active}',
-        started_on = ${schema}.now(),
-        heartbeat_on = ${schema}.now(),
+        started_on = ${schema}.job_now(),
+        heartbeat_on = ${schema}.job_now(),
         retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
       ${updateSource}
       WHERE name = '${name}' AND ${updateMatch}
@@ -1945,7 +1945,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 // single-statement completeJobs() and the distributed completeJobsDistributed().
 function completeJobsUpdate (schema: string, table: string, includeQueued?: boolean): string {
   return `UPDATE ${schema}.${table}
-      SET completed_on = ${schema}.now(),
+      SET completed_on = ${schema}.job_now(),
         state = '${JOB_STATES.completed}',
         output = $3::jsonb,
         blocked = ${includeQueued ? 'false' : 'blocked'},
@@ -2006,7 +2006,7 @@ export function completeJobsWithOutputs (schema: string, table: string) {
     ),
     results AS (
       UPDATE ${schema}.${table} j
-      SET completed_on = ${schema}.now(),
+      SET completed_on = ${schema}.job_now(),
         state = '${JOB_STATES.completed}',
         output = i.output
       FROM input i
@@ -2028,7 +2028,7 @@ export function completeJobsWithOutputsDistributed (schema: string, table: strin
       SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
     )
     UPDATE ${schema}.${table} j
-    SET completed_on = ${schema}.now(),
+    SET completed_on = ${schema}.job_now(),
       state = '${JOB_STATES.completed}',
       output = i.output
     FROM input i
@@ -2043,7 +2043,7 @@ export function cancelJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
-      SET completed_on = ${schema}.now(),
+      SET completed_on = ${schema}.job_now(),
         state = '${JOB_STATES.cancelled}'
       WHERE name = $1
         AND id = ANY($2::uuid[])
@@ -2158,11 +2158,11 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       data,
       COALESCE(priority, 0) as priority,
       j.start_after,
-      ${schema}.now() as created_on,
+      ${schema}.job_now() as created_on,
       "singletonKey",
       CASE
         ${slotClause}
-        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds"::float8 * floor(( date_part('epoch', ${schema}.now()) + COALESCE("singletonOffset",0)::float8) / "singletonSeconds"::float8 ))
+        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds"::float8 * floor(( date_part('epoch', ${schema}.job_now()) + COALESCE("singletonOffset",0)::float8) / "singletonSeconds"::float8 ))
         ELSE NULL
         END as singleton_on,
       "groupId" as group_id,
@@ -2184,7 +2184,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       SELECT *,
         CASE
           WHEN ${isDateTimeString('"startAfter"')} THEN CAST("startAfter" as timestamp with time zone)
-          ELSE ${schema}.now() + CAST(COALESCE("startAfter",'0') as interval)
+          ELSE ${schema}.job_now() + CAST(COALESCE("startAfter",'0') as interval)
           END as start_after
       FROM json_to_recordset($1::text::json) as x (
         id uuid,
@@ -2233,7 +2233,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
     ),
     notified AS (
       SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')
-      FROM ins WHERE start_after <= ${schema}.now() LIMIT 1
+      FROM ins WHERE start_after <= ${schema}.job_now() LIMIT 1
     )
     SELECT id FROM ins WHERE (SELECT count(*) FROM notified) ${comparator}
   `
@@ -2265,7 +2265,7 @@ export function failJobsById (schema: string, table: string) {
 
 export function failJobsByTimeout (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const where = `state = '${JOB_STATES.active}'
-            AND (started_on + expire_seconds * interval '1s') < ${schema}.now()
+            AND (started_on + expire_seconds * interval '1s') < ${schema}.job_now()
             AND name = ANY(${serializeArrayParam(queues)})`
 
   const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
@@ -2276,7 +2276,7 @@ export function failJobsByTimeout (schema: string, table: string, queues: string
 export function failJobsByHeartbeat (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const where = `state = '${JOB_STATES.active}'
             AND heartbeat_seconds IS NOT NULL
-            AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.now()
+            AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.job_now()
             AND name = ANY(${serializeArrayParam(queues)})`
 
   const output = '\'{ "value": { "message": "job heartbeat timeout" } }\'::jsonb'
@@ -2288,7 +2288,7 @@ export function touchJobs (schema: string, table: string) {
   return `
     WITH results AS (
       UPDATE ${schema}.${table}
-      SET heartbeat_on = ${schema}.now()
+      SET heartbeat_on = ${schema}.job_now()
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.active}'
@@ -2330,8 +2330,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
           ELSE '${JOB_STATES.failed}'::${schema}.job_state
           END`
   const completedOn = forceTerminal
-    ? `${schema}.now()`
-    : `CASE WHEN retry_count < retry_limit THEN NULL ELSE ${schema}.now() END`
+    ? `${schema}.job_now()`
+    : `CASE WHEN retry_count < retry_limit THEN NULL ELSE ${schema}.job_now() END`
 
   return `deleted_jobs AS (
       DELETE FROM ${schema}.${table}
@@ -2382,8 +2382,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         retry_backoff,
         retry_delay_max,
         CASE WHEN retry_count = retry_limit THEN start_after
-             WHEN NOT retry_backoff THEN ${schema}.now() + retry_delay * interval '1'
-             ELSE ${schema}.now() + LEAST(
+             WHEN NOT retry_backoff THEN ${schema}.job_now() + retry_delay * interval '1'
+             ELSE ${schema}.job_now() + LEAST(
                retry_delay_max,
                GREATEST(retry_delay, 1) * (
                 2 ^ LEAST(16, retry_count + 1) / 2 +
@@ -2465,7 +2465,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         expire_seconds,
         deletion_seconds,
         created_on,
-        ${schema}.now() as completed_on,
+        ${schema}.job_now() as completed_on,
         keep_until,
         policy,
         ${output},
@@ -2495,9 +2495,9 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         q.retry_limit,
         q.retry_backoff,
         q.retry_delay,
-        ${schema}.now(),
-        ${schema}.now(),
-        ${schema}.now() + q.retention_seconds * interval '1s',
+        ${schema}.job_now(),
+        ${schema}.job_now(),
+        ${schema}.job_now() + q.retention_seconds * interval '1s',
         q.deletion_seconds,
         q.expire_seconds,
         r.name,
@@ -2568,7 +2568,7 @@ export function selectJobsToFailByTimeout (schema: string, table: string, queues
   return {
     text: `SELECT * FROM ${schema}.${table}
       WHERE state = '${JOB_STATES.active}'
-        AND (started_on + expire_seconds * interval '1s') < ${schema}.now()
+        AND (started_on + expire_seconds * interval '1s') < ${schema}.job_now()
         AND name = ANY(${serializeArrayParam(queues)})`,
     values: []
   }
@@ -2579,7 +2579,7 @@ export function selectJobsToFailByHeartbeat (schema: string, table: string, queu
     text: `SELECT * FROM ${schema}.${table}
       WHERE state = '${JOB_STATES.active}'
         AND heartbeat_seconds IS NOT NULL
-        AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.now()
+        AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.job_now()
         AND name = ANY(${serializeArrayParam(queues)})`,
     values: []
   }
@@ -2721,7 +2721,7 @@ export function insertDeadLetterJob (schema: string): string {
     INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
       expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds,
       priority, group_id, group_tier)
-    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.now(), ${schema}.now(), ${schema}.now() + q.retention_seconds * interval '1s', q.deletion_seconds,
+    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
       q.expire_seconds, $4, $5, $6, $7, $8, q.heartbeat_seconds, $9, $10, $11
     FROM ${schema}.queue q WHERE q.name = $1
   `
@@ -2767,8 +2767,8 @@ export function redriveJobs (schema: string, table: string): string {
          expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
          heartbeat_seconds, dead_letter)
       SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
-        q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.now(), ${schema}.now(),
-        ${schema}.now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
+        q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
+        ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
         m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
       FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
       ON CONFLICT DO NOTHING
@@ -2784,9 +2784,9 @@ export function deletion (schema: string, table: string, queues: string[], noAdv
     WHERE name = ANY(${serializeArrayParam(queues)})
       AND
       (
-        (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < ${schema}.now())
+        (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < ${schema}.job_now())
         OR
-        (state < '${JOB_STATES.active}' AND keep_until < ${schema}.now())
+        (state < '${JOB_STATES.active}' AND keep_until < ${schema}.job_now())
       )
   `
 
@@ -2815,7 +2815,7 @@ export function retryJobs (schema: string, table: string) {
 // `data` never clobbers an existing start_after/priority/etc. Targeting is by id or
 // singleton_key; when by key, `match` picks which of several pre-active matches to edit
 // (newest/oldest = one row via ORDER BY + LIMIT; all = every match). When `notify` is set the
-// edit emits a single pg_notify iff a touched row ends up runnable (start_after <= ${schema}.now()),
+// edit emits a single pg_notify iff a touched row ends up runnable (start_after <= ${schema}.job_now()),
 // closing the wake-up gap for jobs pulled forward. Callers needing insert-on-miss compose this
 // with insertJobs (see Manager.upsert).
 //
@@ -2840,13 +2840,13 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
         CASE WHEN jsonb_exists(o.data, 'startAfter')
           THEN CASE WHEN ${isDateTimeString("o.data->>'startAfter'")}
                  THEN (o.data->>'startAfter')::timestamptz
-                 ELSE ${schema}.now() + CAST(o.data->>'startAfter' AS interval) END
+                 ELSE ${schema}.job_now() + CAST(o.data->>'startAfter' AS interval) END
           ELSE job.start_after END`
 
   const tail = notify
     ? `, notified AS (
       SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')
-      FROM upd WHERE start_after <= ${schema}.now() LIMIT 1
+      FROM upd WHERE start_after <= ${schema}.job_now() LIMIT 1
     )
     SELECT id FROM upd WHERE (SELECT count(*) FROM notified) >= 0`
     : `
@@ -2906,7 +2906,7 @@ export function getQueueStats (schema: string, table: string, queues: string[]):
       FROM (
         SELECT
             name,
-            (count(*) FILTER (WHERE start_after > ${schema}.now() AND state < '${JOB_STATES.active}'))::int as "deferredCount",
+            (count(*) FILTER (WHERE start_after > ${schema}.job_now() AND state < '${JOB_STATES.active}'))::int as "deferredCount",
             (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
             (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
             (count(*) FILTER (WHERE state = '${JOB_STATES.failed}'))::int as "failedCount",
@@ -2968,7 +2968,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
       failed_count = COALESCE(stats."failedCount", 0),
       total_count = COALESCE(stats."totalCount", 0),
       singletons_active = stats."singletonsActive",
-      monitor_on = ${schema}.now(),
+      monitor_on = ${schema}.job_now(),
       ready_history = (
         SELECT COALESCE(array_agg(v ORDER BY ord), '{}'::int[])
         FROM (
@@ -3039,7 +3039,7 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
       failed_count = COALESCE(stats."failedCount", 0),
       total_count = COALESCE(stats."totalCount", 0),
       singletons_active = stats."singletonsActive",
-      monitor_on = ${schema}.now()
+      monitor_on = ${schema}.job_now()
     FROM (
       SELECT q.name
       FROM unnest(${serializeArrayParam([name])}) AS q(name)
@@ -3250,16 +3250,16 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
     // reclaimed flag is emitted (bam.ts skips healing when noIndexProgressView is set anyway).
     return `
       UPDATE ${schema}.bam
-      SET status = 'in_progress', started_on = ${schema}.now()
+      SET status = 'in_progress', started_on = ${schema}.job_now()
       WHERE id = (
         SELECT id FROM ${schema}.bam
         WHERE (
           status IN ('pending', 'failed')
-          OR (status = 'in_progress' AND started_on < ${schema}.now() - interval '${BAM_STALE_SECONDS} seconds')
+          OR (status = 'in_progress' AND started_on < ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds')
         )
         AND NOT EXISTS (
           SELECT 1 FROM ${schema}.bam
-          WHERE status = 'in_progress' AND started_on >= ${schema}.now() - interval '${BAM_STALE_SECONDS} seconds'
+          WHERE status = 'in_progress' AND started_on >= ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds'
         )
         ORDER BY (status != 'pending'), created_on
         LIMIT 1
@@ -3304,7 +3304,7 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
       AND l.relation = to_regclass(quote_ident('${resolveSchemaName(schema)}') || '.' || quote_ident(${tableCol}))
   )`
   const stale = (startedCol: string, tableCol: string) => `(
-    ${startedCol} < ${schema}.now() - interval '${BAM_LIVENESS_GRACE_SECONDS} seconds'
+    ${startedCol} < ${schema}.job_now() - interval '${BAM_LIVENESS_GRACE_SECONDS} seconds'
     AND NOT ${liveBuild(tableCol)}
   )`
 
@@ -3339,7 +3339,7 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
       FOR UPDATE OF c SKIP LOCKED
     )
     UPDATE ${schema}.bam b
-    SET status = 'in_progress', started_on = ${schema}.now()
+    SET status = 'in_progress', started_on = ${schema}.job_now()
     FROM candidate
     WHERE b.id = candidate.id
     RETURNING b.id, b.name, b.version, b.status, b.queue, b.table_name as "table", b.command, b.error,
@@ -3383,7 +3383,7 @@ export function bamHealProbe (schema: string, command: string): string | null {
 export function setBamCompleted (schema: string, id: string) {
   return `
     UPDATE ${schema}.bam
-    SET status = 'completed', completed_on = ${schema}.now()
+    SET status = 'completed', completed_on = ${schema}.job_now()
     WHERE id = '${id}'
   `
 }
@@ -3392,7 +3392,7 @@ export function setBamFailed (schema: string, id: string, error: string) {
   const escapedError = error.replace(/'/g, "''")
   return `
     UPDATE ${schema}.bam
-    SET status = 'failed', error = '${escapedError}', completed_on = ${schema}.now()
+    SET status = 'failed', error = '${escapedError}', completed_on = ${schema}.job_now()
     WHERE id = '${id}'
   `
 }
@@ -3553,7 +3553,7 @@ export function expectedManagedConstraints (schema: string, partitioned: boolean
 export function expectedManagedFunctions (schema: string, partitioned: boolean, options: { clockOverride?: boolean } = {}): ManagedFunction[] {
   return manifestSection(partitioned).functions.map(fn => {
     let def = applyManifestSchema(fn.def, schema)
-    if (fn.name === 'now' && options.clockOverride) {
+    if (fn.name === 'job_now' && options.clockOverride) {
       def = def.replace(extractFunctionBody(def), ` ${clockOverrideBody(schema)} `)
     }
     return {

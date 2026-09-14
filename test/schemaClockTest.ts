@@ -29,7 +29,7 @@ describe('schema clock', function () {
     for (const [name, sql] of Object.entries(samples)) {
       expect(sql).not.toMatch(BARE_NOW)
       if (!NO_CLOCK_READ.has(name)) {
-        expect(sql).toContain(`${schema}.now()`)
+        expect(sql).toContain(`${schema}.job_now()`)
       }
     }
   })
@@ -41,19 +41,19 @@ describe('schema clock', function () {
     // The predicate fetchNextJob emits. Whether it lands as an Index Cond or a Filter depends on
     // statistics for a fresh empty table, so assert the inlined text wherever it appears.
     const { rows } = await db.executeSql(
-      `EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM ${ctx.schema}.job WHERE name = 'q' AND start_after <= ${ctx.schema}.now()`
+      `EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM ${ctx.schema}.job WHERE name = 'q' AND start_after <= ${ctx.schema}.job_now()`
     )
     const plan = rows.map((r: any) => r['QUERY PLAN']).join('\n')
 
     expect(plan).toMatch(/start_after <= now\(\)/)
-    expect(plan).not.toContain(`${ctx.schema}.now(`)
+    expect(plan).not.toContain(`${ctx.schema}.job_now(`)
   })
 
   it('agrees with pg_catalog.now() inside one statement', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const db = await helper.getDb()
 
-    const { rows } = await db.executeSql(`SELECT ${ctx.schema}.now() = pg_catalog.now() AS same`)
+    const { rows } = await db.executeSql(`SELECT ${ctx.schema}.job_now() = pg_catalog.now() AS same`)
 
     expect(rows[0].same).toBe(true)
   })

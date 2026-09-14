@@ -1681,7 +1681,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
         // The manifest's rendering of a fresh install (schema.json functions.now.def), pasted so a
         // migrated schema stores byte-identical prosrc. Pasted, not referenced: v42 must not change
         // when a later version edits the body.
-        `CREATE OR REPLACE FUNCTION ${schema}.now()
+        `CREATE OR REPLACE FUNCTION ${schema}.job_now()
  RETURNS timestamp with time zone
  LANGUAGE sql
  STABLE
@@ -1691,7 +1691,7 @@ AS $function$
 `
       ],
       uninstall: [
-        `DROP FUNCTION ${schema}.now()`
+        `DROP FUNCTION ${schema}.job_now()`
       ]
     }
   ]

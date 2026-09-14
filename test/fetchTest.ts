@@ -281,6 +281,6 @@ describe('fetch', function () {
     const jobs = await ctx.boss.fetch(ctx.schema, options)
     expect(jobs.length).toBe(0)
     expect(sqlStatements.length).toBe(1)
-    expect(sqlStatements[0]).toContain(`start_after <= ${ctx.schema}.now()`)
+    expect(sqlStatements[0]).toContain(`start_after <= ${ctx.schema}.job_now()`)
   })
 })

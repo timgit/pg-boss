@@ -1182,6 +1182,10 @@
         "def": "CREATE OR REPLACE FUNCTION {{schema}}.delete_queue(queue_name text)\n RETURNS void\n LANGUAGE plpgsql\nAS $function$\n    DECLARE\n      v_table varchar;\n      v_partition bool;\n    BEGIN\n      \n      SELECT table_name, partition\n      FROM {{schema}}.queue\n      WHERE name = queue_name\n      INTO v_table, v_partition;\n\n      IF v_partition THEN\n        EXECUTE format('DROP TABLE IF EXISTS {{schema}}.%I', v_table);\n      ELSE\n        EXECUTE format('DELETE FROM {{schema}}.%I WHERE name = %L', v_table, queue_name);\n      END IF;\n    \n      DELETE FROM {{schema}}.queue WHERE name = queue_name;\n    END;\n    $function$\n"
       },
       {
+        "name": "job_now",
+        "def": "CREATE OR REPLACE FUNCTION {{schema}}.job_now()\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE\nAS $function$\n      SELECT pg_catalog.now();\n    $function$\n"
+      },
+      {
         "name": "job_table_format",
         "def": "CREATE OR REPLACE FUNCTION {{schema}}.job_table_format(command text, table_name text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE\nAS $function$\n      SELECT format(\n        regexp_replace(\n          regexp_replace(command, '\\.job\\y', '.%1$I', 'g'),\n          '\\yjob_i(\\d+)', '%1$s_i\\1', 'g'\n        ),\n        table_name\n      );\n    $function$\n"
       },
@@ -1192,10 +1196,6 @@
       {
         "name": "job_table_run_async",
         "def": "CREATE OR REPLACE FUNCTION {{schema}}.job_table_run_async(command_name text, version integer, command text, tbl_name text DEFAULT NULL::text, queue_name text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF queue_name IS NOT NULL THEN\n        SELECT table_name INTO tbl_name FROM {{schema}}.queue WHERE name = queue_name;\n      END IF;\n\n      IF tbl_name IS NOT NULL THEN\n        INSERT INTO {{schema}}.bam (name, version, status, queue, table_name, command)\n        VALUES (\n          command_name,\n          version,\n          'pending',\n          queue_name,\n          tbl_name,\n          {{schema}}.job_table_format(command, tbl_name)\n        );\n        RETURN;\n      END IF;\n\n      INSERT INTO {{schema}}.bam (name, version, status, queue, table_name, command)\n      SELECT\n        command_name,\n        version,\n        'pending',\n        NULL,\n        'job_common',\n        {{schema}}.job_table_format(command, 'job_common')\n      UNION ALL\n      SELECT\n        command_name,\n        version,\n        'pending',\n        queue.name,\n        queue.table_name,\n        {{schema}}.job_table_format(command, queue.table_name)\n      FROM {{schema}}.queue\n      WHERE partition = true;\n    END;\n    $function$\n"
-      },
-      {
-        "name": "now",
-        "def": "CREATE OR REPLACE FUNCTION {{schema}}.now()\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE\nAS $function$\n      SELECT pg_catalog.now();\n    $function$\n"
       }
     ],
     "enum": [
@@ -2151,8 +2151,8 @@
         "def": "CREATE OR REPLACE FUNCTION {{schema}}.delete_queue(queue_name text)\n RETURNS void\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      DELETE FROM {{schema}}.job WHERE name = queue_name;\n      DELETE FROM {{schema}}.queue WHERE name = queue_name;\n    END;\n    $function$\n"
       },
       {
-        "name": "now",
-        "def": "CREATE OR REPLACE FUNCTION {{schema}}.now()\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE\nAS $function$\n      SELECT pg_catalog.now();\n    $function$\n"
+        "name": "job_now",
+        "def": "CREATE OR REPLACE FUNCTION {{schema}}.job_now()\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE\nAS $function$\n      SELECT pg_catalog.now();\n    $function$\n"
       }
     ],
     "enum": [

@@ -248,7 +248,7 @@ The following configuration options should not normally need to be changed, but 
 
 * **clock**, object, default the system clock
 
-  Where this instance reads the time and schedules its timers: every poll, heartbeat, cron pass, backoff and timeout. Pass a [`TestClock`](./testing.md#controlling-time) to drive time by hand in tests; it also takes over the Postgres side, so `${schema}.now()` reports the same time for pg-boss's own statements. Any object with `now`, `setTimeout`, `clearTimeout`, `setInterval` and `clearInterval` is accepted. Leave unset in production.
+  Where this instance reads the time and schedules its timers: every poll, heartbeat, cron pass, backoff and timeout. Pass a [`TestClock`](./testing.md#controlling-time) to drive time by hand in tests; it also takes over the Postgres side, so `${schema}.job_now()` reports the same time for pg-boss's own statements. Any object with `now`, `setTimeout`, `clearTimeout`, `setInterval` and `clearInterval` is accepted. Leave unset in production.
 
 * **__test__enableSpies**, bool, default false
 

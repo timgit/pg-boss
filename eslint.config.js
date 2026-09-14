@@ -9,11 +9,11 @@ const config = neostandard({
 })
 
 // Ensure Postgres timestamp API calls in SQL statements go through
-// ${schema}.now() so a test clock can redirect them (pg-boss #689).
+// ${schema}.job_now() so a test clock can redirect them (pg-boss #689).
 const SQL_CLOCK_CALLS = String.raw`(^|[^.\w])(now|transaction_timestamp|statement_timestamp|clock_timestamp|timeofday|age)\(`
 const SQL_CLOCK_KEYWORDS = String.raw`\b(CURRENT_DATE|CURRENT_TIME|CURRENT_TIMESTAMP|LOCALTIME|LOCALTIMESTAMP)\b`
 const SQL_CLOCK_INPUT_STRINGS = String.raw`'(now|today|tomorrow|yesterday)'`
-const SQL_CLOCK_MESSAGE = 'SQL must read the clock through the schema-qualified now() function (pg-boss #689)'
+const SQL_CLOCK_MESSAGE = 'SQL must read the clock through the schema-owned job_now() function (pg-boss #689)'
 
 export default defineConfig(config, {
   languageOptions: {

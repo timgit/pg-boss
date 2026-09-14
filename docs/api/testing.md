@@ -142,7 +142,7 @@ Jumps to `t`, forwards or backwards, without firing anything. Postgres will happ
 
 ### The Postgres side
 
-While a `TestClock` is attached, `${schema}.now()`, the function every pg-boss statement reads the clock through, returns the fake time. That covers job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It does not change `pg_catalog.now()` or your own SQL, and the `created_on` of rows your application inserts directly are unaffected.
+While a `TestClock` is attached, `${schema}.job_now()`, the function every pg-boss statement reads the clock through, returns the fake time. That covers job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It does not change `pg_catalog.now()` or your own SQL, and the `created_on` of rows your application inserts directly are unaffected.
 
 Only sessions that set `pgboss.test_clock = 'on'` see the fake time. pg-boss's own pool sets it on every connection when a `TestClock` is configured, so an instance without one on the same schema keeps real time, as does anything started after a killed run left the override in place. A custom `db` adapter has to run the statement `enableClockOverride()` returns on every connection it opens and declare `clockSessionSetup: true`; `start()` refuses a `TestClock` on an adapter that has not, since a pooled adapter would otherwise read fake time on some connections and real time on others. `attach()` issues the `SET` once itself, which is all a single-session adapter such as PGlite needs, and the bundled PGlite adapter declares the flag. Releasing the clock issues `disableClockOverride()` on the same session.
 

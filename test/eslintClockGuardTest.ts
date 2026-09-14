@@ -22,7 +22,7 @@ describe('eslint clock guard', function () {
   })
 
   it('accepts the schema-qualified form', async function () {
-    const errors = await lint('export const q = (schema: string) => `SELECT 1 WHERE start_after <= $' + '{schema}.now()`\n')
+    const errors = await lint('export const q = (schema: string) => `SELECT 1 WHERE start_after <= $' + '{schema}.job_now()`\n')
     expect(errors).toHaveLength(0)
   })
 })

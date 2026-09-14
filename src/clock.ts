@@ -37,7 +37,7 @@ function toMillis (t: Date | number | string): number {
 /**
  * A clock a test drives by hand. Time only moves through setTime() and tick(); timers only fire
  * from tick(). When attached to a schema, every pg-boss statement there reads the same time
- * through ${schema}.now(), so JavaScript and Postgres agree on what "now" is.
+ * through ${schema}.job_now(), so JavaScript and Postgres agree on what "now" is.
  */
 export class TestClock implements AttachableClock {
   #now: number

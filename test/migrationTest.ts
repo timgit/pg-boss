@@ -1342,7 +1342,7 @@ describe('migration', function () {
       SELECT p.prosrc
         FROM pg_catalog.pg_proc p
         JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = $1 AND p.proname = 'now'`, [schema])).rows[0]?.prosrc
+       WHERE n.nspname = $1 AND p.proname = 'job_now'`, [schema])).rows[0]?.prosrc
 
     const hasClockFunction = async () => (await clockSource()) !== undefined
 
@@ -1351,14 +1351,14 @@ describe('migration', function () {
     expect(await hasClockFunction()).toBe(true)
     // prosrc is stored verbatim, so the fresh body must equal the manifest's rendering byte for byte,
     // and the v42 step below must install exactly the same text.
-    const manifestNow = schemaManifest.partitioned.functions.find(fn => fn.name === 'now')
+    const manifestNow = schemaManifest.partitioned.functions.find(fn => fn.name === 'job_now')
     assertTruthy(manifestNow)
     const freshSource = await clockSource()
     expect(freshSource).toBe(extractFunctionBody(manifestNow.def))
     const fresh = await clockDefaults()
     expect(fresh.length).toBeGreaterThan(0)
     for (const row of fresh) {
-      expect(row.column_default, `${row.table_name}.${row.column_name}`).not.toContain(`${schema}.now()`)
+      expect(row.column_default, `${row.table_name}.${row.column_name}`).not.toContain(`${schema}.job_now()`)
     }
 
     // Rolling v42 back drops the function and leaves the defaults alone.
