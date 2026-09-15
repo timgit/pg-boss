@@ -40,6 +40,7 @@
     "prisma": "^7.10.0",
     "tsx": "^4.23.13",
     "typescript": "^6.0.3",
+    "vite": "^8.3.0",
     "vitest": "^4.0.18"
   },
   "scripts": {
@@ -68,7 +69,8 @@
     "docs": "npm run docs:dev --prefix docs",
     "docs:readme": "node ./scripts/sync-readme.js",
     "docs:sponsors": "node --env-file-if-exists=.env ./scripts/sync-sponsors.js",
-    "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js"
+    "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js",
+    "test:browser": "vite --config test/browser/vite.config.mjs"
   },
   "pgboss": {
     "schema": 42
