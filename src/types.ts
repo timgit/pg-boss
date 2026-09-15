@@ -33,6 +33,12 @@ export interface IDatabase {
    * a custom adapter may implement it to enable transactional workers.
    */
   beginTransaction?(): Promise<TransactionHandle>;
+  /**
+   * Declares that every session this adapter opens has run the statement `enableClockOverride()`
+   * returns, or that it has a single session, so an attached TestClock reaches all of them. pg-boss's
+   * own pool does this itself; `start()` refuses a TestClock on a custom adapter without it.
+   */
+  clockSessionSetup?: boolean;
 }
 
 export interface ListenHandle {
@@ -445,7 +451,40 @@ export interface MigrationPlanOptions extends PlanOptions {
   partitionTables?: MigrationPartition[];
 }
 
+/**
+ * Source of time and timers. pg-boss reads the wall clock and schedules every poll, heartbeat and
+ * timeout through this interface so a test can substitute a controllable clock.
+ */
+export interface Clock {
+  /** epoch milliseconds */
+  now(): number
+  setTimeout(fn: () => void, ms: number): ClockTimer
+  clearTimeout(handle: ClockTimer): void
+  setInterval(fn: () => void, ms: number): ClockTimer
+  clearInterval(handle: ClockTimer): void
+}
+
+/**
+ * Opaque handle returned by a Clock's setTimeout/setInterval and accepted by its clear methods.
+ * The system clock returns NodeJS.Timeout; a test clock returns whatever it uses to track timers.
+ */
+export type ClockTimer = unknown
+
+/**
+ * A Clock that also owns the Postgres-side clock. PgBoss attaches it on start(), after the schema
+ * is installed, and disposes the returned handle on stop(). The handle is the only attachment state.
+ */
+export interface AttachableClock extends Clock {
+  attach(target: { db: IDatabase, schema: string }): Promise<AsyncDisposable>
+}
+
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
+  /**
+   * Source of time and timers for this instance. Defaults to the system clock (`Date.now` and the
+   * global timer functions).
+   * @default systemClock
+   */
+  clock?: Clock;
   /**
    * Enables the LISTEN/NOTIFY listener so workers on notify-enabled queues are woken
    * the moment a job is created, instead of waiting out their polling interval. This
@@ -547,6 +586,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
 /** @internal */
 export interface ResolvedConstructorOptions extends ConstructorOptions, CompatibilityFlags {
   schema: string;
+  clock: Clock;
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;

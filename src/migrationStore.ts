@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- everything above the v42 entry keeps its original SQL verbatim: the pre-v42 migrations and the versioned DDL snapshot maps they use. The clock guard applies from v42 on; a new snapshot builder for v42 or later must use the schema clock even though it sits inside this region. */
 import assert from 'node:assert'
 import * as plans from './plans.ts'
 import { resolveSchemaName } from './tools.ts'
@@ -1665,6 +1666,32 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
       uninstall: [
         `ALTER TABLE ${schema}.schedule DROP COLUMN kind`,
         `ALTER TABLE ${schema}.schedule DROP COLUMN last_job_id`
+      ]
+    },
+    /* eslint-enable no-restricted-syntax */
+    {
+      release: '12.33.0',
+      version: 42,
+      previous: 41,
+      install: [
+        // A single-statement LANGUAGE sql function, so the planner inlines it to pg_catalog.now();
+        // STABLE is what CockroachDB needs to inline. A TestClock swaps the body (pg-boss #689).
+        // Column defaults stay on pg_catalog.now(): CockroachDB would record a dependency from
+        // create_queue() to this function, and every pg-boss write names its timestamps anyway.
+        // The manifest's rendering of a fresh install (schema.json functions.now.def), pasted so a
+        // migrated schema stores byte-identical prosrc. Pasted, not referenced: v42 must not change
+        // when a later version edits the body.
+        `CREATE OR REPLACE FUNCTION ${schema}.job_now()
+ RETURNS timestamp with time zone
+ LANGUAGE sql
+ STABLE
+AS $function$
+      SELECT pg_catalog.now();
+    $function$
+`
+      ],
+      uninstall: [
+        `DROP FUNCTION ${schema}.job_now()`
       ]
     }
   ]

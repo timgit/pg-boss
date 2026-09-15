@@ -38,6 +38,8 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
   }
 
   const db: IDatabase = {
+    // One session, so the SET attach() issues reaches everything.
+    clockSessionSetup: true,
     async executeSql (text: string, values?: unknown[]) {
       try {
         return await run(text, values)

@@ -7,6 +7,8 @@ import packageJson from '../package.json' with { type: 'json' }
 import { setVersion, getPartitionedQueueTables, jobTableFormatFunction, bamCommandIndexName } from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 import type * as types from '../src/types.ts'
+import schemaManifest from '../src/schema.json' with { type: 'json' }
+import { extractFunctionBody } from '../src/drifter.ts'
 
 const currentSchemaVersion = packageJson.pgboss.schema
 // Version 27 has async migrations that create BAM entries for partitioned tables
@@ -222,7 +224,8 @@ describe('migration', function () {
     // the CLI wraps, which takes --backend for exactly this reason. Stock PostgreSQL stays the
     // default, so a caller that names nothing gets what it always got.
     const schema = 'custom'
-    const from = currentSchemaVersion - 2
+    // Start below the oldest migration that seeds a backfill, so every seed the gate drops is in range.
+    const from = Math.min(...getAll(schema).filter(m => sameTransactionBackfills(m).length > 0).map(m => m.previous))
 
     const stock = {
       construction: getConstructionPlans(schema),
@@ -1318,5 +1321,54 @@ describe('migration', function () {
         expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${partition.tableName}_i7 ON ${dbSchema}.${partition.tableName}`)
       }
     })
+  })
+
+  it('v42 adds the schema clock function and leaves the timestamp defaults on pg_catalog', async function () {
+    await contractor.create()
+
+    const { schema } = ctx.bossConfig
+    const db = await getDb()
+
+    // Every default that reads the clock. bam.created_on uses clock_timestamp() on purpose and is
+    // excluded by the LIKE pattern.
+    const clockDefaults = async () => (await db.executeSql(`
+      SELECT table_name, column_name, column_default
+        FROM information_schema.columns
+       WHERE table_schema = $1
+         AND column_default LIKE '%now()%'
+       ORDER BY table_name, column_name`, [schema])).rows as Array<{ table_name: string, column_name: string, column_default: string }>
+
+    const clockSource = async (): Promise<string | undefined> => (await db.executeSql(`
+      SELECT p.prosrc
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = $1 AND p.proname = 'job_now'`, [schema])).rows[0]?.prosrc
+
+    const hasClockFunction = async () => (await clockSource()) !== undefined
+
+    // Fresh install: the function exists and no default reaches it, so DROP FUNCTION never has a
+    // dependent (CockroachDB records one from create_queue() through the queue table's defaults).
+    expect(await hasClockFunction()).toBe(true)
+    // prosrc is stored verbatim, so the fresh body must equal the manifest's rendering byte for byte,
+    // and the v42 step below must install exactly the same text.
+    const manifestNow = schemaManifest.partitioned.functions.find(fn => fn.name === 'job_now')
+    assertTruthy(manifestNow)
+    const freshSource = await clockSource()
+    expect(freshSource).toBe(extractFunctionBody(manifestNow.def))
+    const fresh = await clockDefaults()
+    expect(fresh.length).toBeGreaterThan(0)
+    for (const row of fresh) {
+      expect(row.column_default, `${row.table_name}.${row.column_name}`).not.toContain(`${schema}.job_now()`)
+    }
+
+    // Rolling v42 back drops the function and leaves the defaults alone.
+    await contractor.rollback(currentSchemaVersion)
+    expect(await hasClockFunction()).toBe(false)
+    expect(await clockDefaults()).toEqual(fresh)
+
+    // Migrating forward again lands on exactly the fresh-install shape.
+    await contractor.migrate(currentSchemaVersion - 1)
+    expect(await clockSource()).toBe(freshSource)
+    expect(await clockDefaults()).toEqual(fresh)
   })
 })

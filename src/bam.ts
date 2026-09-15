@@ -11,7 +11,7 @@ const events = {
 class Bam extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #working: boolean
-  #pollInterval: NodeJS.Timeout | undefined
+  #pollInterval: types.ClockTimer | undefined
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
 
@@ -38,7 +38,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
     this.#stopped = false
 
     setImmediate(() => this.#onPoll())
-    this.#pollInterval = setInterval(
+    this.#pollInterval = this.#config.clock.setInterval(
       () => this.#onPoll(),
       this.#config.bamIntervalSeconds * 1000
     )
@@ -48,7 +48,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
     if (this.#stopped) return
     this.#stopped = true
     if (this.#pollInterval) {
-      clearInterval(this.#pollInterval)
+      this.#config.clock.clearInterval(this.#pollInterval)
       this.#pollInterval = undefined
     }
     while (this.#working) {

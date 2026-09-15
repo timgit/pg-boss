@@ -1,18 +1,19 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import { delay } from '../src/tools.ts'
+import { TestClock } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 describe('throttle', function () {
   it('should only create 1 job for interval', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
     const singletonSeconds = 2
     const sendCount = 4
 
     for (let i = 0; i < sendCount; i++) {
       await ctx.boss.send(ctx.schema, null, { singletonSeconds })
-      await delay(1000)
+      await clock.tick(1000)
     }
 
     const { length } = await ctx.boss.fetch(ctx.schema, { batchSize: sendCount })
@@ -21,7 +22,8 @@ describe('throttle', function () {
   })
 
   it('should process at most 1 job per second', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
     const singletonSeconds = 1
     const jobCount = 3
@@ -35,10 +37,10 @@ describe('throttle', function () {
 
     for (let i = 0; i < sendCount; i++) {
       await ctx.boss.send(ctx.schema, null, { singletonSeconds })
-      await delay(sendInterval)
+      await clock.tick(sendInterval)
     }
 
-    await delay(assertTimeout)
+    await clock.tick(assertTimeout)
 
     expect(processCount <= jobCount + 1).toBeTruthy()
   })

@@ -3,6 +3,7 @@ import { delay } from '../src/tools.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
 import Timekeeper from '../src/timekeeper.ts'
+import { systemClock } from '../src/clock.ts'
 import { PgBoss } from '../src/index.ts'
 import type { Job } from '../src/types.ts'
 import { ctx } from './hooks.ts'
@@ -30,7 +31,7 @@ function makeTk () {
     }
   }
 
-  const tk = new Timekeeper(db as any, {} as any, { schema: 'test' } as any)
+  const tk = new Timekeeper(db as any, {} as any, { schema: 'test', clock: systemClock } as any)
 
   return Object.assign(tk, { executed })
 }

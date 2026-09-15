@@ -118,7 +118,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #stopping: boolean
   #maintaining: boolean | undefined
-  #superviseInterval: NodeJS.Timeout | undefined
+  #superviseInterval: types.ClockTimer | undefined
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
   #manager: Manager
@@ -177,7 +177,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   async start () {
     if (this.#stopped) {
       this.#stopping = false
-      this.#superviseInterval = setInterval(
+      this.#superviseInterval = this.#config.clock.setInterval(
         () => this.#onSupervise(),
         this.#config.superviseIntervalSeconds! * 1000
       )
@@ -188,7 +188,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   async stop () {
     if (!this.#stopped) {
       this.#stopping = true
-      if (this.#superviseInterval) clearInterval(this.#superviseInterval)
+      if (this.#superviseInterval) this.#config.clock.clearInterval(this.#superviseInterval)
       this.#stopped = true
       while (this.#maintaining) {
         await delay(10)
@@ -212,6 +212,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       query = { text: query, values: [] }
     }
 
+    // Real time: a stopwatch around I/O reads zero on a frozen clock.
     const started = Date.now()
 
     const result = unwrapSQLResult(await this.#db.executeSql(query.text, query.values))
@@ -852,8 +853,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
         const { rows } = await this.#executeQuery(claim)
         if (!rows.length) return
       } else {
-        if (Date.now() < this.#detectOnly) return
-        this.#detectOnly = Date.now() + this.#config.reindexIntervalSeconds * 1000
+        if (this.#config.clock.now() < this.#detectOnly) return
+        this.#detectOnly = this.#config.clock.now() + this.#config.reindexIntervalSeconds * 1000
       }
     }
 

@@ -417,12 +417,12 @@ describe('drift', function () {
   describe('expectedManagedFunctions (pure)', function () {
     it('partitioned mode expects the job_table_* helpers plus queue functions', function () {
       const names = plans.expectedManagedFunctions('pgboss', true).map(f => f.name).sort()
-      expect(names).toEqual(['create_queue', 'delete_queue', 'job_table_format', 'job_table_run', 'job_table_run_async'])
+      expect(names).toEqual(['create_queue', 'delete_queue', 'job_now', 'job_table_format', 'job_table_run', 'job_table_run_async'])
     })
 
     it('non-partitioned mode expects only the queue functions', function () {
       const names = plans.expectedManagedFunctions('pgboss', false).map(f => f.name).sort()
-      expect(names).toEqual(['create_queue', 'delete_queue'])
+      expect(names).toEqual(['create_queue', 'delete_queue', 'job_now'])
     })
   })
 
@@ -501,7 +501,7 @@ describe('drift', function () {
 
     it('flags an absent function as missing', function () {
       const report = drifter.computeSchemaDrift({ functions: { expected: funcs, live: [asLive(funcs[0])] } })
-      expect(report.missingFunctions.map(f => f.name)).toEqual(['delete_queue'])
+      expect(report.missingFunctions.map(f => f.name)).toEqual(['delete_queue', 'job_now'])
       expect(report.ok).toBe(false)
     })
 
