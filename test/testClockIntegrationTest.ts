@@ -7,6 +7,7 @@ import * as plans from '../src/plans.ts'
 import { delay } from '../src/tools.ts'
 import { enableClockOverride } from '../src/plans.ts'
 import pg from 'pg'
+import Contractor from '../src/contractor.ts'
 
 // A fixed epoch keeps the tests independent of when they run.
 const MINUTE = 60_000
@@ -288,6 +289,45 @@ describe('TestClock', function () {
 
       const rows = await db.executeSql(`SELECT note FROM ${ctx.schema}.clock`)
       expect(rows.rows.map((r: { note: string }) => r.note)).toEqual(['user data'])
+    } finally {
+      await db.close()
+    }
+  })
+
+  it('a clock that is never released is reported as drift, with the override named', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig })
+    await ctx.boss.stop({ graceful: false })
+    ctx.boss = undefined
+
+    const db = await helper.getDb()
+
+    try {
+      // Exactly the state attach() leaves, which a run killed before disposing its handle keeps:
+      // the override body installed on job_now() and its backing table still there.
+      await db.executeSql(`
+        CREATE TABLE ${plans.clockTable(ctx.schema)} (now timestamp with time zone NOT NULL);
+        ${plans.createClockFunction(ctx.schema, { replace: true, body: plans.clockOverrideBody(ctx.schema) })}
+      `)
+
+      const source = await db.executeSql(plans.getClockFunctionSource(ctx.schema))
+      expect(plans.clockFunctionIsOverridden(source.rows[0]?.source)).toBe(true)
+
+      const contractor = new Contractor(db, { ...ctx.bossConfig, schema: ctx.schema })
+      const report = await contractor.detectDrift()
+      const mismatch = report.mismatchedFunctions.find(f => f.name === 'job_now')
+
+      expect(report.ok).toBe(false)
+      assertTruthy(mismatch)
+      expect(plans.clockFunctionIsOverridden(mismatch.actualDefinition)).toBe(true)
+
+      // And doctor's suggested SQL is the real fix: it clears both halves of the leftover.
+      await db.executeSql(plans.restoreClockFunction(ctx.schema))
+
+      const healed = await contractor.detectDrift()
+      expect(healed.mismatchedFunctions.find(f => f.name === 'job_now')).toBeUndefined()
+
+      const table = await db.executeSql(`SELECT to_regclass('${plans.clockTable(ctx.schema)}')::text AS t`)
+      expect(table.rows[0].t).toBe(null)
     } finally {
       await db.close()
     }

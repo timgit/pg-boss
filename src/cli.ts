@@ -523,6 +523,20 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
         console.log(`    expected: ${f.definition}`)
         console.log(`    actual:   ${f.actualDefinition}`)
       }
+
+      // One cause of a job_now() mismatch is common and self-inflicted: a TestClock only restores
+      // the function when its handle is disposed, so a killed run leaves the override installed.
+      // The body still returns real time for a session that never opted in, which is why nothing
+      // surfaces it at runtime - but it no longer inlines, so every statement that reads the clock
+      // pays a per-row call. Name it rather than leave an operator to read two bodies and guess.
+      const clockOverride = report.mismatchedFunctions.find(f => f.name === 'job_now' && plans.clockFunctionIsOverridden(f.actualDefinition))
+
+      if (clockOverride) {
+        console.log('\n  job_now() carries a TestClock override, left behind by a test run that was')
+        console.log('  killed before releasing its clock. Time is still correct, but the function no')
+        console.log('  longer inlines, so every statement that reads the clock is slower. Restore it:')
+        console.log(plans.restoreClockFunction(schema).split('\n').filter(l => l.trim()).map(l => `    ${l.trim()}`).join('\n'))
+      }
     }
 
     if (report.columnDrift.length) {

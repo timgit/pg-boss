@@ -225,6 +225,38 @@ export function disableClockOverride () {
   return `RESET ${CLOCK_OVERRIDE_SETTING}`
 }
 
+// The stored source of the clock function, for spotting an override a killed test run left behind.
+// prosrc rather than pg_get_functiondef: the latter is unsupported on CockroachDB, and the caller
+// only needs to know whether the body reads CLOCK_OVERRIDE_SETTING, not to diff it. CockroachDB
+// rewrites what it stores, so this must never be compared against CLOCK_FUNCTION_BODY for equality -
+// see clockFunctionIsOverridden.
+export function getClockFunctionSource (schema: string) {
+  return `
+    SELECT p.prosrc AS source
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND p.proname = 'job_now'
+  `
+}
+
+// Whether a stored body is a TestClock's rather than the shipped one. A positive test for the
+// setting, not a diff against CLOCK_FUNCTION_BODY: CockroachDB stores its own rewriting of the
+// canonical body ('SELECT now():::TIMESTAMPTZ;'), so equality would call every CockroachDB install
+// overridden. Any spelling of the override still names the setting.
+export function clockFunctionIsOverridden (source: string | null | undefined) {
+  return !!source?.includes(CLOCK_OVERRIDE_SETTING)
+}
+
+// Puts the clock function back the way a fresh install leaves it and clears the table the override
+// body read from. Used to undo a TestClock that was never released, e.g. a killed test run.
+export function restoreClockFunction (schema: string) {
+  return `
+    ${createClockFunction(schema, { replace: true })}
+    DROP TABLE IF EXISTS ${clockTable(schema)};
+  `
+}
+
 export function createClockFunction (schema: string, options: { replace?: boolean, body?: string } = {}) {
   const { replace = false, body = CLOCK_FUNCTION_BODY } = options
   return `
