@@ -25,14 +25,21 @@ function createFakeWorker () {
   const calls: string[] = []
   const listeners = new Set<() => void>()
   let failNext: Error | null = null
+  let hangNext = false
 
   return {
     calls,
     electNewLeader: () => { for (const fn of [...listeners]) fn() },
     failNextWith: (err: Error) => { failNext = err },
+    // Stands in for the upstream hang: a statement that never settles either way.
+    hangNext: () => { hangNext = true },
     listenerCount: () => listeners.size,
     async query (text: string): Promise<{ rows: any[] }> {
       calls.push(text)
+      if (hangNext) {
+        hangNext = false
+        return await new Promise<{ rows: any[] }>(() => {})
+      }
       if (failNext) {
         const err = failNext
         failNext = null
@@ -177,19 +184,50 @@ describe('pglite adapter', () => {
     expect(second.rows).toEqual([])
   })
 
-  it('stops watching for leader changes once the statements are cleared', async () => {
+  it('keeps watching for leader changes after the statements are cleared', async () => {
     const worker = createFakeWorker()
     const db = fromPglite(worker)
 
-    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+    // The subscription is not tied to having statements to reapply: it also fails in-flight
+    // statements, which matters whether or not a TestClock is involved.
     expect(worker.listenerCount()).toBe(1)
 
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
     await db.setSessionStatements!([])
-    expect(worker.listenerCount()).toBe(0)
+    expect(worker.listenerCount()).toBe(1)
 
+    // Nothing left to reapply, so a leader change replays nothing.
     worker.electNewLeader()
     await db.executeSql('SELECT 1')
     expect(worker.calls).toEqual(["SET pgboss.test_clock = 'on'", 'SELECT 1'])
+  })
+
+  // Upstream, a statement that holds PGliteWorker's transaction lock when leadership moves never
+  // settles: the rpc in _runExclusiveTransaction's `finally` is posted to a tab channel the new
+  // leader has not attached to, so nothing replies and nothing rejects it. Verified in a browser
+  // against real election. The adapter fails such a statement itself rather than hang.
+  it('fails a statement left hanging by a leader change', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    worker.hangNext()
+    const hung = db.executeSql('SELECT pg_sleep(5)')
+    const settled = expect(hung).rejects.toThrow('Leader changed')
+
+    worker.electNewLeader()
+    await settled
+
+    // Same treatment a statement that did settle gets: no ROLLBACK to a session that was never in
+    // the transaction.
+    expect(worker.calls).toEqual(['SELECT pg_sleep(5)'])
+  })
+
+  it('does not fail statements issued after the leader change settled', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    worker.electNewLeader()
+    await expect(db.executeSql('SELECT 1')).resolves.toEqual({ rows: [] })
   })
 
   it('does not roll back against a session that never held the transaction', async () => {

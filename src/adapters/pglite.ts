@@ -54,6 +54,8 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
   // While a reapply is in flight, every statement waits for it. Without this a query issued between
   // the leader change and the reapply lands on a session that has not been set up yet.
   let reapplying: Promise<void> | null = null
+  // Statements currently in flight, so a leader change can fail them itself — see executeSql.
+  const inFlight = new Set<(err: Error) => void>()
 
   const applySessionStatements = async () => {
     for (const statement of sessionStatements) {
@@ -76,9 +78,43 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
     }
 
     unsubscribeLeaderChange = pglite.onLeaderChange(() => {
+      // Fail the in-flight statements first: they were issued against a backend that no longer
+      // exists, and one of them may be holding a reapply behind it.
+      for (const fail of [...inFlight]) fail(new Error(LEADER_CHANGED_MESSAGE))
+
       if (!sessionStatements.length) return
       reapplying = applySessionStatements().catch(() => {}).then(() => { reapplying = null })
     })
+  }
+
+  // PGliteWorker settles a statement that was in flight across a leader change only when it was
+  // still queued on the transaction lock: that rejection is raised before _runExclusiveTransaction
+  // enters its try/finally, so it reaches us. A statement that had already *taken* the lock never
+  // settles at all — its own rpc rejects, but the `finally` then posts _releaseTransactionLock to a
+  // tab channel the new leader has not attached to yet, and nothing will ever reply or reject it.
+  // That await swallows the original rejection and hangs forever, which for pg-boss means a
+  // locked() block stalling a maintenance cycle silently and permanently.
+  //
+  // So the leader change fails its own in-flight statements, giving a lock holder the same
+  // indeterminate-state error a queued statement already gets. The abandoned promise is left to
+  // settle or not on its own; only its late rejection has to be swallowed.
+  const raceLeaderChange = async (text: string, values?: unknown[]) => {
+    if (typeof pglite.onLeaderChange !== 'function') {
+      return await run(text, values)
+    }
+
+    let fail: (err: Error) => void
+    const lost = new Promise<never>((_resolve, reject) => { fail = reject })
+    inFlight.add(fail!)
+
+    const statement = run(text, values)
+    statement.catch(() => {})
+
+    try {
+      return await Promise.race([statement, lost])
+    } finally {
+      inFlight.delete(fail!)
+    }
   }
 
   const db: IDatabase = {
@@ -87,15 +123,7 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
     // thing that can take the session away is a PGliteWorker leader change.
     async setSessionStatements (statements: string[]) {
       sessionStatements = statements
-
-      if (!statements.length) {
-        unsubscribeLeaderChange?.()
-        unsubscribeLeaderChange = null
-        return
-      }
-
       await applySessionStatements()
-      watchLeaderChange()
     },
     async executeSql (text: string, values?: unknown[]) {
       if (reapplying) {
@@ -103,7 +131,7 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
       }
 
       try {
-        return await run(text, values)
+        return await raceLeaderChange(text, values)
       } catch (err) {
         // A leader change leaves nothing to roll back on this side: the transaction died with the
         // old leader's instance, and a ROLLBACK now would go to a different session that was never
@@ -116,6 +144,11 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
       }
     }
   }
+
+  // Taken out once and kept for the adapter's life. It used to be tied to having session statements
+  // to reapply; it now also fails in-flight statements, which every adapter needs whether or not a
+  // TestClock is involved. A plain PGlite has no onLeaderChange and subscribes to nothing.
+  watchLeaderChange()
 
   // PGlite is embedded single-connection PostgreSQL, so LISTEN/NOTIFY works entirely in-process:
   // the same instance both NOTIFYs (via pg-boss's inlined pg_notify) and delivers to listeners.
