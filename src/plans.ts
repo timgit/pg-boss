@@ -205,10 +205,16 @@ export const CLOCK_FUNCTION_BODY = 'SELECT pg_catalog.now();'
 // the same schema, or one started after a killed run left the override behind, stays on real time.
 export const CLOCK_OVERRIDE_SETTING = 'pgboss.test_clock'
 
-// The body a TestClock installs: the single row of ${schema}.clock for a session that opted in, else
+// Where a TestClock keeps the fake time. Deliberately a name no user would choose for their own
+// table: attach() takes over whatever is sitting under it, so it has to be unmistakably ours.
+export function clockTable (schema: string) {
+  return `${schema}.__pgboss_test_clock`
+}
+
+// The body a TestClock installs: the single row of the clock table for a session that opted in, else
 // the real clock. The subquery defeats inlining, which is fine in tests and never happens in production.
 export function clockOverrideBody (schema: string) {
-  return `SELECT COALESCE(CASE WHEN current_setting('${CLOCK_OVERRIDE_SETTING}', true) = 'on' THEN (SELECT c.now FROM ${schema}.clock c LIMIT 1) END, pg_catalog.now());`
+  return `SELECT COALESCE(CASE WHEN current_setting('${CLOCK_OVERRIDE_SETTING}', true) = 'on' THEN (SELECT c.now FROM ${clockTable(schema)} c LIMIT 1) END, pg_catalog.now());`
 }
 
 export function enableClockOverride () {

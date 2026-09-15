@@ -118,7 +118,7 @@ await boss.start()
 await boss.work('q', async () => {})
 const id = await boss.send('q', {}, { startAfter: 60 })
 
-await clock.tick(60_000)   // Date, Postgres now(), and the worker's poll all move together
+await clock.tick(60_000)   // JS dates, Postgres timestamps, and the worker's poll all move together
 await boss.getSpy('q').waitForJobWithId(id, 'completed')
 ```
 
@@ -144,7 +144,11 @@ Jumps to `t`, forwards or backwards, without firing anything. Postgres will happ
 
 While a `TestClock` is attached, `${schema}.job_now()`, the function every pg-boss statement reads the clock through, returns the fake time. That covers job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It does not change `pg_catalog.now()` or your own SQL, and the `created_on` of rows your application inserts directly are unaffected.
 
-Only sessions that set `pgboss.test_clock = 'on'` see the fake time, so an instance without a `TestClock` on the same schema keeps real time, as does anything started after a killed run left the override in place. `start()` declares that `SET` through the adapter's `setSessionStatements()` before it opens a connection or runs a statement, and refuses a `TestClock` on an adapter that does not implement it — a pooled adapter that skipped the setup would read fake time on some connections and real time on others, silently and differently on every checkout. pg-boss's own pool applies the statements in its `connect` handler; the bundled PGlite adapter runs them once, which is all a single-session driver needs. Releasing the clock restores the plain function body and issues `disableClockOverride()`.
+Only sessions that set `pgboss.test_clock = 'on'` see the fake time. An instance without a `TestClock` on the same schema keeps real time, and so does anything started after a killed run left the override behind.
+
+`start()` declares that `SET` through the adapter's `setSessionStatements()`, before it opens a connection or runs a statement, and refuses a `TestClock` on an adapter that does not implement it. A pooled adapter that skipped the setup would read fake time on some connections and real time on others — silently, and differently on every checkout. pg-boss's own pool applies the statements in its `connect` handler; the bundled PGlite adapter runs them once, which is all a single-session driver needs.
+
+Releasing the clock restores the plain function body, drops the clock table, and issues `disableClockOverride()`.
 
 `start()` attaches the clock after the schema is installed, and `stop()` releases it, restoring the real clock for that schema. One `TestClock` may be shared by several instances; the schema stays on fake time until the last of them stops.
 

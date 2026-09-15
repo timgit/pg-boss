@@ -270,6 +270,29 @@ describe('TestClock', function () {
     }
   })
 
+  it('attaching leaves a user table named clock alone', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    const db = await helper.getDb()
+
+    try {
+      // A TestClock used to create its table as `${schema}.clock` with IF NOT EXISTS, then DELETE
+      // FROM it - so a table already sitting under that name had its rows wiped and was dropped on
+      // release. The clock table is named for pg-boss now, and nothing touches this one.
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.clock (now timestamptz NOT NULL, note text)`)
+      await db.executeSql(`INSERT INTO ${ctx.schema}.clock (now, note) VALUES (now(), 'user data')`)
+
+      const other = await helper.start({ ...ctx.bossConfig, clock, noDefault: true })
+      await other.stop({ graceful: false })
+
+      const rows = await db.executeSql(`SELECT note FROM ${ctx.schema}.clock`)
+      expect(rows.rows.map((r: { note: string }) => r.note)).toEqual(['user data'])
+    } finally {
+      await db.close()
+    }
+  })
+
   // PGlite is one session, so the opt-in from attach() is visible to every instance sharing it.
   helper.itPglite('an instance without a clock keeps real time on a schema another instance holds on fake time', async function () {
     const clock = new TestClock(T0)

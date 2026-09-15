@@ -45,8 +45,9 @@ export class TestClock implements AttachableClock {
   #seq = 0
   #ticking = false
   // Every (db, schema) this clock currently pushes time to. More than one because a multi-instance
-  // test shares one clock across several PgBoss instances, each of which attaches on start(); the
-  // schema's now() is restored only when the last of them disposes its handle.
+  // test shares one clock across several PgBoss instances, each of which attaches on start(). The
+  // schema is shared, so the last handle to be disposed is the one that restores job_now() and
+  // drops the clock table; the session opt-in is separate, and each instance drops its own.
   #targets: Target[] = []
 
   constructor (start: Date | number | string = Date.now()) {
@@ -125,12 +126,15 @@ export class TestClock implements AttachableClock {
   async attach (target: Target): Promise<AsyncDisposable> {
     const { db, schema } = target
 
+    // Dropped and recreated rather than IF NOT EXISTS: adopting a table that is already there would
+    // mean wiping rows this clock did not write, and dropping it on release. The name is one nobody
+    // else would pick, so a table under it is always a leftover from a killed run and safe to take.
     await db.executeSql(`
-      CREATE TABLE IF NOT EXISTS ${schema}.clock (now timestamp with time zone NOT NULL);
-      DELETE FROM ${schema}.clock;
+      DROP TABLE IF EXISTS ${plans.clockTable(schema)};
+      CREATE TABLE ${plans.clockTable(schema)} (now timestamp with time zone NOT NULL);
       ${plans.createClockFunction(schema, { replace: true, body: plans.clockOverrideBody(schema) })}
     `)
-    await db.executeSql(`INSERT INTO ${schema}.clock (now) VALUES (to_timestamp($1))`, [this.#now / 1000])
+    await db.executeSql(`INSERT INTO ${plans.clockTable(schema)} (now) VALUES (to_timestamp($1))`, [this.#now / 1000])
     // The session opt-in is not issued here. attach() runs after the contractor has already opened
     // connections and migrated, so a SET on this one session would miss every other one. PgBoss
     // declares it through db.setSessionStatements() before anything opens; see #doStart.
@@ -150,7 +154,7 @@ export class TestClock implements AttachableClock {
         if (!this.#targets.some(t => t.schema === schema)) {
           await db.executeSql(`
             ${plans.createClockFunction(schema, { replace: true })}
-            DROP TABLE IF EXISTS ${schema}.clock;
+            DROP TABLE IF EXISTS ${plans.clockTable(schema)};
             ${plans.disableClockOverride()};
           `)
         }
@@ -186,7 +190,7 @@ export class TestClock implements AttachableClock {
     const seconds = this.#now / 1000
 
     await Promise.all(this.#targets.map(({ db, schema }) =>
-      db.executeSql(`UPDATE ${schema}.clock SET now = to_timestamp($1)`, [seconds])
+      db.executeSql(`UPDATE ${plans.clockTable(schema)} SET now = to_timestamp($1)`, [seconds])
     ))
   }
 }
