@@ -205,10 +205,16 @@ export const CLOCK_FUNCTION_BODY = 'SELECT pg_catalog.now();'
 // the same schema, or one started after a killed run left the override behind, stays on real time.
 export const CLOCK_OVERRIDE_SETTING = 'pgboss.test_clock'
 
-// The body a TestClock installs: the single row of ${schema}.clock for a session that opted in, else
+// Where a TestClock keeps the fake time. Deliberately a name no user would choose for their own
+// table: attach() takes over whatever is sitting under it, so it has to be unmistakably ours.
+export function clockTable (schema: string) {
+  return `${schema}.__pgboss_test_clock`
+}
+
+// The body a TestClock installs: the single row of the clock table for a session that opted in, else
 // the real clock. The subquery defeats inlining, which is fine in tests and never happens in production.
 export function clockOverrideBody (schema: string) {
-  return `SELECT COALESCE(CASE WHEN current_setting('${CLOCK_OVERRIDE_SETTING}', true) = 'on' THEN (SELECT c.now FROM ${schema}.clock c LIMIT 1) END, pg_catalog.now());`
+  return `SELECT COALESCE(CASE WHEN current_setting('${CLOCK_OVERRIDE_SETTING}', true) = 'on' THEN (SELECT c.now FROM ${clockTable(schema)} c LIMIT 1) END, pg_catalog.now());`
 }
 
 export function enableClockOverride () {
@@ -217,6 +223,38 @@ export function enableClockOverride () {
 
 export function disableClockOverride () {
   return `RESET ${CLOCK_OVERRIDE_SETTING}`
+}
+
+// The stored source of the clock function, for spotting an override a killed test run left behind.
+// prosrc rather than pg_get_functiondef: the latter is unsupported on CockroachDB, and the caller
+// only needs to know whether the body reads CLOCK_OVERRIDE_SETTING, not to diff it. CockroachDB
+// rewrites what it stores, so this must never be compared against CLOCK_FUNCTION_BODY for equality -
+// see clockFunctionIsOverridden.
+export function getClockFunctionSource (schema: string) {
+  return `
+    SELECT p.prosrc AS source
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND p.proname = 'job_now'
+  `
+}
+
+// Whether a stored body is a TestClock's rather than the shipped one. A positive test for the
+// setting, not a diff against CLOCK_FUNCTION_BODY: CockroachDB stores its own rewriting of the
+// canonical body ('SELECT now():::TIMESTAMPTZ;'), so equality would call every CockroachDB install
+// overridden. Any spelling of the override still names the setting.
+export function clockFunctionIsOverridden (source: string | null | undefined) {
+  return !!source?.includes(CLOCK_OVERRIDE_SETTING)
+}
+
+// Puts the clock function back the way a fresh install leaves it and clears the table the override
+// body read from. Used to undo a TestClock that was never released, e.g. a killed test run.
+export function restoreClockFunction (schema: string) {
+  return `
+    ${createClockFunction(schema, { replace: true })}
+    DROP TABLE IF EXISTS ${clockTable(schema)};
+  `
 }
 
 export function createClockFunction (schema: string, options: { replace?: boolean, body?: string } = {}) {
@@ -637,7 +675,9 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           dead_letter,
           partition,
           table_name,
-          heartbeat_seconds
+          heartbeat_seconds,
+          created_on,
+          updated_on
         )
         VALUES (
           queue_name,
@@ -653,7 +693,9 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           options->>'deadLetter',
           false,
           '${BASE_JOB_TABLE}',
-          (options->>'heartbeatSeconds')::int
+          (options->>'heartbeatSeconds')::int,
+          ${schema}.job_now(),
+          ${schema}.job_now()
         )
         ON CONFLICT DO NOTHING;
       END;
@@ -690,7 +732,9 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           partition,
           table_name,
           heartbeat_seconds,
-          notify
+          notify,
+          created_on,
+          updated_on
         )
         VALUES (
           queue_name,
@@ -707,7 +751,9 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           COALESCE((options->>'partition')::bool, ${QUEUE_DEFAULTS.partition}),
           tablename,
           (options->>'heartbeatSeconds')::int,
-          COALESCE((options->>'notify')::bool, false)
+          COALESCE((options->>'notify')::bool, false),
+          ${schema}.job_now(),
+          ${schema}.job_now()
         )
         ON CONFLICT DO NOTHING
         RETURNING created_on
@@ -1292,8 +1338,8 @@ export function unschedule (schema: string) {
 
 export function subscribe (schema: string) {
   return `
-    INSERT INTO ${schema}.subscription (event, name)
-    VALUES ($1, $2)
+    INSERT INTO ${schema}.subscription (event, name, created_on, updated_on)
+    VALUES ($1, $2, ${schema}.job_now(), ${schema}.job_now())
     ON CONFLICT (event, name) DO UPDATE SET
       event = EXCLUDED.event,
       name = EXCLUDED.name,

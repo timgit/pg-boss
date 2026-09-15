@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PGliteWorker leader-change harness</title>
+<style>
+  body { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 24px; max-width: 900px; }
+  h1 { font-size: 15px; }
+  #out { white-space: pre-wrap; margin-top: 16px; }
+  .pass { color: #0a7f3f; }
+  .fail { color: #c02626; font-weight: 600; }
+  button { font: inherit; padding: 4px 10px; }
+  p { color: #555; }
+</style>
+<h1>PGliteWorker leader-change harness</h1>
+<p>
+  Exercises <code>src/adapters/pglite.ts</code> against real <code>PGliteWorker</code> leader
+  election, which needs a browser and cannot run under vitest. Expect all checks to pass; runs on
+  load, and the button re-runs without a reload.
+</p>
+<button id="run">Run again</button>
+<div id="out">starting…</div>
+<!-- Plain src: a cache-busting dynamic import is rejected by vite's dynamic-import-vars plugin
+     ("Unknown variable dynamic import"). The server's no-store header is what keeps this fresh. -->
+<script type="module" src="./harness.js"></script>

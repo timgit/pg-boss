@@ -245,6 +245,29 @@ class Contractor {
     })
   }
 
+  // A TestClock swaps the body of job_now() and only puts it back when its handle is disposed, so a
+  // run killed mid-test (Ctrl-C, a crashed suite, a bailed runner) leaves the override installed.
+  // Correctness survives - the body falls through to pg_catalog.now() for any session that has not
+  // opted in - but the override's subquery defeats inlining, so every statement that reads the clock
+  // pays a per-row function call instead of a constant-folded timestamp, permanently and silently.
+  // The leftover travels with the database, which matters most for an embedded one whose data
+  // directory gets committed or shipped.
+  //
+  // Best-effort in both directions: a backend or a role that cannot read pg_proc is not evidence of
+  // a problem, and must never block a start that would otherwise succeed.
+  async detectClockOverride (): Promise<boolean> {
+    try {
+      const result = await this.db.executeSql(plans.getClockFunctionSource(this.config.schema))
+      return plans.clockFunctionIsOverridden(result.rows[0]?.source)
+    } catch {
+      return false
+    }
+  }
+
+  async restoreClockFunction (): Promise<void> {
+    await this.db.executeSql(plans.restoreClockFunction(this.config.schema))
+  }
+
   async check () {
     const installed = await this.isInstalled()
 
