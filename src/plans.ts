@@ -675,7 +675,9 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           dead_letter,
           partition,
           table_name,
-          heartbeat_seconds
+          heartbeat_seconds,
+          created_on,
+          updated_on
         )
         VALUES (
           queue_name,
@@ -691,7 +693,9 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           options->>'deadLetter',
           false,
           '${BASE_JOB_TABLE}',
-          (options->>'heartbeatSeconds')::int
+          (options->>'heartbeatSeconds')::int,
+          ${schema}.job_now(),
+          ${schema}.job_now()
         )
         ON CONFLICT DO NOTHING;
       END;
@@ -728,7 +732,9 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           partition,
           table_name,
           heartbeat_seconds,
-          notify
+          notify,
+          created_on,
+          updated_on
         )
         VALUES (
           queue_name,
@@ -745,7 +751,9 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           COALESCE((options->>'partition')::bool, ${QUEUE_DEFAULTS.partition}),
           tablename,
           (options->>'heartbeatSeconds')::int,
-          COALESCE((options->>'notify')::bool, false)
+          COALESCE((options->>'notify')::bool, false),
+          ${schema}.job_now(),
+          ${schema}.job_now()
         )
         ON CONFLICT DO NOTHING
         RETURNING created_on

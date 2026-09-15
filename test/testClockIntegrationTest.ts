@@ -46,6 +46,35 @@ describe('TestClock', function () {
     expect(await dbTime(ctx.boss)).toBe(T0 - MINUTE)
   })
 
+  // queue and subscription metadata is the last thing pg-boss wrote without naming its timestamps,
+  // so these rows took real time from their column defaults while every job row took fake time.
+  it('queue and subscription rows are stamped on the clock', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    const queue = `${ctx.schema}_clock_queue`
+    await ctx.boss.createQueue(queue)
+    await ctx.boss.subscribe('clock_event', queue)
+
+    const db = ctx.boss.getDb()
+    const { rows: queues } = await db.executeSql(`SELECT created_on, updated_on FROM ${ctx.schema}.queue WHERE name = $1`, [queue])
+    expect(queues).toHaveLength(1)
+    expect(new Date(queues[0].created_on).getTime()).toBe(T0)
+    expect(new Date(queues[0].updated_on).getTime()).toBe(T0)
+
+    const { rows: subs } = await db.executeSql(`SELECT created_on, updated_on FROM ${ctx.schema}.subscription WHERE name = $1`, [queue])
+    expect(subs).toHaveLength(1)
+    expect(new Date(subs[0].created_on).getTime()).toBe(T0)
+    expect(new Date(subs[0].updated_on).getTime()).toBe(T0)
+
+    // The conflict branch already named updated_on, so this only pins that insert and update agree.
+    await clock.tick(MINUTE)
+    await ctx.boss.subscribe('clock_event', queue)
+    const { rows: again } = await db.executeSql(`SELECT created_on, updated_on FROM ${ctx.schema}.subscription WHERE name = $1`, [queue])
+    expect(new Date(again[0].created_on).getTime()).toBe(T0)
+    expect(new Date(again[0].updated_on).getTime()).toBe(T0 + MINUTE)
+  })
+
   it('a debounced burst yields three jobs across a slot boundary and two within one', async function () {
     const boundary = T0 + 30_000
     const clock = new TestClock(boundary - 100)
