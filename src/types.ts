@@ -34,11 +34,22 @@ export interface IDatabase {
    */
   beginTransaction?(): Promise<TransactionHandle>;
   /**
-   * Declares that every session this adapter opens has run the statement `enableClockOverride()`
-   * returns, or that it has a single session, so an attached TestClock reaches all of them. pg-boss's
-   * own pool does this itself; `start()` refuses a TestClock on a custom adapter without it.
+   * Optional capability for per-session setup. pg-boss calls this during `start()`, before it
+   * issues any statement, with the complete set of SQL statements that must have run on every
+   * session the adapter executes pg-boss statements on. Each call replaces the previous set; an
+   * empty array clears it.
+   *
+   * A pooled adapter runs them on every connection it opens, before handing it out. A
+   * single-connection adapter (PGlite) runs them once. The requirement covers sessions that run
+   * pg-boss statements, not literally every connection: a dedicated LISTEN connection that only
+   * subscribes and never reads the clock is outside it.
+   *
+   * Only a `TestClock` populates this today - the schema clock is gated on a session setting, so
+   * an adapter that cannot carry one would put some sessions on fake time and some on real time,
+   * silently and differently on every checkout. `start()` refuses a TestClock on an adapter that
+   * does not implement this.
    */
-  clockSessionSetup?: boolean;
+  setSessionStatements?(statements: string[]): Promise<void>;
 }
 
 export interface ListenHandle {

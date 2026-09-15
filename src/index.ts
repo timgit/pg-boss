@@ -154,6 +154,17 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   async #doStart (): Promise<this> {
+    // Before anything opens a connection or runs a statement. The schema clock is gated on a
+    // session setting, and a session that misses it reads real time while its peers read fake
+    // time - silently, and differently on every checkout. Declaring the setup here means no
+    // connection the adapter opens for the contractor, or for any later work, can predate it.
+    if (isAttachable(this.#config.clock)) {
+      assert(typeof this.#db.setSessionStatements === 'function',
+        'configuration assert: this db adapter does not implement setSessionStatements(), so a TestClock cannot reach every session it opens. Implement it to run the given statements on each new connection (or once, if the adapter has a single session).')
+
+      await this.#db.setSessionStatements([plans.enableClockOverride()])
+    }
+
     if (this.#db._pgbdb && !this.#db.opened) {
       await this.#db.open()
     }
@@ -167,8 +178,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     }
 
     if (isAttachable(this.#config.clock)) {
-      assert(this.#db._pgbdb || this.#db.clockSessionSetup,
-        `clock assert: this db adapter does not declare clockSessionSetup, so a TestClock cannot reach every session. Run "${plans.enableClockOverride()}" on every connection it opens, then set clockSessionSetup: true on the adapter.`)
       this.#attachedClock = await this.#config.clock.attach({ db: this.#db, schema: this.#config.schema })
     }
 
@@ -275,6 +284,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
         const attachment = this.#attachedClock
         this.#attachedClock = null
         await attachment[Symbol.asyncDispose]()
+        // Stop stamping the opt-in on connections opened after this point. Harmless if it lingers
+        // - dispose restores the plain function body, which never reads the setting - but an
+        // instance restarted without a clock should not keep setting it.
+        await this.#db.setSessionStatements?.([])
       }
 
       if (close) {

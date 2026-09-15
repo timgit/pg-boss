@@ -191,22 +191,71 @@ describe('TestClock', function () {
     expect(snapshot.capturedOn.getTime()).toBe(later)
   })
 
-  helper.itPglite('start() refuses a TestClock on a custom adapter that has not declared session setup', async function () {
+  helper.itPglite('start() refuses a TestClock on a custom adapter that cannot set up its sessions', async function () {
     const inner = await helper.getDb()
     const adapter = { executeSql: (text: string, values?: unknown[]) => inner.executeSql(text, values) }
 
     try {
       const boss = new PgBoss({ ...ctx.bossConfig, clock: new TestClock(T0), db: adapter })
-      await expect(boss.start()).rejects.toThrow('clockSessionSetup')
+      await expect(boss.start()).rejects.toThrow('setSessionStatements')
     } finally {
+      await inner.close()
+    }
+  })
+
+  helper.itPglite('start() refuses before it opens or migrates anything', async function () {
+    const inner = await helper.getDb()
+    const statements: string[] = []
+    const adapter = {
+      executeSql: (text: string, values?: unknown[]) => {
+        statements.push(text)
+        return inner.executeSql(text, values)
+      }
+    }
+
+    try {
+      const boss = new PgBoss({ ...ctx.bossConfig, clock: new TestClock(T0), db: adapter })
+      await expect(boss.start()).rejects.toThrow('setSessionStatements')
+      // The guard used to run after open() and the contractor, so a misconfigured test installed or
+      // migrated a schema before being told its adapter could not carry the clock.
+      expect(statements).toEqual([])
+    } finally {
+      await inner.close()
+    }
+  })
+
+  helper.itPglite('a custom adapter is handed the statements its sessions need', async function () {
+    const inner = await helper.getDb()
+    const applied: string[] = []
+    const adapter = {
+      executeSql: (text: string, values?: unknown[]) => inner.executeSql(text, values),
+      setSessionStatements: async (statements: string[]) => {
+        applied.push(...statements)
+        for (const statement of statements) await inner.executeSql(statement)
+      }
+    }
+
+    try {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, clock: new TestClock(T0), db: adapter })
+      expect(applied).toEqual([enableClockOverride()])
+      expect(await dbTime(ctx.boss)).toBe(T0)
+    } finally {
+      await ctx.boss?.stop({ graceful: false })
+      ctx.boss = undefined
       await inner.close()
     }
   })
 
   helper.itPglite('a pooled custom adapter that opts in every connection reads the clock on all of them', async function () {
     const pool = new pg.Pool({ ...ctx.bossConfig, max: 5 })
-    pool.on('connect', client => { client.query(enableClockOverride()).catch(() => {}) })
-    const adapter = { executeSql: (text: string, values?: unknown[]) => pool.query(text, values), clockSessionSetup: true }
+    let sessionStatements: string[] = []
+    pool.on('connect', client => {
+      for (const statement of sessionStatements) client.query(statement).catch(() => {})
+    })
+    const adapter = {
+      executeSql: (text: string, values?: unknown[]) => pool.query(text, values),
+      setSessionStatements: async (statements: string[]) => { sessionStatements = statements }
+    }
 
     try {
       const clock = new TestClock(T0)

@@ -131,8 +131,9 @@ export class TestClock implements AttachableClock {
       ${plans.createClockFunction(schema, { replace: true, body: plans.clockOverrideBody(schema) })}
     `)
     await db.executeSql(`INSERT INTO ${schema}.clock (now) VALUES (to_timestamp($1))`, [this.#now / 1000])
-    // Enough for a single-connection adapter such as PGlite; pg-boss's own pool opts in per connection.
-    await db.executeSql(plans.enableClockOverride())
+    // The session opt-in is not issued here. attach() runs after the contractor has already opened
+    // connections and migrated, so a SET on this one session would miss every other one. PgBoss
+    // declares it through db.setSessionStatements() before anything opens; see #doStart.
 
     const entry: Target = { db, schema }
     this.#targets.push(entry)

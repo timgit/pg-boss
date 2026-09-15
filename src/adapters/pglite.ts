@@ -38,8 +38,14 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
   }
 
   const db: IDatabase = {
-    // One session, so the SET attach() issues reaches everything.
-    clockSessionSetup: true,
+    // One session for the life of the instance, so session setup is applied once and every later
+    // statement sees it. A pooled driver has to re-run these per connection; there is nothing here
+    // to re-run them on.
+    async setSessionStatements (statements: string[]) {
+      for (const statement of statements) {
+        await db.executeSql(statement)
+      }
+    },
     async executeSql (text: string, values?: unknown[]) {
       try {
         return await run(text, values)

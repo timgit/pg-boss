@@ -3,8 +3,7 @@ import pg from 'pg'
 import assert from 'node:assert'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
-import { isAttachable, systemClock } from './clock.ts'
-import * as plans from './plans.ts'
+import { systemClock } from './clock.ts'
 
 // Keep silent network failures below the default 30-second notify polling backstop: in the
 // worst case a failure happens immediately after a successful check, then takes one interval,
@@ -22,6 +21,9 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   private pool!: pg.Pool
   private config: types.DatabaseOptions
   private clock: types.Clock
+  // Statements every pooled connection must run before it is handed out. Set by PgBoss during
+  // start(), before open(), so no connection this pool creates can miss them.
+  private sessionStatements: string[] = []
   /** @internal */
   readonly _pgbdb: true
   opened: boolean
@@ -48,12 +50,14 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     this.pool = new pg.Pool(this.config)
     this.pool.on('error', error => this.emit('error', error))
 
-    if (isAttachable(this.clock)) {
-      // Queued on the client before any checkout query, so every connection reads the fake clock.
-      this.pool.on('connect', client => {
-        client.query(plans.enableClockOverride()).catch(error => this.emit('error', error))
-      })
-    }
+    // Queued on the client before any checkout query, so a connection cannot run a pg-boss
+    // statement before its session setup. Reads the field on each connect rather than closing over
+    // it, so a set that arrives between connections still applies to the ones that follow.
+    this.pool.on('connect', client => {
+      for (const statement of this.sessionStatements) {
+        client.query(statement).catch(error => this.emit('error', error))
+      }
+    })
 
     this.opened = true
   }
@@ -63,6 +67,17 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
       this.opened = false
       await this.pool.end()
     }
+  }
+
+  async setSessionStatements (statements: string[]) {
+    // Connections already checked out or idle in the pool never re-run setup, so a non-empty set
+    // that lands after open() would reach some sessions and not others - exactly the split this
+    // capability exists to prevent. Clearing is always safe: the statements it would have run are
+    // the ones already applied, and undoing them is the caller's job.
+    assert(!this.opened || statements.length === 0,
+      'configuration assert: setSessionStatements must be called before open(), or the pool already holds connections without them')
+
+    this.sessionStatements = statements
   }
 
   async executeSql (text: string, values?: unknown[]) {
