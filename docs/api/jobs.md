@@ -791,7 +791,7 @@ Retrieves a job with all metadata by name and id
 
 ### `findJobs(name, options)`
 
-Finds jobs in a queue by id, singleton key, and/or data. Returns an array of jobs with all metadata.
+Finds jobs in a queue by id, singleton key, data, and/or state. Returns an array of jobs with all metadata.
 
 **Arguments**
 - `name`: string, *required*
@@ -815,7 +815,31 @@ Finds jobs in a queue by id, singleton key, and/or data. Returns an array of job
 
   If `true`, only return jobs in queued state (created or retry). If `false`, return jobs in any state.
 
+  Cannot be combined with `states`, which expresses the same filter and more.
+
+* **states**, array of string
+
+  Only return jobs in one of these states: `created`, `retry`, `active`, `completed`, `cancelled`, `failed`. An unknown state is rejected.
+
+* **limit**, int
+
+  Maximum number of jobs to return. Without it the result is unbounded, so a busy queue or a long-lived singleton key returns its whole retained history.
+
+* **orderBy**, string, *default: `createdOn`*
+
+  Column to sort by: `createdOn` or `startAfter`. Both are immutable for the life of a job, which is what makes them safe to page on.
+
+* **direction**, string, *default: `asc`*
+
+  `asc` or `desc`.
+
+* **cursor**, string
+
+  Id of the last job from the previous page. The next page starts strictly after it in the current ordering. An id that does not name a job in this queue returns no rows.
+
 * **db**, object, see notes in `send()`
+
+Ordering is off unless the call asks for something that needs it. Supplying any of `limit`, `orderBy`, `direction`, or `cursor` turns it on, defaulting to `createdOn` ascending; a call using none of them returns rows in no defined order, as it always has.
 
 **Examples**
 
@@ -832,12 +856,63 @@ const jobs = await boss.findJobs('my-queue', { data: { type: 'email' } })
 // Find queued jobs only
 const jobs = await boss.findJobs('my-queue', { key: 'user-123', queued: true })
 
+// Find by state
+const jobs = await boss.findJobs('my-queue', { states: ['failed', 'cancelled'] })
+
+// Newest 20 jobs
+const jobs = await boss.findJobs('my-queue', { limit: 20, direction: 'desc' })
+
 // Combine filters
 const jobs = await boss.findJobs('my-queue', {
   key: 'user-123',
   data: { type: 'email' },
   queued: true
 })
+```
+
+**Paging**
+
+Paging is keyset-based rather than offset-based: the cursor names a row, and the next page starts strictly after it. A job inserted or deleted between calls cannot shift the window into repeating or skipping a row, and the cost of page N does not grow with N.
+
+```js
+let cursor
+
+for (;;) {
+  const page = await boss.findJobs('my-queue', { states: ['failed'], limit: 100, cursor })
+
+  if (page.length === 0) break
+
+  for (const job of page) {
+    // ...
+  }
+
+  cursor = page[page.length - 1].id
+}
+```
+
+### `getJobByKey(name, key, options)`
+
+Returns the most recently created job for a singleton key, or `null` if the queue has none. The singleton-key counterpart of `getJobById()`: a key identifies a series of jobs rather than a single row, so this answers with the latest.
+
+**Arguments**
+- `name`: string, *required*
+- `key`: string, *required*
+- `options`: object
+
+**options**
+
+* **queued**, bool, *default: false*
+
+  Only consider jobs in queued state (created or retry). On a `short`, `singleton`, `stately`, or `exclusive` queue this is the job the key currently has outstanding.
+
+* **db**, object, see notes in `send()`
+
+```js
+// what happened last for this key
+const last = await boss.getJobByKey('order-processing', 'order-42')
+
+// what is pending for this key right now
+const pending = await boss.getJobByKey('order-processing', 'order-42', { queued: true })
 ```
 
 ## Inspecting dependencies
