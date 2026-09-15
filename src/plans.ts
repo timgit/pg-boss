@@ -1330,8 +1330,8 @@ export function unschedule (schema: string) {
 
 export function subscribe (schema: string) {
   return `
-    INSERT INTO ${schema}.subscription (event, name)
-    VALUES ($1, $2)
+    INSERT INTO ${schema}.subscription (event, name, created_on, updated_on)
+    VALUES ($1, $2, ${schema}.job_now(), ${schema}.job_now())
     ON CONFLICT (event, name) DO UPDATE SET
       event = EXCLUDED.event,
       name = EXCLUDED.name,

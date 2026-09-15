@@ -146,7 +146,11 @@ While a `TestClock` is attached, `${schema}.job_now()`, the function every pg-bo
 
 Only sessions that set `pgboss.test_clock = 'on'` see the fake time. An instance without a `TestClock` on the same schema keeps real time, and so does anything started after a killed run left the override behind.
 
-`start()` declares that `SET` through the adapter's `setSessionStatements()`, before it opens a connection or runs a statement, and refuses a `TestClock` on an adapter that does not implement it. A pooled adapter that skipped the setup would read fake time on some connections and real time on others — silently, and differently on every checkout. pg-boss's own pool applies the statements in its `connect` handler; the bundled PGlite adapter runs them once, which is all a single-session driver needs.
+`start()` declares that `SET` through the adapter's `setSessionStatements()`, before it opens a connection or runs a statement.
+
+An adapter that does not implement `setSessionStatements()` is refused a `TestClock`. A pooled adapter that skipped the setup would read fake time on some connections and real time on others — silently, and differently on every checkout.
+
+pg-boss's own pool applies the statements in its `connect` handler. The bundled PGlite adapter runs them once, which is all a single-session driver needs.
 
 Releasing the clock restores the plain function body, drops the clock table, and issues `disableClockOverride()`.
 
