@@ -3,11 +3,21 @@ import type { IDatabase } from '../types.ts'
 // Minimal structural type for an `@electric-sql/pglite` instance, so pg-boss does not take a
 // hard dependency on the package. The query/exec methods return an object with a `rows` array;
 // `listen` (optional, present on real PGlite) registers a LISTEN handler and resolves to an
-// unsubscribe function.
+// unsubscribe function. `onLeaderChange` is present only on `PGliteWorker` — see below.
 export interface PGliteLike {
   query<T = any>(query: string, params?: unknown[]): Promise<{ rows: T[] }>
   exec(query: string): Promise<Array<{ rows: any[] }>>
   listen?(channel: string, callback: (payload: string) => void): Promise<() => Promise<void>>
+  onLeaderChange?(callback: () => void): () => void
+}
+
+// PGliteWorker's error when leadership moves while a call is in flight. Matched on the message
+// rather than the constructor name: the class is anonymous after bundling, so `name` is just
+// 'Error', while the message is fixed in the worker source.
+const LEADER_CHANGED_MESSAGE = 'Leader changed, pending operation in indeterminate state'
+
+function isLeaderChange (err: unknown) {
+  return err instanceof Error && err.message === LEADER_CHANGED_MESSAGE
 }
 
 // Adapts a PGlite instance (embedded single-connection WASM PostgreSQL) to pg-boss's IDatabase.
@@ -37,20 +47,71 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
     return { rows: results.flatMap(r => r.rows ?? []) }
   }
 
+  // The statements every session must carry, kept so they can be reapplied. A plain PGlite has one
+  // session for the life of the instance and never needs that; PGliteWorker does — see below.
+  let sessionStatements: string[] = []
+  let unsubscribeLeaderChange: (() => void) | null = null
+  // While a reapply is in flight, every statement waits for it. Without this a query issued between
+  // the leader change and the reapply lands on a session that has not been set up yet.
+  let reapplying: Promise<void> | null = null
+
+  const applySessionStatements = async () => {
+    for (const statement of sessionStatements) {
+      await run(statement)
+    }
+  }
+
+  // Note what this cannot fix: because one leader instance serves every tab, session state is shared
+  // by all of them. A SET issued through one tab's adapter applies to every other tab's queries
+  // against that database, and there is no way to scope it to the instance that asked for it.
+  //
+  // Only the PGliteWorker leader holds an actual PGlite instance; the other tabs proxy into it. When
+  // the leader tab goes away, the next tab's worker constructs a *new* PGlite over the same data
+  // directory — a new backend, and so a new session. Anything set with SET is gone, and nothing in
+  // the worker replays it, so without this the session would silently revert to defaults: for the
+  // clock override specifically, back to real time with no error anywhere.
+  const watchLeaderChange = () => {
+    if (unsubscribeLeaderChange || typeof pglite.onLeaderChange !== 'function') {
+      return
+    }
+
+    unsubscribeLeaderChange = pglite.onLeaderChange(() => {
+      if (!sessionStatements.length) return
+      reapplying = applySessionStatements().catch(() => {}).then(() => { reapplying = null })
+    })
+  }
+
   const db: IDatabase = {
-    // One session for the life of the instance, so session setup is applied once and every later
-    // statement sees it. A pooled driver has to re-run these per connection; there is nothing here
-    // to re-run them on.
+    // A plain PGlite is one session for the life of the instance, so these are applied once and
+    // every later statement sees them. A pooled driver re-runs them per connection; here the only
+    // thing that can take the session away is a PGliteWorker leader change.
     async setSessionStatements (statements: string[]) {
-      for (const statement of statements) {
-        await db.executeSql(statement)
+      sessionStatements = statements
+
+      if (!statements.length) {
+        unsubscribeLeaderChange?.()
+        unsubscribeLeaderChange = null
+        return
       }
+
+      await applySessionStatements()
+      watchLeaderChange()
     },
     async executeSql (text: string, values?: unknown[]) {
+      if (reapplying) {
+        await reapplying
+      }
+
       try {
         return await run(text, values)
       } catch (err) {
-        await pglite.query('ROLLBACK').catch(() => {})
+        // A leader change leaves nothing to roll back on this side: the transaction died with the
+        // old leader's instance, and a ROLLBACK now would go to a different session that was never
+        // in it. The statement's own outcome is genuinely unknown, which is what the error says.
+        if (!isLeaderChange(err)) {
+          await pglite.query('ROLLBACK').catch(() => {})
+        }
+
         throw err
       }
     }

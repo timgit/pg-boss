@@ -18,6 +18,46 @@ function createFakePglite (): PGliteLike & { calls: Array<{ method: 'query' | 'e
   }
 }
 
+// A PGliteWorker-shaped fake: same query/exec surface, plus the leader-change subscription and the
+// error the worker raises when leadership moves mid-call. Leadership is driven by hand because real
+// election needs several browser tabs, which a node test cannot stand up.
+function createFakeWorker () {
+  const calls: string[] = []
+  const listeners = new Set<() => void>()
+  let failNext: Error | null = null
+
+  return {
+    calls,
+    electNewLeader: () => { for (const fn of [...listeners]) fn() },
+    failNextWith: (err: Error) => { failNext = err },
+    listenerCount: () => listeners.size,
+    async query (text: string): Promise<{ rows: any[] }> {
+      calls.push(text)
+      if (failNext) {
+        const err = failNext
+        failNext = null
+        throw err
+      }
+      return { rows: [] }
+    },
+    async exec (text: string) {
+      calls.push(text)
+      if (failNext) {
+        const err = failNext
+        failNext = null
+        throw err
+      }
+      return [{ rows: [] }]
+    },
+    onLeaderChange (callback: () => void) {
+      listeners.add(callback)
+      return () => listeners.delete(callback)
+    }
+  }
+}
+
+const LEADER_CHANGED = () => new Error('Leader changed, pending operation in indeterminate state')
+
 describe('pglite adapter', () => {
   it('routes parameterized queries through query()', async () => {
     const pglite = createFakePglite()
@@ -98,5 +138,78 @@ describe('pglite adapter', () => {
 
     await expect(db.executeSql('SELECT 1', ['x'])).rejects.toBe(boom)
     expect(calls).toEqual(['SELECT 1', 'ROLLBACK'])
+  })
+
+  it('applies session statements once on a plain instance', async () => {
+    const pglite = createFakePglite()
+    const db = fromPglite(pglite)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+
+    expect(pglite.calls.map(c => c.text)).toEqual(["SET pgboss.test_clock = 'on'"])
+  })
+
+  it('reapplies session statements when the worker elects a new leader', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+    expect(worker.calls).toEqual(["SET pgboss.test_clock = 'on'"])
+
+    // The new leader constructs a fresh PGlite over the same data directory, so the SET is gone.
+    worker.electNewLeader()
+    await db.executeSql('SELECT 1')
+
+    expect(worker.calls).toEqual(["SET pgboss.test_clock = 'on'", "SET pgboss.test_clock = 'on'", 'SELECT 1'])
+  })
+
+  it('holds statements behind the reapply so none reaches an unprepared session', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+    worker.electNewLeader()
+
+    // Issued without awaiting anything in between: the setup must still land first.
+    const [, second] = await Promise.all([db.executeSql('SELECT 1'), db.executeSql('SELECT 2')])
+
+    expect(worker.calls.indexOf('SELECT 1')).toBeGreaterThan(1)
+    expect(second.rows).toEqual([])
+  })
+
+  it('stops watching for leader changes once the statements are cleared', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+    expect(worker.listenerCount()).toBe(1)
+
+    await db.setSessionStatements!([])
+    expect(worker.listenerCount()).toBe(0)
+
+    worker.electNewLeader()
+    await db.executeSql('SELECT 1')
+    expect(worker.calls).toEqual(["SET pgboss.test_clock = 'on'", 'SELECT 1'])
+  })
+
+  it('does not roll back against a session that never held the transaction', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    worker.failNextWith(LEADER_CHANGED())
+    await expect(db.executeSql('UPDATE job SET x = 1')).rejects.toThrow('Leader changed')
+
+    // A ROLLBACK here would go to the new leader, which was never in that transaction.
+    expect(worker.calls).toEqual(['UPDATE job SET x = 1'])
+  })
+
+  it('still rolls back an ordinary failed statement', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    worker.failNextWith(new Error('syntax error'))
+    await expect(db.executeSql('SELEC 1')).rejects.toThrow('syntax error')
+
+    expect(worker.calls).toEqual(['SELEC 1', 'ROLLBACK'])
   })
 })
