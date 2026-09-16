@@ -319,6 +319,60 @@ describe('TestClock', function () {
     }
   })
 
+  helper.itPglite('clears the session opt-in when start() fails before the clock is attached', async function () {
+    const pool = new pg.Pool({ ...ctx.bossConfig, max: 2 })
+    let sessionStatements: string[] = []
+    const db = {
+      executeSql: (text: string, values?: unknown[]) => pool.query(text, values),
+      setSessionStatements: async (statements: string[]) => { sessionStatements = statements }
+    }
+
+    try {
+      // migrate: false over a schema nothing installed, so the contractor's check throws - after
+      // #doStart has already declared the opt-in and before there is any attachment to dispose.
+      const boss = new PgBoss({ ...ctx.bossConfig, db, clock: new TestClock(T0), migrate: false, supervise: false, schedule: false })
+      await expect(async () => { await boss.start() }).rejects.toThrow()
+      expect(sessionStatements).toEqual([enableClockOverride()])
+
+      // Left behind, it would stamp the opt-in on every connection this adapter opens from here on,
+      // including a later run that was never given a clock.
+      await boss.stop({ graceful: false })
+      expect(sessionStatements).toEqual([])
+    } finally {
+      await pool.end()
+    }
+  })
+
+  helper.itPglite('clears the session opt-in even when releasing the clock fails', async function () {
+    const pool = new pg.Pool({ ...ctx.bossConfig, max: 2 })
+    let sessionStatements: string[] = []
+    let failRelease = false
+    const db = {
+      executeSql: (text: string, values?: unknown[]) => {
+        if (failRelease && text.includes(`DROP TABLE IF EXISTS ${plans.clockTable(ctx.schema)}`)) {
+          throw new Error('connection terminated')
+        }
+        return pool.query(text, values)
+      },
+      setSessionStatements: async (statements: string[]) => { sessionStatements = statements }
+    }
+
+    try {
+      const boss = new PgBoss({ ...ctx.bossConfig, db, clock: new TestClock(T0), supervise: false, schedule: false })
+      await boss.start()
+      expect(sessionStatements).toEqual([enableClockOverride()])
+
+      // The release is one statement over the network like any other, and it can fail. Whether it
+      // did or not, the declaration #doStart made has to come back off.
+      failRelease = true
+      await expect(async () => { await boss.stop({ graceful: false }) }).rejects.toThrow('connection terminated')
+      expect(sessionStatements).toEqual([])
+    } finally {
+      failRelease = false
+      await pool.end()
+    }
+  })
+
   it('attaching leaves a user table named clock alone', async function () {
     const clock = new TestClock(T0)
     ctx.boss = await helper.start({ ...ctx.bossConfig, clock })

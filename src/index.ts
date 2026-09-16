@@ -280,14 +280,22 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const shutdown = async () => {
       await this.#manager.failWip()
 
-      if (this.#attachedClock) {
-        const attachment = this.#attachedClock
-        this.#attachedClock = null
-        await attachment[Symbol.asyncDispose]()
+      const attachment = this.#attachedClock
+      this.#attachedClock = null
+
+      try {
+        if (attachment) {
+          await attachment[Symbol.asyncDispose]()
+        }
+      } finally {
         // Stop stamping the opt-in on connections opened after this point. Harmless if it lingers
         // - dispose restores the plain function body, which never reads the setting - but an
-        // instance restarted without a clock should not keep setting it.
-        await this.#db.setSessionStatements?.([])
+        // instance restarted without a clock should not keep setting it. Undone on the same
+        // condition #doStart declared it on, so a start() that threw before attach() and a dispose
+        // that fails both still clear it.
+        if (isAttachable(this.#config.clock)) {
+          await this.#db.setSessionStatements?.([])
+        }
       }
 
       if (close) {
