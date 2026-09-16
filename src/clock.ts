@@ -126,6 +126,12 @@ export class TestClock implements AttachableClock {
   async attach (target: Target): Promise<AsyncDisposable> {
     const { db, schema } = target
 
+    // One batch, so the override function is never visible over an empty table: the body reads the
+    // single row and COALESCEs to pg_catalog.now() when it finds none, so a seed in a second round
+    // trip would serve real time to anything calling job_now() in between. The timestamp is a
+    // literal because a parameterised statement cannot carry more than one command; it is derived
+    // from this.#now, a number, so there is nothing here to inject.
+    //
     // Dropped and recreated rather than IF NOT EXISTS: adopting a table that is already there would
     // mean wiping rows this clock did not write, and dropping it on release. The name is one nobody
     // else would pick, so a table under it is always a leftover from a killed run and safe to take.
@@ -133,8 +139,8 @@ export class TestClock implements AttachableClock {
       DROP TABLE IF EXISTS ${plans.clockTable(schema)};
       CREATE TABLE ${plans.clockTable(schema)} (now timestamp with time zone NOT NULL);
       ${plans.createClockFunction(schema, { replace: true, body: plans.clockOverrideBody(schema) })}
+      INSERT INTO ${plans.clockTable(schema)} (now) VALUES (to_timestamp(${this.#now / 1000}));
     `)
-    await db.executeSql(`INSERT INTO ${plans.clockTable(schema)} (now) VALUES (to_timestamp($1))`, [this.#now / 1000])
     // The session opt-in is not issued here. attach() runs after the contractor has already opened
     // connections and migrated, so a SET on this one session would miss every other one. PgBoss
     // declares it through db.setSessionStatements() before anything opens; see #doStart.
