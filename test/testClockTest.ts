@@ -133,6 +133,30 @@ describe('TestClock (pure)', function () {
     expect(settled).toBe(true)
   })
 
+  it('seeds the row in the same batch that installs the override', async function () {
+    const texts: string[] = []
+    const db = {
+      executeSql: async (text: string) => {
+        texts.push(text)
+        return { rows: [] }
+      }
+    }
+
+    const clock = new TestClock(T0)
+    await clock.attach({ db, schema: 'pgboss' })
+
+    // Two round trips would leave the override reading an empty table in between, and its body
+    // falls back to pg_catalog.now() when it finds no row - real time, silently, to anything that
+    // called job_now() in the gap.
+    const installs = texts.filter(text => text.includes('CREATE OR REPLACE FUNCTION'))
+    expect(installs).toHaveLength(1)
+    expect(installs[0]).toContain('INSERT INTO')
+    expect(texts.filter(text => text.includes('INSERT INTO'))).toHaveLength(1)
+
+    // The literal carries the clock's start time, since a multi-statement batch cannot take params.
+    expect(installs[0]).toContain(`to_timestamp(${T0 / 1000})`)
+  })
+
   it('rejects an unparseable start time', function () {
     expect(() => new TestClock('not a date')).toThrow('invalid time')
   })

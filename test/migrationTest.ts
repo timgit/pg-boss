@@ -286,6 +286,23 @@ describe('migration', function () {
     expect(yugabyte).toMatch(/DEFERRABLE/)
   })
 
+  it('should report no version when the version table is installed but empty', async function () {
+    await contractor.create()
+
+    const db = await getDb()
+    // A version table with no row: the install is there (isInstalled reads the table, not its
+    // contents), but nothing says which version it is at. Reading that as 0 would walk every
+    // migration over a schema that already has them.
+    await db.executeSql(`DELETE FROM ${ctx.schema}.version`)
+
+    expect(await contractor.isInstalled()).toBe(true)
+    expect(await contractor.schemaVersion()).toBe(null)
+
+    await contractor.start()
+
+    expect(await contractor.schemaVersion()).toBe(null)
+  })
+
   it('should not migrate when current version is not found in migration store', async function () {
     const config = { ...ctx.bossConfig }
 

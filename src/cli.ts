@@ -55,6 +55,8 @@ Options:
                           Non-postgres backends need this to emit schema they accept.
   --dry-run               Output SQL without executing (for plans and reindex commands)
   --force                 Rebuild every job index, not just the bloated ones (reindex)
+  --fix                   Restore a job_now() left overridden by a killed TestClock run
+                          (doctor). Only run this when no instance holds a live TestClock.
 
 Environment Variables:
   PGBOSS_DATABASE_URL     Full connection string
@@ -188,7 +190,8 @@ function parseCliArgs () {
       ssl: { type: 'boolean' },
       backend: { type: 'string' },
       'dry-run': { type: 'boolean' },
-      force: { type: 'boolean' }
+      force: { type: 'boolean' },
+      fix: { type: 'boolean' }
     },
     allowPositionals: true
   })
@@ -207,6 +210,7 @@ function parseCliArgs () {
     backend: values.backend,
     dryRun: values['dry-run'],
     force: values.force,
+    fix: values.fix,
     command: positionals[0],
     subCommand: positionals[1]
   }
@@ -437,7 +441,33 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
     // carried divergent best-effort/backend-gating bugs). Contractor.detectDrift handles the
     // partitioned probe, best-effort catalog fallbacks, and backend-specific gating in one place.
     const contractor = new Contractor(db, { ...config, schema })
-    const report = await contractor.detectDrift()
+    let report = await contractor.detectDrift()
+
+    // --fix repairs exactly one cause of drift, and only when asked. A TestClock restores job_now()
+    // when its handle is disposed, so a run killed first leaves the override installed; but a
+    // leftover override is indistinguishable from one a peer instance is holding right now, which is
+    // why this cannot be done automatically at startup. An operator knows which it is. Everything
+    // else doctor finds is reported and never repaired.
+    if (args.fix) {
+      // The drift report is the first source, but not the only one: mismatchedFunctions comes from
+      // pg_get_functiondef, and the whole function check is skipped when that query is unsupported
+      // (CockroachDB). detectClockOverride() reads prosrc instead, so a leftover override is still
+      // found - and repaired - on a backend whose functions never reach the report at all.
+      const override = report.mismatchedFunctions.some(f => f.name === 'job_now' && plans.clockFunctionIsOverridden(f.actualDefinition)) ||
+        await contractor.detectClockOverride()
+
+      if (override) {
+        console.log('\njob_now() carries a TestClock override, left behind by a test run that was')
+        console.log('killed before releasing its clock. Restoring it — make sure no instance is')
+        console.log('holding a live TestClock against this schema.')
+        await contractor.restoreClockFunction()
+        console.log('  restored.')
+        // Report on the repaired schema, so the summary and the exit code describe what is there now.
+        report = await contractor.detectDrift()
+      } else {
+        console.log('\nNothing for --fix to repair: job_now() carries no TestClock override.')
+      }
+    }
 
     if (report.building.length) {
       console.log(`\nBuilding (async index build in progress — not yet drift) (${report.building.length}):`)
@@ -516,6 +546,16 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
       }
     }
 
+    let clockOverrideNamed = false
+
+    const printClockOverrideHint = (marker: string) => {
+      console.log(`\n${marker}job_now() carries a TestClock override, left behind by a test run that was`)
+      console.log('  killed before releasing its clock. Time is still correct, but the function no')
+      console.log('  longer inlines, so every statement that reads the clock is slower. Restore it')
+      console.log('  with "pg-boss doctor --fix", or by hand:')
+      console.log(plans.restoreClockFunction(schema).split('\n').filter(l => l.trim()).map(l => `    ${l.trim()}`).join('\n'))
+    }
+
     if (report.mismatchedFunctions.length) {
       console.log(`\nMISMATCHED FUNCTIONS (body differs) (${report.mismatchedFunctions.length}):`)
       for (const f of report.mismatchedFunctions) {
@@ -523,6 +563,26 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
         console.log(`    expected: ${f.definition}`)
         console.log(`    actual:   ${f.actualDefinition}`)
       }
+
+      // One cause of a job_now() mismatch is common and self-inflicted: a TestClock only restores
+      // the function when its handle is disposed, so a killed run leaves the override installed.
+      // The body still returns real time for a session that never opted in, which is why nothing
+      // surfaces it at runtime - but it no longer inlines, so every statement that reads the clock
+      // pays a per-row call. Name it rather than leave an operator to read two bodies and guess.
+      const clockOverride = report.mismatchedFunctions.find(f => f.name === 'job_now' && plans.clockFunctionIsOverridden(f.actualDefinition))
+
+      if (clockOverride) {
+        clockOverrideNamed = true
+        printClockOverrideHint('  ')
+      }
+    }
+
+    // Same hint for a backend that never produced function rows to mismatch: the check above is
+    // gated on pg_get_functiondef, which CockroachDB does not support, so the override is invisible
+    // to drift there. This probe reads prosrc and finds it anyway. It is not drift the report can
+    // show a body for, so it names the condition and stops short of printing an "actual:".
+    if (!clockOverrideNamed && await contractor.detectClockOverride()) {
+      printClockOverrideHint('⚠ ')
     }
 
     if (report.columnDrift.length) {

@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import crypto from 'node:crypto'
 import { getConnectionString, dropSchema, getDb, itPostgresOnly, describePglite } from './testHelper.ts'
+import * as plans from '../src/plans.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
 const cliOptions = '--import=tsx '
@@ -628,6 +629,63 @@ describePglite('cli', function () {
         expect(stdout).toContain('MISSING')
         expect(stdout).toContain('job_common_i11')
         expect(code).toBe(1)
+      })
+
+      // A TestClock restores job_now() when its handle is disposed, so a run killed first leaves the
+      // override installed. Correct, but no longer inlined - and indistinguishable from an override a
+      // peer instance is holding right now, which is why --fix is the operator's call and not a
+      // startup repair.
+      const installClockOverride = async () => {
+        const db = await getDb()
+        // The clock table too: the override body reads it, so the function will not create without
+        // it - and a killed run leaves both behind exactly like this.
+        await db.executeSql(`
+          DROP TABLE IF EXISTS ${plans.clockTable(schema)};
+          CREATE TABLE ${plans.clockTable(schema)} (now timestamp with time zone NOT NULL);
+          ${plans.createClockFunction(schema, { replace: true, body: plans.clockOverrideBody(schema) })}
+        `)
+        await db.close()
+      }
+
+      itPostgresOnly('should name a leftover TestClock override and point at --fix', async function () {
+        await createSchema()
+        await installClockOverride()
+
+        const { stdout, code } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('job_now() carries a TestClock override')
+        expect(stdout).toContain('doctor --fix')
+        expect(code).toBe(1)
+      })
+
+      itPostgresOnly('should restore a leftover TestClock override with --fix', async function () {
+        await createSchema()
+        await installClockOverride()
+
+        const { stdout, code } = runCli(['doctor', '--fix', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('restored')
+        expect(stdout).toContain('No drift detected')
+        expect(code).toBe(0)
+
+        // The repair is what the report describes, so a second run has nothing left to say.
+        const second = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
+        expect(second.stdout).toContain('No drift detected')
+        expect(second.code).toBe(0)
+
+        // The clock table goes with the function body - it is the only thing that read from it, and
+        // once the body no longer does, it is a table nobody owns. Nothing else would trip over it
+        // (attach() drops before it creates), so leaving it behind is just litter the repair missed.
+        const db = await getDb()
+        const { rows } = await db.executeSql('SELECT to_regclass($1) AS oid', [plans.clockTable(schema)])
+        await db.close()
+        expect(rows[0].oid).toBe(null)
+      })
+
+      itPostgresOnly('should say when --fix has nothing to repair', async function () {
+        await createSchema()
+
+        const { stdout, code } = runCli(['doctor', '--fix', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('Nothing for --fix to repair')
+        expect(code).toBe(0)
       })
 
       itPostgresOnly('should report an index with a changed predicate as mismatched', async function () {
