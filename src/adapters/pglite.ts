@@ -137,8 +137,12 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
       await applySessionStatements()
     },
     async executeSql (text: string, values?: unknown[]) {
-      if (reapplying) {
-        await reapplying
+      // Re-checked, not awaited once: a second leader change during a reapply fails the first
+      // chain's in-flight statement, so that chain settles early and hands the gate back while the
+      // chain that replaced it has not reissued anything yet. Waiting again on whatever is there
+      // now is what keeps a query from reaching a session the current chain has not set up.
+      for (let pending = reapplying; pending; pending = reapplying) {
+        await pending
       }
 
       try {

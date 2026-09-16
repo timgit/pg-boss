@@ -290,6 +290,45 @@ describe('pglite adapter', () => {
     expect(settled).toBe(true)
   })
 
+  it('holds a statement already waiting when a second leader change replaces the reapply', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+
+    worker.blockNext()
+    worker.electNewLeader()
+    await tick()
+
+    // Issued between the two changes, so it is parked on the *first* chain rather than on whatever
+    // is current when it arrives - the case the test above cannot reach.
+    let settled = false
+    const pending = db.executeSql('SELECT 1').then(result => { settled = true; return result })
+    await tick()
+
+    // The second change fails the first chain's in-flight statement, so that chain settles at once
+    // and the waiter wakes up. What it must not do is take that as its turn: the chain that
+    // replaced it has not reissued anything yet, so this session has no clock override on it.
+    worker.blockNext()
+    worker.electNewLeader()
+    await tick()
+
+    expect(settled).toBe(false)
+    expect(worker.calls).not.toContain('SELECT 1')
+
+    worker.release()
+    await pending
+    expect(settled).toBe(true)
+
+    // Both reapplies before the query, never interleaved with it.
+    expect(worker.calls).toEqual([
+      "SET pgboss.test_clock = 'on'",
+      "SET pgboss.test_clock = 'on'",
+      "SET pgboss.test_clock = 'on'",
+      'SELECT 1'
+    ])
+  })
+
   it('does not fail statements issued after the leader change settled', async () => {
     const worker = createFakeWorker()
     const db = fromPglite(worker)
