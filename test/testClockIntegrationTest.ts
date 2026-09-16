@@ -276,6 +276,25 @@ describe('TestClock', function () {
     }
   })
 
+  it('a restart over a pool the previous run left open still reads the clock', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    expect(await dbTime(ctx.boss)).toBe(T0)
+
+    // stop({ close: false }) keeps the pool, so the second start() hands its statements to a db that
+    // is already open, holding idle connections that will never re-run the connect hook. That used
+    // to be an assert; the set is made total instead, because nothing is checked out during start().
+    await ctx.boss.stop({ close: false, graceful: false })
+    await ctx.boss.start()
+
+    // Concurrent, so the reads land on different pooled connections - including the ones the first
+    // run opened. A set that reached only the new connections would show real time on some of them.
+    await clock.setTime(T0 + MINUTE)
+    const reads = await Promise.all(Array.from({ length: 5 }, () => dbTime(ctx.boss!)))
+    expect(reads).toEqual([T0 + MINUTE, T0 + MINUTE, T0 + MINUTE, T0 + MINUTE, T0 + MINUTE])
+  })
+
   helper.itPglite('a pooled custom adapter that opts in every connection reads the clock on all of them', async function () {
     const pool = new pg.Pool({ ...ctx.bossConfig, max: 5 })
     let sessionStatements: string[] = []
@@ -360,6 +379,47 @@ describe('TestClock', function () {
     } finally {
       await db.close()
     }
+  })
+
+  it('the override is found without pg_get_functiondef, so doctor --fix is not blind on CockroachDB', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig })
+    await ctx.boss.stop({ graceful: false })
+    ctx.boss = undefined
+
+    const db = await helper.getDb()
+
+    try {
+      await db.executeSql(`
+        CREATE TABLE ${plans.clockTable(ctx.schema)} (now timestamp with time zone NOT NULL);
+        ${plans.createClockFunction(ctx.schema, { replace: true, body: plans.clockOverrideBody(ctx.schema) })}
+      `)
+
+      // The drift report reaches the override through pg_get_functiondef, which CockroachDB does
+      // not support - the whole function check is skipped there, so a leftover never reaches the
+      // report and --fix used to say there was nothing to repair. This probe reads prosrc, which is
+      // also why it is a positive test for the override rather than a diff against the canonical
+      // body: CockroachDB rewrites what it stores.
+      const contractor = new Contractor(db, { ...ctx.bossConfig, schema: ctx.schema })
+      expect(await contractor.detectClockOverride()).toBe(true)
+
+      await contractor.restoreClockFunction()
+      expect(await contractor.detectClockOverride()).toBe(false)
+    } finally {
+      await db.close()
+    }
+  })
+
+  it('treats a pg_proc it cannot read as no override, not as a problem', async function () {
+    // The probe is best-effort in both directions: a backend without pg_proc, or a role that cannot
+    // read it, is not evidence of a leftover override. Saying yes there would have doctor --fix
+    // rewrite job_now() on no evidence at all.
+    const unreadable = {
+      executeSql: async () => { throw new Error('permission denied for table pg_proc') }
+    }
+
+    const contractor = new Contractor(unreadable as any, { ...ctx.bossConfig, schema: ctx.schema })
+
+    expect(await contractor.detectClockOverride()).toBe(false)
   })
 
   // PGlite is one session, so the opt-in from attach() is visible to every instance sharing it.

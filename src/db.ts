@@ -70,14 +70,39 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   }
 
   async setSessionStatements (statements: string[]) {
-    // Connections already checked out or idle in the pool never re-run setup, so a non-empty set
-    // that lands after open() would reach some sessions and not others - exactly the split this
-    // capability exists to prevent. Clearing is always safe: the statements it would have run are
-    // the ones already applied, and undoing them is the caller's job.
-    assert(!this.opened || statements.length === 0,
-      'configuration assert: setSessionStatements must be called before open(), or the pool already holds connections without them')
+    // Clearing is always safe: the statements it would have run are the ones already applied, and
+    // undoing them is the caller's job.
+    if (!this.opened || statements.length === 0) {
+      this.sessionStatements = statements
+      return
+    }
 
+    // An open pool holds connections that will never re-run the connect hook, so a non-empty set
+    // arriving now would reach some sessions and not others - exactly the split this capability
+    // exists to prevent. It can still be made total while nothing is checked out (a restart after
+    // stop({ close: false }) is the case that matters): every existing connection is idle, so it
+    // can be taken and set up here, and every later one gets the hook. With a connection in use
+    // there is no way to reach it, so refuse instead of applying a partial set.
+    assert(this.pool.idleCount === this.pool.totalCount && this.pool.waitingCount === 0,
+      'configuration assert: setSessionStatements cannot reach connections that are already checked out - call it before open(), or while the pool is idle')
+
+    // Set first, so a connection the checkout below has to create runs the statements through the
+    // connect hook rather than being missed by a sweep that already counted it.
     this.sessionStatements = statements
+
+    const clients = await Promise.all(
+      Array.from({ length: this.pool.totalCount }, async () => await this.pool.connect())
+    )
+
+    try {
+      await Promise.all(clients.map(async client => {
+        for (const statement of statements) {
+          await client.query(statement)
+        }
+      }))
+    } finally {
+      for (const client of clients) client.release()
+    }
   }
 
   async executeSql (text: string, values?: unknown[]) {

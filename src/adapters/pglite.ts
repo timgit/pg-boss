@@ -57,12 +57,6 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
   // Statements currently in flight, so a leader change can fail them itself — see executeSql.
   const inFlight = new Set<(err: Error) => void>()
 
-  const applySessionStatements = async () => {
-    for (const statement of sessionStatements) {
-      await run(statement)
-    }
-  }
-
   // Note what this cannot fix: because one leader instance serves every tab, session state is shared
   // by all of them. A SET issued through one tab's adapter applies to every other tab's queries
   // against that database, and there is no way to scope it to the instance that asked for it.
@@ -83,7 +77,14 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
       for (const fail of [...inFlight]) fail(new Error(LEADER_CHANGED_MESSAGE))
 
       if (!sessionStatements.length) return
-      reapplying = applySessionStatements().catch(() => {}).then(() => { reapplying = null })
+
+      // Cleared only by the chain that set it: a second leader change during a reapply assigns a
+      // new one, and the first must not open the gate on a session the new chain has not set up.
+      const chain: Promise<void> = applySessionStatements().catch(() => {}).then(() => {
+        if (reapplying === chain) reapplying = null
+      })
+
+      reapplying = chain
     })
   }
 
@@ -114,6 +115,16 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
       return await Promise.race([statement, lost])
     } finally {
       inFlight.delete(fail!)
+    }
+  }
+
+  // Through raceLeaderChange, not run(): a reapply orphaned by a *second* leader change is the
+  // same upstream hang as any other statement, and worse here, because executeSql waits on
+  // `reapplying` - a reapply that never settles stalls the adapter permanently and silently.
+  // Failing it instead leaves the next leader change to reapply from scratch.
+  const applySessionStatements = async () => {
+    for (const statement of sessionStatements) {
+      await raceLeaderChange(statement)
     }
   }
 

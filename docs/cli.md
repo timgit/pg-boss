@@ -25,6 +25,7 @@ npx pg-boss --help
 | `create` | Create initial pg-boss schema |
 | `version` | Show current schema version |
 | `doctor` | Check for schema drift (indexes, functions, enum) against the expected schema |
+| `reindex` | Rebuild bloated job indexes with `REINDEX INDEX CONCURRENTLY` |
 | `rollback` | Rollback the last migration |
 | `plans <subcommand>` | Output SQL without executing (subcommands: `create` (alias `construct`), `migrate`, `rollback`; defaults to `migrate`) |
 
@@ -96,7 +97,28 @@ CONSTRAINT DRIFT (missing or unexpected constraints) (1):
     missing:    CHECK ((dead_letter IS DISTINCT FROM name))
 ```
 
-`doctor` only diagnoses — it never changes the schema, and because it runs against a schema that is already at the latest version, a restart or `migrate` will not repair the drift it finds. Copy the printed statement to fix an index (insert `CONCURRENTLY` on a live table). See [Remediation](api/ops#detectschemadrift) for how to fix each category (recreate a missing index, drop a stale one, and so on).
+`doctor` diagnoses; the only thing it ever repairs is a leftover clock override, and only when asked with `--fix` (below). Because it runs against a schema that is already at the latest version, a restart or `migrate` will not repair the drift it finds. Copy the printed statement to fix an index (insert `CONCURRENTLY` on a live table). See [Remediation](api/ops#detectschemadrift) for how to fix each category (recreate a missing index, drop a stale one, and so on).
+
+#### `doctor --fix`
+
+Repairs exactly one thing: a `job_now()` left overridden by a [TestClock](api/testing) whose run was killed before it released the clock. The override keeps time correct — the body falls through to real time for any session that never opted in — but it no longer inlines, so every statement that reads the clock pays a per-row function call. `--fix` restores the canonical body and drops the clock table, then re-runs the scan so the summary and exit code describe the repaired schema.
+
+```bash
+pg-boss doctor --connection-string postgres://localhost/myapp --fix
+```
+
+> **Warning:** a leftover override is indistinguishable from one a live instance is holding right now, which is why nothing repairs it automatically. Only run `--fix` when no instance holds a live TestClock against this schema.
+
+Nothing else `doctor` finds is ever repaired.
+
+### `reindex`
+
+Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY`, one at a time, skipping any index the connected role does not own. Without flags it rebuilds only the indexes the bloat check flags; `--force` rebuilds every job index. `--dry-run` prints the SQL instead of running it. Unsupported on CockroachDB and YugabyteDB, which neither accept `REINDEX` nor report the catalog statistics the bloat check reads.
+
+```bash
+pg-boss reindex --connection-string postgres://localhost/myapp
+pg-boss reindex --connection-string postgres://localhost/myapp --force --dry-run
+```
 
 ### `rollback`
 
@@ -186,7 +208,9 @@ The CLI supports multiple ways to configure the database connection, in order of
 | `--config` | `-c` | Path to config file (default: pgboss.json, .pgbossrc, .pgbossrc.json) |
 | `--ssl` | | Enable SSL connection (`rejectUnauthorized: false`) |
 | `--backend` | | Database backend profile: `postgres` (default), `cockroachdb`, `yugabytedb`, `citus` |
-| `--dry-run` | | Show SQL without executing (for `migrate`, `create`, `rollback`) |
+| `--dry-run` | | Show SQL without executing (for `migrate`, `create`, `rollback`, `plans`, `reindex`) |
+| `--force` | | Rebuild every job index, not just the bloated ones (for `reindex`) |
+| `--fix` | | Restore a `job_now()` left overridden by a killed TestClock run (for `doctor`) |
 | `--help` | `-h` | Show help |
 
 > **Note:** `-c` is the short form for `--config` (a config file path), **not** `--connection-string`. The connection string has no short form.

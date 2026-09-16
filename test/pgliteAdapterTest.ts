@@ -24,8 +24,16 @@ function createFakePglite (): PGliteLike & { calls: Array<{ method: 'query' | 'e
 function createFakeWorker () {
   const calls: string[] = []
   const listeners = new Set<() => void>()
+  const blocked: Array<() => void> = []
   let failNext: Error | null = null
   let hangNext = false
+  let blockNext = false
+
+  const maybeBlock = async () => {
+    if (!blockNext) return
+    blockNext = false
+    await new Promise<void>(resolve => blocked.push(resolve))
+  }
 
   return {
     calls,
@@ -33,9 +41,14 @@ function createFakeWorker () {
     failNextWith: (err: Error) => { failNext = err },
     // Stands in for the upstream hang: a statement that never settles either way.
     hangNext: () => { hangNext = true },
+    // Holds the next statement open until release() - a reapply slow enough to still be in flight
+    // when the next leader change arrives.
+    blockNext: () => { blockNext = true },
+    release: () => { for (const resolve of blocked.splice(0)) resolve() },
     listenerCount: () => listeners.size,
     async query (text: string): Promise<{ rows: any[] }> {
       calls.push(text)
+      await maybeBlock()
       if (hangNext) {
         hangNext = false
         return await new Promise<{ rows: any[] }>(() => {})
@@ -49,6 +62,11 @@ function createFakeWorker () {
     },
     async exec (text: string) {
       calls.push(text)
+      await maybeBlock()
+      if (hangNext) {
+        hangNext = false
+        return await new Promise<Array<{ rows: any[] }>>(() => {})
+      }
       if (failNext) {
         const err = failNext
         failNext = null
@@ -64,6 +82,9 @@ function createFakeWorker () {
 }
 
 const LEADER_CHANGED = () => new Error('Leader changed, pending operation in indeterminate state')
+
+// Lets the promise chains a leader change kicks off run to their next await.
+const tick = async () => { for (let i = 0; i < 5; i++) await Promise.resolve() }
 
 describe('pglite adapter', () => {
   it('routes parameterized queries through query()', async () => {
@@ -220,6 +241,53 @@ describe('pglite adapter', () => {
     // Same treatment a statement that did settle gets: no ROLLBACK to a session that was never in
     // the transaction.
     expect(worker.calls).toEqual(['SELECT pg_sleep(5)'])
+  })
+
+  it('does not stall forever when a leader change orphans the reapply', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+
+    // A reapply is a statement like any other, so the next leader change can leave it hanging -
+    // and it is worse here than anywhere else, because every later statement waits on `reapplying`.
+    worker.hangNext()
+    worker.electNewLeader()
+    await tick()
+
+    // Nothing left to reapply after this change, so nothing replaces the hung one: the gate is held
+    // by a promise that will never settle unless the leader change fails it itself. This is the
+    // shape a stopped instance leaves behind - stop() clears the statements it declared.
+    await db.setSessionStatements!([])
+    worker.electNewLeader()
+
+    await expect(db.executeSql('SELECT 1')).resolves.toEqual({ rows: [] })
+  })
+
+  it('keeps the gate closed when a second leader change replaces the reapply', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+
+    worker.blockNext()
+    worker.electNewLeader()
+    await tick()
+
+    // The second change fails the first reapply and starts its own. The first must not open the
+    // gate on its way out: the session it set up belongs to a leader that is already gone.
+    worker.blockNext()
+    worker.electNewLeader()
+    await tick()
+
+    let settled = false
+    const pending = db.executeSql('SELECT 1').then(result => { settled = true; return result })
+    await tick()
+    expect(settled).toBe(false)
+
+    worker.release()
+    await pending
+    expect(settled).toBe(true)
   })
 
   it('does not fail statements issued after the leader change settled', async () => {

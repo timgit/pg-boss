@@ -671,8 +671,9 @@ describePglite('cli', function () {
         expect(second.stdout).toContain('No drift detected')
         expect(second.code).toBe(0)
 
-        // The clock table goes with the function body - it is what the override read from, and
-        // leaving it would block the next TestClock's non-adopting CREATE TABLE.
+        // The clock table goes with the function body - it is the only thing that read from it, and
+        // once the body no longer does, it is a table nobody owns. Nothing else would trip over it
+        // (attach() drops before it creates), so leaving it behind is just litter the repair missed.
         const db = await getDb()
         const { rows } = await db.executeSql('SELECT to_regclass($1) AS oid', [plans.clockTable(schema)])
         await db.close()
