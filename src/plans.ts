@@ -199,6 +199,13 @@ function createEnumJobState (schema: string) {
 // clause, so the planner inlines it and plans are identical to calling pg_catalog.now() directly;
 // STABLE matches the body and is what CockroachDB requires to inline. A TestClock swaps the body
 // (pg-boss #689).
+//
+// Column defaults stay on pg_catalog.now(). Every pg-boss write names its timestamps, so a default
+// that read this function would only ever serve rows pg-boss did not write - and it would tie the
+// function to every table that carries the default (create_queue() copies them into each partition
+// with LIKE job INCLUDING DEFAULTS), which CockroachDB records as a dependency and refuses to drop.
+// Only create_queue()'s own body names it, which is why v42's uninstall restores that body before
+// dropping the function.
 export const CLOCK_FUNCTION_BODY = 'SELECT pg_catalog.now();'
 
 // Sessions opt into the fake clock through this setting, so an instance without a TestClock on

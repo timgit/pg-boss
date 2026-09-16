@@ -1801,8 +1801,6 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
       release: '12.31.0',
       version: 41,
       previous: 40,
-      // Two columns on the schedule table, in one migration so a database takes one pass over it.
-      //
       // `kind` says which format the expression in `cron` is in. The default labels every row cron,
       // which is what a table this migration has never seen holds: cron was the only format a
       // schedule could be written in. The UPDATE is for the table it has seen before, since
@@ -1859,13 +1857,6 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
       version: 42,
       previous: 41,
       install: [
-        // A single-statement LANGUAGE sql function, so the planner inlines it to pg_catalog.now();
-        // STABLE is what CockroachDB needs to inline. A TestClock swaps the body (pg-boss #689).
-        // Column defaults stay on pg_catalog.now(): CockroachDB would record a dependency from
-        // create_queue() to this function, and every pg-boss write names its timestamps anyway.
-        // The manifest's rendering of a fresh install (schema.json functions.now.def), pasted so a
-        // migrated schema stores byte-identical prosrc. Pasted, not referenced: v42 must not change
-        // when a later version edits the body.
         `CREATE OR REPLACE FUNCTION ${schema}.job_now()
  RETURNS timestamp with time zone
  LANGUAGE sql
@@ -1874,10 +1865,6 @@ AS $function$
       SELECT pg_catalog.now();
     $function$
 `,
-        // "every pg-boss write names its timestamps" was not quite true when that was written:
-        // create_queue() left queue.created_on and updated_on to their column defaults, so the row
-        // took real time under a fake clock. Neither column gates anything, but the body is stored
-        // and drift-checked, so making it true is a migration. Both architectures carry the insert.
         noPartitioning
           ? createQueueNoPartitionFn[42](schema)
           : createQueueFn[42](schema)

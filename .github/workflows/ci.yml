@@ -149,10 +149,27 @@ jobs:
     - name: Check docs/index.md is in sync with README.md
       run: npm run docs:readme -- --check
 
-  # Fast feedback on every push/PR: the distributed-mode invariants that the rest of the
-  # suite can't express, run against a real CockroachDB cluster.
+  # Fast feedback on every push/PR against a real CockroachDB cluster: the distributed-mode
+  # invariants the rest of the suite can't express, and the migrations. Migrations are here rather
+  # than left to a pre-release run because CockroachDB refuses schema the other backends accept
+  # (partitioning, covering indexes, a column written in the transaction that added it) and records
+  # dependencies they don't, so a migration can be green everywhere else and unrunnable here.
+  #
+  # One cluster per suite, not one cluster running both. Concurrent DDL contends on the descriptor
+  # table whatever schema it targets, so the two files together fail with RETRY_SERIALIZABLE in
+  # whichever one loses the race, and serializing them costs more wall clock (~11m) than two runners
+  # taking ~5m each. fail-fast is off so one suite's failure doesn't mask the other's result.
   test-cockroachdb:
     runs-on: ubuntu-latest
+    name: test-cockroachdb (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: distributed
+            script: test:cockroachdb
+          - suite: migrations
+            script: test:cockroachdb:migrations
 
     steps:
     - name: Checkout code
@@ -188,8 +205,8 @@ jobs:
     - name: Install
       run: npm ci
 
-    - name: Test distributed database mode
-      run: npm run test:cockroachdb
+    - name: Test ${{ matrix.suite }}
+      run: npm run ${{ matrix.script }}
 
   coverage:
     needs: [test]

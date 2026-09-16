@@ -1,6 +1,6 @@
 import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
-import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly, start } from './testHelper.ts'
+import { getDb, assertTruthy, getSchemaDefs, isCockroachDb, itPostgresOnly, start } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll, getAllForConfig, migrate, migrateCommands, getMinVersion, next } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
@@ -1363,19 +1363,33 @@ describe('migration', function () {
 
     const hasClockFunction = async () => (await clockSource()) !== undefined
 
-    // Fresh install: the function exists and no default reaches it, so DROP FUNCTION never has a
-    // dependent (CockroachDB records one from create_queue() through the queue table's defaults).
+    // Fresh install: the function exists and no default reaches it, so nothing but create_queue()
+    // can depend on it, and the uninstall restores that body before it drops the function.
     expect(await hasClockFunction()).toBe(true)
-    // prosrc is stored verbatim, so the fresh body must equal the manifest's rendering byte for byte,
-    // and the v42 step below must install exactly the same text.
     const manifestNow = schemaManifest.partitioned.functions.find(fn => fn.name === 'job_now')
     assertTruthy(manifestNow)
     const freshSource = await clockSource()
-    expect(freshSource).toBe(extractFunctionBody(manifestNow.def))
+    // Postgres stores prosrc verbatim, so the fresh body must equal the manifest's rendering byte
+    // for byte. CockroachDB stores its own rewriting of it ('SELECT now():::TIMESTAMPTZ;'), so the
+    // manifest comparison is meaningless there - the fresh-vs-migrated comparison below is not, and
+    // runs on every backend.
+    if (!isCockroachDb) {
+      expect(freshSource).toBe(extractFunctionBody(manifestNow.def))
+    }
     const fresh = await clockDefaults()
     expect(fresh.length).toBeGreaterThan(0)
     for (const row of fresh) {
       expect(row.column_default, `${row.table_name}.${row.column_name}`).not.toContain(`${schema}.job_now()`)
+    }
+
+    // CockroachDB resolves the UDFs a function body calls at creation time and records the
+    // dependency, so create_queue() - which names job_now() for queue.created_on/updated_on - pins
+    // the function until its v41 body is back. That makes the order of v42's uninstall load-bearing
+    // rather than cosmetic: restore create_queue(), then drop. Postgres records no such dependency
+    // from a plpgsql body, so this is asserted only where it is real.
+    if (isCockroachDb) {
+      await expect(db.executeSql(`DROP FUNCTION ${schema}.job_now()`)).rejects.toMatchObject({ code: '2BP01' })
+      expect(await hasClockFunction()).toBe(true)
     }
 
     // Rolling v42 back drops the function and leaves the defaults alone.
