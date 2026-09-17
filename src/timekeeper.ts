@@ -3,6 +3,7 @@ import assert from 'node:assert'
 import EventEmitter from 'node:events'
 
 import * as Attorney from './attorney.ts'
+import { ClaimTimer } from './claimTimer.ts'
 import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import { isRrule, latestOccurrenceBefore, occurrencesInWindow, rruleWalker, assertRrule, assertRruleSends } from './rrule.ts'
@@ -202,8 +203,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   manager: Manager
 
   private stopped = true
-  private cronMonitorInterval: types.ClockTimer | null | undefined
-  private skewMonitorInterval: types.ClockTimer | null | undefined
+  private cronMonitorTimer: ClaimTimer | null | undefined
+  private skewMonitorTimer: types.ClockTimer | null | undefined
   private timekeeping: boolean | undefined
   private _checkingSkew = false
 
@@ -251,6 +252,12 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async start () {
+    // As bam and the navigator do. Without it a second start takes a second reading and arms a
+    // second cron timer and a second skew chain over the fields holding the first, which stop()
+    // then cannot reach: the orphans keep polling until the process ends. The flag is set before
+    // the first await below, so two concurrent calls cannot both get through.
+    if (!this.stopped) return
+
     this.stopped = false
     // A restart should re-surface a row nobody has fixed yet
     this.warnedSchedules.clear()
@@ -267,8 +274,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     setImmediate(() => this.onCron())
 
-    this.cronMonitorInterval = this.config.clock.setInterval(async () => await this.onCron(), this.config.cronMonitorIntervalSeconds! * 1000)
-    this.skewMonitorInterval = this.config.clock.setInterval(async () => await this.cacheClockSkew(), this.config.clockMonitorIntervalSeconds! * 1000)
+    this.cronMonitorTimer = new ClaimTimer(this.config.clock, this.config.cronMonitorIntervalSeconds!, () => this.onCron())
+    this.cronMonitorTimer.start()
+    this.scheduleSkewMonitor()
   }
 
   async stop () {
@@ -280,14 +288,14 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     await this.manager.offWork(QUEUES.SEND_IT, { wait: true })
 
-    if (this.skewMonitorInterval) {
-      this.config.clock.clearInterval(this.skewMonitorInterval)
-      this.skewMonitorInterval = null
+    if (this.skewMonitorTimer) {
+      this.config.clock.clearTimeout(this.skewMonitorTimer)
+      this.skewMonitorTimer = null
     }
 
-    if (this.cronMonitorInterval) {
-      this.config.clock.clearInterval(this.cronMonitorInterval)
-      this.cronMonitorInterval = null
+    if (this.cronMonitorTimer) {
+      this.cronMonitorTimer.stop()
+      this.cronMonitorTimer = null
     }
 
     while (this.timekeeping || this._checkingSkew) {
@@ -295,7 +303,33 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  // The next check is scheduled when the last one has finished, rather than repeating on a fixed
+  // period. This is a round trip to the database on a timer nobody is waiting for, so the polite
+  // shape is a full interval of quiet between two of them: on an interval, a check that runs long -
+  // a stalled connection, a server under load, the conditions that make a skew reading worth having
+  // in the first place - has the next one fire on top of it and every one after that queue up
+  // behind, which is load arriving exactly when there is least room for it. Chained, a slow check
+  // costs its own duration and nothing else.
+  //
+  // Unlike the interval claims this is not about when the check lands. Nothing is measured against
+  // the period, the reading is local to this instance, and a check a few milliseconds either side
+  // of ten minutes is the same reading. See ClaimTimer for the timers where the landing matters.
+  private scheduleSkewMonitor () {
+    this.skewMonitorTimer = this.config.clock.setTimeout(async () => {
+      try {
+        await this.cacheClockSkew()
+      } finally {
+        if (!this.stopped) this.scheduleSkewMonitor()
+      }
+    }, this.config.clockMonitorIntervalSeconds! * 1000)
+  }
+
   async cacheClockSkew () {
+    // One at a time. The timer above cannot overlap two of these now that it chains, but this is a
+    // public method as well, and stop() waits on the flag below: with two in flight the first to
+    // finish would clear it and let stop() return while the second still held a connection.
+    if (this._checkingSkew) return
+
     let skew = 0
 
     this._checkingSkew = true
@@ -350,6 +384,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
       if (!this.stopped) {
         const { rows } = await this.db.executeSql(sql)
+
+        // cron_on is stamped; the next attempt is measured from here rather than from the tick that
+        // started this one, which is what keeps two passes an interval apart instead of letting one
+        // land a few milliseconds short and lose the claim for a whole interval. See ClaimTimer.
+        this.cronMonitorTimer?.anchor()
 
         if (!this.stopped && rows.length === 1) {
           // The claim answers with the timestamp it replaced, which is when an instance last ran a
@@ -551,10 +590,15 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    *
    * The gap is (lastPass, windowStart]: older than the due window, so no pass has sent it, and
    * newer than the moment an instance last ran a pass, so no pass has skipped it either. A pass
-   * claims at most `cronMonitorIntervalSeconds` after the one before it, 45 seconds at the
-   * configurable ceiling, against a 60-second window, so the range is empty while passes keep
-   * running and fills up when they stop: a deployment that is down, between deploys, or running
-   * with scheduling switched off.
+   * claims `cronMonitorIntervalSeconds` after the one before it plus the round trip the claim
+   * itself cost, 45 seconds and change at the configurable ceiling, against a 60-second window, so
+   * the range is empty while passes keep running and fills up when they stop: a deployment that is
+   * down, between deploys, or running with scheduling switched off.
+   *
+   * That the spacing is an interval and not two of them is the claim timer's doing: it schedules
+   * each attempt from the moment the previous claim stamped the row rather than on a grid, so a
+   * statement that lands quickly cannot measure the row short of the interval and lose the claim
+   * for a whole one. See ClaimTimer.
    *
    * The most recent occurrence rather than all of them, which is the whole of what `once` promises:
    * a job carries the schedule's `data` and nothing else, so a job per missed occurrence would be

@@ -1,4 +1,5 @@
 import EventEmitter from 'node:events'
+import { ClaimTimer } from './claimTimer.ts'
 import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import { delay } from './tools.ts'
@@ -23,7 +24,7 @@ class Navigator extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #stopping: boolean
   #working: boolean
-  #pollInterval: types.ClockTimer | undefined
+  #pollTimer: ClaimTimer | undefined
   #db: types.IDatabase
   #manager: Manager
   #config: types.ResolvedConstructorOptions
@@ -54,11 +55,14 @@ class Navigator extends EventEmitter implements types.EventsMixin {
     this.#stopped = false
     this.#stopping = false
 
-    setImmediate(() => this.#onPoll())
-    this.#pollInterval = this.#config.clock.setInterval(
-      () => this.#onPoll(),
-      this.#config.flowIntervalSeconds * 1000
+    this.#pollTimer = new ClaimTimer(
+      this.#config.clock,
+      this.#config.flowIntervalSeconds,
+      () => this.#onPoll()
     )
+
+    setImmediate(() => this.#onPoll())
+    this.#pollTimer.start()
   }
 
   async stop () {
@@ -66,9 +70,9 @@ class Navigator extends EventEmitter implements types.EventsMixin {
     this.#stopping = true
     this.#stopped = true
 
-    if (this.#pollInterval) {
-      this.#config.clock.clearInterval(this.#pollInterval)
-      this.#pollInterval = undefined
+    if (this.#pollTimer) {
+      this.#pollTimer.stop()
+      this.#pollTimer = undefined
     }
 
     while (this.#working) {
@@ -92,6 +96,10 @@ class Navigator extends EventEmitter implements types.EventsMixin {
 
       const gate = plans.trySetFlowTime(this.#config.schema, this.#config.flowIntervalSeconds)
       const { rows } = await this.#db.executeSql(gate)
+
+      // The row is stamped; the next attempt is measured from here rather than from the tick that
+      // started this one. See ClaimTimer.
+      this.#pollTimer?.anchor()
 
       if (rows.length === 1) {
         await this.#resolve()
