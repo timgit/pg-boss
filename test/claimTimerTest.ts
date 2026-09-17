@@ -262,6 +262,35 @@ describe('claim timer', function () {
       return { cron: at(version.cron_on), bam: at(version.bam_on), flow: at(version.flow_on), monitor: at(q?.monitor_claim_on ?? null) }
     }
 
+    it('takes a claim at exactly the interval and refuses one a millisecond short', async function () {
+      const clock = new TestClock(START)
+
+      ctx.boss = await helper.start({ ...ctx.bossConfig, clock, schedule: false, supervise: false, noDefault: true })
+
+      const db = ctx.boss.getDb() as Db
+      const seconds = 30
+
+      // bam claims bam_on the moment the instance starts; let that land before writing the column
+      await helper.until(async () => (await readClaims(db, '')).bam !== null)
+
+      const claim = async () => (await db.executeSql(plans.trySetCronTime(ctx.schema, seconds))).rows.length === 1
+      const write = async (ago: number) => {
+        await db.executeSql(`UPDATE ${ctx.schema}.version SET cron_on = ${ctx.schema}.job_now() - interval '${ago} seconds'`)
+      }
+
+      await write(seconds)
+
+      expect(await claim(), 'exactly the interval').toBe(true)
+
+      await write(seconds - 0.001)
+
+      expect(await claim(), 'a millisecond short of the interval').toBe(false)
+
+      await write(seconds + 0.001)
+
+      expect(await claim(), 'a millisecond past the interval').toBe(true)
+    })
+
     it('does not let a scoped supervise() call defer the background pass', async function () {
       // supervise() is public and documented down to `boss.supervise('email-queue')`, so an
       // application may drive one hot queue on its own schedule. Only the timer's own pass
@@ -300,6 +329,250 @@ describe('claim timer', function () {
 
       await helper.until(() => claimed('b'), 3000)
         .catch(() => { throw new Error('the background pass never covered the queue the scoped call did not name') })
+    })
+
+    it('runs every claim on every tick, tick after tick', async function () {
+      // One period for all of them, so each tick is exactly one interval for every claim at once
+      const seconds = 30
+      const clock = new TestClock(START)
+
+      ctx.boss = await helper.start({
+        ...ctx.bossConfig,
+        clock,
+        schedule: true,
+        supervise: true,
+        cronMonitorIntervalSeconds: seconds,
+        bamIntervalSeconds: seconds,
+        flowIntervalSeconds: seconds,
+        superviseIntervalSeconds: seconds,
+        monitorIntervalSeconds: seconds
+      })
+
+      const boss = ctx.boss
+      const db = boss.getDb() as Db
+
+      await boss.createQueue('q')
+
+      const t0 = new Date(START).getTime()
+
+      // cron, bam and flow each try once as they start; supervise first runs on its first tick
+      await helper.until(async () => {
+        const c = await readClaims(db, 'q')
+        return c.cron === t0 && c.bam === t0 && c.flow === t0
+      })
+
+      for (let i = 1; i <= 4; i++) {
+        // A tick that lands while the previous pass is still running is dropped, by design, and a
+        // chained timer only re-arms once its pass is done - so let the instance go quiet first.
+        await helper.until(() => !boss.isMaintaining())
+        await new Promise(resolve => setTimeout(resolve, 100))
+
+        await clock.tick(seconds * 1000)
+
+        const expected = t0 + i * seconds * 1000
+
+        await helper.until(async () => {
+          const c = await readClaims(db, 'q')
+          return c.cron === expected && c.bam === expected && c.flow === expected && c.monitor === expected
+        }, 3000).catch(async () => {
+          const c = await readClaims(db, 'q')
+          const off = (v: number | null) => v === null ? 'null' : `+${(v - t0) / 1000}s`
+          throw new Error(`after tick ${i} (clock at +${i * seconds}s): cron ${off(c.cron)}, bam ${off(c.bam)}, flow ${off(c.flow)}, monitor ${off(c.monitor)}`)
+        })
+      }
+    })
+  })
+
+  /**
+   * A rolling upgrade puts instances on both releases against the same version and queue rows. The
+   * whole of the difference between them is the comparison: the release before this one wrote `>`
+   * where this one writes `>=`, so the only elapsed time the two disagree on is exactly the
+   * interval. These pin that, in both directions, for all three statements the change touched.
+   *
+   * Driven on a TestClock because "exactly the interval" is the case at issue, and a real clock
+   * measures elapsed time to the microsecond - the one value that cannot be hit on purpose.
+   */
+  describe('alongside an instance on the previous release', function () {
+    const START = '2026-01-01T00:00:00Z'
+
+    /** The previous release's claims: these statements with the comparison strict. */
+    const previous = {
+      version: (column: string) => (schema: string, seconds: number) => `
+        UPDATE ${schema}.version
+        SET ${column} = ${schema}.job_now()
+        WHERE EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+        RETURNING true
+      `,
+      cron: (schema: string, seconds: number) => `
+        WITH prior AS (
+          SELECT cron_on FROM ${schema}.version
+        ), claim AS (
+          ${previous.version('cron_on')(schema, seconds)}
+        )
+        SELECT prior.cron_on as "priorCronOn" FROM prior, claim
+      `,
+      queue: (column: string) => (schema: string, queues: string[], seconds: number) => ({
+        text: `
+        UPDATE ${schema}.queue
+        SET ${column} = ${schema}.job_now()
+        WHERE name = ANY($1::text[])
+          AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+        RETURNING name
+      `,
+        values: [queues]
+      }),
+      monitor: (schema: string, queues: string[], seconds: number) => ({
+        text: `
+        UPDATE ${schema}.queue
+        SET monitor_claim_on = ${schema}.job_now()
+        WHERE name = ANY($1::text[])
+          AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+        RETURNING name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats"
+      `,
+        values: [queues]
+      })
+    }
+
+    const SECONDS = 30
+
+    /**
+     * A migrated schema with an idle instance holding the clock, so the test drives every claim
+     * itself. The instance has to stay up: stopping it releases the TestClock, and job_now() falls
+     * back to real time, where "exactly the interval" cannot be written. Nothing of its own runs -
+     * no schedule, no supervise, and the one claim bam takes as it starts is on a column no test
+     * here touches.
+     */
+    async function quiet (queues: string[] = []) {
+      const clock = new TestClock(START)
+
+      ctx.boss = await helper.start({ ...ctx.bossConfig, clock, schedule: false, supervise: false, noDefault: true })
+
+      for (const queue of queues) {
+        await ctx.boss.createQueue(queue)
+      }
+
+      const db = ctx.boss.getDb() as Db
+
+      await helper.until(async () => (await db.executeSql(`SELECT bam_on FROM ${ctx.schema}.version`)).rows[0].bam_on !== null)
+
+      return { db, clock }
+    }
+
+    /** One claim column under both releases, however it is addressed. */
+    interface Pair {
+      write: (db: Db, secondsAgo: number) => Promise<void>
+      current: (db: Db) => Promise<boolean>
+      before: (db: Db) => Promise<boolean>
+    }
+
+    const versionPair = (column: string, current: (schema: string, seconds: number) => string): Pair => ({
+      write: async (db, ago) => {
+        await db.executeSql(`UPDATE ${ctx.schema}.version SET ${column} = ${ctx.schema}.job_now() - interval '${ago} seconds'`)
+      },
+      current: async db => (await db.executeSql(current(ctx.schema, SECONDS))).rows.length === 1,
+      before: async db => (await db.executeSql(previous.version(column)(ctx.schema, SECONDS))).rows.length === 1
+    })
+
+    const queuePair = (
+      column: string,
+      current: (schema: string, queues: string[], seconds: number) => plans.SqlQuery,
+      before: (schema: string, queues: string[], seconds: number) => plans.SqlQuery
+    ): Pair => ({
+      write: async (db, ago) => {
+        await db.executeSql(`UPDATE ${ctx.schema}.queue SET ${column} = ${ctx.schema}.job_now() - interval '${ago} seconds' WHERE name = $1`, ['a'])
+      },
+      current: async db => {
+        const { text, values } = current(ctx.schema, ['a'], SECONDS)
+        return (await db.executeSql(text, values)).rows.length === 1
+      },
+      before: async db => {
+        const { text, values } = before(ctx.schema, ['a'], SECONDS)
+        return (await db.executeSql(text, values)).rows.length === 1
+      }
+    })
+
+    // One per statement builder the change touched, rather than one per claim: cron_on and bam_on
+    // are the same statement with a different column.
+    const pairs = [
+      { name: 'cron, on the version row', queues: [] as string[], pair: () => versionPair('cron_on', plans.trySetCronTime) },
+      { name: 'maintain, on a queue row', queues: ['a'], pair: () => queuePair('maintain_on', plans.trySetQueueDeletionTime, previous.queue('maintain_on')) },
+      { name: 'monitor, on a queue row', queues: ['a'], pair: () => queuePair('monitor_claim_on', plans.trySetQueueMonitorTime, previous.monitor) }
+    ]
+
+    for (const { name, queues, pair } of pairs) {
+      it(`${name}: the releases agree everywhere except exactly the interval`, async function () {
+        const { db } = await quiet(queues)
+        const p = pair()
+
+        // Short of the interval, neither release takes it
+        await p.write(db, SECONDS - 0.001)
+        expect(await p.before(db), 'previous release, a millisecond short').toBe(false)
+        expect(await p.current(db), 'this release, a millisecond short').toBe(false)
+
+        // Past it, both do
+        await p.write(db, SECONDS + 0.001)
+        expect(await p.before(db), 'previous release, a millisecond past').toBe(true)
+
+        await p.write(db, SECONDS + 0.001)
+        expect(await p.current(db), 'this release, a millisecond past').toBe(true)
+
+        // And exactly on it, which is the one value they read differently
+        await p.write(db, SECONDS)
+        expect(await p.before(db), 'previous release, exactly the interval').toBe(false)
+        expect(await p.current(db), 'this release, exactly the interval').toBe(true)
+      })
+
+      it(`${name}: only one release takes the claim when both try at once`, async function () {
+        const { db } = await quiet(queues)
+        const p = pair()
+
+        for (let round = 0; round < 3; round++) {
+          await p.write(db, SECONDS * 2)
+
+          const taken = await Promise.all([p.before(db), p.current(db), p.before(db), p.current(db)])
+
+          expect(taken.filter(Boolean), `round ${round}`).toHaveLength(1)
+        }
+      })
+
+      it(`${name}: the claim hands off between the releases in both directions`, async function () {
+        const { db } = await quiet(queues)
+        const p = pair()
+
+        // Whichever release claims, the other is refused straight after: a pass is never run
+        // twice in one interval by a mixed deployment.
+        await p.write(db, SECONDS * 2)
+        expect(await p.before(db), 'previous release takes an old row').toBe(true)
+        expect(await p.current(db), 'this release, straight after').toBe(false)
+
+        await p.write(db, SECONDS * 2)
+        expect(await p.current(db), 'this release takes an old row').toBe(true)
+        expect(await p.before(db), 'previous release, straight after').toBe(false)
+      })
+    }
+
+    it('cron: each release reads back the timestamp the other wrote', async function () {
+      // The cron claim answers with the timestamp it replaced, which is how a pass learns how long
+      // scheduling was off. A mixed deployment has to hand that across the release boundary intact.
+      const { db } = await quiet()
+
+      const cronOn = async () => (await db.executeSql(`SELECT cron_on FROM ${ctx.schema}.version`)).rows[0].cron_on as Date
+
+      await db.executeSql(`UPDATE ${ctx.schema}.version SET cron_on = ${ctx.schema}.job_now() - interval '${SECONDS * 2} seconds'`)
+
+      const byPrevious = await cronOn()
+      const current = await db.executeSql(plans.trySetCronTime(ctx.schema, SECONDS))
+
+      expect(current.rows).toHaveLength(1)
+      expect(new Date(current.rows[0].priorCronOn).getTime(), 'this release reads what the previous one left').toBe(byPrevious.getTime())
+
+      await db.executeSql(`UPDATE ${ctx.schema}.version SET cron_on = ${ctx.schema}.job_now() - interval '${SECONDS * 2} seconds'`)
+
+      const byCurrent = await cronOn()
+      const before = await db.executeSql(previous.cron(ctx.schema, SECONDS))
+
+      expect(before.rows).toHaveLength(1)
+      expect(new Date(before.rows[0].priorCronOn).getTime(), 'and the previous release reads this one back').toBe(byCurrent.getTime())
     })
   })
 
