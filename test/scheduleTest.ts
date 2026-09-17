@@ -502,6 +502,11 @@ describe('timekeeper clock domain', function () {
     return new Timekeeper(db as any, manager as any, { schema: 'test', clock: systemClock, ...config } as any)
   }
 
+  /** How many clock skew readings a stub-backed timekeeper has taken. */
+  function skewChecks (tk: InstanceType<typeof Timekeeper>): number {
+    return (tk.db as any).executed.filter((e: { sql: string }) => e.sql.includes('as time')).length
+  }
+
   // A manager whose send() walks the given script, one entry per job in the batch. An Error entry
   // rejects that job's forward, which is what separates a partial batch failure from a total one.
   function sendingManager (script: (string | null | Error)[]) {
@@ -565,6 +570,88 @@ describe('timekeeper clock domain', function () {
     }
 
     expect(directions).toEqual(['slower', 'faster'])
+  })
+
+  it('runs one clock skew check at a time', async function () {
+    // cacheClockSkew() is public as well as timer-driven, and stop() waits on the in-flight flag:
+    // two overlapping checks would have the first to finish clear it and let stop() return while
+    // the second still held a connection.
+    const tk = makeTk(0, { __test__delay_clock_skew_ms: 50 })
+
+    await Promise.all([tk.cacheClockSkew(), tk.cacheClockSkew(), tk.cacheClockSkew()])
+
+    expect(skewChecks(tk)).toBe(1)
+    expect(tk.checkingSkew).toBe(false)
+  })
+
+  it('schedules the next clock skew check from the end of the last one', async function () {
+    // The check chains a timeout rather than repeating on an interval, so a round trip that runs
+    // long costs its own duration instead of having the next check fire on top of it. What that
+    // must not do is stop: a chain that fails to re-arm leaves the instance reading a skew from
+    // whenever it last managed one, with nothing to say it has gone stale.
+    const clock = new TestClock()
+    const tk = makeTk(0, {
+      clock,
+      clockMonitorIntervalSeconds: 1,
+      // far enough out that no tick below reaches it, so the only timer in play is the skew one
+      cronMonitorIntervalSeconds: 600
+    }, { createQueue: async () => {}, work: async () => {}, offWork: async () => {} })
+
+    // The cron pass is not what is under test here and has no real database to run against
+    tk.on('error', () => {})
+    ;(tk as any).cron = async () => {}
+
+    try {
+      await tk.start()
+
+      // start() takes the first reading itself, before it arms anything
+      expect(skewChecks(tk)).toBe(1)
+
+      for (let i = 2; i <= 4; i++) {
+        await clock.tick(1000)
+        await helper.until(() => skewChecks(tk) === i)
+      }
+    } finally {
+      await tk.stop()
+    }
+
+    // Nothing left armed to fire after the instance stopped
+    const stopped = skewChecks(tk)
+
+    await clock.tick(10_000)
+
+    expect(skewChecks(tk)).toBe(stopped)
+  })
+
+  it('ignores a second start, so nothing is left polling after stop', async function () {
+    // Without the guard the second start arms a second cron timer and a second skew chain over the
+    // fields holding the first. stop() clears the fields it can see, and the orphans keep polling
+    // for the life of the process.
+    const clock = new TestClock()
+    const tk = makeTk(0, {
+      clock,
+      clockMonitorIntervalSeconds: 1,
+      // far enough out that no tick below reaches it, so the skew chain is the only timer in play
+      cronMonitorIntervalSeconds: 600
+    }, { createQueue: async () => {}, work: async () => {}, offWork: async () => {} })
+
+    tk.on('error', () => {})
+    ;(tk as any).cron = async () => {}
+
+    await tk.start()
+    await tk.start()
+
+    // start() takes a reading of its own, so a second one that ran would show up here
+    expect(skewChecks(tk)).toBe(1)
+
+    await tk.stop()
+
+    const afterStop = skewChecks(tk)
+
+    await clock.tick(5000)
+
+    // and nothing the second start armed is still polling behind stop()
+    expect(skewChecks(tk)).toBe(afterStop)
   })
 
   it('stops cleanly when neither monitor was ever started', async function () {

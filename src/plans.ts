@@ -1018,7 +1018,7 @@ export function trySetQueueMonitorTime (schema: string, queues: string[], second
     UPDATE ${schema}.queue
     SET monitor_claim_on = ${schema}.job_now()
     WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
     RETURNING name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats"
   `,
     values: [queues]
@@ -1133,11 +1133,25 @@ export function trySetReindexTime (schema: string, seconds: number) {
   return trySetTimestamp(schema, 'reindex_on', seconds)
 }
 
+// The claim that decides which instance in a deployment runs an interval pass: whoever moves the
+// timestamp owns the interval, and everyone else's UPDATE matches nothing. The COALESCE lets the
+// first claim through while the column is still null.
+//
+// The comparison includes the interval itself. On a real clock that is one instant out of a
+// microsecond-resolution range and changes nothing, but a fake clock has no jitter to hide behind:
+// TestClock fires each timer exactly one period after the last and moves job_now() with it, so the
+// elapsed time here is exactly `seconds` on every tick - the one value a strict `>` refuses every
+// time, which ran a pass on every other tick. Nothing is accepted early either way, so the looser
+// comparison costs nothing on a real clock.
+//
+// It is not what keeps a real deployment's passes on schedule. That is the timer: see ClaimTimer,
+// which anchors the next attempt to the moment this statement stamps the row rather than to a grid
+// fixed before it ran.
 function trySetTimestamp (schema: string, column: string, seconds: number) {
   return `
     UPDATE ${schema}.version
     SET ${column} = ${schema}.job_now()
-    WHERE EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+    WHERE EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
     RETURNING true
   `
 }
@@ -1148,7 +1162,7 @@ function trySetQueueTimestamp (schema: string, queues: string[], column: string,
     UPDATE ${schema}.queue
     SET ${column} = ${schema}.job_now()
     WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
     RETURNING name
   `,
     values: [queues]
