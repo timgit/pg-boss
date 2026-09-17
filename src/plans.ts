@@ -1018,7 +1018,7 @@ export function trySetQueueMonitorTime (schema: string, queues: string[], second
     UPDATE ${schema}.queue
     SET monitor_claim_on = ${schema}.job_now()
     WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) > ${claimThreshold(seconds)}
     RETURNING name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats"
   `,
     values: [queues]
@@ -1133,11 +1133,26 @@ export function trySetReindexTime (schema: string, seconds: number) {
   return trySetTimestamp(schema, 'reindex_on', seconds)
 }
 
+// How far short of `seconds` a claim may come and still be taken. Each instance tries on a client
+// timer whose period is the same `seconds`, measured on its monotonic clock, while the elapsed
+// time below is the row's age on the server's wall clock, to the microsecond. The two put a tick a
+// few milliseconds either side of the period: Node measures the next interval from just before the
+// callback, floored to a millisecond, and the two clocks do not run at quite the same rate.
+// Compared strictly against `seconds`, the ticks that land short lose, and the next tick claims at
+// twice the interval. For the cron pass at the 45-second ceiling that is 90 seconds, wider than the
+// 60-second window a pass has to land inside, so the occurrences outside it are not sent. Capped at
+// a tenth of the interval so the shortest intervals keep excluding a second instance.
+const CLAIM_TOLERANCE_SECONDS = 1
+
+function claimThreshold (seconds: number): number {
+  return seconds - Math.min(CLAIM_TOLERANCE_SECONDS, seconds / 10)
+}
+
 function trySetTimestamp (schema: string, column: string, seconds: number) {
   return `
     UPDATE ${schema}.version
     SET ${column} = ${schema}.job_now()
-    WHERE EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+    WHERE EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${claimThreshold(seconds)}
     RETURNING true
   `
 }
@@ -1148,7 +1163,7 @@ function trySetQueueTimestamp (schema: string, queues: string[], column: string,
     UPDATE ${schema}.queue
     SET ${column} = ${schema}.job_now()
     WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${seconds}
+      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) > ${claimThreshold(seconds)}
     RETURNING name
   `,
     values: [queues]

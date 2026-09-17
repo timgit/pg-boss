@@ -551,10 +551,13 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    *
    * The gap is (lastPass, windowStart]: older than the due window, so no pass has sent it, and
    * newer than the moment an instance last ran a pass, so no pass has skipped it either. A pass
-   * claims at most `cronMonitorIntervalSeconds` after the one before it, 45 seconds at the
+   * claims about `cronMonitorIntervalSeconds` after the one before it, 45 seconds at the
    * configurable ceiling, against a 60-second window, so the range is empty while passes keep
    * running and fills up when they stop: a deployment that is down, between deploys, or running
-   * with scheduling switched off.
+   * with scheduling switched off. That holds because the claim accepts a tick that lands a little
+   * short of the interval (see trySetTimestamp): compared strictly, a tick that lands a few
+   * milliseconds short loses the claim and the pass after it comes twice the interval late, outside
+   * the window at the ceiling.
    *
    * The most recent occurrence rather than all of them, which is the whole of what `once` promises:
    * a job carries the schedule's `data` and nothing else, so a job per missed occurrence would be
