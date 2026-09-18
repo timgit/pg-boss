@@ -902,11 +902,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.config.clock.clearInterval(this.queueCacheInterval)
     this.config.clock.clearInterval(this.wipInterval)
 
-    await Promise.allSettled(
+    // offWork stops every worker on a queue, so iterate queue names rather than workers - otherwise
+    // a localConcurrency of N re-stops all N workers N times and registers N pending cleanups.
+    const names = new Set(
       [...this.workers.values()]
         .filter(worker => !INTERNAL_QUEUES[worker.name])
-        .map(async worker => await this.offWork(worker.name, { wait: false }))
+        .map(worker => worker.name)
     )
+
+    await Promise.allSettled([...names].map(name => this.offWork(name, { wait: false })))
 
     // Clean up all local group tracking on full stop
     this.#localGroupConfig.clear()
@@ -1183,8 +1187,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // a worker on a different queue.
     const query = (i: Worker<any>) => i.name === name && (options?.id ? (i.id === options.id || i.workId === options.id) : true)
 
-    // A waiting caller must also drain workers that an earlier offWork call is stopping.
-    const workers = this.getWorkers().filter(i => query(i) && !i.stopped)
+    // Every match is drained, including one an earlier offWork is already stopping: `wait` promises
+    // the caller that current jobs have finished, and that is not weaker because someone else asked
+    // first. Worker.stop() is idempotent and removeWorker() is a Map.delete, so overlapping calls
+    // converge on the one run promise instead of racing.
+    const workers = this.getWorkers().filter(query)
 
     if (workers.length === 0) {
       return

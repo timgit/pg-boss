@@ -137,6 +137,11 @@ class Worker<T = unknown> {
   }
 
   async stop (): Promise<void> {
+    // Idempotent: run() has already reset `stopping` and exited, so a second stop would strand the
+    // worker in `stopping` with nothing left to clear it. Overlapping stops on a *live* worker are
+    // fine - they all await the one `runPromise` - so only the settled case needs the guard.
+    if (this.stopped) return
+
     this.stopping = true
     this.state = WORKER_STATES.stopping
 

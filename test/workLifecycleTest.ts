@@ -308,6 +308,46 @@ describe('work lifecycle', function () {
       expect(job.output).toBeTruthy()
     }
   })
+
+  it('a graceful stop drains every worker on a localConcurrency queue', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const localConcurrency = 3
+    const jobIds: (string | null)[] = []
+    let started = 0
+    let completed = 0
+
+    for (let i = 0; i < localConcurrency; i++) {
+      jobIds.push(await ctx.boss.send(ctx.schema, { index: i }, { retryLimit: 0 }))
+    }
+
+    // Manager.stop() iterates queue names, not workers, so one offWork call covers all three of
+    // these workers and registers one pending cleanup. The graceful stop has to wait out that
+    // cleanup for every worker, not just the one that happened to be reached first.
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async () => {
+      started++
+      await delay(500)
+      completed++
+    })
+
+    for (let i = 0; i < 50; i++) {
+      if (started >= localConcurrency) break
+      await delay(100)
+    }
+    expect(started).toBe(localConcurrency)
+
+    await ctx.boss.stop({ timeout: 5000 })
+
+    expect(completed).toBe(localConcurrency)
+
+    await ctx.boss.start()
+
+    for (const jobId of jobIds) {
+      assertTruthy(jobId)
+      const job = await ctx.boss.getJobById<{}>(ctx.schema, jobId)
+      expect(job?.state).toBe('completed')
+    }
+  })
 })
 
 describe('work lifecycle shutdown errors', function () {

@@ -335,6 +335,64 @@ describe('work', function () {
     expect(boss.getWipData().filter(worker => worker.id === id)).toHaveLength(0)
   })
 
+  it('a second non-waiting offWork also drains the worker the first one is stopping', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+
+    let startHandler: () => void = () => { throw new Error('Handler promise not initialized') }
+    let releaseHandler: () => void = () => { throw new Error('Release promise not initialized') }
+    const started = new Promise<void>(resolve => { startHandler = resolve })
+    const release = new Promise<void>(resolve => { releaseHandler = resolve })
+
+    await boss.send(ctx.schema)
+
+    let finished = false
+    const id = await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+      startHandler()
+      await release
+      finished = true
+    })
+
+    await started
+
+    // Both calls opt out of waiting, so neither may block on the held handler - but the second one
+    // must still queue a real cleanup rather than short-circuiting, because that cleanup is what
+    // stop({ graceful: true }) drains through hasPendingCleanups().
+    await boss.offWork(ctx.schema, { wait: false })
+    await boss.offWork(ctx.schema, { wait: false })
+
+    expect(finished).toBe(false)
+    expect(boss.getWipData().filter(worker => worker.id === id)).toHaveLength(1)
+
+    releaseHandler()
+
+    // stop() waits out the pending cleanups both calls registered.
+    await boss.stop({ timeout: 5000 })
+    ctx.boss = undefined
+
+    expect(finished).toBe(true)
+  })
+
+  it('offWork resolves without error when no worker matches', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+
+    // Never worked, so nothing matches by name.
+    await boss.offWork(ctx.schema)
+
+    const id = await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {})
+
+    // Matches the queue but not the id, and the id belongs to a worker that exists.
+    await boss.offWork(ctx.schema, { id: 'e7c3a1b2-0000-4000-8000-000000000000' })
+    expect(boss.getWipData().filter(worker => worker.id === id)).toHaveLength(1)
+
+    await boss.offWork(ctx.schema)
+    expect(boss.getWipData().filter(worker => worker.id === id)).toHaveLength(0)
+
+    // Already drained: the same call again is a no-op rather than a second stop.
+    await boss.offWork(ctx.schema)
+  })
+
   it('offWork by returned id stops every worker spawned under localConcurrency', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
