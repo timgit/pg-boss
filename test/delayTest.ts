@@ -1,12 +1,13 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
-import { delay } from '../src/tools.ts'
+import { TestClock } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 describe('delayed jobs', function () {
   it('should wait until after an int (in seconds)', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
     const startAfter = 2
 
@@ -16,7 +17,7 @@ describe('delayed jobs', function () {
 
     expect(job).toBeFalsy()
 
-    await delay(startAfter * 1000)
+    await clock.tick(startAfter * 1000)
 
     const [job2] = await ctx.boss.fetch(ctx.schema)
 
@@ -24,9 +25,10 @@ describe('delayed jobs', function () {
   })
 
   it('should wait until after a date time string', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
-    const date = new Date()
+    const date = new Date(clock.now())
 
     date.setUTCSeconds(date.getUTCSeconds() + 2)
 
@@ -38,7 +40,7 @@ describe('delayed jobs', function () {
 
     expect(job).toBeFalsy()
 
-    await delay(5000)
+    await clock.tick(2000)
 
     const job2 = await ctx.boss.fetch(ctx.schema)
 
@@ -46,9 +48,10 @@ describe('delayed jobs', function () {
   })
 
   it('should wait until after a date object', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
-    const date = new Date()
+    const date = new Date(clock.now())
     date.setUTCSeconds(date.getUTCSeconds() + 2)
 
     const startAfter = date
@@ -59,7 +62,7 @@ describe('delayed jobs', function () {
 
     expect(job).toBeFalsy()
 
-    await delay(2000)
+    await clock.tick(2000)
 
     const [job2] = await ctx.boss.fetch(ctx.schema)
 
@@ -67,9 +70,10 @@ describe('delayed jobs', function () {
   })
 
   it('should work with sendAfter() and a date object', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
-    const date = new Date()
+    const date = new Date(clock.now())
     date.setUTCSeconds(date.getUTCSeconds() + 2)
 
     const startAfter = date
@@ -80,7 +84,7 @@ describe('delayed jobs', function () {
 
     expect(job).toBeFalsy()
 
-    await delay(2000)
+    await clock.tick(2000)
 
     const [job2] = await ctx.boss.fetch(ctx.schema)
 

@@ -1,4 +1,5 @@
 import EventEmitter from 'node:events'
+import { ClaimTimer } from './claimTimer.ts'
 import * as plans from './plans.ts'
 import { delay } from './tools.ts'
 import * as types from './types.ts'
@@ -11,7 +12,7 @@ const events = {
 class Bam extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #working: boolean
-  #pollInterval: NodeJS.Timeout | undefined
+  #pollTimer: ClaimTimer | undefined
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
 
@@ -37,19 +38,22 @@ class Bam extends EventEmitter implements types.EventsMixin {
     if (!this.#stopped) return
     this.#stopped = false
 
-    setImmediate(() => this.#onPoll())
-    this.#pollInterval = setInterval(
-      () => this.#onPoll(),
-      this.#config.bamIntervalSeconds * 1000
+    this.#pollTimer = new ClaimTimer(
+      this.#config.clock,
+      this.#config.bamIntervalSeconds,
+      () => this.#onPoll()
     )
+
+    setImmediate(() => this.#onPoll())
+    this.#pollTimer.start()
   }
 
   async stop () {
     if (this.#stopped) return
     this.#stopped = true
-    if (this.#pollInterval) {
-      clearInterval(this.#pollInterval)
-      this.#pollInterval = undefined
+    if (this.#pollTimer) {
+      this.#pollTimer.stop()
+      this.#pollTimer = undefined
     }
     while (this.#working) {
       await delay(10)
@@ -75,6 +79,10 @@ class Bam extends EventEmitter implements types.EventsMixin {
         this.#config.bamIntervalSeconds
       )
       const { rows } = await this.#db.executeSql(sql)
+
+      // The row is stamped; the next attempt is measured from here rather than from the tick that
+      // started this one. See ClaimTimer.
+      this.#pollTimer?.anchor()
 
       if (rows.length === 1) {
         await this.#processCommands()

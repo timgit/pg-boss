@@ -1,4 +1,5 @@
 import EventEmitter from 'node:events'
+import { ClaimTimer } from './claimTimer.ts'
 import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import { delay, unwrapSQLResult } from './tools.ts'
@@ -118,7 +119,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #stopping: boolean
   #maintaining: boolean | undefined
-  #superviseInterval: NodeJS.Timeout | undefined
+  #superviseTimer: ClaimTimer | undefined
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
   #manager: Manager
@@ -177,10 +178,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
   async start () {
     if (this.#stopped) {
       this.#stopping = false
-      this.#superviseInterval = setInterval(
-        () => this.#onSupervise(),
-        this.#config.superviseIntervalSeconds! * 1000
+      this.#superviseTimer = new ClaimTimer(
+        this.#config.clock,
+        this.#config.superviseIntervalSeconds!,
+        () => this.#onSupervise()
       )
+      this.#superviseTimer.start()
       this.#stopped = false
     }
   }
@@ -188,7 +191,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   async stop () {
     if (!this.#stopped) {
       this.#stopping = true
-      if (this.#superviseInterval) clearInterval(this.#superviseInterval)
+      if (this.#superviseTimer) this.#superviseTimer.stop()
       this.#stopped = true
       while (this.#maintaining) {
         await delay(10)
@@ -212,6 +215,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       query = { text: query, values: [] }
     }
 
+    // Real time: a stopwatch around I/O reads zero on a frozen clock.
     const started = Date.now()
 
     const result = unwrapSQLResult(await this.#db.executeSql(query.text, query.values))
@@ -246,7 +250,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       const queues = await this.#manager.getQueues()
 
-      !this.#stopped && (await this.supervise(queues))
+      // The timer's own pass is the only one that re-anchors it. A supervise() call from the
+      // application stamps the same claims, but it may be scoped to a single queue, and anchoring
+      // on it would push the background pass - the one that covers every other queue - out by a
+      // full interval each time. An application polling one hot queue would starve the rest.
+      !this.#stopped && (await this.#supervisePass(queues, undefined, () => this.#superviseTimer?.anchor()))
     } catch (err) {
       this.emit(events.error, err)
     } finally {
@@ -280,6 +288,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   async supervise (value?: string | types.QueueResult[], options?: types.SuperviseOptions) {
+    await this.#supervisePass(value, options)
+  }
+
+  // onClaimsSettled fires once every monitor and maintain claim in the pass has been stamped, which
+  // is where the background timer measures its next attempt from. Only #onSupervise passes one.
+  async #supervisePass (value?: string | types.QueueResult[], options?: types.SuperviseOptions, onClaimsSettled?: () => void) {
     let queues: types.QueueResult[]
 
     if (Array.isArray(value)) {
@@ -321,6 +335,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
         await this.#maintain(table, chunk)
       }
     }
+
+    // Every monitor and maintain claim in this pass has now been stamped, so the next pass is
+    // measured from here rather than from the tick that started this one. See ClaimTimer. Before
+    // the tail below and not at the end of the pass: the tail ends in a rebuild that is DDL and can
+    // run for seconds, and the claims must not be measured from the far side of it.
+    onClaimsSettled?.()
 
     if (this.#stopping) return
 
@@ -852,8 +872,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
         const { rows } = await this.#executeQuery(claim)
         if (!rows.length) return
       } else {
-        if (Date.now() < this.#detectOnly) return
-        this.#detectOnly = Date.now() + this.#config.reindexIntervalSeconds * 1000
+        if (this.#config.clock.now() < this.#detectOnly) return
+        this.#detectOnly = this.#config.clock.now() + this.#config.reindexIntervalSeconds * 1000
       }
     }
 

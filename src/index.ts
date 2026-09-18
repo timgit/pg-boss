@@ -1,3 +1,4 @@
+import assert from 'node:assert'
 import EventEmitter from 'node:events'
 import * as Attorney from './attorney.ts'
 import Contractor from './contractor.ts'
@@ -8,6 +9,7 @@ import Bam from './bam.ts'
 import Navigator from './navigator.ts'
 import Notifier from './notifier.ts'
 import { delay } from './tools.ts'
+import { isAttachable } from './clock.ts'
 import type * as types from './types.ts'
 import * as plans from './plans.ts'
 import DbDefault from './db.ts'
@@ -50,11 +52,11 @@ export function getRollbackPlans (schema?: string, version?: number, options?: t
 }
 
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
-  #stoppingOn: number | null
   #stopped: boolean
   #started: boolean | undefined
   #startingPromise: Promise<this> | null = null
   #stoppingPromise: Promise<void> | null = null
+  #attachedClock: AsyncDisposable | null = null
   #config: types.ResolvedConstructorOptions
   #db: (types.IDatabase & { _pgbdb?: false }) | DbDefault
   #boss: Boss
@@ -69,7 +71,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   constructor (options: types.ConstructorOptions)
   constructor (value: string | types.ConstructorOptions) {
     super()
-    this.#stoppingOn = null
     this.#stopped = true
 
     const config = Attorney.getConfig(value)
@@ -153,6 +154,17 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   async #doStart (): Promise<this> {
+    // Before anything opens a connection or runs a statement. The schema clock is gated on a
+    // session setting, and a session that misses it reads real time while its peers read fake
+    // time - silently, and differently on every checkout. Declaring the setup here means no
+    // connection the adapter opens for the contractor, or for any later work, can predate it.
+    if (isAttachable(this.#config.clock)) {
+      assert(typeof this.#db.setSessionStatements === 'function',
+        'configuration assert: this db adapter does not implement setSessionStatements(), so a TestClock cannot reach every session it opens. Implement it to run the given statements on each new connection (or once, if the adapter has a single session).')
+
+      await this.#db.setSessionStatements([plans.enableClockOverride()])
+    }
+
     if (this.#db._pgbdb && !this.#db.opened) {
       await this.#db.open()
     }
@@ -163,6 +175,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#contractor.start()
     } else {
       await this.#contractor.check()
+    }
+
+    if (isAttachable(this.#config.clock)) {
+      this.#attachedClock = await this.#config.clock.attach({ db: this.#db, schema: this.#config.schema })
     }
 
     await this.#manager.start()
@@ -244,7 +260,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     timeout = Math.max(timeout, 1000)
 
-    this.#stoppingOn = Date.now()
     this.#stoppingPromise = this.#doStop(close, graceful, timeout)
 
     try {
@@ -255,42 +270,63 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   async #doStop (close: boolean, graceful: boolean, timeout: number): Promise<void> {
-    try {
-      await this.#notifier.stop()
-      await this.#manager.stop()
-      await this.#timekeeper.stop()
-      await this.#boss.stop()
-      await this.#navigator.stop()
-      await this.#bam.stop()
+    await this.#notifier.stop()
+    await this.#manager.stop()
+    await this.#timekeeper.stop()
+    await this.#boss.stop()
+    await this.#navigator.stop()
+    await this.#bam.stop()
 
-      const shutdown = async () => {
-        await this.#manager.failWip()
+    const shutdown = async () => {
+      await this.#manager.failWip()
 
-        if (close) {
-          await this.#closeDb()
+      const attachment = this.#attachedClock
+      this.#attachedClock = null
+
+      try {
+        if (attachment) {
+          await attachment[Symbol.asyncDispose]()
         }
-
-        this.#stopped = true
-        this.#started = false
-
-        this.emit(events.stopped)
+      } finally {
+        // Stop stamping the opt-in on connections opened after this point. Harmless if it lingers
+        // - dispose restores the plain function body, which never reads the setting - but an
+        // instance restarted without a clock should not keep setting it. Undone on the same
+        // condition #doStart declared it on, so a start() that threw before attach() and a dispose
+        // that fails both still clear it.
+        if (isAttachable(this.#config.clock)) {
+          await this.#db.setSessionStatements?.([])
+        }
       }
 
-      if (!graceful) {
-        await shutdown()
-        return
+      if (close) {
+        await this.#closeDb()
       }
 
-      while ((Date.now() - this.#stoppingOn!) < timeout && this.#manager.hasPendingCleanups()) {
+      this.#stopped = true
+      this.#started = false
+
+      this.emit(events.stopped)
+    }
+
+    if (!graceful) {
+      await shutdown()
+      return
+    }
+
+    // Real time, not the configured clock: the deadline bounds shutdown I/O, and under a test
+    // clock nothing would tick it while the test is blocked inside stop().
+    const deadline = { reached: false }
+    const deadlineTimer = setTimeout(() => { deadline.reached = true }, timeout)
+
+    try {
+      while (!deadline.reached && this.#manager.hasPendingCleanups()) {
         await delay(500)
       }
-
-      await shutdown()
     } finally {
-      // Reset unconditionally (success or throw) so a stop() that fails partway can be retried
-      // instead of every future stop()/start() call silently no-op-ing forever on the stale marker.
-      this.#stoppingOn = null
+      clearTimeout(deadlineTimer)
     }
+
+    await shutdown()
   }
 
   async #closeDb (): Promise<void> {
@@ -529,7 +565,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   detectSchemaDrift (): Promise<types.SchemaDriftReport> {
-    return this.#contractor.detectDrift()
+    return this.#contractor.detectDrift({ clockOverride: this.#attachedClock !== null })
   }
 
   /**
@@ -581,9 +617,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 }
 
+export { systemClock, TestClock } from './clock.ts'
+export { CLOCK_OVERRIDE_SETTING, enableClockOverride, disableClockOverride } from './plans.ts'
+
 export type {
   BackendProfile,
   BackendOptions,
+  AttachableClock,
+  Clock,
+  ClockTimer,
   BamEntry,
   BamEvent,
   BamStatusSummary,

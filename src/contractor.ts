@@ -137,7 +137,7 @@ class Contractor {
   // Presence-level schema drift scan: compares the managed indexes the code expects against the live
   // catalog. Partitioned vs. non-partitioned is read from the database (job_common presence), and the
   // per-queue policy indexes are computed from the queue table, so conditional indexes are handled.
-  async detectDrift (): Promise<types.SchemaDriftReport> {
+  async detectDrift (options: { clockOverride?: boolean } = {}): Promise<types.SchemaDriftReport> {
     const schema = this.config.schema
 
     const probe = await this.db.executeSql(plans.jobCommonExists(schema))
@@ -238,11 +238,34 @@ class Contractor {
     return drifter.computeSchemaDrift({
       indexes: { expected: expectedIndexes, live, building },
       tables: { expected: plans.expectedManagedTables(schema, partitioned, partitions), live: liveTables ?? [...new Set(liveColumns.map(c => c.table))] },
-      functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned), live: liveFunctions } : undefined,
+      functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned, options), live: liveFunctions } : undefined,
       columns: { expected: expectedColumns, live: liveColumns },
       constraints: canonicalPg ? { expected: plans.expectedManagedConstraints(schema, partitioned), live: liveConstraints } : undefined,
       enum: { name: 'job_state', expected: plans.EXPECTED_JOB_STATES, actual: enumLabels }
     })
+  }
+
+  // A TestClock swaps the body of job_now() and only puts it back when its handle is disposed, so a
+  // run killed mid-test (Ctrl-C, a crashed suite, a bailed runner) leaves the override installed.
+  // Correctness survives - the body falls through to pg_catalog.now() for any session that has not
+  // opted in - but the override's subquery defeats inlining, so every statement that reads the clock
+  // pays a per-row function call instead of a constant-folded timestamp, permanently and silently.
+  // The leftover travels with the database, which matters most for an embedded one whose data
+  // directory gets committed or shipped.
+  //
+  // Best-effort in both directions: a backend or a role that cannot read pg_proc is not evidence of
+  // a problem, and must never block a start that would otherwise succeed.
+  async detectClockOverride (): Promise<boolean> {
+    try {
+      const result = await this.db.executeSql(plans.getClockFunctionSource(this.config.schema))
+      return plans.clockFunctionIsOverridden(result.rows[0]?.source)
+    } catch {
+      return false
+    }
+  }
+
+  async restoreClockFunction (): Promise<void> {
+    await this.db.executeSql(plans.restoreClockFunction(this.config.schema))
   }
 
   async check () {

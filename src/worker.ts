@@ -1,4 +1,4 @@
-import { type AbortablePromise, delay } from './tools.ts'
+import { type AbortablePromise, clockDelay } from './tools.ts'
 import type * as types from './types.ts'
 
 const WORKER_STATES = {
@@ -17,6 +17,7 @@ interface WorkerOptions<T> {
   fetch: () => Promise<types.Job<T>[]>
   onFetch: (jobs: types.Job<T>[]) => Promise<void>
   onError: (err: any) => void
+  clock: types.Clock
 }
 
 class Worker<T = unknown> {
@@ -28,9 +29,10 @@ class Worker<T = unknown> {
   readonly onFetch: (jobs: types.Job<T>[]) => Promise<void>
   readonly onError: (err: any) => void
   readonly resolveInterval: (lastFetchCount: number) => number
+  readonly clock: types.Clock
 
   jobs: types.Job<T>[] = []
-  createdOn = Date.now()
+  createdOn: number
   state: types.WorkerState = WORKER_STATES.created
   lastFetchedOn: number | null = null
   lastJobStartedOn: number | null = null
@@ -50,7 +52,9 @@ class Worker<T = unknown> {
   private beenNotified = false
   private runPromise: Promise<void> | null = null
 
-  constructor ({ id, workId, name, options, resolveInterval, fetch, onFetch, onError }: WorkerOptions<T>) {
+  constructor ({ id, workId, name, options, resolveInterval, fetch, onFetch, onError, clock }: WorkerOptions<T>) {
+    this.clock = clock
+    this.createdOn = clock.now()
     this.id = id
     this.workId = workId
     this.name = name
@@ -69,7 +73,7 @@ class Worker<T = unknown> {
     this.state = WORKER_STATES.active
 
     while (!this.stopping) {
-      const started = Date.now()
+      const started = this.clock.now()
 
       // Number of jobs the last fetch returned; stays 0 on error so a failed fetch backs
       // off to normal polling instead of hot-looping in burst mode.
@@ -79,7 +83,7 @@ class Worker<T = unknown> {
         this.beenNotified = false
         const jobs = await this.fetch()
 
-        this.lastFetchedOn = Date.now()
+        this.lastFetchedOn = this.clock.now()
 
         if (jobs) {
           fetchedCount = jobs.length
@@ -89,12 +93,12 @@ class Worker<T = unknown> {
 
           await this.onFetch(jobs)
 
-          this.lastJobEndedOn = Date.now()
+          this.lastJobEndedOn = this.clock.now()
 
           this.jobs = []
         }
       } catch (err: any) {
-        this.lastErrorOn = Date.now()
+        this.lastErrorOn = this.clock.now()
         this.lastError = err
 
         err.message = `${err.message} (Queue: ${this.name}, Worker: ${this.id})`
@@ -102,7 +106,7 @@ class Worker<T = unknown> {
         this.onError(err)
       }
 
-      const duration = Date.now() - started
+      const duration = this.clock.now() - started
 
       this.lastJobDuration = duration
 
@@ -113,7 +117,7 @@ class Worker<T = unknown> {
       const interval = this.resolveInterval(fetchedCount)
 
       if (!this.stopping && !this.beenNotified && (interval - duration) > 100) {
-        this.loopDelayPromise = delay(interval - duration)
+        this.loopDelayPromise = clockDelay(this.clock, interval - duration)
         await this.loopDelayPromise
         this.loopDelayPromise = null
       }
@@ -133,6 +137,11 @@ class Worker<T = unknown> {
   }
 
   async stop (): Promise<void> {
+    // Idempotent: run() has already reset `stopping` and exited, so a second stop would strand the
+    // worker in `stopping` with nothing left to clear it. Overlapping stops on a *live* worker are
+    // fine - they all await the one `runPromise` - so only the settled case needs the guard.
+    if (this.stopped) return
+
     this.stopping = true
     this.state = WORKER_STATES.stopping
 

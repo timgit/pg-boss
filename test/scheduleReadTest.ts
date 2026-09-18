@@ -1,13 +1,14 @@
 import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import Timekeeper from '../src/timekeeper.ts'
+import { systemClock } from '../src/clock.ts'
 import { ctx } from './hooks.ts'
 
 // A timekeeper over a stub database, for the paths that never reach one: previewSchedule() is pure
 // arithmetic, and getSchedule() checks its argument before it queries anything.
 function makeTk (config: object = {}) {
   const db = { executeSql: async () => ({ rows: [] }) }
-  return new Timekeeper(db as any, {} as any, { schema: 'test', ...config } as any)
+  return new Timekeeper(db as any, {} as any, { schema: 'test', clock: systemClock, ...config } as any)
 }
 
 describe('getSchedule', function () {

@@ -1,18 +1,20 @@
 import { expect, it } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
-import { delay } from '../src/tools.ts'
+import { TestClock } from '../src/index.ts'
 import { ctx } from './hooks.ts'
+import type { JobWithMetadata } from '../src/types.ts'
 
 describe('retries', function () {
   it('should retry a job that didn\'t complete', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
     const jobId = await ctx.boss.send({ name: ctx.schema, options: { expireInSeconds: 1, retryLimit: 1 } })
 
     const [try1] = await ctx.boss.fetch(ctx.schema)
 
-    await delay(1000)
+    await clock.tick(1001)
     await ctx.boss.supervise()
 
     const [try2] = await ctx.boss.fetch(ctx.schema)
@@ -36,7 +38,8 @@ describe('retries', function () {
   })
 
   it('should retry with a fixed delay', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
     const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 1, retryDelay: 1 })
 
@@ -48,7 +51,7 @@ describe('retries', function () {
 
     expect(job1).toBeFalsy()
 
-    await delay(1000)
+    await clock.tick(1000)
 
     const [job2] = await ctx.boss.fetch(ctx.schema)
 
@@ -56,21 +59,34 @@ describe('retries', function () {
   })
 
   it('should retry with a exponential backoff', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
-    let processCount = 0
-    const retryLimit = 4
+    const retryDelay = 2
 
-    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 1 }, async () => {
-      ++processCount
-      throw new Error('retry')
-    })
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 4, retryDelay, retryBackoff: true })
+    assertTruthy(jobId)
 
-    await ctx.boss.send(ctx.schema, null, { retryLimit, retryDelay: 2, retryBackoff: true })
+    // Each failure pushes start_after out by retryDelay * (2^n / 2) * (1 + jitter), so the floor of
+    // every backoff doubles: [2, 4), then [4, 8), then [8, 16) seconds.
+    for (const attempt of [1, 2, 3]) {
+      const [job] = await ctx.boss.fetch(ctx.schema)
+      expect(job?.id).toBe(jobId)
 
-    await delay(8000)
+      const failedAt = clock.now()
+      await ctx.boss.fail(ctx.schema, jobId)
 
-    expect(processCount < retryLimit).toBeTruthy()
+      const retried: JobWithMetadata | null = await ctx.boss.getJobById(ctx.schema, jobId)
+      assertTruthy(retried)
+      const backoffSeconds = (new Date(retried.startAfter).getTime() - failedAt) / 1000
+      const floor = retryDelay * Math.pow(2, attempt) / 2
+
+      expect(backoffSeconds).toBeGreaterThanOrEqual(floor)
+      expect(backoffSeconds).toBeLessThan(floor * 2)
+
+      expect(await ctx.boss.fetch(ctx.schema)).toHaveLength(0)
+      await clock.tick(floor * 2 * 1000)
+    }
   })
 
   it('should apply nonzero backoff when retryBackoff is set but retryDelay is not (#839)', async function () {
@@ -99,32 +115,37 @@ describe('retries', function () {
     expect(immediate).toBeFalsy()
   })
 
-  it('should limit retry delay with exponential backoff', { timeout: 15000 }, async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+  it('should limit retry delay with exponential backoff', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
-    const startAfters: Date[] = []
+    const retryLimit = 4
     const retryDelayMax = 3
 
-    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 0.5, includeMetadata: true }, async ([job]) => {
-      startAfters.push(job.startAfter)
-      throw new Error('retry')
-    })
-
-    await ctx.boss.send(ctx.schema, null, {
-      retryLimit: 4,
+    const jobId = await ctx.boss.send(ctx.schema, null, {
+      retryLimit,
       retryDelay: 1,
       retryBackoff: true,
       retryDelayMax
     })
+    assertTruthy(jobId)
 
-    await delay(13000)
+    // Uncapped, the third and fourth backoffs would exceed the cap; every one must stay under it.
+    for (let attempt = 0; attempt < retryLimit; attempt++) {
+      const [job] = await ctx.boss.fetch(ctx.schema)
+      expect(job?.id).toBe(jobId)
 
-    const delays = startAfters.map((startAfter, index) =>
-      index === 0 ? 0 : (startAfter.getTime() - startAfters[index - 1].getTime()) / 1000)
+      const failedAt = clock.now()
+      await ctx.boss.fail(ctx.schema, jobId)
 
-    for (const d of delays) {
-      // the +1 eval here is to allow latency from the work() polling interval
-      expect(d < (retryDelayMax + 1)).toBeTruthy()
+      const retried: JobWithMetadata | null = await ctx.boss.getJobById(ctx.schema, jobId)
+      assertTruthy(retried)
+      const backoffSeconds = (new Date(retried.startAfter).getTime() - failedAt) / 1000
+
+      expect(backoffSeconds).toBeGreaterThan(0)
+      expect(backoffSeconds).toBeLessThanOrEqual(retryDelayMax)
+
+      await clock.tick(retryDelayMax * 1000)
     }
   })
 

@@ -18,7 +18,7 @@ To change how often schedules are checked, you can set `cronMonitorIntervalSecon
 
 In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sent even if multiple instances are running.
 
-If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
+If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds`. Cron evaluation reads the time from the instance's [`clock`](./constructor.md#newoptions) option, so a [`TestClock`](./testing.md#controlling-time) can move a schedule to its next occurrence without waiting for it. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
 
 ```js
 {
@@ -100,7 +100,7 @@ A pass sends the occurrences of the preceding 60 seconds, so an occurrence that 
 await boss.schedule('report', '0 3 * * *', null, { missed: 'once' })
 ```
 
-The gap runs from the last time any instance ran a cron pass, which pg-boss records on its version row, to the moment the due window opens. Passes claim every `cronMonitorIntervalSeconds` (30 by default, 45 at the ceiling) against a 60-second window, so a deployment whose passes keep running has no gap and the option costs it nothing. A gap opens when the passes stop: the deployment is down, in the middle of a deploy, or running with `schedule: false`.
+The gap runs from the last time any instance ran a cron pass, which pg-boss records on its version row, to the moment the due window opens. Passes claim every `cronMonitorIntervalSeconds` (30 by default, 45 at the ceiling) against a 60-second window, so a deployment whose passes keep running has no gap and the option costs it nothing. Each pass is scheduled from the moment the one before it claimed, so the spacing is the interval and never a multiple of it. A gap opens when the passes stop: the deployment is down, in the middle of a deploy, or running with `schedule: false`.
 
 A schedule never reaches back past its own row. `created_on` bounds the range, so a schedule written while nothing was running starts from when it was written rather than from the start of the outage. Re-running `schedule()` for an existing `(name, key)` leaves that bound where it is, which is what lets a deployment that registers its schedules on every boot still catch up on the outage it just ended.
 

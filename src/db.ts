@@ -3,6 +3,7 @@ import pg from 'pg'
 import assert from 'node:assert'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
+import { systemClock } from './clock.ts'
 
 // Keep silent network failures below the default 30-second notify polling backstop: in the
 // worst case a failure happens immediately after a successful check, then takes one interval,
@@ -19,12 +20,18 @@ export const TRANSACTION_ROLLBACK_TIMEOUT_MS = 5000
 class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   private pool!: pg.Pool
   private config: types.DatabaseOptions
+  private clock: types.Clock
+  // Statements every pooled connection must run before it is handed out. Set by PgBoss during
+  // start(), before open(), so no connection this pool creates can miss them.
+  private sessionStatements: string[] = []
   /** @internal */
   readonly _pgbdb: true
   opened: boolean
 
-  constructor (config: types.DatabaseOptions) {
+  constructor (config: types.DatabaseOptions & { clock?: types.Clock }) {
     super()
+
+    this.clock = config.clock ?? systemClock
 
     config.application_name = config.application_name || 'pgboss'
     config.connectionTimeoutMillis ??= 10000
@@ -42,6 +49,16 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   async open () {
     this.pool = new pg.Pool(this.config)
     this.pool.on('error', error => this.emit('error', error))
+
+    // Queued on the client before any checkout query, so a connection cannot run a pg-boss
+    // statement before its session setup. Reads the field on each connect rather than closing over
+    // it, so a set that arrives between connections still applies to the ones that follow.
+    this.pool.on('connect', client => {
+      for (const statement of this.sessionStatements) {
+        client.query(statement).catch(error => this.emit('error', error))
+      }
+    })
+
     this.opened = true
   }
 
@@ -49,6 +66,42 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     if (!this.pool.ending) {
       this.opened = false
       await this.pool.end()
+    }
+  }
+
+  async setSessionStatements (statements: string[]) {
+    // Clearing is always safe: the statements it would have run are the ones already applied, and
+    // undoing them is the caller's job.
+    if (!this.opened || statements.length === 0) {
+      this.sessionStatements = statements
+      return
+    }
+
+    // An open pool holds connections that will never re-run the connect hook, so a non-empty set
+    // arriving now would reach some sessions and not others - exactly the split this capability
+    // exists to prevent. It can still be made total while nothing is checked out (a restart after
+    // stop({ close: false }) is the case that matters): every existing connection is idle, so it
+    // can be taken and set up here, and every later one gets the hook. With a connection in use
+    // there is no way to reach it, so refuse instead of applying a partial set.
+    assert(this.pool.idleCount === this.pool.totalCount && this.pool.waitingCount === 0,
+      'configuration assert: setSessionStatements cannot reach connections that are already checked out - call it before open(), or while the pool is idle')
+
+    // Set first, so a connection the checkout below has to create runs the statements through the
+    // connect hook rather than being missed by a sweep that already counted it.
+    this.sessionStatements = statements
+
+    const clients = await Promise.all(
+      Array.from({ length: this.pool.totalCount }, async () => await this.pool.connect())
+    )
+
+    try {
+      await Promise.all(clients.map(async client => {
+        for (const statement of statements) {
+          await client.query(statement)
+        }
+      }))
+    } finally {
+      for (const client of clients) client.release()
     }
   }
 
@@ -82,8 +135,8 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
     let closed = false
     let client: pg.Client | null = null
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-    let heartbeatTimer: ReturnType<typeof setTimeout> | null = null
+    let reconnectTimer: types.ClockTimer | null = null
+    let heartbeatTimer: types.ClockTimer | null = null
     let attempt = 0
     const heartbeatInterval = this.config.notifyHeartbeatIntervalMs ?? DEFAULT_LISTEN_HEARTBEAT_INTERVAL_MS
     const heartbeatTimeout = this.config.notifyHeartbeatTimeoutMs ?? DEFAULT_LISTEN_HEARTBEAT_TIMEOUT_MS
@@ -97,7 +150,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
     const clearHeartbeat = () => {
       if (!heartbeatTimer) return
-      clearTimeout(heartbeatTimer)
+      this.clock.clearTimeout(heartbeatTimer)
       heartbeatTimer = null
     }
 
@@ -105,7 +158,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
       if (closed || reconnectTimer) return
       const backoff = Math.min(30000, 1000 * 2 ** Math.min(attempt, 5))
       attempt++
-      reconnectTimer = setTimeout(() => {
+      reconnectTimer = this.clock.setTimeout(() => {
         reconnectTimer = null
         connect().catch(() => scheduleReconnect())
       }, backoff)
@@ -124,7 +177,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
     const scheduleHeartbeat = (target: pg.Client) => {
       if (closed || client !== target) return
-      heartbeatTimer = setTimeout(() => {
+      heartbeatTimer = this.clock.setTimeout(() => {
         heartbeatTimer = null
         heartbeat(target).catch(error => disconnect(target, error))
       }, heartbeatInterval)
@@ -133,7 +186,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     const heartbeat = async (target: pg.Client) => {
       if (closed || client !== target) return
 
-      let timeout: ReturnType<typeof setTimeout> | null = null
+      let timeout: types.ClockTimer | null = null
       const query = target.query(
         `SELECT EXISTS (
            SELECT 1
@@ -148,7 +201,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
         const result = await Promise.race([
           query,
           new Promise<never>((resolve, reject) => {
-            timeout = setTimeout(() => reject(new Error('LISTEN/NOTIFY heartbeat timed out')), heartbeatTimeout)
+            timeout = this.clock.setTimeout(() => reject(new Error('LISTEN/NOTIFY heartbeat timed out')), heartbeatTimeout)
           })
         ])
 
@@ -156,7 +209,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
           throw new Error('LISTEN/NOTIFY channel registration was lost')
         }
       } finally {
-        if (timeout) clearTimeout(timeout)
+        if (timeout) this.clock.clearTimeout(timeout)
       }
 
       scheduleHeartbeat(target)
@@ -210,7 +263,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
       close: async () => {
         closed = true
         if (reconnectTimer) {
-          clearTimeout(reconnectTimer)
+          this.clock.clearTimeout(reconnectTimer)
           reconnectTimer = null
         }
         clearHeartbeat()

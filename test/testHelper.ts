@@ -220,6 +220,16 @@ async function findJobs (schema: string, where: string, values?: any[]): Promise
   return jobs
 }
 
+// Real-time wait for I/O that a TestClock tick set in motion. tick() fires the timer and returns;
+// the fetch, insert or send the callback started still has to reach the database.
+async function until (predicate: () => Promise<boolean> | boolean, ms = 5000): Promise<void> {
+  const deadline = Date.now() + ms
+  while (!(await predicate())) {
+    if (Date.now() > deadline) throw new Error(`until: condition not met within ${ms}ms`)
+    await delay(10)
+  }
+}
+
 async function countJobs (schema: string, table: string, where: string, values?: any[]): Promise<number> {
   const db = await getDb()
   const result = await db.executeSql(`select count(*) as count from ${schema}.${table} where ${where}`, values)
@@ -332,6 +342,7 @@ export {
   getDb,
   countJobs,
   findJobs,
+  until,
   getConfig,
   getConnectionString,
   tryCreateDb,

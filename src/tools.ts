@@ -1,4 +1,5 @@
 import { setTimeout } from 'node:timers/promises'
+import type { Clock } from './types.ts'
 
 /**
  * When sql contains multiple queries, result is an array of objects with rows property
@@ -22,19 +23,13 @@ export interface AbortablePromise<T> extends Promise<T> {
   abort: () => void
 }
 
-function delay (ms: number, error?: string, abortController?: AbortController): AbortablePromise<void> {
-  const ac = abortController || new AbortController()
+function delay (ms: number, error?: string): AbortablePromise<void> {
+  const ac = new AbortController()
 
   const promise = new Promise<void>((resolve, reject) => {
     setTimeout(ms, null, { signal: ac.signal })
-      .then(() => {
-        if (error) {
-          reject(new Error(error))
-        } else {
-          resolve()
-        }
-      })
-      .catch(resolve)
+      .then(() => error ? reject(new Error(error)) : resolve())
+      .catch(() => resolve())
   }) as AbortablePromise<void>
 
   promise.abort = () => {
@@ -46,9 +41,47 @@ function delay (ms: number, error?: string, abortController?: AbortController): 
   return promise
 }
 
-async function resolveWithinSeconds<T> (promise: Promise<T>, seconds: number, message?: string, abortController?: AbortController): Promise<T | void> {
+/**
+ * Like delay(), but scheduled on the given clock so a test clock can fire it. Real-time
+ * spin-waits on in-flight I/O keep using delay().
+ */
+function clockDelay (clock: Clock, ms: number, error?: string, abortController?: AbortController): AbortablePromise<void> {
+  const ac = abortController || new AbortController()
+
+  const promise = new Promise<void>((resolve, reject) => {
+    const handle = clock.setTimeout(() => {
+      ac.signal.removeEventListener('abort', onAbort)
+      if (error) {
+        reject(new Error(error))
+      } else {
+        resolve()
+      }
+    }, ms)
+
+    const onAbort = () => {
+      clock.clearTimeout(handle)
+      resolve()
+    }
+
+    if (ac.signal.aborted) {
+      onAbort()
+    } else {
+      ac.signal.addEventListener('abort', onAbort, { once: true })
+    }
+  }) as AbortablePromise<void>
+
+  promise.abort = () => {
+    if (!ac.signal.aborted) {
+      ac.abort()
+    }
+  }
+
+  return promise
+}
+
+async function resolveWithinSeconds<T> (clock: Clock, promise: Promise<T>, seconds: number, message?: string, abortController?: AbortController): Promise<T | void> {
   const timeout = Math.max(1, seconds) * 1000
-  const reject = delay(timeout, message, abortController)
+  const reject = clockDelay(clock, timeout, message, abortController)
 
   let result
 
@@ -105,6 +138,7 @@ function normalizeSchemaName (schema: string): string {
 }
 
 export {
+  clockDelay,
   delay,
   normalizeSchemaName,
   resolveSchemaName,

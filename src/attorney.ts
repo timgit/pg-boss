@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { systemClock } from './clock.ts'
 import { DEFAULT_SCHEMA } from './plans.ts'
 import type * as types from './types.ts'
 
@@ -508,6 +509,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
 
   resolveBackend(config)
 
+  applyClockConfig(config)
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
@@ -516,6 +518,19 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   validateWarningConfig(config)
 
   return config as types.ResolvedConstructorOptions
+}
+
+const CLOCK_METHODS = ['now', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] as const
+
+function applyClockConfig (config: types.ConstructorOptions) {
+  if (config.clock) {
+    const clock = config.clock as unknown as Record<string, unknown>
+    for (const method of CLOCK_METHODS) {
+      assert(typeof clock[method] === 'function', `configuration assert: clock must implement ${method}()`)
+    }
+  }
+
+  config.clock = config.clock || systemClock
 }
 
 function applySchemaConfig (config: types.ConstructorOptions) {

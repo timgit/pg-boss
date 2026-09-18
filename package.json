@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.32.0",
+  "version": "12.33.2",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -40,6 +40,7 @@
     "prisma": "^7.10.0",
     "tsx": "^4.23.13",
     "typescript": "^6.0.3",
+    "vite": "^8.3.0",
     "vitest": "^4.0.18"
   },
   "scripts": {
@@ -51,6 +52,7 @@
     "test:distributed": "cross-env DISTRIBUTED=true npm test",
     "test:ci": "npm run cover && cross-env DISTRIBUTED=true npm run cover && npm run test:pglite",
     "test:cockroachdb": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/distributedDatabaseTest.ts",
+    "test:cockroachdb:migrations": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/migrationTest.ts",
     "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
     "test:yugabytedb:full": "cross-env DB_TYPE=yugabytedb YUGABYTE_HOST=localhost npm test -- --no-file-parallelism",
     "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
@@ -68,10 +70,11 @@
     "docs": "npm run docs:dev --prefix docs",
     "docs:readme": "node ./scripts/sync-readme.js",
     "docs:sponsors": "node --env-file-if-exists=.env ./scripts/sync-sponsors.js",
-    "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js"
+    "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js",
+    "test:browser": "vite --config test/browser/vite.config.mjs"
   },
   "pgboss": {
-    "schema": 41
+    "schema": 42
   },
   "repository": {
     "type": "git",

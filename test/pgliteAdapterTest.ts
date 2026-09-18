@@ -18,6 +18,74 @@ function createFakePglite (): PGliteLike & { calls: Array<{ method: 'query' | 'e
   }
 }
 
+// A PGliteWorker-shaped fake: same query/exec surface, plus the leader-change subscription and the
+// error the worker raises when leadership moves mid-call. Leadership is driven by hand because real
+// election needs several browser tabs, which a node test cannot stand up.
+function createFakeWorker () {
+  const calls: string[] = []
+  const listeners = new Set<() => void>()
+  const blocked: Array<() => void> = []
+  let failNext: Error | null = null
+  let hangNext = false
+  let blockNext = false
+
+  const maybeBlock = async () => {
+    if (!blockNext) return
+    blockNext = false
+    await new Promise<void>(resolve => blocked.push(resolve))
+  }
+
+  return {
+    calls,
+    electNewLeader: () => { for (const fn of [...listeners]) fn() },
+    failNextWith: (err: Error) => { failNext = err },
+    // Stands in for the upstream hang: a statement that never settles either way.
+    hangNext: () => { hangNext = true },
+    // Holds the next statement open until release() - a reapply slow enough to still be in flight
+    // when the next leader change arrives.
+    blockNext: () => { blockNext = true },
+    release: () => { for (const resolve of blocked.splice(0)) resolve() },
+    listenerCount: () => listeners.size,
+    async query (text: string): Promise<{ rows: any[] }> {
+      calls.push(text)
+      await maybeBlock()
+      if (hangNext) {
+        hangNext = false
+        return await new Promise<{ rows: any[] }>(() => {})
+      }
+      if (failNext) {
+        const err = failNext
+        failNext = null
+        throw err
+      }
+      return { rows: [] }
+    },
+    async exec (text: string) {
+      calls.push(text)
+      await maybeBlock()
+      if (hangNext) {
+        hangNext = false
+        return await new Promise<Array<{ rows: any[] }>>(() => {})
+      }
+      if (failNext) {
+        const err = failNext
+        failNext = null
+        throw err
+      }
+      return [{ rows: [] }]
+    },
+    onLeaderChange (callback: () => void) {
+      listeners.add(callback)
+      return () => listeners.delete(callback)
+    }
+  }
+}
+
+const LEADER_CHANGED = () => new Error('Leader changed, pending operation in indeterminate state')
+
+// Lets the promise chains a leader change kicks off run to their next await.
+const tick = async () => { for (let i = 0; i < 5; i++) await Promise.resolve() }
+
 describe('pglite adapter', () => {
   it('routes parameterized queries through query()', async () => {
     const pglite = createFakePglite()
@@ -98,5 +166,195 @@ describe('pglite adapter', () => {
 
     await expect(db.executeSql('SELECT 1', ['x'])).rejects.toBe(boom)
     expect(calls).toEqual(['SELECT 1', 'ROLLBACK'])
+  })
+
+  it('applies session statements once on a plain instance', async () => {
+    const pglite = createFakePglite()
+    const db = fromPglite(pglite)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+
+    expect(pglite.calls.map(c => c.text)).toEqual(["SET pgboss.test_clock = 'on'"])
+  })
+
+  it('reapplies session statements when the worker elects a new leader', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+    expect(worker.calls).toEqual(["SET pgboss.test_clock = 'on'"])
+
+    // The new leader constructs a fresh PGlite over the same data directory, so the SET is gone.
+    worker.electNewLeader()
+    await db.executeSql('SELECT 1')
+
+    expect(worker.calls).toEqual(["SET pgboss.test_clock = 'on'", "SET pgboss.test_clock = 'on'", 'SELECT 1'])
+  })
+
+  it('holds statements behind the reapply so none reaches an unprepared session', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+    worker.electNewLeader()
+
+    // Issued without awaiting anything in between: the setup must still land first.
+    const [, second] = await Promise.all([db.executeSql('SELECT 1'), db.executeSql('SELECT 2')])
+
+    expect(worker.calls.indexOf('SELECT 1')).toBeGreaterThan(1)
+    expect(second.rows).toEqual([])
+  })
+
+  it('keeps watching for leader changes after the statements are cleared', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    // The subscription is not tied to having statements to reapply: it also fails in-flight
+    // statements, which matters whether or not a TestClock is involved.
+    expect(worker.listenerCount()).toBe(1)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+    await db.setSessionStatements!([])
+    expect(worker.listenerCount()).toBe(1)
+
+    // Nothing left to reapply, so a leader change replays nothing.
+    worker.electNewLeader()
+    await db.executeSql('SELECT 1')
+    expect(worker.calls).toEqual(["SET pgboss.test_clock = 'on'", 'SELECT 1'])
+  })
+
+  // Upstream, a statement that holds PGliteWorker's transaction lock when leadership moves never
+  // settles: the rpc in _runExclusiveTransaction's `finally` is posted to a tab channel the new
+  // leader has not attached to, so nothing replies and nothing rejects it. Verified in a browser
+  // against real election. The adapter fails such a statement itself rather than hang.
+  it('fails a statement left hanging by a leader change', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    worker.hangNext()
+    const hung = db.executeSql('SELECT pg_sleep(5)')
+    const settled = expect(hung).rejects.toThrow('Leader changed')
+
+    worker.electNewLeader()
+    await settled
+
+    // Same treatment a statement that did settle gets: no ROLLBACK to a session that was never in
+    // the transaction.
+    expect(worker.calls).toEqual(['SELECT pg_sleep(5)'])
+  })
+
+  it('does not stall forever when a leader change orphans the reapply', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+
+    // A reapply is a statement like any other, so the next leader change can leave it hanging -
+    // and it is worse here than anywhere else, because every later statement waits on `reapplying`.
+    worker.hangNext()
+    worker.electNewLeader()
+    await tick()
+
+    // Nothing left to reapply after this change, so nothing replaces the hung one: the gate is held
+    // by a promise that will never settle unless the leader change fails it itself. This is the
+    // shape a stopped instance leaves behind - stop() clears the statements it declared.
+    await db.setSessionStatements!([])
+    worker.electNewLeader()
+
+    await expect(db.executeSql('SELECT 1')).resolves.toEqual({ rows: [] })
+  })
+
+  it('keeps the gate closed when a second leader change replaces the reapply', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+
+    worker.blockNext()
+    worker.electNewLeader()
+    await tick()
+
+    // The second change fails the first reapply and starts its own. The first must not open the
+    // gate on its way out: the session it set up belongs to a leader that is already gone.
+    worker.blockNext()
+    worker.electNewLeader()
+    await tick()
+
+    let settled = false
+    const pending = db.executeSql('SELECT 1').then(result => { settled = true; return result })
+    await tick()
+    expect(settled).toBe(false)
+
+    worker.release()
+    await pending
+    expect(settled).toBe(true)
+  })
+
+  it('holds a statement already waiting when a second leader change replaces the reapply', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    await db.setSessionStatements!(["SET pgboss.test_clock = 'on'"])
+
+    worker.blockNext()
+    worker.electNewLeader()
+    await tick()
+
+    // Issued between the two changes, so it is parked on the *first* chain rather than on whatever
+    // is current when it arrives - the case the test above cannot reach.
+    let settled = false
+    const pending = db.executeSql('SELECT 1').then(result => { settled = true; return result })
+    await tick()
+
+    // The second change fails the first chain's in-flight statement, so that chain settles at once
+    // and the waiter wakes up. What it must not do is take that as its turn: the chain that
+    // replaced it has not reissued anything yet, so this session has no clock override on it.
+    worker.blockNext()
+    worker.electNewLeader()
+    await tick()
+
+    expect(settled).toBe(false)
+    expect(worker.calls).not.toContain('SELECT 1')
+
+    worker.release()
+    await pending
+    expect(settled).toBe(true)
+
+    // Both reapplies before the query, never interleaved with it.
+    expect(worker.calls).toEqual([
+      "SET pgboss.test_clock = 'on'",
+      "SET pgboss.test_clock = 'on'",
+      "SET pgboss.test_clock = 'on'",
+      'SELECT 1'
+    ])
+  })
+
+  it('does not fail statements issued after the leader change settled', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    worker.electNewLeader()
+    await expect(db.executeSql('SELECT 1')).resolves.toEqual({ rows: [] })
+  })
+
+  it('does not roll back against a session that never held the transaction', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    worker.failNextWith(LEADER_CHANGED())
+    await expect(db.executeSql('UPDATE job SET x = 1')).rejects.toThrow('Leader changed')
+
+    // A ROLLBACK here would go to the new leader, which was never in that transaction.
+    expect(worker.calls).toEqual(['UPDATE job SET x = 1'])
+  })
+
+  it('still rolls back an ordinary failed statement', async () => {
+    const worker = createFakeWorker()
+    const db = fromPglite(worker)
+
+    worker.failNextWith(new Error('syntax error'))
+    await expect(db.executeSql('SELEC 1')).rejects.toThrow('syntax error')
+
+    expect(worker.calls).toEqual(['SELEC 1', 'ROLLBACK'])
   })
 })

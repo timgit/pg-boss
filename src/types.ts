@@ -33,6 +33,23 @@ export interface IDatabase {
    * a custom adapter may implement it to enable transactional workers.
    */
   beginTransaction?(): Promise<TransactionHandle>;
+  /**
+   * Optional capability for per-session setup. pg-boss calls this during `start()`, before it
+   * issues any statement, with the complete set of SQL statements that must have run on every
+   * session the adapter executes pg-boss statements on. Each call replaces the previous set; an
+   * empty array clears it.
+   *
+   * A pooled adapter runs them on every connection it opens, before handing it out. A
+   * single-connection adapter (PGlite) runs them once. The requirement covers sessions that run
+   * pg-boss statements, not literally every connection: a dedicated LISTEN connection that only
+   * subscribes and never reads the clock is outside it.
+   *
+   * Only a `TestClock` populates this today - the schema clock is gated on a session setting, so
+   * an adapter that cannot carry one would put some sessions on fake time and some on real time,
+   * silently and differently on every checkout. `start()` refuses a TestClock on an adapter that
+   * does not implement this.
+   */
+  setSessionStatements?(statements: string[]): Promise<void>;
 }
 
 export interface ListenHandle {
@@ -445,7 +462,40 @@ export interface MigrationPlanOptions extends PlanOptions {
   partitionTables?: MigrationPartition[];
 }
 
+/**
+ * Source of time and timers. pg-boss reads the wall clock and schedules every poll, heartbeat and
+ * timeout through this interface so a test can substitute a controllable clock.
+ */
+export interface Clock {
+  /** epoch milliseconds */
+  now(): number
+  setTimeout(fn: () => void, ms: number): ClockTimer
+  clearTimeout(handle: ClockTimer): void
+  setInterval(fn: () => void, ms: number): ClockTimer
+  clearInterval(handle: ClockTimer): void
+}
+
+/**
+ * Opaque handle returned by a Clock's setTimeout/setInterval and accepted by its clear methods.
+ * The system clock returns NodeJS.Timeout; a test clock returns whatever it uses to track timers.
+ */
+export type ClockTimer = unknown
+
+/**
+ * A Clock that also owns the Postgres-side clock. PgBoss attaches it on start(), after the schema
+ * is installed, and disposes the returned handle on stop(). The handle is the only attachment state.
+ */
+export interface AttachableClock extends Clock {
+  attach(target: { db: IDatabase, schema: string }): Promise<AsyncDisposable>
+}
+
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
+  /**
+   * Source of time and timers for this instance. Defaults to the system clock (`Date.now` and the
+   * global timer functions).
+   * @default systemClock
+   */
+  clock?: Clock;
   /**
    * Enables the LISTEN/NOTIFY listener so workers on notify-enabled queues are woken
    * the moment a job is created, instead of waiting out their polling interval. This
@@ -547,6 +597,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
 /** @internal */
 export interface ResolvedConstructorOptions extends ConstructorOptions, CompatibilityFlags {
   schema: string;
+  clock: Clock;
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;

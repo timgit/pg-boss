@@ -2,7 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 describe('work lifecycle', function () {
@@ -70,7 +70,8 @@ describe('work lifecycle', function () {
   })
 
   it('should emit wip heartbeat while workers are busy with long-running jobs', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 
     await ctx.boss.send(ctx.schema)
 
@@ -79,13 +80,9 @@ describe('work lifecycle', function () {
 
     await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 1 }, async ([job]) => {
       jobStartedResolve()
-      const ac = new AbortController()
-      job.signal.addEventListener('abort', () => ac.abort(), { once: true })
-      try {
-        await delay(10000, undefined, ac)
-      } catch {
-        // aborted during boss.stop() teardown — expected
-      }
+      const wait = delay(10000)
+      job.signal.addEventListener('abort', () => wait.abort(), { once: true })
+      await wait
     })
 
     await jobStarted
@@ -93,11 +90,15 @@ describe('work lifecycle', function () {
     let wipCount = 0
     const listener = () => { wipCount++ }
     ctx.boss.on('wip', listener)
-    await delay(6000)
+    await clock.tick(6000)
     ctx.boss.off('wip', listener)
 
     expect(wipCount).toBeGreaterThanOrEqual(2)
-  }, 20000)
+
+    // The graceful stop deadline runs on the clock too, so release the handler now rather than
+    // leaving teardown to wait on it.
+    await ctx.boss.stop({ graceful: false })
+  })
 
   it('should reject work() after stopping', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
@@ -305,6 +306,46 @@ describe('work lifecycle', function () {
       assertTruthy(job)
       expect(job.state).toBe('failed')
       expect(job.output).toBeTruthy()
+    }
+  })
+
+  it('a graceful stop drains every worker on a localConcurrency queue', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const localConcurrency = 3
+    const jobIds: (string | null)[] = []
+    let started = 0
+    let completed = 0
+
+    for (let i = 0; i < localConcurrency; i++) {
+      jobIds.push(await ctx.boss.send(ctx.schema, { index: i }, { retryLimit: 0 }))
+    }
+
+    // Manager.stop() iterates queue names, not workers, so one offWork call covers all three of
+    // these workers and registers one pending cleanup. The graceful stop has to wait out that
+    // cleanup for every worker, not just the one that happened to be reached first.
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async () => {
+      started++
+      await delay(500)
+      completed++
+    })
+
+    for (let i = 0; i < 50; i++) {
+      if (started >= localConcurrency) break
+      await delay(100)
+    }
+    expect(started).toBe(localConcurrency)
+
+    await ctx.boss.stop({ timeout: 5000 })
+
+    expect(completed).toBe(localConcurrency)
+
+    await ctx.boss.start()
+
+    for (const jobId of jobIds) {
+      assertTruthy(jobId)
+      const job = await ctx.boss.getJobById<{}>(ctx.schema, jobId)
+      expect(job?.state).toBe('completed')
     }
   })
 })
