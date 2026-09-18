@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 import { resolveBasePath } from './app/lib/base-path'
-import { proAlias } from './app/lib/pro-overlay.ts'
+import { proAlias, proServerAlias } from './app/lib/pro-overlay.ts'
 
 const { viteBase } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
 
@@ -29,6 +29,10 @@ export default defineConfig(({ command }) => ({
     alias: {
       '~': '/app',
       '~pro': proAlias(),
+      // The dev server imports this through the SSR runner to build the same
+      // Hono app production does; without the alias here it resolves to nothing
+      // and the overlay's server half is silently absent from `npm run dev`.
+      '~pro-server': proServerAlias(),
       'pg-boss': resolve(__dirname, '../../src'),
     },
     // Force a single copy of React in the dev module graph. Without this, Vite's

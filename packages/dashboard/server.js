@@ -20,9 +20,17 @@ const vite = await createViteServer({
 const ssrRunner = vite.environments.ssr.runner
 const { createHonoApp } = await ssrRunner.import('/app/server.ts')
 
+// The same server overlay production loads, through the same `~pro-server`
+// alias — the stub in every free build. Without this the dev server builds a
+// Hono app that production does not: no overlay middleware, no overlay auth.
+// A Pro feature living in that half would be undevelopable locally, which is
+// how it ends up only ever exercised by a release.
+const { serverOverlay } = await ssrRunner.import('~pro-server')
+
 const app = createHonoApp({
   mode: 'development',
   serveStaticAssets: false,
+  overlay: serverOverlay,
   // Re-fetch the server build per request so route edits are picked up via HMR.
   build: () => ssrRunner.import('virtual:react-router/server-build'),
 })
