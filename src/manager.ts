@@ -1183,7 +1183,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // a worker on a different queue.
     const query = (i: Worker<any>) => i.name === name && (options?.id ? (i.id === options.id || i.workId === options.id) : true)
 
-    const workers = this.getWorkers().filter(i => query(i) && !i.stopping && !i.stopped)
+    // A waiting caller must also drain workers that an earlier offWork call is stopping.
+    const workers = this.getWorkers().filter(i => query(i) && !i.stopped)
 
     if (workers.length === 0) {
       return

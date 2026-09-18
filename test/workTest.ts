@@ -1,3 +1,4 @@
+import { setImmediate } from 'node:timers/promises'
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
@@ -297,6 +298,41 @@ describe('work', function () {
     await delay(2000)
 
     expect(receivedCount).toBe(1)
+  })
+
+  it.each([
+    { wait: true, byId: true },
+    { wait: false, byId: true },
+    { wait: true, byId: false },
+    { wait: false, byId: false }
+  ])('offWork waits for an already stopping worker (initial wait: $wait, by id: $byId)', async function ({ wait, byId }) {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+    let startHandler: () => void = () => { throw new Error('Handler promise not initialized') }
+    let releaseHandler: () => void = () => { throw new Error('Release promise not initialized') }
+    const started = new Promise<void>(resolve => { startHandler = resolve })
+    const release = new Promise<void>(resolve => { releaseHandler = resolve })
+    await boss.send(ctx.schema)
+    const id = await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+      startHandler()
+      await release
+    })
+    await started
+    const options = byId ? { id } : {}
+    let firstDrained = false
+    const first = boss.offWork(ctx.schema, { ...options, wait }).then(() => { firstDrained = true })
+    let drained = false
+    const second = boss.offWork(ctx.schema, { ...options, wait: true }).then(() => { drained = true })
+    try {
+      await setImmediate()
+      expect(firstDrained).toBe(!wait)
+      expect(drained).toBe(false)
+    } finally {
+      releaseHandler()
+      await Promise.all([first, second])
+    }
+    expect(drained).toBe(true)
+    expect(boss.getWipData().filter(worker => worker.id === id)).toHaveLength(0)
   })
 
   it('offWork by returned id stops every worker spawned under localConcurrency', async function () {
