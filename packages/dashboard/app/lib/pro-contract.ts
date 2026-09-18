@@ -76,6 +76,14 @@ export interface ProServerOverlay {
    * After, so the overlay can both add its own values (the actor) and narrow
    * what the free dashboard chose (the database a viewer is allowed to see).
    * Running first would mean the free defaults silently overwrote the narrowing.
+   *
+   * This is also where an overlay says what the person may *do*: set
+   * `capabilityContext` (`~/lib/capability-context`) and the root loader
+   * publishes it instead of deriving the answer from read-only mode, so every
+   * mutating control in the free UI is drawn per role. It replaces rather than
+   * merges — a role that permits less has to be able to permit less — and an
+   * unlisted capability is denied. Enforcement is still the overlay's own
+   * middleware; this only decides what is drawn.
    */
   loadContext?: (c: Context, context: RouterContextProvider) => void
 }

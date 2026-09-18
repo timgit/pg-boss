@@ -17,6 +17,8 @@ import { cn } from "~/lib/utils";
 import { dbContext } from "~/lib/db-context";
 import { toPublicDatabase } from "~/lib/config.server";
 import { isReadOnly } from "~/lib/read-only.server";
+import { capabilityContext } from "~/lib/capability-context";
+import { DEFAULT_DENIAL, defaultCapabilities } from "~/lib/capabilities";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -99,6 +101,11 @@ const themeScript = `
 export async function loader({ context }: Route.LoaderArgs) {
   const { databases, currentDb } = context.get(dbContext);
 
+  // Set by the Pro overlay from `loadContext`, absent in every free build. It is
+  // read with a fallback rather than required, so the dashboard has exactly one
+  // answer to "what may this person do" whether or not an overlay is mounted.
+  const actor = context.get(capabilityContext);
+
   // Project before returning. The sidebar needs an id, a display name and the
   // schema; it never needs the connection string. A loader's return value is
   // serialized into the HTML for hydration, so returning the raw config puts
@@ -107,8 +114,14 @@ export async function loader({ context }: Route.LoaderArgs) {
     databases: databases.map(toPublicDatabase),
     currentDb: currentDb ? toPublicDatabase(currentDb) : currentDb,
     // Drives whether mutating controls render. The server refuses mutations
-    // regardless, so this is presentation, not enforcement.
-    readOnly: isReadOnly(),
+    // regardless — `read-only.server.ts` here, the overlay's middleware when one
+    // is mounted — so this is presentation, not enforcement.
+    //
+    // One field, not two. A `readOnly` boolean beside this would be a second
+    // answer to the same question, and the two would disagree the first time a
+    // role permitted something the global switch forbade.
+    can: actor?.capabilities ?? defaultCapabilities(isReadOnly()),
+    denial: actor?.denial ?? DEFAULT_DENIAL,
   };
 }
 

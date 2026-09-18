@@ -3,7 +3,7 @@ import { useFetcher, redirect } from 'react-router'
 import { Copy, Check } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
-import { useReadOnly } from '~/lib/read-only'
+import { useCan } from '~/lib/use-capabilities'
 import { getJobById, cancelJob, retryJob, resumeJob, deleteJob, isValidIntent } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
@@ -94,7 +94,13 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 
 export default function JobDetail ({ loaderData }: Route.ComponentProps) {
   const { job, queueName } = loaderData
-  const readOnly = useReadOnly()
+  // One per verb, not one for the page. An operator may retry, resume and cancel
+  // a job but not delete it, which is precisely what a single flag could not say.
+  const mayRetry = useCan('job:retry')
+  const mayResume = useCan('job:resume')
+  const mayCancel = useCan('job:cancel')
+  const mayDelete = useCan('job:delete')
+  const mayAct = mayRetry || mayResume || mayCancel || mayDelete
   const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>()
   const isLoading = fetcher.state !== 'idle'
   const [copied, setCopied] = useState(false)
@@ -123,24 +129,24 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
             <Badge variant={JOB_STATE_VARIANTS[job.state]} size="lg" dot>{job.state}</Badge>
           </span>
         }
-        action={readOnly ? undefined : (
+        action={!mayAct ? undefined : (
           <div className="flex items-center gap-2">
             {showError && (
               <span className="text-xs text-[var(--warning-600)]" title={actionResult.message}>
                 Action failed
               </span>
             )}
-            {job.state === 'failed' && (
+            {mayRetry && job.state === 'failed' && (
               <Button variant="outline" size="sm" disabled={isLoading} onClick={() => submitAction('retry')}>
                 Retry
               </Button>
             )}
-            {job.state === 'cancelled' && (
+            {mayResume && job.state === 'cancelled' && (
               <Button variant="outline" size="sm" disabled={isLoading} onClick={() => submitAction('resume')}>
                 Resume
               </Button>
             )}
-            {(job.state === 'created' || job.state === 'retry' || job.state === 'active') && (
+            {mayCancel && (job.state === 'created' || job.state === 'retry' || job.state === 'active') && (
               <ConfirmDialog
                 title="Cancel Job"
                 description={`Are you sure you want to cancel job ${job.id}? This will prevent the job from being processed.`}
@@ -152,7 +158,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
                 disabled={isLoading}
               />
             )}
-            {job.state !== 'active' && (
+            {mayDelete && job.state !== 'active' && (
               <ConfirmDialog
                 title="Delete Job"
                 description={`Are you sure you want to delete job ${job.id}? This action cannot be undone.`}
