@@ -68,6 +68,11 @@ const boss = new PgBoss({
   supervise: true,
   superviseIntervalSeconds: 1,
   monitorIntervalSeconds: 1,
+  // Without this the monitor never writes `queue_stats`, the metrics chart has
+  // nothing to draw, and every queue shows the "stats history isn't being
+  // recorded" banner — which is accurate but makes the whole surface
+  // unreviewable in dev. `queueStatRetentionDays` defaults to 7.
+  persistQueueStats: true,
 })
 
 boss.on('error', (err) => console.error('pg-boss error:', err.message))
@@ -93,6 +98,7 @@ async function main () {
 
   await seedWarnings()
   await seedReadyHistory()
+  await seedQueueStats()
 
   console.log('\nDone. Start the dashboard with `npm run dev`.')
   console.log('Read-only mode:  PGBOSS_DASHBOARD_READ_ONLY=1 npm run dev')
@@ -371,6 +377,159 @@ async function seedReadyHistory () {
     }
 
     console.log(`  ready history: ${counts.length} queues x ${WINDOW} samples (${flat} flat, on purpose)`)
+  } finally {
+    await client.end()
+  }
+}
+
+/**
+ * Backfill `queue_stats` so the metrics chart has a range to draw.
+ *
+ * pg-boss writes one row per queue per monitor cycle, but only when constructed
+ * with `persistQueueStats: true` — which this script now does. That alone still
+ * leaves a fresh database holding a few seconds of history while the metrics
+ * page defaults to a 24-hour range, so every range but the shortest would draw
+ * empty. And `getQueueStatsCollectionStatus` only asks whether the table has any
+ * row at all, so an unseeded database shows the "stats history isn't being
+ * recorded" banner even once recording is on.
+ *
+ * `queue_stats` is partitioned by UTC day and pg-boss maintains only today's and
+ * tomorrow's partitions (`ensureQueueStatsPartitions` in src/plans.ts), so the
+ * backfill creates the older ones itself. It repeats that function's naming and
+ * its explicit `+00` bounds deliberately: a bare date literal would be cast in
+ * the session time zone, and rows written near UTC midnight would fall outside
+ * every partition.
+ *
+ * DAYS stays below the 7-day `queueStatRetentionDays` default so the first
+ * maintenance pass — which runs as soon as `npm run dev:worker` starts — does not
+ * drop the partitions this just created.
+ *
+ * Each series is blended into the queue's real current counts, exactly as the
+ * ready sparkline is, so the right edge of the chart agrees with the numbers
+ * rendered on the queue detail page beside it.
+ */
+async function seedQueueStats () {
+  const DAYS = 6
+  const INTERVAL_MINUTES = 10
+  const SAMPLES = (DAYS * 24 * 60) / INTERVAL_MINUTES
+  const PER_DAY = (24 * 60) / INTERVAL_MINUTES
+
+  const client = new Client({ connectionString })
+  await client.connect()
+
+  try {
+    await client.query(`
+      DO $$
+      DECLARE
+        d date;
+        i int;
+        part_name text;
+      BEGIN
+        FOR i IN -${DAYS}..1 LOOP
+          d := (${schema}.job_now() AT TIME ZONE 'UTC')::date + i;
+          part_name := 'queue_stats_' || to_char(d, 'YYYYMMDD');
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = '${schema}' AND c.relname = part_name
+          ) THEN
+            EXECUTE format(
+              'CREATE TABLE ${schema}.%I PARTITION OF ${schema}.queue_stats FOR VALUES FROM (%L) TO (%L)',
+              part_name,
+              to_char(d, 'YYYY-MM-DD') || ' 00:00:00+00',
+              to_char(d + 1, 'YYYY-MM-DD') || ' 00:00:00+00'
+            );
+          END IF;
+        END LOOP;
+      END;
+      $$
+    `)
+
+    const { rows: queues } = await client.query<{
+      name: string
+      ready_count: number
+      active_count: number
+      failed_count: number
+      queued_count: number
+      deferred_count: number
+      total_count: number
+    }>(
+      `SELECT name, ready_count, active_count, failed_count, queued_count, deferred_count, total_count
+         FROM ${schema}.queue ORDER BY name`
+    )
+
+    // A per-name hash gives each queue its own phase and amplitude, so they do
+    // not all peak on the same tick and each one draws the same shape on every
+    // run.
+    const hash = (name: string): number => {
+      let h = 0
+      for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) | 0
+      return Math.abs(h)
+    }
+
+    const now = Date.now()
+    let rows = 0
+
+    for (const queue of queues) {
+      const h = hash(queue.name)
+      const p = (h % 360) * (Math.PI / 180)
+      // Amplitudes are the series' own, not a multiple of the queue's current
+      // counts. Those counts are mostly zero on a seeded database — the demo
+      // jobs are pinned in terminal states, which no live counter reflects — so
+      // scaling by them would draw the flat line this function exists to avoid.
+      const peak = 12 + (h % 48)
+      const at: Date[] = []
+      const series: Record<string, number[]> = {
+        ready: [], active: [], failed: [], queued: [], deferred: [], total: [],
+      }
+
+      for (let i = 0; i < SAMPLES; i++) {
+        at.push(new Date(now - (SAMPLES - 1 - i) * INTERVAL_MINUTES * 60_000))
+
+        // One cycle per day, so a 24-hour view shows a full wave and the 7-day
+        // view shows six of them.
+        const wave = 0.5 + 0.5 * Math.sin((i / PER_DAY) * 2 * Math.PI + p)
+
+        // A little per-tick jitter, deterministic in i, so the lines are not
+        // suspiciously smooth.
+        const jitter = (i * 7 + h) % 5
+
+        series.ready.push(Math.round(peak * wave) + jitter)
+        series.active.push(Math.round(peak * 0.25 * wave))
+        // Failures accumulate over a window rather than oscillating, so this one
+        // ramps instead of waving.
+        series.failed.push(Math.round((peak / 6) * (i / SAMPLES)))
+        series.queued.push(Math.round(peak * 0.4 * wave) + (jitter % 2))
+        series.deferred.push(Math.round(peak * 0.15 * (1 - wave)))
+        series.total.push(Math.round(peak * (0.8 + 0.6 * wave)) + jitter)
+      }
+
+      const ends: Record<string, number> = {
+        ready: Number(queue.ready_count),
+        active: Number(queue.active_count),
+        failed: Number(queue.failed_count),
+        queued: Number(queue.queued_count),
+        deferred: Number(queue.deferred_count),
+        total: Number(queue.total_count),
+      }
+
+      for (const key of Object.keys(series)) {
+        series[key] = blendTail(series[key], ends[key], 12)
+      }
+
+      await client.query(
+        `INSERT INTO ${schema}.queue_stats
+           (name, captured_on, ready_count, active_count, failed_count, queued_count, deferred_count, total_count)
+         SELECT $1, t, r, a, f, q, d, tot
+           FROM unnest($2::timestamptz[], $3::int[], $4::int[], $5::int[], $6::int[], $7::int[], $8::int[])
+             AS s(t, r, a, f, q, d, tot)`,
+        [queue.name, at, series.ready, series.active, series.failed, series.queued, series.deferred, series.total]
+      )
+
+      rows += SAMPLES
+    }
+
+    console.log(`  queue stats: ${queues.length} queues x ${SAMPLES} samples over ${DAYS}d (${rows} rows)`)
   } finally {
     await client.end()
   }

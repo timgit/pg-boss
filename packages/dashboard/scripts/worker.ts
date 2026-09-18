@@ -9,6 +9,9 @@ async function main () {
   const boss = new PgBoss({
     connectionString,
     schema,
+    // Keeps `queue_stats` growing while the worker runs, so the metrics chart
+    // moves instead of ending at whatever `dev:init-db` backfilled.
+    persistQueueStats: true,
   })
 
   boss.on('error', (err) => console.error('pg-boss error:', err.message))
