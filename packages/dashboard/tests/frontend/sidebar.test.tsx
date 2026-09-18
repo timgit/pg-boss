@@ -69,11 +69,17 @@ describe('Sidebar', () => {
       expect(brandTexts.length).toBeGreaterThanOrEqual(1)
     })
 
-    it('renders PG logo', () => {
-      renderWithRouter()
+    /**
+     * The mark is decorative here: the wordmark beside it already says
+     * "pg-boss", so an alt text would have a screen reader announce the name
+     * twice. An empty alt is the assertion, not an oversight.
+     */
+    it('renders the mark beside the wordmark', () => {
+      const { container } = renderWithRouter()
 
-      const logoTexts = screen.getAllByText('PG')
-      expect(logoTexts.length).toBeGreaterThanOrEqual(1)
+      const mark = container.querySelector('img[alt=""]')
+      expect(mark).not.toBeNull()
+      expect(mark?.getAttribute('src')).toMatch(/pg-boss-mark/)
     })
   })
 

@@ -19,6 +19,8 @@ import { toPublicDatabase } from "~/lib/config.server";
 import { isReadOnly } from "~/lib/read-only.server";
 import { capabilityContext } from "~/lib/capability-context";
 import { DEFAULT_DENIAL, defaultCapabilities } from "~/lib/capabilities";
+import markSmall from "~/assets/pg-boss-mark-small.svg";
+import markSmallSource from "~/assets/pg-boss-mark-small.svg?raw";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -59,6 +61,10 @@ function MainContent ({ children }: { children: React.ReactNode }) {
 // Inline script to prevent flash of wrong theme
 const themeScript = `
   (function() {
+    // The mark's own source, inlined at build time. Inside the IIFE so the page
+    // gains no global; it is only ever read a few lines below.
+    const MARK_SOURCE = ${JSON.stringify(markSmallSource)};
+
     const stored = localStorage.getItem('pg-boss-theme');
     const mode = stored || 'system';
     let theme = mode;
@@ -84,9 +90,13 @@ const themeScript = `
     const colorTheme = localStorage.getItem('pg-boss-color-theme') || 'cobalt';
     document.documentElement.dataset.colorTheme = colorTheme;
 
-    // Create favicon with color theme
+    // Tint the mark's square to the chosen theme, the way this has always
+    // worked. links() ships the cobalt original so there is a correct icon
+    // before any of this runs; only the square's fill is swapped, so the
+    // letterforms and the queue row come straight from the asset and cannot
+    // drift from the one the sidebar draws.
     const hex = colorHex[colorTheme] || colorHex.cobalt;
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="' + hex + '"/><text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" font-weight="bold" fill="white">PG</text></svg>';
+    const svg = MARK_SOURCE.split('#284fe0').join(hex);
     var link = document.querySelector('link[rel="icon"]');
     if (!link) {
       link = document.createElement('link');
@@ -192,6 +202,9 @@ export function meta() {
 
 export function links() {
   return [
+    // The mark, at the size it was drawn for: the small-size fallback drops the
+    // queue row, which closes up below 24px and reads as a smudge at 16.
+    { rel: "icon", type: "image/svg+xml", href: markSmall },
     { rel: "preconnect", href: "https://fonts.googleapis.com" },
     { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
     {

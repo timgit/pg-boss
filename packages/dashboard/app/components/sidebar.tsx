@@ -7,6 +7,7 @@ import { ThemeToggle } from '~/components/ui/theme-toggle'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
 import type { PublicDatabase } from '~/lib/types'
+import markWhite from '~/assets/pg-boss-mark-white.svg'
 import {
   Sidebar,
   SidebarContent,
@@ -238,8 +239,20 @@ export function AppSidebar () {
     <Sidebar>
       <SidebarHeader>
         <div className="flex items-center gap-2.5 pl-1.5 pr-3 py-2">
-          <div className="w-8 h-8 rounded-[9px] bg-primary-600 flex items-center justify-center shrink-0">
-            <span className="text-white font-bold text-sm tracking-tight">PG</span>
+          {/*
+            The square is a themed element and the glyph is the knockout mark on
+            top of it, rather than one image carrying both. An <img> is an
+            isolated document, so no CSS of ours can reach the square inside it —
+            and the square has to follow the colour theme the way it always has.
+
+            The knockout keeps the full 160 viewBox, so the glyph sits at exactly
+            the inset it has inside the drawn square. The radius is the brand's
+            own 36/160 of the width rather than a chosen number: 32 × 0.225 = 7.2.
+            At 32px the queue row still reads; the 16px favicon uses the
+            small-size fallback, which drops it.
+          */}
+          <div className="w-8 h-8 rounded-[7.2px] bg-primary-600 shrink-0">
+            <img src={markWhite} alt="" width={32} height={32} className="w-8 h-8" />
           </div>
           <div className="leading-tight whitespace-nowrap group-data-[state=collapsed]:hidden">
             <div className="font-semibold text-sm text-sidebar-accent-foreground">pg-boss</div>
