@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { createHonoApp, getLoadContext } from '~/server'
 import { serverOverlay as stub } from '~pro-server'
 import { dbContext } from '~/lib/db-context'
+import { getDatabaseConfigs } from '~/lib/config.server'
 import type { ProServerOverlay } from '~/lib/pro-contract'
 
 /**
@@ -120,7 +121,9 @@ describe('getLoadContext with an overlay', () => {
     let resolved: ReturnType<typeof getLoadContext> | undefined
 
     app.get('*', (c) => {
-      resolved = getLoadContext(c, overlay)
+      // The databases are passed explicitly now that a host may supply its own;
+      // these tests are about the overlay hook, so they use the configured ones.
+      resolved = getLoadContext(c, getDatabaseConfigs(), overlay)
       return c.text('ok')
     })
 

@@ -7,7 +7,7 @@ import { ThemeToggle } from '~/components/ui/theme-toggle'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
 import type { PublicDatabase } from '~/lib/types'
-import markWhite from '~/assets/pg-boss-mark-white.svg'
+import markWhite from '~/assets/pg-boss-mark-white.svg?raw'
 import {
   Sidebar,
   SidebarContent,
@@ -251,9 +251,18 @@ export function AppSidebar () {
             At 32px the queue row still reads; the 16px favicon uses the
             small-size fallback, which drops it.
           */}
-          <div className="w-8 h-8 rounded-[7.2px] bg-primary-600 shrink-0">
-            <img src={markWhite} alt="" width={32} height={32} className="w-8 h-8" />
-          </div>
+          {/*
+            Inlined rather than referenced by URL. An imported asset URL is
+            absolute and is baked into this chunk, which `withBasePath` cannot
+            rewrite when the dashboard is mounted under a prefix — the build's
+            portability check fails on it. The markup is the overlay's own SVG,
+            not anything a request supplied.
+          */}
+          <div
+            className="w-8 h-8 rounded-[7.2px] bg-primary-600 shrink-0 [&>svg]:w-full [&>svg]:h-full"
+            aria-hidden="true"
+            dangerouslySetInnerHTML={{ __html: markWhite }}
+          />
           <div className="leading-tight whitespace-nowrap group-data-[state=collapsed]:hidden">
             <div className="font-semibold text-sm text-sidebar-accent-foreground">pg-boss</div>
             <div className="font-mono text-[9px] tracking-[0.15em] text-sidebar-foreground/60">CONSOLE</div>

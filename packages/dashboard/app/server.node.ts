@@ -1,7 +1,9 @@
+import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
 import { serverOverlay } from '~pro-server'
+import { resolveBasePath } from './lib/base-path'
 import pkg from '../package.json' with { type: 'json' }
 
 // The React Router server build is emitted by `react-router build` as a sibling of this
@@ -14,15 +16,29 @@ const build = (await import(buildModulePath)) as unknown as ServerBuild
 const port = Number(process.env.PORT) || 3000
 const hostname = process.env.HOST || '0.0.0.0'
 
+// Read at runtime, so the prebuilt package can be served under a sub-path without a rebuild.
+const basePath = process.env.PGBOSS_DASHBOARD_BASE_PATH || undefined
+
+// Relative to this file, not the working directory, so the server can be started from anywhere.
+const clientRoot = fileURLToPath(new URL('./client', import.meta.url))
+
 // `~pro-server` is the empty stub in every build but a Pro one, so this is the
 // free dashboard unchanged: an object with no hooks on it.
-const app = createHonoApp({ build, mode: 'production', serveStaticAssets: true, overlay: serverOverlay })
+const app = createHonoApp({
+  build,
+  mode: 'production',
+  serveStaticAssets: true,
+  clientRoot,
+  basePath,
+  overlay: serverOverlay,
+})
 
 serve({ fetch: app.fetch, port, hostname }, (info) => {
   // Named from the manifest rather than hardcoded: this bundle is repackaged under
   // other names, and a build that announces itself as something else is confusing.
   console.log(`${pkg.name}@${pkg.version} listening on http://${hostname}:${info.port}`)
-  if (build.basename && build.basename !== '/') {
-    console.log(`base path: ${build.basename}`)
+  const servedUnder = basePath ? resolveBasePath(basePath).routerBasename : build.basename
+  if (servedUnder && servedUnder !== '/') {
+    console.log(`base path: ${servedUnder}`)
   }
 })

@@ -7,24 +7,33 @@ import { proAlias, proServerAlias } from './app/lib/pro-overlay.ts'
 
 const { viteBase } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
 
+// Kept as runtime imports: React and React Router must stay a single shared copy, and `pg`
+// loads optional native bindings. Everything else is bundled into the server build.
+const SERVER_RUNTIME_PACKAGES = [
+  '@react-router/node',
+  'isbot',
+  'pg',
+  'react',
+  'react-dom',
+  'react-router',
+]
+
 export default defineConfig(({ command }) => ({
   // Vite bakes `base` into asset URLs at build time, which is what production
   // deployments behind a sub-path need. In dev we keep it at `/`: the React
   // Router dev server requires `basename` to start with `base`, and the dev
   // server serves assets from the root regardless of the app's basename.
   base: command === 'build' ? viteBase : '/',
-  // The base path is a build-time concept (it is baked into asset URLs above), so
-  // inline it into the bundled server too. This lets `app/server.ts` resolve the
-  // basename without depending on the env var being present at runtime.
-  define: {
-    'process.env.PGBOSS_DASHBOARD_BASE_PATH': JSON.stringify(
-      process.env.PGBOSS_DASHBOARD_BASE_PATH ?? ''
-    ),
-  },
   plugins: [
     tailwindcss(),
     reactRouter(),
   ],
+  // Left external, the UI libraries had to be installed whole (lucide-react alone is ~45 MB
+  // for ~20 icons). Build only: the dev server evaluates inlined modules as ESM, which breaks
+  // on the CommonJS-only `use-sync-external-store` that @base-ui/react depends on.
+  ssr: command === 'build'
+    ? { noExternal: true, external: SERVER_RUNTIME_PACKAGES }
+    : undefined,
   resolve: {
     alias: {
       '~': '/app',

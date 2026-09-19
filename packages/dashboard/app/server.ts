@@ -4,9 +4,10 @@ import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'r
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
-import { getDatabaseConfigs, findDatabaseById } from './lib/config.server'
+import { getDatabaseConfigs, findDatabaseById, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay } from './lib/pro-contract'
+import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 
 // Resolve the per-request load context the loaders/actions rely on. The selected
 // database comes from the `?db=` query param or the `pgboss_db` cookie, falling back
@@ -15,9 +16,11 @@ import type { ProServerOverlay } from './lib/pro-contract'
 //
 // Exported for the tests, which assert the overlay hook runs last. Nothing else
 // should call it.
-export function getLoadContext (c: Context, overlay: ProServerOverlay | null = null): RouterContextProvider {
-  const databases = getDatabaseConfigs()
-
+export function getLoadContext (
+  c: Context,
+  databases: DatabaseConfig[],
+  overlay: ProServerOverlay | null = null
+): RouterContextProvider {
   const url = new URL(c.req.url)
   const dbId = url.searchParams.get('db') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
   const currentDb = findDatabaseById(databases, dbId) || databases[0]
@@ -52,15 +55,37 @@ export interface CreateHonoAppOptions {
    * the Vite dev server middleware serves assets instead.
    */
   serveStaticAssets?: boolean;
+  /** Where the built client assets live. Defaults to `./build/client`, relative to the cwd. */
+  clientRoot?: string;
+  /** Defaults to the databases described by DATABASE_URL / PGBOSS_SCHEMA. */
+  databases?: DatabaseConfig[];
+  /** Overrides the base path baked into the build. Production builds only. */
+  basePath?: string;
   /**
-   * The Pro overlay's server half, from `loadProServer()`. `null` in every free
-   * build, which is the only shape this package is ever tested against on its own.
+   * The Pro overlay's server half, from `loadProServer()`, or `null` for a free
+   * build — which is the only shape this package is ever tested against on its
+   * own.
+   *
+   * Required, with no default, and that is the whole point. An entry point that
+   * forgets it would serve a Pro build with none of Pro's authentication: no
+   * session gate, no capability narrowing, every loader answering an anonymous
+   * request. A default of `null` makes that a silent hole; requiring the field
+   * makes it a compile error in the one place it can be introduced.
    */
-  overlay?: ProServerOverlay | null;
+  overlay: ProServerOverlay | null;
 }
 
-export function createHonoApp ({ build, mode, serveStaticAssets = false, overlay = null }: CreateHonoAppOptions): Hono {
+export function createHonoApp ({
+  build: givenBuild,
+  mode,
+  serveStaticAssets = false,
+  clientRoot = './build/client',
+  databases,
+  basePath,
+  overlay,
+}: CreateHonoAppOptions): Hono {
   const app = new Hono()
+  const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
 
   // Precedence between the two authentication schemes, decided once.
   //
@@ -125,15 +150,24 @@ export function createHonoApp ({ build, mode, serveStaticAssets = false, overlay
         }
       : undefined
 
-    app.use(`${basename}/assets/*`, serveStatic({ root: './build/client', rewriteRequestPath }))
+    // The static manifest file still carries the baked asset URLs: answer with the re-homed one.
+    if (typeof build !== 'function' && build !== givenBuild) {
+      const manifestSource = renderManifestSource(build)
+
+      app.get(build.assets.url, (c) => c.body(manifestSource, 200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+      }))
+    }
+
+    app.use(`${basename}/assets/*`, serveStatic({ root: clientRoot, rewriteRequestPath }))
     // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
-    app.use('*', serveStatic({ root: './build/client', rewriteRequestPath }))
+    app.use('*', serveStatic({ root: clientRoot, rewriteRequestPath }))
   }
 
   app.all('*', async (c) => {
     const resolvedBuild = typeof build === 'function' ? await build() : build
     const handler = createRequestHandler(resolvedBuild, mode)
-    return handler(c.req.raw, getLoadContext(c, overlay))
+    return handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs(), overlay))
   })
 
   return app

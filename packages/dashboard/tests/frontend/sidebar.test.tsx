@@ -70,16 +70,19 @@ describe('Sidebar', () => {
     })
 
     /**
-     * The mark is decorative here: the wordmark beside it already says
-     * "pg-boss", so an alt text would have a screen reader announce the name
-     * twice. An empty alt is the assertion, not an oversight.
+     * The mark is inlined rather than referenced by URL, so the build stays
+     * portable across base paths. It is decorative: the wordmark beside it
+     * already says "pg-boss", so `aria-hidden` is the assertion rather than an
+     * oversight — announcing the name twice is worse than not announcing the
+     * glyph.
      */
     it('renders the mark beside the wordmark', () => {
       const { container } = renderWithRouter()
 
-      const mark = container.querySelector('img[alt=""]')
+      const mark = container.querySelector('[aria-hidden="true"] > svg')
       expect(mark).not.toBeNull()
-      expect(mark?.getAttribute('src')).toMatch(/pg-boss-mark/)
+      // The queue row: three jobs, two of them dimmed.
+      expect(mark?.querySelectorAll('path[opacity="0.34"]')).toHaveLength(2)
     })
   })
 

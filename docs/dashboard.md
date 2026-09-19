@@ -86,7 +86,7 @@ The dashboard is configured via environment variables:
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
 | `PGBOSS_DASHBOARD_READ_ONLY` | Set to `1` to disable every mutating action (see [Read-only mode](#read-only-mode)) | - |
-| `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (build-time only, see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
+| `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
 
 ### Basic Authentication
@@ -213,14 +213,13 @@ server {
 
 ### Serving under a sub-path
 
-By default the dashboard is served from the root path (`/`). To serve it under a sub-path (for example behind a reverse proxy at `https://example.com/pgboss/`), set `PGBOSS_DASHBOARD_BASE_PATH` **at build time**:
+By default the dashboard is served from the root path (`/`). To serve it under a sub-path (for example behind a reverse proxy at `https://example.com/pgboss/`), set `PGBOSS_DASHBOARD_BASE_PATH` when you start it:
 
 ```bash
-PGBOSS_DASHBOARD_BASE_PATH=/pgboss npm run build
-PGBOSS_DASHBOARD_BASE_PATH=/pgboss npm start
+PGBOSS_DASHBOARD_BASE_PATH=/pgboss npx pg-boss-dashboard
 ```
 
-This sets both the Vite asset `base` and the React Router `basename`, so assets, in-app navigation, and action redirects all stay under the prefix. The reverse proxy should forward the prefix unchanged (do not strip it):
+Assets, in-app navigation, and action redirects all stay under the prefix. This is a runtime setting, so it works with the published npm package as is; no rebuild is needed. The reverse proxy should forward the prefix unchanged (do not strip it):
 
 ```nginx
 location /pgboss/ {
@@ -233,9 +232,59 @@ location /pgboss/ {
 }
 ```
 
-> The asset base is baked in at build time, so the published npm package (which ships a prebuilt `build/`) always uses `/`. To serve under a sub-path, build from source with `PGBOSS_DASHBOARD_BASE_PATH` set.
+> Setting `PGBOSS_DASHBOARD_BASE_PATH` at build time still works and bakes the prefix into the build. A value set at runtime takes precedence.
 
-> The dev server (`npm run dev`) always serves from the root path; `PGBOSS_DASHBOARD_BASE_PATH` only affects production builds.
+> The dev server (`npm run dev`) always serves from the root path.
+
+### Mounting inside an existing application
+
+If you already run a Node.js server, you can mount the dashboard in it instead of running a separate process. `createDashboardHandler()` returns a standard [Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) handler, `(request: Request) => Promise<Response>`.
+
+With a framework built on `Request`/`Response`, such as Hono, it plugs straight in:
+
+```ts
+import { Hono } from 'hono'
+import { createDashboardHandler } from '@pg-boss/dashboard/handler'
+
+const dashboard = createDashboardHandler({
+  databases: [{ url: process.env.DATABASE_URL, schema: 'pgboss' }],
+  basePath: '/admin/queues',
+})
+
+const app = new Hono()
+
+app.use('/admin/*', requireAdmin) // your own authentication middleware
+app.all('/admin/queues', (c) => dashboard(c.req.raw))
+app.all('/admin/queues/*', (c) => dashboard(c.req.raw))
+```
+
+With Express, Fastify or plain `node:http`, convert the request first. `@hono/node-server` ships an adapter that does it:
+
+```ts
+import express from 'express'
+import { getRequestListener } from '@hono/node-server'
+
+const app = express()
+
+app.use('/admin/queues', requireAdmin, (req, res) => {
+  req.url = req.originalUrl // Express strips the mount path; the handler needs it
+  return getRequestListener(dashboard)(req, res)
+})
+```
+
+| Option | Description |
+|--------|-------------|
+| `databases` | One or more `{ url, name?, schema? }` entries. The first is selected by default. Give each a distinct `name` when two connection strings end in the same database name. |
+| `basePath` | The path you mount the handler under. Requests must reach the handler with this prefix still in the URL. Defaults to `/`. |
+
+A few things worth knowing:
+
+- **Authentication is yours.** The handler adds none of its own. Mounted without a guard, it lets anyone read job payloads and send, retry, cancel or delete jobs. Place it behind whatever already protects your admin routes. `PGBOSS_DASHBOARD_AUTH_USERNAME` / `PGBOSS_DASHBOARD_AUTH_PASSWORD` and `PGBOSS_DASHBOARD_READ_ONLY` still apply if you set them.
+- **Its forms carry no CSRF token.** If your application authenticates with a session cookie, apply your usual CSRF protection to the mounted path, or set `PGBOSS_DASHBOARD_READ_ONLY=1`.
+- **It is lazy.** Nothing is imported and no database connection is opened until the first request arrives. The connection pool drains again when the dashboard is idle.
+- **It does not depend on the working directory.** Static assets are resolved relative to the installed package.
+- **Your process stays yours.** The standalone server closes its pools and exits on `SIGTERM`/`SIGINT`. The handler does neither. Call `await dashboard.close()` from your own shutdown sequence if you want the pools closed right away; otherwise idle connections expire after about ten seconds.
+- **Behind a reverse proxy, pass the public URL.** React Router rejects a form submission whose `Origin` header does not match the request URL. If your server sees an internal address such as `http://127.0.0.1:3000`, every action fails with a 400. Rebuild the `Request` with the URL the visitor used (from `X-Forwarded-Proto` and `X-Forwarded-Host`) before handing it over.
 
 ## Enabling Warning Persistence
 

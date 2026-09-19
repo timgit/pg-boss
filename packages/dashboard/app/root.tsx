@@ -19,7 +19,6 @@ import { toPublicDatabase } from "~/lib/config.server";
 import { isReadOnly } from "~/lib/read-only.server";
 import { capabilityContext } from "~/lib/capability-context";
 import { DEFAULT_DENIAL, defaultCapabilities } from "~/lib/capabilities";
-import favicon from "~/assets/pg-boss-favicon.svg";
 import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
@@ -59,6 +58,9 @@ function MainContent ({ children }: { children: React.ReactNode }) {
 }
 
 // Inline script to prevent flash of wrong theme
+/** Built once, and used both for the static link and as the script's starting point. */
+const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(faviconSource)}`
+
 const themeScript = `
   (function() {
     // The mark's own source, inlined at build time. Inside the IIFE so the page
@@ -202,9 +204,12 @@ export function meta() {
 
 export function links() {
   return [
-    // The favicon is its own drawing, not the mark shrunk: the three jobs
-    // without the letters, no strokes, so nothing thins out at tab size.
-    { rel: "icon", type: "image/svg+xml", href: favicon },
+    // A data URI rather than the built asset's URL. An imported asset URL is
+    // absolute and gets baked into this route's chunk, where `withBasePath`
+    // cannot reach it — `scripts/check-build-portable.mjs` fails the build for
+    // exactly that. The source is inlined anyway for the themed version below,
+    // so this costs nothing extra.
+    { rel: "icon", type: "image/svg+xml", href: FAVICON_DATA_URI },
     { rel: "preconnect", href: "https://fonts.googleapis.com" },
     { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
     {
