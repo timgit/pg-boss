@@ -35,10 +35,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '~': resolve(__dirname, './app'),
+      '~': resolve(import.meta.dirname, './app'),
       '~pro': proAlias(),
       '~pro-server': proServerAlias(),
-      'pg-boss': resolve(__dirname, '../../src'),
+      'pg-boss': resolve(import.meta.dirname, '../../src'),
     },
   },
 })

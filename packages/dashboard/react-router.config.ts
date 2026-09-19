@@ -1,5 +1,5 @@
 import type { Config } from '@react-router/dev/config'
-import { resolveBasePath } from './app/lib/base-path'
+import { resolveBasePath } from './app/lib/base-path.ts'
 
 const { routerBasename } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
 
