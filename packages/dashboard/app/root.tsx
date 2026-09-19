@@ -19,8 +19,8 @@ import { toPublicDatabase } from "~/lib/config.server";
 import { isReadOnly } from "~/lib/read-only.server";
 import { capabilityContext } from "~/lib/capability-context";
 import { DEFAULT_DENIAL, defaultCapabilities } from "~/lib/capabilities";
-import markSmall from "~/assets/pg-boss-mark-small.svg";
-import markSmallSource from "~/assets/pg-boss-mark-small.svg?raw";
+import favicon from "~/assets/pg-boss-favicon.svg";
+import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -63,7 +63,7 @@ const themeScript = `
   (function() {
     // The mark's own source, inlined at build time. Inside the IIFE so the page
     // gains no global; it is only ever read a few lines below.
-    const MARK_SOURCE = ${JSON.stringify(markSmallSource)};
+    const MARK_SOURCE = ${JSON.stringify(faviconSource)};
 
     const stored = localStorage.getItem('pg-boss-theme');
     const mode = stored || 'system';
@@ -202,9 +202,9 @@ export function meta() {
 
 export function links() {
   return [
-    // The mark, at the size it was drawn for: the small-size fallback drops the
-    // queue row, which closes up below 24px and reads as a smudge at 16.
-    { rel: "icon", type: "image/svg+xml", href: markSmall },
+    // The favicon is its own drawing, not the mark shrunk: the three jobs
+    // without the letters, no strokes, so nothing thins out at tab size.
+    { rel: "icon", type: "image/svg+xml", href: favicon },
     { rel: "preconnect", href: "https://fonts.googleapis.com" },
     { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
     {
