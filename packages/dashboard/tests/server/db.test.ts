@@ -204,6 +204,23 @@ describe('db.server', () => {
       expect(countHandlers()).toBe(before + 2)
     })
 
+    it('can be closed by two handlers at once', async () => {
+      const { getPool, closeAllPools } = await import('~/lib/db.server')
+      getPool(ctx.connectionString)
+
+      await expect(Promise.all([closeAllPools(), closeAllPools()])).resolves.toBeDefined()
+    })
+
+    it('can open pools again after closing when embedded: another handler may still be in use', async () => {
+      store[embeddedKey] = true
+      const { getPool, closeAllPools } = await import('~/lib/db.server')
+
+      await closeAllPools()
+
+      expect(() => getPool(ctx.connectionString)).not.toThrow()
+      await closeAllPools()
+    })
+
     it('leaves the signals to the host when embedded, and hands it closeAllPools', async () => {
       store[embeddedKey] = true
       const before = countHandlers()
