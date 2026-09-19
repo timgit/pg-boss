@@ -67,8 +67,13 @@ describe('static assets under a base path', () => {
 
     const response = await app.request('http://localhost/aaaaaaaaaaaa../server/index.js')
 
-    // Falls through to the SSR handler rather than returning a file.
-    expect(await response.text()).toBe('ssr')
+    // Asserted as "no file was served", not as "it fell through to SSR".
+    // Whether an escape attempt ends in SSR or a 404 is a routing decision that
+    // may change; that it never returns a file from outside `build/client` is
+    // the property, and a test pinned to the routing stops checking it the day
+    // the routing moves.
+    expect(response.headers.get('content-type') ?? '').not.toMatch(/javascript/)
+    expect(await response.text()).not.toMatch(/createHonoApp|serveStatic/)
   })
 
   it('still strips the base path from a real asset request', async () => {
