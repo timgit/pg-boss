@@ -64,8 +64,27 @@ export function createHonoApp ({ build, mode, serveStaticAssets = false }: Creat
     const basename = typeof build !== 'function' && build.basename && build.basename !== '/'
       ? build.basename
       : ''
+    // Only strip a prefix that is genuinely there, and only on a segment
+    // boundary. A blind `slice` escapes the static root: serveStatic's traversal
+    // guard runs on the *raw* path and only rejects `..` bounded by slashes, so
+    // `/aaaaaaaaaaaa../server/index.js` passes it, and slicing 13 characters for
+    // a basename of `/admin/queues` leaves `../server/index.js` — one level out
+    // of `build/client`, into the server bundle. The catch-all below sees every
+    // path, not just `${basename}/assets/*`, which is what makes it reachable.
+    //
+    // A path that is not under the basename is returned unchanged rather than
+    // trimmed. It cannot be ours, and `join` treats what is left as an ordinary
+    // segment name, so it simply misses and falls through to the SSR handler.
     const rewriteRequestPath = basename
-      ? (path: string) => path.slice(basename.length)
+      ? (path: string) => {
+          if (path !== basename && !path.startsWith(`${basename}/`)) {
+            return path
+          }
+
+          const rest = path.slice(basename.length)
+
+          return rest.startsWith('/') ? rest : `/${rest}`
+        }
       : undefined
 
     app.use(`${basename}/assets/*`, serveStatic({ root: './build/client', rewriteRequestPath }))
