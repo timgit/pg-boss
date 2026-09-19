@@ -204,6 +204,16 @@ describe('db.server', () => {
       expect(countHandlers()).toBe(before + 2)
     })
 
+    it('can open pools again after closing when embedded: another handler may still be in use', async () => {
+      store[embeddedKey] = true
+      const { getPool, closeAllPools } = await import('~/lib/db.server')
+
+      await closeAllPools()
+
+      expect(() => getPool(ctx.connectionString)).not.toThrow()
+      await closeAllPools()
+    })
+
     it('leaves the signals to the host when embedded, and hands it closeAllPools', async () => {
       store[embeddedKey] = true
       const before = countHandlers()

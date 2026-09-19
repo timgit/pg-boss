@@ -67,6 +67,41 @@ describe('createHonoApp under a runtime base path', () => {
     expect(res.status).toBe(401)
   })
 
+  it('answers 404 itself for anything outside the mount path', async () => {
+    const app = createApp()
+
+    for (const path of ['/', '/admin/queuesX', '/assets/entry.client-1.js', '/other.data']) {
+      const res = await app.request(path)
+
+      expect(res.status).toBe(404)
+      expect(await res.text()).toBe('Not Found')
+    }
+  })
+
+  it('lets the index data request through: it is a sibling of the mount path', async () => {
+    const res = await createApp().request('/admin/queues.data')
+
+    expect(await res.text()).not.toBe('Not Found')
+  })
+
+  it('caches hashed assets for good, and never the manifest or a page', async () => {
+    const app = createApp()
+
+    expect((await app.request('/admin/queues/assets/entry.client-1.js')).headers.get('cache-control')).toContain('immutable')
+    expect((await app.request('/admin/queues/assets/manifest-abc123.js')).headers.get('cache-control')).toBe('no-cache')
+  })
+
+  it('ignores PGBOSS_DASHBOARD_AUTH_* when the host authenticates', async () => {
+    process.env.PGBOSS_DASHBOARD_AUTH_USERNAME = 'admin'
+    process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD = 'secret'
+
+    const app = createHonoApp({
+      build, mode: 'production', serveStaticAssets: true, clientRoot, basePath: '/admin/queues', auth: false,
+    })
+
+    expect((await app.request('/admin/queues/assets/entry.client-1.js')).status).toBe(200)
+  })
+
   it('leaves the baked manifest alone without a runtime base path', async () => {
     const app = createHonoApp({ build, mode: 'production', serveStaticAssets: true, clientRoot })
     const res = await app.request('/assets/manifest-abc123.js')

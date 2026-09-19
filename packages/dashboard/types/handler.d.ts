@@ -11,6 +11,8 @@ export interface CreateDashboardHandlerOptions {
   databases: DatabaseInput[];
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
+  /** Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin. */
+  allowedActionOrigins?: string[];
 }
 
 export interface DashboardHandler {
