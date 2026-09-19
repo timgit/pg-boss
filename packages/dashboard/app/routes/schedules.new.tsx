@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { redirect, useActionData, useNavigation, useBlocker } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/schedules.new'
-import { useReadOnly } from '~/lib/read-only'
+import { useCan } from '~/lib/use-capabilities'
 import { ReadOnlyNotice } from '~/components/read-only-notice'
 import { schedule } from '~/lib/boss.server'
 import { getQueues } from '~/lib/queries.server'
@@ -142,7 +142,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function CreateSchedule ({ loaderData, actionData }: any) {
-  const readOnly = useReadOnly()
+  const mayAct = useCan('schedule:create')
   const actionDataResult = useActionData<typeof action>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
@@ -186,7 +186,7 @@ export default function CreateSchedule ({ loaderData, actionData }: any) {
   // Read-only mode: the route stays reachable so a bookmark explains itself, but
   // the form is replaced rather than rendered disabled — the server would refuse
   // the submit anyway.
-  if (readOnly) {
+  if (!mayAct) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">New Schedule</h1>

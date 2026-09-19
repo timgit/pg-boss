@@ -1,7 +1,7 @@
 import { useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/jobs'
-import { useReadOnly } from '~/lib/read-only'
+import { useCan } from '~/lib/use-capabilities'
 import {
   getRecentJobs,
   getRecentJobsCount,
@@ -223,7 +223,7 @@ export function buildParams (
 }
 
 export default function Jobs ({ loaderData }: Route.ComponentProps) {
-  const readOnly = useReadOnly()
+  const mayAct = useCan('job:send')
   const {
     recentJobs,
     queueNames,
@@ -286,7 +286,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
       <PageHeader
         title="Jobs"
         subtitle={subtitle}
-        action={readOnly ? undefined : (
+        action={!mayAct ? undefined : (
           <DbLink to="/send">
             <Button variant="primary" size="md">Send Job</Button>
           </DbLink>

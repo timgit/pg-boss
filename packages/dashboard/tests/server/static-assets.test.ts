@@ -67,9 +67,20 @@ describe('static assets under a base path', () => {
 
     const response = await app.request('http://localhost/aaaaaaaaaaaa../server/index.js')
 
-    // Outside the base path: refused before any file lookup.
+    // Both, and for different reasons.
+    //
+    // The 404 pins the mount-path guard: outside the base path, refused before
+    // any file lookup happens at all. The two below pin the property the guard
+    // is protecting — that no file from outside `build/client` is ever returned.
+    // Either check alone goes quiet when the other mechanism changes: assert
+    // only the status and the suite passes with the path-stripping fix reverted;
+    // assert only the body and it passes if the guard is dropped.
     expect(response.status).toBe(404)
-    expect(await response.text()).toBe('Not Found')
+
+    const body = await response.text()
+
+    expect(response.headers.get('content-type') ?? '').not.toMatch(/javascript/)
+    expect(body).not.toMatch(/createHonoApp|serveStatic/)
   })
 
   it('still strips the base path from a real asset request', async () => {

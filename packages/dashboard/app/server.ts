@@ -6,13 +6,21 @@ import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
 import { getDatabaseConfigs, findDatabaseById, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
+import type { ProServerOverlay } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 
 // Resolve the per-request load context the loaders/actions rely on. The selected
 // database comes from the `?db=` query param or the `pgboss_db` cookie, falling back
 // to the first configured database. With `v8_middleware` on, loaders read these
 // values via `context.get(dbContext)`.
-function getLoadContext (c: Context, databases: DatabaseConfig[]): RouterContextProvider {
+//
+// Exported for the tests, which assert the overlay hook runs last. Nothing else
+// should call it.
+export function getLoadContext (
+  c: Context,
+  databases: DatabaseConfig[],
+  overlay: ProServerOverlay | null = null
+): RouterContextProvider {
   const url = new URL(c.req.url)
   const dbId = url.searchParams.get('db') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
   const currentDb = findDatabaseById(databases, dbId) || databases[0]
@@ -25,6 +33,12 @@ function getLoadContext (c: Context, databases: DatabaseConfig[]): RouterContext
     DB_URL: currentDb?.url || 'postgres://localhost/pgboss',
     SCHEMA: currentDb?.schema || 'pgboss',
   })
+
+  // Last, so the overlay can narrow what was just chosen as well as add to it —
+  // a viewer scoped to one database has to be able to override `currentDb`, not
+  // merely to observe that the free default disagreed with them.
+  overlay?.loadContext?.(c, context)
+
   return context
 }
 
@@ -51,6 +65,18 @@ export interface CreateHonoAppOptions {
   auth?: boolean;
   /** Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin. */
   allowedActionOrigins?: string[];
+  /**
+   * The Pro overlay's server half, from `loadProServer()`, or `null` for a free
+   * build — which is the only shape this package is ever tested against on its
+   * own.
+   *
+   * Required, with no default, and that is the whole point. An entry point that
+   * forgets it would serve a Pro build with none of Pro's authentication: no
+   * session gate, no capability narrowing, every loader answering an anonymous
+   * request. A default of `null` makes that a silent hole; requiring the field
+   * makes it a compile error in the one place it can be introduced.
+   */
+  overlay: ProServerOverlay | null;
 }
 
 export function createHonoApp ({
@@ -62,6 +88,7 @@ export function createHonoApp ({
   basePath,
   auth = true,
   allowedActionOrigins,
+  overlay,
 }: CreateHonoAppOptions): Hono {
   const app = new Hono()
   const rehomed = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
@@ -80,10 +107,48 @@ export function createHonoApp ({
     })
   }
 
-  // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs first so static
-  // assets and SSR responses are both gated.
-  if (auth) {
-    configureAuth(app)
+  // Precedence between the authentication schemes, decided once.
+  //
+  // Hono dispatches in registration order, so this ordering *is* the rule: a
+  // route registered before `app.use(basicAuth)` answers without ever reaching
+  // it. An overlay that does not authenticate must therefore be registered
+  // after the gate, or mounting Pro would quietly open a hole in a dashboard
+  // that was password-protected the day before.
+  //
+  // Whichever branch runs, a credential the operator configured is never
+  // discarded in silence. There are two ways to end up ignoring one — an overlay
+  // that authenticates instead, or a host that says it will — and both say so on
+  // stdout. An operator who set a password and is not being asked for one needs
+  // to hear that from us rather than discover it.
+  const configuredCredential = Boolean(
+    process.env.PGBOSS_DASHBOARD_AUTH_USERNAME || process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD
+  )
+
+  if (overlay?.ownsAuth) {
+    // An overlay that authenticates replaces the shared credential rather than
+    // sitting behind it: stacking them prompts twice for two unrelated logins,
+    // and the browser's Basic dialog is the one with no way to sign out. It goes
+    // first because its own login route has to answer someone who is by
+    // definition not authenticated yet.
+    if (configuredCredential) {
+      console.log('PGBOSS_DASHBOARD_AUTH_* ignored: the Pro overlay provides authentication.')
+    }
+
+    overlay.server?.(app)
+  } else {
+    // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs before the
+    // handler so static assets and SSR responses are both gated — and before the
+    // overlay, so anything it adds is gated too.
+    if (auth) {
+      configureAuth(app)
+    } else if (configuredCredential) {
+      console.log(
+        'PGBOSS_DASHBOARD_AUTH_* ignored: this dashboard is mounted inside a host ' +
+        'application, which is responsible for authenticating the request.'
+      )
+    }
+
+    overlay?.server?.(app)
   }
 
   // Read-only mode (no-op unless PGBOSS_DASHBOARD_READ_ONLY=1). Runs after auth so a
@@ -132,13 +197,32 @@ export function createHonoApp ({
       }))
     }
 
+    // Immutable only when a file was actually served.
+    //
+    // Keying on the URL prefix and `res.ok` instead would put a year of
+    // immutable on any 200 answered under `${basename}/assets/*` — including an
+    // SSR response, over the `no-store` it just earned for carrying job
+    // payloads. Nothing routes there today, so it was latent rather than live.
+    //
+    // Two parts, because `onFound` runs after `serveStatic` has already built
+    // its response: setting a header there does nothing. So it records that a
+    // file was found, and the middleware outside sets the header on the response
+    // once it exists. The manifest keeps its own `no-cache` — it is answered by
+    // a route above, so `onFound` never fires for it.
     app.use(`${basename}/assets/*`, async (c, next) => {
       await next()
-      if (c.res.ok) {
+
+      if (c.get('servedStaticFile' as never)) {
         c.res.headers.set('Cache-Control', 'public, max-age=31536000, immutable')
       }
     })
-    app.use(`${basename}/assets/*`, serveStatic({ root: clientRoot, rewriteRequestPath }))
+    app.use(`${basename}/assets/*`, serveStatic({
+      root: clientRoot,
+      rewriteRequestPath,
+      onFound: (_path, c) => {
+        c.set('servedStaticFile' as never, true as never)
+      },
+    }))
     // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
     app.use('*', serveStatic({ root: clientRoot, rewriteRequestPath }))
   }
@@ -147,7 +231,7 @@ export function createHonoApp ({
 
   app.all('*', async (c) => {
     const handler = productionHandler ?? createRequestHandler(await (build as () => ServerBuild | Promise<ServerBuild>)(), mode)
-    const response = await handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs()))
+    const response = await handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs(), overlay))
 
     // Pages carry job payloads.
     if (!response.headers.has('Cache-Control')) {

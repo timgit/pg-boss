@@ -17,6 +17,9 @@ import { cn } from "~/lib/utils";
 import { dbContext } from "~/lib/db-context";
 import { toPublicDatabase } from "~/lib/config.server";
 import { isReadOnly } from "~/lib/read-only.server";
+import { capabilityContext } from "~/lib/capability-context";
+import { DEFAULT_DENIAL, defaultCapabilities } from "~/lib/capabilities";
+import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -55,8 +58,15 @@ function MainContent ({ children }: { children: React.ReactNode }) {
 }
 
 // Inline script to prevent flash of wrong theme
+/** Built once, and used both for the static link and as the script's starting point. */
+const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(faviconSource)}`
+
 const themeScript = `
   (function() {
+    // The mark's own source, inlined at build time. Inside the IIFE so the page
+    // gains no global; it is only ever read a few lines below.
+    const MARK_SOURCE = ${JSON.stringify(faviconSource)};
+
     const stored = localStorage.getItem('pg-boss-theme');
     const mode = stored || 'system';
     let theme = mode;
@@ -82,9 +92,13 @@ const themeScript = `
     const colorTheme = localStorage.getItem('pg-boss-color-theme') || 'cobalt';
     document.documentElement.dataset.colorTheme = colorTheme;
 
-    // Create favicon with color theme
+    // Tint the mark's square to the chosen theme, the way this has always
+    // worked. links() ships the cobalt original so there is a correct icon
+    // before any of this runs; only the square's fill is swapped, so the
+    // letterforms and the queue row come straight from the asset and cannot
+    // drift from the one the sidebar draws.
     const hex = colorHex[colorTheme] || colorHex.cobalt;
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="' + hex + '"/><text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" font-weight="bold" fill="white">PG</text></svg>';
+    const svg = MARK_SOURCE.split('#284fe0').join(hex);
     var link = document.querySelector('link[rel="icon"]');
     if (!link) {
       link = document.createElement('link');
@@ -99,6 +113,11 @@ const themeScript = `
 export async function loader({ context }: Route.LoaderArgs) {
   const { databases, currentDb } = context.get(dbContext);
 
+  // Set by the Pro overlay from `loadContext`, absent in every free build. It is
+  // read with a fallback rather than required, so the dashboard has exactly one
+  // answer to "what may this person do" whether or not an overlay is mounted.
+  const actor = context.get(capabilityContext);
+
   // Project before returning. The sidebar needs an id, a display name and the
   // schema; it never needs the connection string. A loader's return value is
   // serialized into the HTML for hydration, so returning the raw config puts
@@ -107,8 +126,14 @@ export async function loader({ context }: Route.LoaderArgs) {
     databases: databases.map(toPublicDatabase),
     currentDb: currentDb ? toPublicDatabase(currentDb) : currentDb,
     // Drives whether mutating controls render. The server refuses mutations
-    // regardless, so this is presentation, not enforcement.
-    readOnly: isReadOnly(),
+    // regardless — `read-only.server.ts` here, the overlay's middleware when one
+    // is mounted — so this is presentation, not enforcement.
+    //
+    // One field, not two. A `readOnly` boolean beside this would be a second
+    // answer to the same question, and the two would disagree the first time a
+    // role permitted something the global switch forbade.
+    can: actor?.capabilities ?? defaultCapabilities(isReadOnly()),
+    denial: actor?.denial ?? DEFAULT_DENIAL,
   };
 }
 
@@ -179,6 +204,12 @@ export function meta() {
 
 export function links() {
   return [
+    // A data URI rather than the built asset's URL. An imported asset URL is
+    // absolute and gets baked into this route's chunk, where `withBasePath`
+    // cannot reach it — `scripts/check-build-portable.mjs` fails the build for
+    // exactly that. The source is inlined anyway for the themed version below,
+    // so this costs nothing extra.
+    { rel: "icon", type: "image/svg+xml", href: FAVICON_DATA_URI },
     { rel: "preconnect", href: "https://fonts.googleapis.com" },
     { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
     {

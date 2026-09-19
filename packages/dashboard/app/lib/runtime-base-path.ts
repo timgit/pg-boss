@@ -16,7 +16,11 @@ export function withBasePath (build: ServerBuild, basePath: string | undefined):
     throw new Error(`Invalid base path "${basePath}": use letters, digits and . _ ~ - / only`)
   }
 
-  if (basePath.split('/').some(segment => segment === '.' || segment === '..')) {
+  // Trimmed, like the check above and like `resolveBasePath` below. Splitting
+  // the raw string means `'/a/.. '` yields a segment of `'.. '`, which is not
+  // `'..'`, so the guard passes — and the value that reaches the router is the
+  // trimmed `/a/..` it was meant to reject.
+  if (basePath.trim().split('/').some(segment => segment === '.' || segment === '..')) {
     throw new Error(`Invalid base path "${basePath}": it must not contain . or .. segments`)
   }
 
@@ -46,7 +50,14 @@ export function rehomeAssetUrls<T> (value: T, fromPublicPath: string, toPublicPa
       return node.map(visit)
     }
     if (node && typeof node === 'object') {
-      return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, visit(child)]))
+      // Keys are rewritten as well as values. Parts of the manifest are maps
+      // *keyed* by asset URL — `sri` is declared as Record<string, string> in
+      // react-router 8.3.1 — and a rewritten value under an un-rewritten key is
+      // a lookup that silently misses. `visit` only touches strings starting
+      // with the old prefix, so a key that is not an asset URL is untouched.
+      return Object.fromEntries(
+        Object.entries(node).map(([key, child]) => [visit(key) as string, visit(child)])
+      )
     }
     return node
   }

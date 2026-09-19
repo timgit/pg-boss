@@ -69,11 +69,20 @@ describe('Sidebar', () => {
       expect(brandTexts.length).toBeGreaterThanOrEqual(1)
     })
 
-    it('renders PG logo', () => {
-      renderWithRouter()
+    /**
+     * The mark is inlined rather than referenced by URL, so the build stays
+     * portable across base paths. It is decorative: the wordmark beside it
+     * already says "pg-boss", so `aria-hidden` is the assertion rather than an
+     * oversight — announcing the name twice is worse than not announcing the
+     * glyph.
+     */
+    it('renders the mark beside the wordmark', () => {
+      const { container } = renderWithRouter()
 
-      const logoTexts = screen.getAllByText('PG')
-      expect(logoTexts.length).toBeGreaterThanOrEqual(1)
+      const mark = container.querySelector('[aria-hidden="true"] > svg')
+      expect(mark).not.toBeNull()
+      // The queue row: three jobs, two of them dimmed.
+      expect(mark?.querySelectorAll('path[opacity="0.34"]')).toHaveLength(2)
     })
   })
 

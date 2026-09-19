@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/schedules.$name.$key'
-import { useReadOnly } from '~/lib/read-only'
+import { useCan } from '~/lib/use-capabilities'
 import { getSchedule } from '~/lib/queries.server'
 import { nextScheduleOccurrence } from '~/lib/schedule.server'
 import { unschedule } from '~/lib/boss.server'
@@ -66,7 +66,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 
 export default function ScheduleDetail ({ loaderData, actionData }: Route.ComponentProps) {
   const { schedule, nextOccurrence } = loaderData
-  const readOnly = useReadOnly()
+  const mayUnschedule = useCan('schedule:delete')
   const [confirmDialog, setConfirmDialog] = useState(false)
 
   return (
@@ -81,7 +81,7 @@ export default function ScheduleDetail ({ loaderData, actionData }: Route.Compon
           </h1>
         </div>
         <div className="flex flex-col items-end gap-3">
-          {!readOnly && (
+          {mayUnschedule && (
             <Button
               variant="danger"
               size="md"

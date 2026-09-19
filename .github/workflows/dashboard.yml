@@ -64,3 +64,11 @@ jobs:
       working-directory: packages/dashboard
       env:
         DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+
+    # The build is the only thing that runs `scripts/build-server.ts`, which
+    # resolves the `~pro-server` alias and so has real logic in it. Nothing above
+    # touches it: a break there would otherwise surface in `prepublishOnly`,
+    # mid-release, rather than on the pull request that caused it.
+    - name: Build
+      run: npm run build
+      working-directory: packages/dashboard

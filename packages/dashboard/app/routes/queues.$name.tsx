@@ -4,7 +4,7 @@ import { MoreHorizontal, ChevronDown, ChevronRight, LineChart } from 'lucide-rea
 import { Menu } from '@base-ui/react/menu'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name'
-import { useReadOnly } from '~/lib/read-only'
+import { useCan } from '~/lib/use-capabilities'
 import {
   getQueue,
   getJobs,
@@ -175,7 +175,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
-  const readOnly = useReadOnly()
+  const maySend = useCan('job:send')
   const {
     queue,
     jobs,
@@ -243,7 +243,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
                 View metrics
               </Button>
             </DbLink>
-            {!readOnly && (
+            {maySend && (
               <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
                 <Button variant="primary" size="md">Send Job</Button>
               </DbLink>
@@ -434,7 +434,14 @@ function JobRow ({
   queueName: string
   jobColumns: JobColumn[]
 }) {
-  const readOnly = useReadOnly()
+  // `canRetry` and friends below are job-state checks — whether this job can be
+  // retried at all. These are whether this person may. Both have to be true, and
+  // conflating them is how a viewer ends up looking at a Delete button.
+  const mayRetry = useCan('job:retry')
+  const mayResume = useCan('job:resume')
+  const mayCancel = useCan('job:cancel')
+  const mayDelete = useCan('job:delete')
+  const mayAct = mayRetry || mayResume || mayCancel || mayDelete
   const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>()
   const isLoading = fetcher.state !== 'idle'
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -502,7 +509,7 @@ function JobRow ({
                 Failed
               </span>
             )}
-            {!readOnly && (
+            {mayAct && (
               <Menu.Root>
                 <Menu.Trigger
                   className={cn(
@@ -527,7 +534,7 @@ function JobRow ({
                         'animate-in fade-in-0 zoom-in-95'
                       )}
                     >
-                      {canRetry && (
+                      {mayRetry && canRetry && (
                         <Menu.Item
                           className={menuItemClass}
                           onClick={() => submitAction('retry')}
@@ -535,7 +542,7 @@ function JobRow ({
                           Retry
                         </Menu.Item>
                       )}
-                      {canResume && (
+                      {mayResume && canResume && (
                         <Menu.Item
                           className={menuItemClass}
                           onClick={() => submitAction('resume')}
@@ -543,7 +550,7 @@ function JobRow ({
                           Resume
                         </Menu.Item>
                       )}
-                      {canCancel && (
+                      {mayCancel && canCancel && (
                         <Menu.Item
                           className={dangerMenuItemClass}
                           onClick={() => openConfirmDialog(
@@ -556,7 +563,7 @@ function JobRow ({
                           Cancel
                         </Menu.Item>
                       )}
-                      {canDelete && (
+                      {mayDelete && canDelete && (
                         <Menu.Item
                           className={dangerMenuItemClass}
                           onClick={() => openConfirmDialog(

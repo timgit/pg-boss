@@ -3,15 +3,20 @@ import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 import { resolveBasePath } from './app/lib/base-path'
-import { proAlias } from './app/lib/pro-overlay.ts'
+import { proAlias, proServerAlias } from './app/lib/pro-overlay.ts'
+import { thirdPartyPlugin } from './scripts/third-party.ts'
 
 const { viteBase } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
 
 // Kept as runtime imports: React and React Router must stay a single shared copy, and `pg`
 // loads optional native bindings. Everything else is bundled into the server build.
+//
+// `isbot` was on this list and did not need to be — it is ordinary JavaScript with
+// no shared state and no native code. Bundling it is one fewer package a consumer
+// installs, and `scripts/check-imports.mjs` now fails the build if anything left
+// external is undeclared, so the list can be short without being risky.
 const SERVER_RUNTIME_PACKAGES = [
   '@react-router/node',
-  'isbot',
   'pg',
   'react',
   'react-dom',
@@ -27,6 +32,11 @@ export default defineConfig(({ command }) => ({
   plugins: [
     tailwindcss(),
     reactRouter(),
+    // Records which third-party packages ended up in the bundles, so the notices
+    // describe what is redistributed rather than what happens to be installed.
+    // The two stopped being the same thing when the server build started
+    // bundling its dependencies.
+    thirdPartyPlugin(),
   ],
   // Left external, the UI libraries had to be installed whole (lucide-react alone is ~45 MB
   // for ~20 icons). Build only: the dev server evaluates inlined modules as ESM, which breaks
@@ -38,6 +48,10 @@ export default defineConfig(({ command }) => ({
     alias: {
       '~': '/app',
       '~pro': proAlias(),
+      // The dev server imports this through the SSR runner to build the same
+      // Hono app production does; without the alias here it resolves to nothing
+      // and the overlay's server half is silently absent from `npm run dev`.
+      '~pro-server': proServerAlias(),
       'pg-boss': resolve(__dirname, '../../src'),
     },
     // Force a single copy of React in the dev module graph. Without this, Vite's

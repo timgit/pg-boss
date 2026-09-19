@@ -1,7 +1,7 @@
 import { useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/schedules'
-import { useReadOnly } from '~/lib/read-only'
+import { useCan } from '~/lib/use-capabilities'
 import {
   getSchedules,
   getScheduleCount,
@@ -120,7 +120,7 @@ export function scheduleHuman (expression: string, kind?: ScheduleKind): string 
 }
 
 export default function Schedules ({ loaderData }: Route.ComponentProps) {
-  const readOnly = useReadOnly()
+  const mayAct = useCan('schedule:create')
   const { schedules, totalCount, page, totalPages, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -135,7 +135,7 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
       <PageHeader
         title="Schedules"
         subtitle="Jobs queued automatically by pg-boss, on a cron expression or a recurrence rule"
-        action={readOnly ? undefined : (
+        action={!mayAct ? undefined : (
           <DbLink to="/schedules/new">
             <Button variant="primary" size="md" className='cursor-pointer'>Schedule Job</Button>
           </DbLink>
