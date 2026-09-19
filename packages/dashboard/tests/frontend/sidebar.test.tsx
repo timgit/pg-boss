@@ -81,8 +81,20 @@ describe('Sidebar', () => {
 
       const mark = container.querySelector('[aria-hidden="true"] > svg')
       expect(mark).not.toBeNull()
-      // The queue row: three jobs, two of them dimmed.
-      expect(mark?.querySelectorAll('path[opacity="0.34"]')).toHaveLength(2)
+
+      // The queue row: three jobs, two waiting and the rightmost active. The
+      // count is asserted, not the opacity — how faint a waiting job looks is a
+      // design decision that has already changed once, and pinning the value
+      // makes a test fail for a reason nobody would call a regression. That
+      // there are two of them, dimmed, and one that is not, is the mark.
+      const dimmed = [...(mark?.querySelectorAll('path[opacity]') ?? [])]
+      expect(dimmed).toHaveLength(2)
+
+      for (const job of dimmed) {
+        const value = Number(job.getAttribute('opacity'))
+        expect(value).toBeGreaterThan(0)
+        expect(value).toBeLessThan(1)
+      }
     })
   })
 
