@@ -75,15 +75,14 @@ export async function queryOne<T = unknown> (
 // Cleanup function for graceful shutdown
 export async function closeAllPools (): Promise<void> {
   isShuttingDown = true
-  const closePromises: Promise<void>[] = []
-  for (const [connectionString, pool] of pools) {
-    closePromises.push(
-      pool.end().then(() => {
-        pools.delete(connectionString)
-      })
-    )
+  const closing = [...pools.values()]
+  pools.clear()
+  await Promise.all(closing.map(pool => pool.end()))
+
+  // Embedded, another handler may still be open or be created later. Standalone, the process exits.
+  if (globalStore[EMBEDDED_KEY]) {
+    isShuttingDown = false
   }
-  await Promise.all(closePromises)
 }
 
 // Standalone, the dashboard owns the process: close the pools and exit on a signal. Embedded,

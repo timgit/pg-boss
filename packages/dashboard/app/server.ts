@@ -47,6 +47,10 @@ export interface CreateHonoAppOptions {
   databases?: DatabaseConfig[];
   /** Overrides the base path baked into the build. Production builds only. */
   basePath?: string;
+  /** Apply PGBOSS_DASHBOARD_AUTH_*. Off when embedded: the host authenticates. */
+  auth?: boolean;
+  /** Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin. */
+  allowedActionOrigins?: string[];
 }
 
 export function createHonoApp ({
@@ -56,13 +60,31 @@ export function createHonoApp ({
   clientRoot = './build/client',
   databases,
   basePath,
+  auth = true,
+  allowedActionOrigins,
 }: CreateHonoAppOptions): Hono {
   const app = new Hono()
-  const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
+  const rehomed = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
+  const build = typeof rehomed === 'function' || !allowedActionOrigins
+    ? rehomed
+    : { ...rehomed, allowedActionOrigins }
+  const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
+
+  if (mountPath) {
+    // `${mountPath}.data` is the index route's data request: a sibling of the mount path.
+    app.use('*', async (c, next) => {
+      const { pathname } = new URL(c.req.url)
+      const ours = pathname === mountPath || pathname === `${mountPath}.data` || pathname.startsWith(`${mountPath}/`)
+
+      return ours ? next() : c.text('Not Found', 404)
+    })
+  }
 
   // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs first so static
   // assets and SSR responses are both gated.
-  configureAuth(app)
+  if (auth) {
+    configureAuth(app)
+  }
 
   // Read-only mode (no-op unless PGBOSS_DASHBOARD_READ_ONLY=1). Runs after auth so a
   // rejected mutation still requires credentials to provoke, and before the SSR
@@ -101,23 +123,37 @@ export function createHonoApp ({
       : undefined
 
     // The static manifest file still carries the baked asset URLs: answer with the re-homed one.
-    if (typeof build !== 'function' && build !== givenBuild) {
+    if (typeof build !== 'function' && rehomed !== givenBuild) {
       const manifestSource = renderManifestSource(build)
 
       app.get(build.assets.url, (c) => c.body(manifestSource, 200, {
         'Content-Type': 'text/javascript; charset=utf-8',
+        'Cache-Control': 'no-cache',
       }))
     }
 
+    app.use(`${basename}/assets/*`, async (c, next) => {
+      await next()
+      if (c.res.ok) {
+        c.res.headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+      }
+    })
     app.use(`${basename}/assets/*`, serveStatic({ root: clientRoot, rewriteRequestPath }))
     // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
     app.use('*', serveStatic({ root: clientRoot, rewriteRequestPath }))
   }
 
+  const productionHandler = typeof build === 'function' ? undefined : createRequestHandler(build, mode)
+
   app.all('*', async (c) => {
-    const resolvedBuild = typeof build === 'function' ? await build() : build
-    const handler = createRequestHandler(resolvedBuild, mode)
-    return handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs()))
+    const handler = productionHandler ?? createRequestHandler(await (build as () => ServerBuild | Promise<ServerBuild>)(), mode)
+    const response = await handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs()))
+
+    // Pages carry job payloads.
+    if (!response.headers.has('Cache-Control')) {
+      response.headers.set('Cache-Control', 'no-store')
+    }
+    return response
   })
 
   return app
