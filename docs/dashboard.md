@@ -86,7 +86,7 @@ The dashboard is configured via environment variables:
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
 | `PGBOSS_DASHBOARD_READ_ONLY` | Set to `1` to disable every mutating action (see [Read-only mode](#read-only-mode)) | - |
-| `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (build-time only, see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
+| `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
 
 ### Basic Authentication
@@ -213,14 +213,13 @@ server {
 
 ### Serving under a sub-path
 
-By default the dashboard is served from the root path (`/`). To serve it under a sub-path (for example behind a reverse proxy at `https://example.com/pgboss/`), set `PGBOSS_DASHBOARD_BASE_PATH` **at build time**:
+By default the dashboard is served from the root path (`/`). To serve it under a sub-path (for example behind a reverse proxy at `https://example.com/pgboss/`), set `PGBOSS_DASHBOARD_BASE_PATH` when you start it:
 
 ```bash
-PGBOSS_DASHBOARD_BASE_PATH=/pgboss npm run build
-PGBOSS_DASHBOARD_BASE_PATH=/pgboss npm start
+PGBOSS_DASHBOARD_BASE_PATH=/pgboss npx pg-boss-dashboard
 ```
 
-This sets both the Vite asset `base` and the React Router `basename`, so assets, in-app navigation, and action redirects all stay under the prefix. The reverse proxy should forward the prefix unchanged (do not strip it):
+Assets, in-app navigation, and action redirects all stay under the prefix. This is a runtime setting, so it works with the published npm package as is; no rebuild is needed. The reverse proxy should forward the prefix unchanged (do not strip it):
 
 ```nginx
 location /pgboss/ {
@@ -233,9 +232,9 @@ location /pgboss/ {
 }
 ```
 
-> The asset base is baked in at build time, so the published npm package (which ships a prebuilt `build/`) always uses `/`. To serve under a sub-path, build from source with `PGBOSS_DASHBOARD_BASE_PATH` set.
+> Setting `PGBOSS_DASHBOARD_BASE_PATH` at build time still works and bakes the prefix into the build. A value set at runtime takes precedence.
 
-> The dev server (`npm run dev`) always serves from the root path; `PGBOSS_DASHBOARD_BASE_PATH` only affects production builds.
+> The dev server (`npm run dev`) always serves from the root path.
 
 ## Enabling Warning Persistence
 

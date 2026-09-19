@@ -6,6 +6,7 @@ import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
 import { getDatabaseConfigs, findDatabaseById } from './lib/config.server'
 import { dbContext } from './lib/db-context'
+import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 
 // Resolve the per-request load context the loaders/actions rely on. The selected
 // database comes from the `?db=` query param or the `pgboss_db` cookie, falling back
@@ -42,10 +43,28 @@ export interface CreateHonoAppOptions {
    * the Vite dev server middleware serves assets instead.
    */
   serveStaticAssets?: boolean;
+  /**
+   * Where the built client assets live. Defaults to `./build/client`, relative to the
+   * working directory. The production server passes an absolute path so it does not
+   * depend on where it is started from.
+   */
+  clientRoot?: string;
+  /**
+   * Serve under this path instead of the one baked into the build. Only supported with
+   * a concrete production build.
+   */
+  basePath?: string;
 }
 
-export function createHonoApp ({ build, mode, serveStaticAssets = false }: CreateHonoAppOptions): Hono {
+export function createHonoApp ({
+  build: givenBuild,
+  mode,
+  serveStaticAssets = false,
+  clientRoot = './build/client',
+  basePath,
+}: CreateHonoAppOptions): Hono {
   const app = new Hono()
+  const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
 
   // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs first so static
   // assets and SSR responses are both gated.
@@ -68,9 +87,19 @@ export function createHonoApp ({ build, mode, serveStaticAssets = false }: Creat
       ? (path: string) => path.slice(basename.length)
       : undefined
 
-    app.use(`${basename}/assets/*`, serveStatic({ root: './build/client', rewriteRequestPath }))
+    // Under a runtime base path the static copy of the route manifest still carries the
+    // asset URLs baked at build time, so answer with the re-homed one instead.
+    if (typeof build !== 'function' && build !== givenBuild) {
+      const manifestSource = renderManifestSource(build)
+
+      app.get(build.assets.url, (c) => c.body(manifestSource, 200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+      }))
+    }
+
+    app.use(`${basename}/assets/*`, serveStatic({ root: clientRoot, rewriteRequestPath }))
     // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
-    app.use('*', serveStatic({ root: './build/client', rewriteRequestPath }))
+    app.use('*', serveStatic({ root: clientRoot, rewriteRequestPath }))
   }
 
   app.all('*', async (c) => {

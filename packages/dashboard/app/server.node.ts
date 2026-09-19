@@ -1,6 +1,8 @@
+import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
+import { resolveBasePath } from './lib/base-path'
 import pkg from '../package.json' with { type: 'json' }
 
 // The React Router server build is emitted by `react-router build` as a sibling of this
@@ -13,13 +15,22 @@ const build = (await import(buildModulePath)) as unknown as ServerBuild
 const port = Number(process.env.PORT) || 3000
 const hostname = process.env.HOST || '0.0.0.0'
 
-const app = createHonoApp({ build, mode: 'production', serveStaticAssets: true })
+// Read at runtime, so the prebuilt npm package can be served under a sub-path without a
+// rebuild. Left unset, the build keeps whatever base path it was built with.
+const basePath = process.env.PGBOSS_DASHBOARD_BASE_PATH || undefined
+
+// Resolved from this file rather than the working directory, so
+// `node node_modules/@pg-boss/dashboard/build/server.js` finds its assets from anywhere.
+const clientRoot = fileURLToPath(new URL('./client', import.meta.url))
+
+const app = createHonoApp({ build, mode: 'production', serveStaticAssets: true, clientRoot, basePath })
 
 serve({ fetch: app.fetch, port, hostname }, (info) => {
   // Named from the manifest rather than hardcoded: this bundle is repackaged under
   // other names, and a build that announces itself as something else is confusing.
   console.log(`${pkg.name}@${pkg.version} listening on http://${hostname}:${info.port}`)
-  if (build.basename && build.basename !== '/') {
-    console.log(`base path: ${build.basename}`)
+  const servedUnder = basePath ? resolveBasePath(basePath).routerBasename : build.basename
+  if (servedUnder && servedUnder !== '/') {
+    console.log(`base path: ${servedUnder}`)
   }
 })
