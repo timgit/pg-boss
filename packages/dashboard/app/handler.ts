@@ -13,6 +13,24 @@ export interface CreateDashboardHandlerOptions {
   databases: DatabaseInput[];
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
+  /**
+   * Origins a form submission may come from, e.g. `https://ops.example.com`.
+   *
+   * React Router refuses an action whose `Origin` header does not match the
+   * request URL. Behind a proxy the host often sees `http://127.0.0.1:3000`
+   * while the browser sent the public origin, so every action returns 400 while
+   * every page renders — a failure that looks like a dashboard bug and is not.
+   *
+   * The usual answer is `react-router.config.ts`, which a host cannot edit on a
+   * prebuilt package, so the handler is the only thing that can set it. Passing
+   * a `Request` carrying the public URL also works and needs no configuration;
+   * this is for when reconstructing that request is the harder half.
+   *
+   * `false` disables the check entirely. That is a real option for a handler
+   * mounted behind an authenticating proxy on a private network, and a bad one
+   * anywhere else.
+   */
+  allowedActionOrigins?: string[] | false;
 }
 
 export interface DashboardHandler {
@@ -33,7 +51,9 @@ const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
  * own, and this loads it, so mounting Pro here authenticates exactly as the
  * standalone server does.
  */
-export function createDashboardHandler ({ databases, basePath }: CreateDashboardHandlerOptions): DashboardHandler {
+export function createDashboardHandler (
+  { databases, basePath, allowedActionOrigins }: CreateDashboardHandlerOptions
+): DashboardHandler {
   if (databases.length === 0) {
     throw new Error('createDashboardHandler() needs at least one database')
   }
@@ -61,7 +81,14 @@ export function createDashboardHandler ({ databases, basePath }: CreateDashboard
 
     // Non-literal so esbuild and tsc leave it as a runtime import, as in server.node.ts.
     const buildModulePath = './server/index.js'
-    const build = (await import(buildModulePath)) as unknown as ServerBuild
+    const loaded = (await import(buildModulePath)) as unknown as ServerBuild
+
+    // Spread onto a copy rather than mutating the imported module, which is
+    // shared: two handlers with different settings would otherwise fight over
+    // one object. `withBasePath` already returns a copy the same way.
+    const build = allowedActionOrigins === undefined
+      ? loaded
+      : { ...loaded, allowedActionOrigins }
 
     return createHonoApp({
       build,

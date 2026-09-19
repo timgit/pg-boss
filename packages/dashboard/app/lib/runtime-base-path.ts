@@ -42,7 +42,14 @@ export function rehomeAssetUrls<T> (value: T, fromPublicPath: string, toPublicPa
       return node.map(visit)
     }
     if (node && typeof node === 'object') {
-      return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, visit(child)]))
+      // Keys are rewritten as well as values. Parts of the manifest are maps
+      // *keyed* by asset URL — `sri` is declared as Record<string, string> in
+      // react-router 8.3.1 — and a rewritten value under an un-rewritten key is
+      // a lookup that silently misses. `visit` only touches strings starting
+      // with the old prefix, so a key that is not an asset URL is untouched.
+      return Object.fromEntries(
+        Object.entries(node).map(([key, child]) => [visit(key) as string, visit(child)])
+      )
     }
     return node
   }

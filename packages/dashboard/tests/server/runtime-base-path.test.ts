@@ -70,6 +70,27 @@ describe('withBasePath', () => {
 })
 
 describe('rehomeAssetUrls', () => {
+  /**
+   * Parts of the manifest are maps *keyed* by asset URL — `sri` is declared as
+   * `Record<string, string>` in react-router 8.3.1. A rewritten value under an
+   * un-rewritten key is a lookup that silently misses, which is worse than not
+   * rewriting at all: the page loads and the integrity check never matches.
+   */
+  it('rewrites keys as well as values', () => {
+    const rehomed = rehomeAssetUrls(
+      { sri: { '/assets/a.js': 'sha384-x' }, url: '/assets/a.js' },
+      '/',
+      '/x/'
+    )
+
+    expect(rehomed).toEqual({ sri: { '/x/assets/a.js': 'sha384-x' }, url: '/x/assets/a.js' })
+  })
+
+  it('leaves a key that is not an asset URL alone', () => {
+    expect(rehomeAssetUrls({ routes: { 'root': '/assets/a.js' } }, '/', '/x/'))
+      .toEqual({ routes: { 'root': '/x/assets/a.js' } })
+  })
+
   it('only rewrites strings that start with the public asset path', () => {
     expect(rehomeAssetUrls(['/assets/a.js', 'see /assets/a.js', '/other/assets/a.js'], '/', '/x/'))
       .toEqual(['/x/assets/a.js', 'see /assets/a.js', '/other/assets/a.js'])
