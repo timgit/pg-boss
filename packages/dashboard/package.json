@@ -46,7 +46,7 @@
     "dev:auth": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev PGBOSS_DASHBOARD_AUTH_USERNAME=admin PGBOSS_DASHBOARD_AUTH_PASSWORD=admin node server.js",
     "dev:init-db": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev tsx scripts/init-dev-db.ts",
     "dev:worker": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev tsx scripts/worker.ts",
-    "build": "react-router build && tsx scripts/build-server.ts && node scripts/check-build-portable.mjs",
+    "build": "react-router build && tsx scripts/build-server.ts && node scripts/check-build-portable.mjs && tsx scripts/notices.ts",
     "start": "node ./build/server.js",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build",
     "test": "vitest run --config vitest.config.frontend.ts && vitest run --config vitest.config.server.ts",

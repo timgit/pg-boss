@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 import { resolveBasePath } from './app/lib/base-path'
 import { proAlias, proServerAlias } from './app/lib/pro-overlay.ts'
+import { thirdPartyPlugin } from './scripts/third-party.ts'
 
 const { viteBase } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
 
@@ -27,6 +28,11 @@ export default defineConfig(({ command }) => ({
   plugins: [
     tailwindcss(),
     reactRouter(),
+    // Records which third-party packages ended up in the bundles, so the notices
+    // describe what is redistributed rather than what happens to be installed.
+    // The two stopped being the same thing when the server build started
+    // bundling its dependencies.
+    thirdPartyPlugin(),
   ],
   // Left external, the UI libraries had to be installed whole (lucide-react alone is ~45 MB
   // for ~20 icons). Build only: the dev server evaluates inlined modules as ESM, which breaks
