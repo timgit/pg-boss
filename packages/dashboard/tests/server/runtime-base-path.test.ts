@@ -64,6 +64,10 @@ describe('withBasePath', () => {
     expect(rehomed.assets.entry.module).toBe('/assets/entry.client-1.js')
   })
 
+  it.each(['/a/../b', '/a/./b', '/..'])('rejects %s, which no request path can match', (basePath) => {
+    expect(() => withBasePath(build, basePath)).toThrow('Invalid base path')
+  })
+
   it.each(['/a:b', '/a*', '/a b', '/a?x', '/{a}'])('rejects %s, which would be read as a route pattern', (basePath) => {
     expect(() => withBasePath(build, basePath)).toThrow('Invalid base path')
   })

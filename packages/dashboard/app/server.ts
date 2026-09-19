@@ -61,6 +61,10 @@ export interface CreateHonoAppOptions {
   databases?: DatabaseConfig[];
   /** Overrides the base path baked into the build. Production builds only. */
   basePath?: string;
+  /** Apply PGBOSS_DASHBOARD_AUTH_*. Off when embedded: the host authenticates. */
+  auth?: boolean;
+  /** Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin. */
+  allowedActionOrigins?: string[];
   /**
    * The Pro overlay's server half, from `loadProServer()`, or `null` for a free
    * build — which is the only shape this package is ever tested against on its
@@ -82,26 +86,51 @@ export function createHonoApp ({
   clientRoot = './build/client',
   databases,
   basePath,
+  auth = true,
+  allowedActionOrigins,
   overlay,
 }: CreateHonoAppOptions): Hono {
   const app = new Hono()
-  const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
+  const rehomed = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
+  const build = typeof rehomed === 'function' || !allowedActionOrigins
+    ? rehomed
+    : { ...rehomed, allowedActionOrigins }
+  const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
 
-  // Precedence between the two authentication schemes, decided once.
+  if (mountPath) {
+    // `${mountPath}.data` is the index route's data request: a sibling of the mount path.
+    app.use('*', async (c, next) => {
+      const { pathname } = new URL(c.req.url)
+      const ours = pathname === mountPath || pathname === `${mountPath}.data` || pathname.startsWith(`${mountPath}/`)
+
+      return ours ? next() : c.text('Not Found', 404)
+    })
+  }
+
+  // Precedence between the authentication schemes, decided once.
   //
   // Hono dispatches in registration order, so this ordering *is* the rule: a
   // route registered before `app.use(basicAuth)` answers without ever reaching
   // it. An overlay that does not authenticate must therefore be registered
   // after the gate, or mounting Pro would quietly open a hole in a dashboard
   // that was password-protected the day before.
+  //
+  // Whichever branch runs, a credential the operator configured is never
+  // discarded in silence. There are two ways to end up ignoring one — an overlay
+  // that authenticates instead, or a host that says it will — and both say so on
+  // stdout. An operator who set a password and is not being asked for one needs
+  // to hear that from us rather than discover it.
+  const configuredCredential = Boolean(
+    process.env.PGBOSS_DASHBOARD_AUTH_USERNAME || process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD
+  )
+
   if (overlay?.ownsAuth) {
     // An overlay that authenticates replaces the shared credential rather than
     // sitting behind it: stacking them prompts twice for two unrelated logins,
     // and the browser's Basic dialog is the one with no way to sign out. It goes
     // first because its own login route has to answer someone who is by
-    // definition not authenticated yet. Said out loud, because dropping a
-    // credential an operator deliberately configured is not a silent act.
-    if (process.env.PGBOSS_DASHBOARD_AUTH_USERNAME || process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD) {
+    // definition not authenticated yet.
+    if (configuredCredential) {
       console.log('PGBOSS_DASHBOARD_AUTH_* ignored: the Pro overlay provides authentication.')
     }
 
@@ -110,7 +139,15 @@ export function createHonoApp ({
     // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs before the
     // handler so static assets and SSR responses are both gated — and before the
     // overlay, so anything it adds is gated too.
-    configureAuth(app)
+    if (auth) {
+      configureAuth(app)
+    } else if (configuredCredential) {
+      console.log(
+        'PGBOSS_DASHBOARD_AUTH_* ignored: this dashboard is mounted inside a host ' +
+        'application, which is responsible for authenticating the request.'
+      )
+    }
+
     overlay?.server?.(app)
   }
 
@@ -151,23 +188,37 @@ export function createHonoApp ({
       : undefined
 
     // The static manifest file still carries the baked asset URLs: answer with the re-homed one.
-    if (typeof build !== 'function' && build !== givenBuild) {
+    if (typeof build !== 'function' && rehomed !== givenBuild) {
       const manifestSource = renderManifestSource(build)
 
       app.get(build.assets.url, (c) => c.body(manifestSource, 200, {
         'Content-Type': 'text/javascript; charset=utf-8',
+        'Cache-Control': 'no-cache',
       }))
     }
 
+    app.use(`${basename}/assets/*`, async (c, next) => {
+      await next()
+      if (c.res.ok) {
+        c.res.headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+      }
+    })
     app.use(`${basename}/assets/*`, serveStatic({ root: clientRoot, rewriteRequestPath }))
     // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
     app.use('*', serveStatic({ root: clientRoot, rewriteRequestPath }))
   }
 
+  const productionHandler = typeof build === 'function' ? undefined : createRequestHandler(build, mode)
+
   app.all('*', async (c) => {
-    const resolvedBuild = typeof build === 'function' ? await build() : build
-    const handler = createRequestHandler(resolvedBuild, mode)
-    return handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs(), overlay))
+    const handler = productionHandler ?? createRequestHandler(await (build as () => ServerBuild | Promise<ServerBuild>)(), mode)
+    const response = await handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs(), overlay))
+
+    // Pages carry job payloads.
+    if (!response.headers.has('Cache-Control')) {
+      response.headers.set('Cache-Control', 'no-store')
+    }
+    return response
   })
 
   return app

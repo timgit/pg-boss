@@ -47,6 +47,7 @@ export interface DashboardHandler {
 
 const EMBEDDED_KEY = Symbol.for('pgboss.dashboard.embedded')
 const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
+const STOP_INSTANCES_KEY = Symbol.for('pgboss.dashboard.stopAllInstances')
 
 /**
  * A Fetch API handler for the dashboard, to mount inside an existing application.
@@ -57,9 +58,7 @@ const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
  * own, and this loads it, so mounting Pro here authenticates exactly as the
  * standalone server does.
  */
-export function createDashboardHandler (
-  { databases, basePath, allowedActionOrigins }: CreateDashboardHandlerOptions
-): DashboardHandler {
+export function createDashboardHandler ({ databases, basePath, allowedActionOrigins }: CreateDashboardHandlerOptions): DashboardHandler {
   if (databases.length === 0) {
     throw new Error('createDashboardHandler() needs at least one database')
   }
@@ -75,10 +74,12 @@ export function createDashboardHandler (
   withBasePath({ basename: '/', publicPath: '/', assets: {} } as unknown as ServerBuild, basePath)
 
   let app: Promise<Hono> | undefined
+  let closed = false
 
   const globalStore = globalThis as typeof globalThis & {
     [EMBEDDED_KEY]?: boolean
     [CLOSE_POOLS_KEY]?: () => Promise<void>
+    [STOP_INSTANCES_KEY]?: () => Promise<void>
   }
 
   const load = async (): Promise<Hono> => {
@@ -103,10 +104,17 @@ export function createDashboardHandler (
       clientRoot: fileURLToPath(new URL('./client', import.meta.url)),
       databases: configs,
       basePath,
+      // The host authenticates; see the note in `createHonoApp`, which says so
+      // on stdout when a credential was configured rather than dropping it in
+      // silence.
+      auth: false,
+      allowedActionOrigins,
       // The same overlay the standalone server loads, through the same alias.
       // `~pro-server` is the empty stub in every build but a Pro one, so this
       // adds nothing to a free build — and in a Pro build it is the difference
       // between a mounted dashboard that authenticates and one that does not.
+      // A Pro overlay owns authentication, so `auth: false` above costs it
+      // nothing: `createHonoApp` takes the overlay branch either way.
       // It resolves because `scripts/build-server.ts` bundles this entry point
       // with the alias; a bare esbuild invocation could not.
       overlay: serverOverlay,
@@ -114,6 +122,10 @@ export function createDashboardHandler (
   }
 
   const handler = async (request: Request): Promise<Response> => {
+    if (closed) {
+      return new Response('The dashboard handler is closed', { status: 503 })
+    }
+
     // A failed load is not cached, so the next request retries.
     app ??= load().catch((error) => {
       app = undefined
@@ -123,7 +135,13 @@ export function createDashboardHandler (
     return (await app).fetch(request)
   }
 
-  const close = async (): Promise<void> => { await globalStore[CLOSE_POOLS_KEY]?.() }
+  const close = async (): Promise<void> => {
+    closed = true
+    // A load in flight has not published its hooks yet.
+    await app?.catch(() => {})
+    await globalStore[STOP_INSTANCES_KEY]?.()
+    await globalStore[CLOSE_POOLS_KEY]?.()
+  }
 
   return Object.assign(handler, { close })
 }

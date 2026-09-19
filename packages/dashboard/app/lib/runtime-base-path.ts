@@ -16,6 +16,10 @@ export function withBasePath (build: ServerBuild, basePath: string | undefined):
     throw new Error(`Invalid base path "${basePath}": use letters, digits and . _ ~ - / only`)
   }
 
+  if (basePath.split('/').some(segment => segment === '.' || segment === '..')) {
+    throw new Error(`Invalid base path "${basePath}": it must not contain . or .. segments`)
+  }
+
   const { routerBasename, viteBase } = resolveBasePath(basePath)
 
   if (viteBase === build.publicPath && routerBasename === (build.basename ?? '/')) {

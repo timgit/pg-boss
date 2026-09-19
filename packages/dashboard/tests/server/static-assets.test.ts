@@ -67,13 +67,20 @@ describe('static assets under a base path', () => {
 
     const response = await app.request('http://localhost/aaaaaaaaaaaa../server/index.js')
 
-    // Asserted as "no file was served", not as "it fell through to SSR".
-    // Whether an escape attempt ends in SSR or a 404 is a routing decision that
-    // may change; that it never returns a file from outside `build/client` is
-    // the property, and a test pinned to the routing stops checking it the day
-    // the routing moves.
+    // Both, and for different reasons.
+    //
+    // The 404 pins the mount-path guard: outside the base path, refused before
+    // any file lookup happens at all. The two below pin the property the guard
+    // is protecting — that no file from outside `build/client` is ever returned.
+    // Either check alone goes quiet when the other mechanism changes: assert
+    // only the status and the suite passes with the path-stripping fix reverted;
+    // assert only the body and it passes if the guard is dropped.
+    expect(response.status).toBe(404)
+
+    const body = await response.text()
+
     expect(response.headers.get('content-type') ?? '').not.toMatch(/javascript/)
-    expect(await response.text()).not.toMatch(/createHonoApp|serveStatic/)
+    expect(body).not.toMatch(/createHonoApp|serveStatic/)
   })
 
   it('still strips the base path from a real asset request', async () => {
@@ -100,6 +107,7 @@ describe('static assets under a base path', () => {
 
     const response = await app.request('http://localhost/elsewhere/thing.js')
 
-    expect(await response.text()).toBe('ssr')
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe('Not Found')
   })
 })
