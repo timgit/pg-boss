@@ -4,16 +4,15 @@ import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'r
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
-import { getDatabaseConfigs, findDatabaseById } from './lib/config.server'
+import { getDatabaseConfigs, findDatabaseById, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
+import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 
 // Resolve the per-request load context the loaders/actions rely on. The selected
 // database comes from the `?db=` query param or the `pgboss_db` cookie, falling back
 // to the first configured database. With `v8_middleware` on, loaders read these
 // values via `context.get(dbContext)`.
-function getLoadContext (c: Context): RouterContextProvider {
-  const databases = getDatabaseConfigs()
-
+function getLoadContext (c: Context, databases: DatabaseConfig[]): RouterContextProvider {
   const url = new URL(c.req.url)
   const dbId = url.searchParams.get('db') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
   const currentDb = findDatabaseById(databases, dbId) || databases[0]
@@ -42,10 +41,24 @@ export interface CreateHonoAppOptions {
    * the Vite dev server middleware serves assets instead.
    */
   serveStaticAssets?: boolean;
+  /** Where the built client assets live. Defaults to `./build/client`, relative to the cwd. */
+  clientRoot?: string;
+  /** Defaults to the databases described by DATABASE_URL / PGBOSS_SCHEMA. */
+  databases?: DatabaseConfig[];
+  /** Overrides the base path baked into the build. Production builds only. */
+  basePath?: string;
 }
 
-export function createHonoApp ({ build, mode, serveStaticAssets = false }: CreateHonoAppOptions): Hono {
+export function createHonoApp ({
+  build: givenBuild,
+  mode,
+  serveStaticAssets = false,
+  clientRoot = './build/client',
+  databases,
+  basePath,
+}: CreateHonoAppOptions): Hono {
   const app = new Hono()
+  const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
 
   // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs first so static
   // assets and SSR responses are both gated.
@@ -68,15 +81,24 @@ export function createHonoApp ({ build, mode, serveStaticAssets = false }: Creat
       ? (path: string) => path.slice(basename.length)
       : undefined
 
-    app.use(`${basename}/assets/*`, serveStatic({ root: './build/client', rewriteRequestPath }))
+    // The static manifest file still carries the baked asset URLs: answer with the re-homed one.
+    if (typeof build !== 'function' && build !== givenBuild) {
+      const manifestSource = renderManifestSource(build)
+
+      app.get(build.assets.url, (c) => c.body(manifestSource, 200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+      }))
+    }
+
+    app.use(`${basename}/assets/*`, serveStatic({ root: clientRoot, rewriteRequestPath }))
     // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
-    app.use('*', serveStatic({ root: './build/client', rewriteRequestPath }))
+    app.use('*', serveStatic({ root: clientRoot, rewriteRequestPath }))
   }
 
   app.all('*', async (c) => {
     const resolvedBuild = typeof build === 'function' ? await build() : build
     const handler = createRequestHandler(resolvedBuild, mode)
-    return handler(c.req.raw, getLoadContext(c))
+    return handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs()))
   })
 
   return app

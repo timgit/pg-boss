@@ -13,6 +13,8 @@ DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboar
 
 Open http://localhost:3000 in your browser.
 
+Already running a Node.js server? The dashboard can be [mounted inside it](https://pgboss.io/dashboard#mounting-inside-an-existing-application) instead of running as a separate process.
+
 
 ## Development
 

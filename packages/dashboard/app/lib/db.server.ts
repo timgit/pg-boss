@@ -86,8 +86,19 @@ export async function closeAllPools (): Promise<void> {
   await Promise.all(closePromises)
 }
 
-// Register cleanup on process exit
-if (typeof process !== 'undefined') {
+// Standalone, the dashboard owns the process: close the pools and exit on a signal. Embedded,
+// the host does, so `createDashboardHandler()` sets this flag and calls `closeAllPools` itself,
+// through globalThis because it lives in another bundle (as db-context.ts does for its token).
+const EMBEDDED_KEY = Symbol.for('pgboss.dashboard.embedded')
+const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
+const globalStore = globalThis as typeof globalThis & {
+  [EMBEDDED_KEY]?: boolean
+  [CLOSE_POOLS_KEY]?: () => Promise<void>
+}
+
+globalStore[CLOSE_POOLS_KEY] = closeAllPools
+
+if (typeof process !== 'undefined' && !globalStore[EMBEDDED_KEY]) {
   let cleanupInProgress: Promise<void> | null = null
 
   const cleanup = async () => {
