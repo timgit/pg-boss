@@ -10,9 +10,13 @@ const { viteBase } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
 
 // Kept as runtime imports: React and React Router must stay a single shared copy, and `pg`
 // loads optional native bindings. Everything else is bundled into the server build.
+//
+// `isbot` was on this list and did not need to be — it is ordinary JavaScript with
+// no shared state and no native code. Bundling it is one fewer package a consumer
+// installs, and `scripts/check-imports.mjs` now fails the build if anything left
+// external is undeclared, so the list can be short without being risky.
 const SERVER_RUNTIME_PACKAGES = [
   '@react-router/node',
-  'isbot',
   'pg',
   'react',
   'react-dom',
