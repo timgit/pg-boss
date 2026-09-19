@@ -1,6 +1,6 @@
 {
   "name": "@pg-boss/dashboard",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Web dashboard for monitoring and managing pg-boss job queues",
   "keywords": [
     "pg-boss",

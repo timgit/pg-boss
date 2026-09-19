@@ -20,6 +20,7 @@ import { isReadOnly } from "~/lib/read-only.server";
 import { capabilityContext } from "~/lib/capability-context";
 import { DEFAULT_DENIAL, defaultCapabilities } from "~/lib/capabilities";
 import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
+import { COLOR_HEX } from "~/lib/favicon";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -58,14 +59,18 @@ function MainContent ({ children }: { children: React.ReactNode }) {
 }
 
 // Inline script to prevent flash of wrong theme
-/** Built once, and used both for the static link and as the script's starting point. */
-const FAVICON_DATA_URI = `data:image/svg+xml,${encodeURIComponent(faviconSource)}`
-
 const themeScript = `
   (function() {
     // The mark's own source, inlined at build time. Inside the IIFE so the page
     // gains no global; it is only ever read a few lines below.
+    // Both interpolated from ~/lib/favicon at build time: this script is a
+    // string and cannot import, and a second copy of either is a second thing to
+    // keep in step. The icon is set here rather than in links() because the
+    // server rendering that tag has never seen localStorage — anything it
+    // emitted would be a guess, and hydration correcting it is what produced the
+    // flash of the right colour followed by the wrong one.
     const MARK_SOURCE = ${JSON.stringify(faviconSource)};
+    const colorHex = ${JSON.stringify(COLOR_HEX)};
 
     const stored = localStorage.getItem('pg-boss-theme');
     const mode = stored || 'system';
@@ -78,17 +83,6 @@ const themeScript = `
     // can render from CSS on the first paint instead of client-only React state.
     document.documentElement.dataset.themeMode = mode;
 
-    const colorHex = {
-      cobalt: '#284fe0',
-      emerald: '#059669',
-      teal: '#0d9488',
-      cyan: '#0891b2',
-      sky: '#0284c7',
-      blue: '#2563eb',
-      indigo: '#4f46e5',
-      violet: '#7c3aed',
-      purple: '#9333ea',
-    };
     const colorTheme = localStorage.getItem('pg-boss-color-theme') || 'cobalt';
     document.documentElement.dataset.colorTheme = colorTheme;
 
@@ -204,12 +198,6 @@ export function meta() {
 
 export function links() {
   return [
-    // A data URI rather than the built asset's URL. An imported asset URL is
-    // absolute and gets baked into this route's chunk, where `withBasePath`
-    // cannot reach it — `scripts/check-build-portable.mjs` fails the build for
-    // exactly that. The source is inlined anyway for the themed version below,
-    // so this costs nothing extra.
-    { rel: "icon", type: "image/svg+xml", href: FAVICON_DATA_URI },
     { rel: "preconnect", href: "https://fonts.googleapis.com" },
     { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
     {

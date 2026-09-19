@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { applyFavicon, faviconDataUri } from '~/lib/favicon'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -10,17 +11,6 @@ export const COLOR_THEMES: ColorTheme[] = [
 ]
 
 // Color-600 hex values for favicon
-const COLOR_HEX: Record<ColorTheme, string> = {
-  cobalt: '#284fe0',
-  emerald: '#059669',
-  teal: '#0d9488',
-  cyan: '#0891b2',
-  sky: '#0284c7',
-  blue: '#2563eb',
-  indigo: '#4f46e5',
-  violet: '#7c3aed',
-  purple: '#9333ea',
-}
 
 interface ThemeContextValue {
   theme: Theme
@@ -102,21 +92,11 @@ export function ThemeProvider ({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     document.documentElement.dataset.colorTheme = colorTheme
 
-    // Update favicon with new color
-    const hex = COLOR_HEX[colorTheme]
-    const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="${hex}"/><text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" font-weight="bold" fill="white">PG</text></svg>`
-    const encodedSvg = encodeURIComponent(faviconSvg)
+    // One helper, shared with the inline script that runs before hydration, so
+    // the icon cannot disagree with itself. This used to draw the old `PG`
+    // monogram inline here, which survived the mark replacing it everywhere else.
+    applyFavicon(faviconDataUri(colorTheme))
 
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
-    if (link) {
-      link.href = `data:image/svg+xml,${encodedSvg}`
-    } else {
-      link = document.createElement('link')
-      link.rel = 'icon'
-      link.type = 'image/svg+xml'
-      link.href = `data:image/svg+xml,${encodedSvg}`
-      document.head.appendChild(link)
-    }
   }, [colorTheme])
 
   const setTheme = (newTheme: Theme) => {
