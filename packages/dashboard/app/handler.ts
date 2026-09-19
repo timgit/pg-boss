@@ -14,6 +14,20 @@ export interface CreateDashboardHandlerOptions {
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
   /**
+   * Apply `PGBOSS_DASHBOARD_AUTH_*` inside the mount as well.
+   *
+   * Off by default: a handler is mounted behind the host's own authentication,
+   * and prompting again for a second, unrelated credential is worse than not
+   * prompting. Turn it on for defence in depth, or when the host has no
+   * authentication of its own to put in front.
+   *
+   * Either way a configured credential is never discarded in silence — leaving
+   * it off with `PGBOSS_DASHBOARD_AUTH_*` set says so on stdout, because an
+   * operator who set a password and is not being asked for one needs to hear it
+   * from us.
+   */
+  auth?: boolean;
+  /**
    * Hosts a form submission may come from, e.g. `ops.example.com`,
    * `ops.example.com:8443` or `*.example.com`.
    *
@@ -41,7 +55,13 @@ export interface CreateDashboardHandlerOptions {
 
 export interface DashboardHandler {
   (request: Request): Promise<Response>;
-  /** Closes the database pools. Final: the handler cannot serve requests afterwards. */
+  /**
+   * Releases everything this handler holds: the database pools and the pg-boss
+   * instances behind the write paths, whose timers otherwise keep the event
+   * loop alive.
+   *
+   * Final. Requests after it answer 503 rather than reopening what was closed.
+   */
   close (): Promise<void>;
 }
 
@@ -58,7 +78,9 @@ const STOP_INSTANCES_KEY = Symbol.for('pgboss.dashboard.stopAllInstances')
  * own, and this loads it, so mounting Pro here authenticates exactly as the
  * standalone server does.
  */
-export function createDashboardHandler ({ databases, basePath, allowedActionOrigins }: CreateDashboardHandlerOptions): DashboardHandler {
+export function createDashboardHandler (
+  { databases, basePath, allowedActionOrigins, auth = false }: CreateDashboardHandlerOptions
+): DashboardHandler {
   if (databases.length === 0) {
     throw new Error('createDashboardHandler() needs at least one database')
   }
@@ -104,10 +126,10 @@ export function createDashboardHandler ({ databases, basePath, allowedActionOrig
       clientRoot: fileURLToPath(new URL('./client', import.meta.url)),
       databases: configs,
       basePath,
-      // The host authenticates; see the note in `createHonoApp`, which says so
-      // on stdout when a credential was configured rather than dropping it in
+      // Defaults to false: the host authenticates. `createHonoApp` says so on
+      // stdout when a credential was configured, rather than dropping it in
       // silence.
-      auth: false,
+      auth,
       allowedActionOrigins,
       // The same overlay the standalone server loads, through the same alias.
       // `~pro-server` is the empty stub in every build but a Pro one, so this

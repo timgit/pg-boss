@@ -197,13 +197,32 @@ export function createHonoApp ({
       }))
     }
 
+    // Immutable only when a file was actually served.
+    //
+    // Keying on the URL prefix and `res.ok` instead would put a year of
+    // immutable on any 200 answered under `${basename}/assets/*` — including an
+    // SSR response, over the `no-store` it just earned for carrying job
+    // payloads. Nothing routes there today, so it was latent rather than live.
+    //
+    // Two parts, because `onFound` runs after `serveStatic` has already built
+    // its response: setting a header there does nothing. So it records that a
+    // file was found, and the middleware outside sets the header on the response
+    // once it exists. The manifest keeps its own `no-cache` — it is answered by
+    // a route above, so `onFound` never fires for it.
     app.use(`${basename}/assets/*`, async (c, next) => {
       await next()
-      if (c.res.ok) {
+
+      if (c.get('servedStaticFile' as never)) {
         c.res.headers.set('Cache-Control', 'public, max-age=31536000, immutable')
       }
     })
-    app.use(`${basename}/assets/*`, serveStatic({ root: clientRoot, rewriteRequestPath }))
+    app.use(`${basename}/assets/*`, serveStatic({
+      root: clientRoot,
+      rewriteRequestPath,
+      onFound: (_path, c) => {
+        c.set('servedStaticFile' as never, true as never)
+      },
+    }))
     // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
     app.use('*', serveStatic({ root: clientRoot, rewriteRequestPath }))
   }

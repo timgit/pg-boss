@@ -16,7 +16,11 @@ export function withBasePath (build: ServerBuild, basePath: string | undefined):
     throw new Error(`Invalid base path "${basePath}": use letters, digits and . _ ~ - / only`)
   }
 
-  if (basePath.split('/').some(segment => segment === '.' || segment === '..')) {
+  // Trimmed, like the check above and like `resolveBasePath` below. Splitting
+  // the raw string means `'/a/.. '` yields a segment of `'.. '`, which is not
+  // `'..'`, so the guard passes — and the value that reaches the router is the
+  // trimmed `/a/..` it was meant to reject.
+  if (basePath.trim().split('/').some(segment => segment === '.' || segment === '..')) {
     throw new Error(`Invalid base path "${basePath}": it must not contain . or .. segments`)
   }
 
