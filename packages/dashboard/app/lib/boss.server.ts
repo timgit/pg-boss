@@ -32,12 +32,19 @@ async function getInstance (dbUrl: string, schema: string): Promise<PgBoss> {
     createSchema: false,
   })
 
+  // Without a listener, a dropped connection throws and takes the process down.
+  boss.on('error', (err) => {
+    console.error('Unexpected pg-boss error:', err)
+  })
+
   const startPromise = boss.start().then(() => {
     instances.set(key, boss)
     starting.delete(key)
     return boss
-  }).catch((err) => {
+  }).catch(async (err) => {
     starting.delete(key)
+    // start() opens its pool before it can fail.
+    await boss.stop({ graceful: false }).catch(() => {})
     throw err
   })
 
@@ -45,6 +52,19 @@ async function getInstance (dbUrl: string, schema: string): Promise<PgBoss> {
 
   return startPromise
 }
+
+// Each instance keeps a timer alive. Reached by an embedding host's `close()`, from another bundle.
+export async function stopAllInstances (): Promise<void> {
+  await Promise.allSettled(starting.values())
+
+  const started = [...instances.values()]
+  instances.clear()
+
+  await Promise.allSettled(started.map(boss => boss.stop({ graceful: false })))
+}
+
+const STOP_INSTANCES_KEY = Symbol.for('pgboss.dashboard.stopAllInstances')
+;(globalThis as typeof globalThis & { [STOP_INSTANCES_KEY]?: () => Promise<void> })[STOP_INSTANCES_KEY] = stopAllInstances
 
 export async function sendJob (
   dbUrl: string,

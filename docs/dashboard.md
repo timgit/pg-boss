@@ -255,6 +255,7 @@ const app = new Hono()
 
 app.use('/admin/*', requireAdmin) // your own authentication middleware
 app.all('/admin/queues', (c) => dashboard(c.req.raw))
+app.all('/admin/queues.data', (c) => dashboard(c.req.raw)) // the home page's data request
 app.all('/admin/queues/*', (c) => dashboard(c.req.raw))
 ```
 
@@ -266,7 +267,7 @@ import { getRequestListener } from '@hono/node-server'
 
 const app = express()
 
-app.use('/admin/queues', requireAdmin, (req, res) => {
+app.use(['/admin/queues', '/admin/queues.data'], requireAdmin, (req, res) => {
   req.url = req.originalUrl // Express strips the mount path; the handler needs it
   return getRequestListener(dashboard)(req, res)
 })
@@ -276,15 +277,18 @@ app.use('/admin/queues', requireAdmin, (req, res) => {
 |--------|-------------|
 | `databases` | One or more `{ url, name?, schema? }` entries. The first is selected by default. Give each a distinct `name` when two connection strings end in the same database name. |
 | `basePath` | The path you mount the handler under. Requests must reach the handler with this prefix still in the URL. Defaults to `/`. |
+| `allowedActionOrigins` | Hosts a form may be submitted from, as `host[:port]` or `*.example.com`. Needed behind a proxy, see below. |
 
 A few things worth knowing:
 
-- **Authentication is yours.** The handler adds none of its own. Mounted without a guard, it lets anyone read job payloads and send, retry, cancel or delete jobs. Place it behind whatever already protects your admin routes. `PGBOSS_DASHBOARD_AUTH_USERNAME` / `PGBOSS_DASHBOARD_AUTH_PASSWORD` and `PGBOSS_DASHBOARD_READ_ONLY` still apply if you set them.
-- **Its forms carry no CSRF token.** If your application authenticates with a session cookie, apply your usual CSRF protection to the mounted path, or set `PGBOSS_DASHBOARD_READ_ONLY=1`.
+- **Authentication is yours.** The handler adds none of its own. Mounted without a guard, it lets anyone read job payloads and send, retry, cancel or delete jobs. Place it behind whatever already protects your admin routes.
+- **Its forms carry no CSRF token.** They rely on React Router's `Origin` check. If your application authenticates with a session cookie, keep your usual CSRF protection on the mounted path, or set `PGBOSS_DASHBOARD_READ_ONLY=1`.
 - **It is lazy.** Nothing is imported and no database connection is opened until the first request arrives. The connection pool drains again when the dashboard is idle.
 - **It does not depend on the working directory.** Static assets are resolved relative to the installed package.
-- **Your process stays yours.** The standalone server closes its pools and exits on `SIGTERM`/`SIGINT`. The handler does neither. Call `await dashboard.close()` from your own shutdown sequence if you want the pools closed right away; otherwise idle connections expire after about ten seconds.
-- **Behind a reverse proxy, pass the public URL.** React Router rejects a form submission whose `Origin` header does not match the request URL. If your server sees an internal address such as `http://127.0.0.1:3000`, every action fails with a 400. Rebuild the `Request` with the URL the visitor used (from `X-Forwarded-Proto` and `X-Forwarded-Host`) before handing it over.
+- **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, a sibling of the mount path rather than a child, so a `/admin/queues/*` pattern alone misses it and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
+- **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`; the handler leaves signals to you. A write action starts a pg-boss instance whose timers keep the process alive until `await dashboard.close()`. A closed handler answers 503.
+- **Behind a reverse proxy, list your public host.** React Router rejects a form submission whose `Origin` does not match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `allowedActionOrigins: ['admin.example.com']`.
+- **Environment variables.** `PGBOSS_DASHBOARD_READ_ONLY` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_AUTH_*` do not: the options and your own authentication replace them.
 
 ## Enabling Warning Persistence
 

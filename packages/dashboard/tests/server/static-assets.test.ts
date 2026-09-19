@@ -24,7 +24,7 @@ function buildWithBasename (basename: string): ServerBuild {
     future: {},
     ssr: true,
     isSpaMode: false,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   } as any
 }
 
@@ -67,8 +67,9 @@ describe('static assets under a base path', () => {
 
     const response = await app.request('http://localhost/aaaaaaaaaaaa../server/index.js')
 
-    // Falls through to the SSR handler rather than returning a file.
-    expect(await response.text()).toBe('ssr')
+    // Outside the base path: refused before any file lookup.
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe('Not Found')
   })
 
   it('still strips the base path from a real asset request', async () => {
@@ -95,6 +96,7 @@ describe('static assets under a base path', () => {
 
     const response = await app.request('http://localhost/elsewhere/thing.js')
 
-    expect(await response.text()).toBe('ssr')
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe('Not Found')
   })
 })

@@ -84,6 +84,11 @@ export async function closeAllPools (): Promise<void> {
     )
   }
   await Promise.all(closePromises)
+
+  // Embedded, another handler may still be open or be created later. Standalone, the process exits.
+  if ((globalThis as Record<symbol, unknown>)[Symbol.for('pgboss.dashboard.embedded')]) {
+    isShuttingDown = false
+  }
 }
 
 // Standalone, the dashboard owns the process: close the pools and exit on a signal. Embedded,

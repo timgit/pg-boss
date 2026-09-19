@@ -35,6 +35,15 @@ describe('createDashboardHandler', () => {
     await expect(handler(new Request('http://localhost/'))).rejects.toThrow()
   })
 
+  it('answers 503 once closed, instead of loading or writing again', async () => {
+    const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
+    await handler.close()
+
+    const res = await handler(new Request('http://localhost/'))
+
+    expect(res.status).toBe(503)
+  })
+
   it('can be closed before it was ever used', async () => {
     const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
 
