@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { createHonoApp } from '~/server'
 import type { ServerBuild } from 'react-router'
 
@@ -10,6 +11,13 @@ import type { ServerBuild } from 'react-router'
  * serveStatic's traversal guard rather than before it. That guard only rejects
  * `..` bounded by slashes, so it is not the thing keeping requests inside the
  * static root — the strip is.
+ *
+ * Two mechanisms now protect this, and they are tested separately on purpose.
+ * The mount-path guard refuses anything outside the base path before a file is
+ * looked up at all; the strip keeps what remains inside the root. Either one
+ * alone stops every payload below, which is why neither may be asserted through
+ * the other: a test that only pins the status passes with the strip reverted,
+ * and a test that only pins the body passes with the guard removed.
  */
 
 // A build that reports a base path, and an SSR handler that answers anything
@@ -37,6 +45,27 @@ vi.mock('react-router', async (importOriginal) => {
   }
 })
 
+const BASENAME = '/admin/queues'
+
+/**
+ * A marker that really is in the file an escape would reach, checked here rather
+ * than assumed.
+ *
+ * The previous version of this test asserted the body did not contain
+ * `createHonoApp` or `serveStatic`. Neither string appears in
+ * `build/server/index.js` — that bundle is the *route* build — so the assertion
+ * could never have failed and the test was pinning nothing but the status. Read
+ * the first bytes of the target instead, and skip the body check when the file
+ * is absent rather than quietly passing on a substring that is never there.
+ */
+function serverBundleMarker (): string | null {
+  try {
+    return readFileSync(new URL('../../build/server/index.js', import.meta.url), 'utf8').slice(0, 120)
+  } catch {
+    return null
+  }
+}
+
 describe('static assets under a base path', () => {
   const cwd = process.cwd()
 
@@ -50,49 +79,88 @@ describe('static assets under a base path', () => {
   })
 
   /**
-   * The escape. Thirteen characters of basename are stripped from a path whose
-   * `..` is not on a segment boundary, and what is left walks out of
-   * `build/client` into the server bundle beside it.
+   * Shapes that have to stay outside `build/client`.
    *
-   * Asserting on the status rather than the body: the file may or may not exist
-   * in a given checkout, and the point is that the request must never be treated
-   * as an asset lookup at all.
+   * The padded `..` is the original bug: thirteen characters of basename are
+   * stripped from a path whose `..` is not on a segment boundary, and what is
+   * left walks out of `build/client` into the server bundle beside it. The rest
+   * are the encodings a scanner tries next, including the ones that only become
+   * `..` after the strip has already run.
    */
-  it('does not let a padded .. escape the static root', async () => {
+  const escapes = [
+    ['padded .., the original bug', '/aaaaaaaaaaaa../server/index.js'],
+    ['plain traversal', '/../server/index.js'],
+    ['traversal inside the base path', `${BASENAME}/../../server/index.js`],
+    ['doubled traversal', `${BASENAME}/../../../packages/dashboard/build/server/index.js`],
+    ['encoded dots', `${BASENAME}/%2e%2e/%2e%2e/server/index.js`],
+    ['double-encoded dots', `${BASENAME}/%252e%252e/server/index.js`],
+    ['encoded slash', `${BASENAME}/..%2f..%2fserver/index.js`],
+    ['backslash separator', `${BASENAME}\\..\\..\\server\\index.js`],
+    ['encoded backslash', `${BASENAME}/..%5c..%5cserver/index.js`],
+    ['overlong dot', `${BASENAME}/%c0%ae%c0%ae/server/index.js`],
+    ['dot-semicolon', `${BASENAME}/..;/server/index.js`],
+    ['four-dot slash', `${BASENAME}/....//server/index.js`],
+    ['trailing null', `${BASENAME}/../server/index.js%00.css`],
+  ] as const
+
+  it.each(escapes)('never serves a file outside the static root: %s', async (_label, path) => {
     const app = createHonoApp({
-      build: buildWithBasename('/admin/queues'),
+      build: buildWithBasename(BASENAME),
+      mode: 'production',
+      serveStaticAssets: true,
+    })
+
+    const response = await app.request(`http://localhost${path}`)
+    const body = await response.text()
+    const marker = serverBundleMarker()
+
+    // The property, asserted directly: whatever came back, it is not the file
+    // sitting outside the root. Independent of which mechanism refused it.
+    expect(response.headers.get('content-type') ?? '').not.toMatch(/javascript/)
+
+    if (marker) {
+      expect(body).not.toContain(marker)
+    }
+
+    // And nothing here may be answered as a file at all.
+    expect([200, 404]).toContain(response.status)
+
+    if (response.status === 200) {
+      // The only legitimate 200 is the mocked SSR handler.
+      expect(body).toBe('ssr')
+    }
+  })
+
+  /**
+   * The mount-path guard, pinned on its own.
+   *
+   * Asserting the exact 404 body rather than only the status: a status alone
+   * would also be satisfied by a missing file falling through to a router 404,
+   * which is a different refusal.
+   */
+  it('refuses a path outside the base path before any file lookup', async () => {
+    const app = createHonoApp({
+      build: buildWithBasename(BASENAME),
       mode: 'production',
       serveStaticAssets: true,
     })
 
     const response = await app.request('http://localhost/aaaaaaaaaaaa../server/index.js')
 
-    // Both, and for different reasons.
-    //
-    // The 404 pins the mount-path guard: outside the base path, refused before
-    // any file lookup happens at all. The two below pin the property the guard
-    // is protecting — that no file from outside `build/client` is ever returned.
-    // Either check alone goes quiet when the other mechanism changes: assert
-    // only the status and the suite passes with the path-stripping fix reverted;
-    // assert only the body and it passes if the guard is dropped.
     expect(response.status).toBe(404)
-
-    const body = await response.text()
-
-    expect(response.headers.get('content-type') ?? '').not.toMatch(/javascript/)
-    expect(body).not.toMatch(/createHonoApp|serveStatic/)
+    expect(await response.text()).toBe('Not Found')
   })
 
   it('still strips the base path from a real asset request', async () => {
     const app = createHonoApp({
-      build: buildWithBasename('/admin/queues'),
+      build: buildWithBasename(BASENAME),
       mode: 'production',
       serveStaticAssets: true,
     })
 
     // No such file, so this falls through — but it proves the path was rewritten
     // rather than rejected, which the escape test alone cannot show.
-    const response = await app.request('http://localhost/admin/queues/assets/nothing.js')
+    const response = await app.request(`http://localhost${BASENAME}/assets/nothing.js`)
 
     expect(response.status).toBe(200)
   })
@@ -100,7 +168,7 @@ describe('static assets under a base path', () => {
   /** A path that is not under the basename is not ours to rewrite. */
   it('leaves a path outside the base path alone', async () => {
     const app = createHonoApp({
-      build: buildWithBasename('/admin/queues'),
+      build: buildWithBasename(BASENAME),
       mode: 'production',
       serveStaticAssets: true,
     })
@@ -109,5 +177,31 @@ describe('static assets under a base path', () => {
 
     expect(response.status).toBe(404)
     expect(await response.text()).toBe('Not Found')
+  })
+
+  /**
+   * With no base path there is no strip and no mount guard, so serveStatic's own
+   * traversal handling is all there is. Pinned because "the dashboard at the
+   * root path" is the default deployment.
+   */
+  it('never serves a file outside the static root without a base path', async () => {
+    const app = createHonoApp({
+      build: buildWithBasename('/'),
+      mode: 'production',
+      serveStaticAssets: true,
+    })
+
+    const marker = serverBundleMarker()
+
+    for (const [, path] of escapes) {
+      const response = await app.request(`http://localhost${path}`)
+      const body = await response.text()
+
+      expect(response.headers.get('content-type') ?? '').not.toMatch(/javascript/)
+
+      if (marker) {
+        expect(body).not.toContain(marker)
+      }
+    }
   })
 })

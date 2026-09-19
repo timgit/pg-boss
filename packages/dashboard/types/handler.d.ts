@@ -39,9 +39,11 @@ export interface CreateDashboardHandlerOptions {
    * `lib/actions.js:19,27`), so a scheme never matches: `https://ops.example.com`
    * is refused, `ops.example.com` is allowed. Wildcards are matched per label.
    *
-   * There is no way to switch the check off. React Router coerces anything that
-   * is not an array to `[]` before comparing, so a non-array value is the same
-   * as omitting this.
+   * `['**']` matches every host and so turns the check off completely. It is a
+   * wildcard like any other — `matchWildcardDomain` returns true for any
+   * non-empty domain once the pattern is down to `**` — and it is the wrong
+   * answer to "actions return 400 behind my proxy": name the host. React Router
+   * coerces a non-array value to `[]`, so passing `false` disables nothing.
    *
    * The usual place to set it is `react-router.config.ts`, which a host cannot
    * edit on a prebuilt package, leaving the handler as the only component that

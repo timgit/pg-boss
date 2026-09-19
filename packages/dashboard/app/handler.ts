@@ -41,9 +41,11 @@ export interface CreateDashboardHandlerOptions {
    * `lib/actions.js:19,27`), so a scheme never matches: `https://ops.example.com`
    * is refused, `ops.example.com` is allowed. Wildcards are matched per label.
    *
-   * There is no way to switch the check off. React Router coerces anything that
-   * is not an array to `[]` before comparing, so a non-array value is the same
-   * as omitting this.
+   * `['**']` matches every host and so turns the check off completely. It is a
+   * wildcard like any other — `matchWildcardDomain` returns true for any
+   * non-empty domain once the pattern is down to `**` — and it is the wrong
+   * answer to "actions return 400 behind my proxy": name the host. React Router
+   * coerces a non-array value to `[]`, so passing `false` disables nothing.
    *
    * The usual place to set it is `react-router.config.ts`, which a host cannot
    * edit on a prebuilt package, leaving the handler as the only component that
@@ -94,6 +96,21 @@ export function createDashboardHandler (
 
   // Fail on a bad base path now, not on the first request.
   withBasePath({ basename: '/', publicPath: '/', assets: {} } as unknown as ServerBuild, basePath)
+
+  // Say this now too, for the same reason.
+  //
+  // `createHonoApp` emits it as well, but it does not run until the first
+  // request arrives — and of every option here this is the one whose failure
+  // mode is "the dashboard is answering anonymously". An operator who set a
+  // password, started the host and read a clean log has to be told before the
+  // first visitor rather than by the line that visitor's request produces.
+  if (!auth && (process.env.PGBOSS_DASHBOARD_AUTH_USERNAME || process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD)) {
+    console.log(
+      'PGBOSS_DASHBOARD_AUTH_* ignored: this dashboard is mounted inside a host ' +
+      'application, which is responsible for authenticating the request. Pass ' +
+      'auth: true to createDashboardHandler() to use the credential instead.'
+    )
+  }
 
   let app: Promise<Hono> | undefined
   let closed = false

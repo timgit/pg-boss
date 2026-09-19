@@ -36,12 +36,16 @@ jobs:
         with:
           node-version: '24'
 
+      # `npm ci`, not `npm install`: the published artifact has to be built from
+      # the locked tree. `npm install` is also free to rewrite package.json —
+      # @react-router/dev adds `isbot` to `dependencies` and shells out to it —
+      # which on a release run would mean publishing a manifest nobody reviewed.
       - name: Install root dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install dashboard dependencies
         working-directory: packages/dashboard
-        run: npm install
+        run: npm ci
 
       - name: Publish to npm
         working-directory: packages/dashboard

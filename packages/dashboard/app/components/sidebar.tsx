@@ -248,8 +248,10 @@ export function AppSidebar () {
             The knockout keeps the full 160 viewBox, so the glyph sits at exactly
             the inset it has inside the drawn square. The radius is the brand's
             own 36/160 of the width rather than a chosen number: 32 × 0.225 = 7.2.
-            At 32px the queue row still reads; the 16px favicon uses the
-            small-size fallback, which drops it.
+
+            This is the full mark, letterforms over the queue row. The favicon is
+            a different asset carrying only the queue row, because at 16px these
+            letterforms close up into a smudge.
           */}
           {/*
             Inlined rather than referenced by URL. An imported asset URL is

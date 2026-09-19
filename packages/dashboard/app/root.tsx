@@ -20,7 +20,8 @@ import { isReadOnly } from "~/lib/read-only.server";
 import { capabilityContext } from "~/lib/capability-context";
 import { DEFAULT_DENIAL, defaultCapabilities } from "~/lib/capabilities";
 import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
-import { COLOR_HEX } from "~/lib/favicon";
+import markWhite from "~/assets/pg-boss-mark-white.svg?raw";
+import { BRAND_COBALT, COLOR_HEX, DEFAULT_COLOR_THEME } from "~/lib/favicon";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -44,9 +45,18 @@ function MainContent ({ children }: { children: React.ReactNode }) {
         </div>
         {!open && (
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary-600 flex items-center justify-center md:hidden">
-              <span className="text-white font-bold text-xs">PG</span>
-            </div>
+            {/*
+              The same construction as the sidebar header: a themed square with
+              the knockout mark inlined on top, rather than an <img> whose square
+              no CSS of ours could reach. The radius is the brand's own 36/160 of
+              the width, 28 × 0.225 = 6.3, so it matches the sidebar at a
+              different size. This is the only mark a phone-width viewport shows.
+            */}
+            <div
+              className="w-7 h-7 rounded-[6.3px] bg-primary-600 shrink-0 md:hidden [&>svg]:w-full [&>svg]:h-full"
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{ __html: markWhite }}
+            />
             <span className="font-semibold text-sidebar-foreground md:hidden">pg-boss</span>
           </div>
         )}
@@ -63,12 +73,13 @@ const themeScript = `
   (function() {
     // The mark's own source, inlined at build time. Inside the IIFE so the page
     // gains no global; it is only ever read a few lines below.
-    // Both interpolated from ~/lib/favicon at build time: this script is a
-    // string and cannot import, and a second copy of either is a second thing to
-    // keep in step. The icon is set here rather than in links() because the
-    // server rendering that tag has never seen localStorage — anything it
-    // emitted would be a guess, and hydration correcting it is what produced the
-    // flash of the right colour followed by the wrong one.
+    //
+    // Every constant this script depends on is interpolated from ~/lib/favicon
+    // rather than written out here: the script is a string and cannot import,
+    // and a literal copy of the palette, the default theme or the brand hex is
+    // a second thing to keep in step. The one that bites is the brand hex — a
+    // copy here would keep tinting correctly after the module's own guard had
+    // started failing, so the two must come from the same place.
     const MARK_SOURCE = ${JSON.stringify(faviconSource)};
     const colorHex = ${JSON.stringify(COLOR_HEX)};
 
@@ -83,16 +94,16 @@ const themeScript = `
     // can render from CSS on the first paint instead of client-only React state.
     document.documentElement.dataset.themeMode = mode;
 
-    const colorTheme = localStorage.getItem('pg-boss-color-theme') || 'cobalt';
+    const colorTheme = localStorage.getItem('pg-boss-color-theme') || ${JSON.stringify(DEFAULT_COLOR_THEME)};
     document.documentElement.dataset.colorTheme = colorTheme;
 
-    // Tint the mark's square to the chosen theme, the way this has always
-    // worked. links() ships the cobalt original so there is a correct icon
-    // before any of this runs; only the square's fill is swapped, so the
-    // letterforms and the queue row come straight from the asset and cannot
-    // drift from the one the sidebar draws.
-    const hex = colorHex[colorTheme] || colorHex.cobalt;
-    const svg = MARK_SOURCE.split('#284fe0').join(hex);
+    // Tint the mark's square to the chosen theme. This runs before first paint
+    // and is the only thing that sets the icon on load — links() deliberately
+    // emits none, because the server has never seen localStorage. Only the
+    // square's fill is swapped, so the queue row comes straight from the asset
+    // and cannot drift from the one the sidebar draws.
+    const hex = colorHex[colorTheme] || colorHex[${JSON.stringify(DEFAULT_COLOR_THEME)}];
+    const svg = MARK_SOURCE.split(${JSON.stringify(BRAND_COBALT)}).join(hex);
     var link = document.querySelector('link[rel="icon"]');
     if (!link) {
       link = document.createElement('link');

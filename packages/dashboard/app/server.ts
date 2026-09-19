@@ -8,6 +8,7 @@ import { getDatabaseConfigs, findDatabaseById, type DatabaseConfig } from './lib
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
+import { stripBasePrefix } from './lib/base-path'
 
 // Resolve the per-request load context the loaders/actions rely on. The selected
 // database comes from the `?db=` query param or the `pgboss_db` cookie, falling back
@@ -130,11 +131,23 @@ export function createHonoApp ({
     // and the browser's Basic dialog is the one with no way to sign out. It goes
     // first because its own login route has to answer someone who is by
     // definition not authenticated yet.
+    // `ownsAuth` without a `server` hook registers nothing, and this branch has
+    // already skipped `configureAuth` — the result is a dashboard with no
+    // authentication at all that has just announced it is ignoring the operator's
+    // password. `server` is optional on the contract because an overlay may add
+    // routes without owning auth; claiming `ownsAuth` is what makes it required.
+    if (!overlay.server) {
+      throw new Error(
+        'A Pro overlay that declares ownsAuth must provide a server() hook: it has ' +
+        'replaced the built-in credential check and nothing else will authenticate.'
+      )
+    }
+
     if (configuredCredential) {
       console.log('PGBOSS_DASHBOARD_AUTH_* ignored: the Pro overlay provides authentication.')
     }
 
-    overlay.server?.(app)
+    overlay.server(app)
   } else {
     // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs before the
     // handler so static assets and SSR responses are both gated — and before the
@@ -164,27 +177,12 @@ export function createHonoApp ({
     const basename = typeof build !== 'function' && build.basename && build.basename !== '/'
       ? build.basename
       : ''
-    // Only strip a prefix that is genuinely there, and only on a segment
-    // boundary. A blind `slice` escapes the static root: serveStatic's traversal
-    // guard runs on the *raw* path and only rejects `..` bounded by slashes, so
-    // `/aaaaaaaaaaaa../server/index.js` passes it, and slicing 13 characters for
-    // a basename of `/admin/queues` leaves `../server/index.js` — one level out
-    // of `build/client`, into the server bundle. The catch-all below sees every
-    // path, not just `${basename}/assets/*`, which is what makes it reachable.
-    //
-    // A path that is not under the basename is returned unchanged rather than
-    // trimmed. It cannot be ours, and `join` treats what is left as an ordinary
-    // segment name, so it simply misses and falls through to the SSR handler.
+    // `stripBasePrefix` carries the reasoning and the traversal guard; it lives in
+    // `~/lib/base-path` so it can be tested directly. The catch-all below sees
+    // every path, not just `${basename}/assets/*`, which is what makes an escape
+    // reachable at all.
     const rewriteRequestPath = basename
-      ? (path: string) => {
-          if (path !== basename && !path.startsWith(`${basename}/`)) {
-            return path
-          }
-
-          const rest = path.slice(basename.length)
-
-          return rest.startsWith('/') ? rest : `/${rest}`
-        }
+      ? (path: string) => stripBasePrefix(path, basename)
       : undefined
 
     // The static manifest file still carries the baked asset URLs: answer with the re-homed one.
