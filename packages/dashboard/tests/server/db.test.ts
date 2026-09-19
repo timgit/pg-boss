@@ -187,4 +187,30 @@ describe('db.server', () => {
       await pool.end()
     })
   })
+
+  describe('process signals', () => {
+    const embeddedKey = Symbol.for('pgboss.dashboard.embedded')
+    const store = globalThis as unknown as Record<symbol, unknown>
+    const countHandlers = () => process.listenerCount('SIGTERM') + process.listenerCount('SIGINT')
+
+    afterEach(() => {
+      delete store[embeddedKey]
+    })
+
+    it('closes the pools and exits on a signal when running standalone', async () => {
+      const before = countHandlers()
+      await import('~/lib/db.server')
+
+      expect(countHandlers()).toBe(before + 2)
+    })
+
+    it('leaves the signals to the host when embedded, and hands it closeAllPools', async () => {
+      store[embeddedKey] = true
+      const before = countHandlers()
+      const { closeAllPools } = await import('~/lib/db.server')
+
+      expect(countHandlers()).toBe(before)
+      expect(store[Symbol.for('pgboss.dashboard.closeAllPools')]).toBe(closeAllPools)
+    })
+  })
 })

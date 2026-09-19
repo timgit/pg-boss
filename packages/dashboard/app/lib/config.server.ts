@@ -40,24 +40,37 @@ export function parseDatabaseConfig (): DatabaseConfig[] {
   return urlParts.map((part, index) => {
     // Check for "name=url" format
     const equalsIndex = part.indexOf('=')
-    let name: string
-    let url: string
 
     // Only treat as name=url if = comes before :// (to avoid matching postgres://user:pass@)
     const protocolIndex = part.indexOf('://')
     if (equalsIndex > 0 && (protocolIndex === -1 || equalsIndex < protocolIndex)) {
-      name = part.substring(0, equalsIndex).trim()
-      url = part.substring(equalsIndex + 1).trim()
-    } else {
-      url = part
-      name = extractDatabaseName(url) || `Database ${index + 1}`
+      return toDatabaseConfig({
+        name: part.substring(0, equalsIndex).trim(),
+        url: part.substring(equalsIndex + 1).trim(),
+        schema: schemaParts[index],
+      }, index)
     }
 
-    const schema = schemaParts[index] || DEFAULT_SCHEMA
-    const id = generateId(name, index)
-
-    return { id, name, url, schema }
+    return toDatabaseConfig({ url: part, schema: schemaParts[index] }, index)
   })
+}
+
+export interface DatabaseInput {
+  url: string;
+  name?: string;
+  schema?: string;
+}
+
+/** Shared by the environment parser above and by `createDashboardHandler()`. */
+export function toDatabaseConfig ({ url, name, schema }: DatabaseInput, index: number): DatabaseConfig {
+  const displayName = name || extractDatabaseName(url) || `Database ${index + 1}`
+
+  return {
+    id: generateId(displayName, index),
+    name: displayName,
+    url,
+    schema: schema || DEFAULT_SCHEMA,
+  }
 }
 
 /**
