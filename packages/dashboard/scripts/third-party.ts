@@ -213,7 +213,7 @@ export function renderNotices (packages: ThirdPartyPackage[], preamble: string):
       lines.push(pkg.licenseText)
     } else {
       lines.push(
-        `This package ships no licence file. Its package.json declares ` +
+        'This package ships no licence file. Its package.json declares ' +
         `${pkg.license ?? 'no licence'}.`
       )
     }

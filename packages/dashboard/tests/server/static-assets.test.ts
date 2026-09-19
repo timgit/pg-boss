@@ -24,7 +24,7 @@ function buildWithBasename (basename: string): ServerBuild {
     future: {},
     ssr: true,
     isSpaMode: false,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   } as any
 }
 

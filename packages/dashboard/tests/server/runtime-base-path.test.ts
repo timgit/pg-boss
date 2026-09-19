@@ -91,8 +91,8 @@ describe('rehomeAssetUrls', () => {
   })
 
   it('leaves a key that is not an asset URL alone', () => {
-    expect(rehomeAssetUrls({ routes: { 'root': '/assets/a.js' } }, '/', '/x/'))
-      .toEqual({ routes: { 'root': '/x/assets/a.js' } })
+    expect(rehomeAssetUrls({ routes: { root: '/assets/a.js' } }, '/', '/x/'))
+      .toEqual({ routes: { root: '/x/assets/a.js' } })
   })
 
   it('only rewrites strings that start with the public asset path', () => {

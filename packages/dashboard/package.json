@@ -67,8 +67,7 @@
     "pg-boss": "^12.31.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router": "^8.3.1",
-    "isbot": "^5"
+    "react-router": "^8.3.1"
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",
