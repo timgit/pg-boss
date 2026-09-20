@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Hono } from 'hono'
 import { createHonoApp, getLoadContext } from '~/server'
-import { serverOverlay as stub } from '~pro-server'
+import { serverOverlay as stub } from '~/lib/pro-server-stub'
 import { dbContext } from '~/lib/db-context'
 import { getDatabaseConfigs } from '~/lib/config.server'
 import type { ProServerOverlay } from '~/lib/pro-contract'
@@ -31,6 +31,14 @@ const answersProbe: ProServerOverlay = {
   },
 }
 
+/**
+ * Imported by path, not through `~pro-server`.
+ *
+ * The alias is what a *build* resolves, and in a Pro build it resolves to the
+ * overlay — so asserting "the alias has no hooks on it" states that no overlay
+ * exists, which stops being true exactly when the suite runs mounted, which is
+ * when this file most needs to pass. The subject here is the stub itself.
+ */
 describe('the stub every free build resolves to', () => {
   it('has no hooks on it, so nothing in createHonoApp changes', () => {
     expect(stub).toEqual({})
