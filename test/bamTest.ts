@@ -339,6 +339,35 @@ describe('bam', function () {
       expect(rows[0].indexdef).toContain('(a)')
     }, 10000)
 
+    it('completes a reattempt whose command has no IF NOT EXISTS when its index is already valid', async function () {
+      // job_i7 and job_i8 were queued without IF NOT EXISTS. A short-lived process (one that starts,
+      // schedules and stops within a second) can be stopped right after the CREATE: the index is
+      // valid, the row is not marked, and every later attempt fails with "already exists".
+      const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
+      const errors: Error[] = []
+      boss.on('error', (err: Error) => errors.push(err))
+
+      const db = await helper.getDb()
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
+      await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
+
+      const command = `CREATE INDEX CONCURRENTLY heal_idx ON ${ctx.schema}.heal_test (a)`
+      await insertBamRow(ctx.schema, 'strict_cmd', 'in_progress', command, 25 * 60 * 60)
+
+      const done = waitForBamEvent(boss, 'strict_cmd', 'completed')
+      await triggerBamPoll(ctx.schema)
+      await done
+
+      const { rows } = await db.executeSql(
+        `SELECT status, error FROM ${ctx.schema}.bam WHERE name = 'strict_cmd'`
+      )
+      await db.close()
+
+      expect(rows[0].status).toBe('completed')
+      expect(rows[0].error).toBeNull()
+      expect(errors).toHaveLength(0)
+    }, 10000)
+
     it('should not heal on backends without pg_stat_progress_create_index (timeout-only reclaim)', async function () {
       const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, __test__noIndexProgressView: true })
       boss.on('error', () => {})

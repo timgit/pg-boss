@@ -1430,7 +1430,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
           'group_concurency_index',
           $VERSION$,
           $$
-          CREATE INDEX CONCURRENTLY job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL
+          CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL
           $$
         )`
       ],
@@ -1465,7 +1465,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
           'key_strict_fifo_index',
           $VERSION$,
           $$
-          CREATE UNIQUE INDEX CONCURRENTLY job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'
+          CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'
           $$
         , 'job_common')`
       ],
