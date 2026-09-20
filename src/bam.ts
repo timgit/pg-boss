@@ -108,6 +108,8 @@ class Bam extends EventEmitter implements types.EventsMixin {
       table: entry.table
     })
 
+    let built = false
+
     try {
       // A re-attempted command (a stale in_progress reclaim, or a retry of a prior 'failed' — including
       // failed rows left by older releases) may have an INVALID index behind it from an interrupted or
@@ -128,11 +130,18 @@ class Bam extends EventEmitter implements types.EventsMixin {
           const { rows } = await this.#db.executeSql(probeSql!)
           if (rows[0]?.invalid) {
             await this.#db.executeSql(dropSql)
+          } else if (rows.length === 1) {
+            // The two oldest index commands (job_i7, job_i8) were queued without IF NOT EXISTS, and a
+            // row keeps the text it was queued with. Re-running one against its own valid index fails
+            // with "already exists", and a failed row is retried forever.
+            built = true
           }
         }
       }
 
-      await this.#db.executeSql(entry.command)
+      if (!built) {
+        await this.#db.executeSql(entry.command)
+      }
 
       if (this.#stopped) return
 
