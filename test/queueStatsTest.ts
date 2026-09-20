@@ -1,5 +1,6 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import * as plans from '../src/plans.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
@@ -167,5 +168,181 @@ describe('queueStats', function () {
     expect(queueData.queuedCount).toBe(0)
     expect(queueData.activeCount).toBe(0)
     expect(queueData.totalCount).toBe(0)
+  })
+
+  /**
+   * Throughput, which is the one thing the other counts cannot answer: five
+   * hundred jobs arriving and five hundred leaving looks identical to a still
+   * queue in every gauge on this table.
+   */
+  describe('completedDelta and failedDelta', function () {
+    /**
+     * One monitor pass, run the way the monitor runs it.
+     *
+     * Not `getQueueStats({ force: true })`: that reuses anything computed in the
+     * last minute, so two passes in one test would read back the row the first
+     * one wrote. And not by winding `monitor_on` backwards either — that is the
+     * watermark these counters are windowed on, so moving it is moving the
+     * thing under test.
+     */
+    async function monitorPass (queue: string, trackThroughput = true) {
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      const { rows: [{ table_name: table }] } = await db.executeSql(
+        `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
+      )
+
+      const { rows } = await db.executeSql(
+        plans.refreshQueueStats(schema, table, queue, { noAdvisoryLocks: true, trackThroughput }), []
+      )
+
+      return rows[0]
+    }
+
+    /**
+     * The counters cost a join and three filters on the monitor's biggest
+     * query, so they are opt-in. With the option off the aggregate must be the
+     * one that shipped before throughput existed, and the columns stay at zero.
+     */
+    it('counts nothing when tracking is off', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.send(queue)
+      await monitorPass(queue, false)
+
+      const [job] = await ctx.boss.fetch(queue)
+      await ctx.boss.complete(queue, job.id)
+
+      const off = await monitorPass(queue, false)
+      expect(off.completedDelta).toBe(0)
+      expect(off.arrivedDelta).toBe(0)
+    })
+
+    /**
+     * Turning it on starts the series; it does not recover the past.
+     *
+     * The window is the watermark, and passes made while tracking was off moved
+     * the watermark like any other pass. So work done before the switch is
+     * behind it and stays uncounted — which is worth knowing, because a chart
+     * that began yesterday should say so rather than imply the queue was idle.
+     */
+    it('starts counting when it is turned on, and does not backfill', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.send(queue)
+
+      const [before] = await ctx.boss.fetch(queue)
+      await ctx.boss.complete(queue, before.id)
+
+      // An untracked pass still advances the watermark, so this completion ends
+      // up behind it — counted by nobody, which is the cost of having had the
+      // option off when it happened.
+      await monitorPass(queue, false)
+
+      expect((await monitorPass(queue, true)).completedDelta).toBe(0)
+
+      await ctx.boss.send(queue)
+      const [after] = await ctx.boss.fetch(queue)
+      await ctx.boss.complete(queue, after.id)
+
+      expect((await monitorPass(queue, true)).completedDelta).toBe(1)
+    })
+
+    it('counts arrivals, which is the other half of a growing backlog', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue)
+
+      await ctx.boss.send(queue)
+      await ctx.boss.send(queue)
+
+      const after = await monitorPass(queue)
+      expect(after.arrivedDelta).toBe(2)
+      expect(after.completedDelta).toBe(0)
+    })
+
+    it('counts what finished between one pass and the next', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      // First pass: establishes the watermark. Nothing has finished yet, and a
+      // queue with no previous pass to compare against must count zero rather
+      // than everything in the table.
+      await ctx.boss.send(queue)
+      const before = await monitorPass(queue)
+      expect(before.completedDelta).toBe(0)
+
+      const [job] = await ctx.boss.fetch(queue)
+      await ctx.boss.complete(queue, job.id)
+
+      const after = await monitorPass(queue)
+      expect(after.completedDelta).toBe(1)
+      expect(after.failedDelta).toBe(0)
+    })
+
+    /** The window moves with the watermark, so nothing is counted twice. */
+    it('does not count the same job in two passes', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.send(queue)
+      await monitorPass(queue)
+
+      const [job] = await ctx.boss.fetch(queue)
+      await ctx.boss.complete(queue, job.id)
+
+      expect((await monitorPass(queue)).completedDelta).toBe(1)
+      // The window now starts after that completion, so the same row is behind
+      // the watermark and is never counted again.
+      expect((await monitorPass(queue)).completedDelta).toBe(0)
+    })
+
+    it('counts a terminal failure, and not a retry', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const retried = randomUUID()
+      const terminal = randomUUID()
+
+      await ctx.boss.createQueue(retried, { retryLimit: 1 })
+      await ctx.boss.createQueue(terminal, { retryLimit: 0 })
+
+      await ctx.boss.send(retried)
+      await ctx.boss.send(terminal)
+      await monitorPass(retried)
+      await monitorPass(terminal)
+
+      const [retryJob] = await ctx.boss.fetch(retried)
+      await ctx.boss.fail(retried, retryJob.id)
+
+      const [failJob] = await ctx.boss.fetch(terminal)
+      await ctx.boss.fail(terminal, failJob.id)
+
+      // A job that will be retried has not finished, whatever its timestamps say.
+      expect((await monitorPass(retried)).failedDelta).toBe(0)
+      expect((await monitorPass(terminal)).failedDelta).toBe(1)
+    })
+
+    it('counts every job in a batch', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      for (let i = 0; i < 5; i++) {
+        await ctx.boss.send(queue)
+      }
+      await monitorPass(queue)
+
+      const jobs = await ctx.boss.fetch(queue, { batchSize: 5 })
+      await ctx.boss.complete(queue, jobs.map(job => job.id))
+
+      expect((await monitorPass(queue)).completedDelta).toBe(5)
+    })
   })
 })

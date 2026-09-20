@@ -1875,6 +1875,37 @@ AS $function$
           : createQueueFn[40](schema),
         `DROP FUNCTION ${schema}.job_now()`
       ]
+    },
+    {
+      release: '12.34.0',
+      version: 43,
+      previous: 42,
+      // Throughput: how many jobs finished between one monitor pass and the
+      // next. Every other count on these tables is a gauge, and a gauge cannot
+      // answer it — five hundred jobs arriving and five hundred leaving looks
+      // exactly like a queue where nothing happened.
+      //
+      // Two columns on `queue` for the latest interval and two on `queue_stats`
+      // for the history, matching how every other count here already travels.
+      // Both are NOT NULL DEFAULT 0, which Postgres adds without rewriting the
+      // table — on `queue_stats`, which is partitioned and large on a busy
+      // installation, a rewrite would be the whole cost of this migration.
+      install: [
+        `ALTER TABLE ${schema}.queue ADD COLUMN completed_delta int NOT NULL DEFAULT 0`,
+        `ALTER TABLE ${schema}.queue ADD COLUMN failed_delta int NOT NULL DEFAULT 0`,
+        `ALTER TABLE ${schema}.queue ADD COLUMN arrived_delta int NOT NULL DEFAULT 0`,
+        `ALTER TABLE ${schema}.queue_stats ADD COLUMN completed_delta int NOT NULL DEFAULT 0`,
+        `ALTER TABLE ${schema}.queue_stats ADD COLUMN failed_delta int NOT NULL DEFAULT 0`,
+        `ALTER TABLE ${schema}.queue_stats ADD COLUMN arrived_delta int NOT NULL DEFAULT 0`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.queue DROP COLUMN completed_delta`,
+        `ALTER TABLE ${schema}.queue DROP COLUMN failed_delta`,
+        `ALTER TABLE ${schema}.queue DROP COLUMN arrived_delta`,
+        `ALTER TABLE ${schema}.queue_stats DROP COLUMN completed_delta`,
+        `ALTER TABLE ${schema}.queue_stats DROP COLUMN failed_delta`,
+        `ALTER TABLE ${schema}.queue_stats DROP COLUMN arrived_delta`
+      ]
     }
   ]
 }

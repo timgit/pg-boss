@@ -161,6 +161,20 @@ export interface MaintenanceOptions {
   warningRetentionDays?: number;
   persistQueueStats?: boolean;
   queueStatRetentionDays?: number;
+  /**
+   * Count what each queue *finished* and *received* between monitor passes, not just what it holds.
+   *
+   * Off by default, because it is not free. The monitor's aggregate gains a join against `queue`
+   * (for each queue's own watermark) and three more filtered counts; measured on a 2-million-row
+   * queue that took it from ~227ms to ~344ms. On a small queue the difference is noise; on a large
+   * one it is the most expensive query pg-boss runs getting half again as expensive.
+   *
+   * Turn it on to answer questions no gauge can: how many jobs a queue got through, whether the
+   * backlog is growing because arrivals rose or because completions stopped, and how long the
+   * current backlog will take to drain. `completedDelta`, `failedDelta` and `arrivedDelta` are zero
+   * while this is off.
+   */
+  trackThroughput?: boolean;
   bamIntervalSeconds?: number;
   flowIntervalSeconds?: number;
   /**
@@ -267,6 +281,25 @@ export interface QueueStats {
   activeCount: number;
   failedCount: number;
   totalCount: number;
+  /**
+   * Jobs that completed between the previous monitor pass and this one — throughput, not a gauge.
+   *
+   * Every other count here says how many jobs are in a state right now, which cannot answer "how
+   * many did this queue get through": five hundred arriving and five hundred leaving looks
+   * identical to a queue where nothing happened. Zero on a queue that has never been monitored,
+   * and over a bucketed history these are summed rather than averaged.
+   */
+  completedDelta: number;
+  /** Jobs that failed terminally in the same window. Retries are not counted; they are not finished. */
+  failedDelta: number;
+  /**
+   * Jobs that arrived in the same window.
+   *
+   * With completedDelta this is the pair that says whether a backlog is growing because more work
+   * is arriving or because less of it is leaving — two situations with the same rising queue depth
+   * and completely different answers.
+   */
+  arrivedDelta: number;
   capturedOn: Date;
 }
 
@@ -868,6 +901,12 @@ export interface QueueResult extends Queue {
    */
   failedCount: number;
   totalCount: number
+  /** Jobs completed since the previous monitor pass. See `QueueStats.completedDelta`. */
+  completedDelta: number;
+  /** Jobs failed terminally since the previous monitor pass. */
+  failedDelta: number;
+  /** Jobs that arrived since the previous monitor pass. */
+  arrivedDelta: number;
   table: string;
   createdOn: Date;
   updatedOn: Date;

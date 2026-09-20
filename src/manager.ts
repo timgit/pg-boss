@@ -116,7 +116,13 @@ const STATS_COUNT_FIELDS = [
   'readyCount',
   'activeCount',
   'failedCount',
-  'totalCount'
+  'totalCount',
+  // Counters rather than gauges — jobs finished since the previous pass. They
+  // travel with the gauges because they come from the same aggregate and need
+  // the same CockroachDB string-to-number normalisation below.
+  'completedDelta',
+  'failedDelta',
+  'arrivedDelta'
 ] as const
 
 // Stale-cache budget for getQueueStats when persistQueueStats is off. A queue-table cache older than
@@ -2384,6 +2390,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
         activeCount: 0,
         failedCount: 0,
         totalCount: 0,
+        completedDelta: 0,
+        failedDelta: 0,
+        arrivedDelta: 0,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
@@ -2474,6 +2483,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // A queue with no capture yet has no cache to fall back on, so its first scan is exempt from the
     // try-lock. See refreshQueueStats. Every later read has real counts to serve and can lose.
     const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name, {
+      trackThroughput: this.config.trackThroughput,
       noAdvisoryLocks: this.config.noAdvisoryLocks,
       firstCapture: cached.capturedOn == null
     })
