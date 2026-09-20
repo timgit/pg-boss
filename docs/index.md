@@ -111,7 +111,7 @@ A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/packag
 See the [proxy documentation](/proxy) for details.
 
 ## Requirements
-* Node 22.12 or higher for CommonJS's require(esm)
+* Node 22.12 or higher, or Bun
 * PostgreSQL 13 or higher
 
 ## Sponsors
