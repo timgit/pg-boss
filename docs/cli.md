@@ -58,13 +58,15 @@ pg-boss version --connection-string postgres://localhost/myapp
 
 ### `doctor`
 
-Compares the tables, indexes, functions, table columns (name, default, type, nullability), table constraints, and `job_state` enum pg-boss expects against the live database and reports any missing, invalid, or mismatched (dropped table, wrong index key order/predicate, altered function body, added/dropped columns, changed column defaults/types/nullability, added/dropped constraints, or changed enum values) objects, plus a warning for extra indexes. It exits `0` when the schema is clean and `1` when drift is found (or pg-boss is not installed), so it can gate a deploy — extra-index warnings do not affect the exit code. This is the CLI wrapper around [`detectSchemaDrift()`](api/ops#detectschemadrift). Default/type/nullability and constraint checks cover the fixed tables only (job/job_common/partitions are excluded); function, constraint, and enum checks are skipped on backends without `pg_get_functiondef`/`pg_get_constraintdef`, and type/default/constraint checks are skipped entirely on CockroachDB (its `INT8` typing and constraint rendering diverge from standard Postgres).
+Reports anything in the live schema that no longer matches what pg-boss expects. The CLI wrapper around [`detectSchemaDrift()`](api/ops#detectschemadrift), which documents what is compared and what each backend skips.
+
+Exits `0` when the schema is clean and `1` when drift is found or pg-boss is not installed, so it can gate a deploy. Extra-index warnings never change the exit code.
 
 ```bash
 pg-boss doctor --connection-string postgres://localhost/myapp
 ```
 
-Each drifted index is printed with the `CREATE INDEX` statement needed to fix it. A `mismatched` index — one whose definition was altered — shows the expected statement and the actual one side by side:
+Every entry prints with the statement that repairs it. A `mismatched` index shows the expected statement beside the one in the catalog:
 
 ```
 Schema "pgboss" version 37 (latest: 37)
@@ -77,7 +79,7 @@ MISMATCHED (definition differs) (1):
 ✗ Schema drift detected
 ```
 
-Dropped managed tables print under `MISSING TABLES`. A `missing` index prints the `create:` statement to run; an `invalid` one prints the `rebuild:` statement to drop and recreate it (its definition is already correct, so there is nothing to compare against). Drifted functions print under `MISSING FUNCTIONS`/`MISMATCHED FUNCTIONS` with the expected (and, for a mismatch, actual) `CREATE FUNCTION` body; tables with column drift print under `COLUMN DRIFT` with their `missing:`/`unexpected:` column lists plus a `default`/`type`/`nullability <col>: expected … actual …` line per changed attribute; tables with constraint drift print under `CONSTRAINT DRIFT` with their `missing:`/`unexpected:` constraint definitions; and a changed `job_state` enum prints under `ENUM DRIFT` with the expected vs. actual value list. Standalone indexes on a managed table that pg-boss doesn't expect print under `⚠ EXTRA INDEXES` — a **warning only** (a stale pg-boss index or one you added; harmless), which does **not** change the `0` exit code. Example:
+Every other category prints under a heading of its own — `MISSING TABLES`, `MISSING FUNCTIONS`, `MISMATCHED FUNCTIONS`, `COLUMN DRIFT`, `CONSTRAINT DRIFT`, `ENUM DRIFT`, and `⚠ EXTRA INDEXES` for indexes pg-boss does not expect, which are harmless and leave the exit code at `0`:
 
 ```
 ⚠ EXTRA INDEXES (present on a managed table but not expected — harmless) (1):
@@ -97,7 +99,7 @@ CONSTRAINT DRIFT (missing or unexpected constraints) (1):
     missing:    CHECK ((dead_letter IS DISTINCT FROM name))
 ```
 
-`doctor` diagnoses; the only thing it ever repairs is a leftover clock override, and only when asked with `--fix` (below). Because it runs against a schema that is already at the latest version, a restart or `migrate` will not repair the drift it finds. Copy the printed statement to fix an index (insert `CONCURRENTLY` on a live table). See [Remediation](api/ops#detectschemadrift) for how to fix each category (recreate a missing index, drop a stale one, and so on).
+`doctor` diagnoses; the only thing it repairs is a leftover clock override, and only when asked with `--fix` (below). The schema it checks is already at the latest version, so a restart or `migrate` will not repair what it finds — run the printed statement yourself, inserting `CONCURRENTLY` on a live table. [Remediation](api/ops#detectschemadrift) covers every category.
 
 #### `doctor --fix`
 
