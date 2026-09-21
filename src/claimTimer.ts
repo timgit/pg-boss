@@ -26,7 +26,8 @@ import type { Clock, ClockTimer } from './types.ts'
  * is nothing for a skew correction to correct, which is why the fix is in when the attempt is made
  * rather than in what it is measured against.
  *
- * `anchor()` is what a pass calls once its claim has been stamped. A pass that returns without ever
+ * `anchor()` is what a pass calls once its claim has been stamped, and it takes a wait of its own
+ * for the pass that knows when the row it was refused by comes due. A pass that returns without ever
  * reaching its claim - stopped, already working, an error on the way in - is re-armed from the end
  * of the callback instead, so the chain cannot die on a path that never anchored it.
  */
@@ -59,22 +60,28 @@ export class ClaimTimer {
 
   /**
    * Re-anchors the next attempt to now, because the claim this timer drives has just been stamped.
-   * Called whether the claim was won or lost: the winner needs its next attempt to fall after its
-   * own stamp, and a loser's phase is its own business either way.
+   *
+   * Called whether the claim was won or lost. A winner needs its next attempt to fall an interval
+   * after its own stamp. A loser has two phases it could take, and which one it takes is not a
+   * matter of taste: measured from its own failure it comes back an interval later, which is up to
+   * a whole interval after the row is next due, and that is the deployment's spacing the moment the
+   * instance holding the claim stops. A caller that knows when the row comes due passes that wait
+   * in `ms` instead. See Timekeeper.onCron(), which is the one claim where the difference costs
+   * work rather than latency.
    */
-  anchor (): void {
+  anchor (ms: number = this.#ms): void {
     if (this.#stopped) return
 
     this.#anchored = true
-    this.#arm()
+    this.#arm(ms)
   }
 
-  #arm (): void {
+  #arm (ms: number = this.#ms): void {
     this.#disarm()
 
     if (this.#stopped) return
 
-    this.#handle = this.#clock.setTimeout(() => { this.#run() }, this.#ms)
+    this.#handle = this.#clock.setTimeout(() => { this.#run() }, ms)
   }
 
   #disarm (): void {

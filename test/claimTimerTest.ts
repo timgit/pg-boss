@@ -3,6 +3,7 @@ import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
 import { ClaimTimer } from '../src/claimTimer.ts'
+import Timekeeper from '../src/timekeeper.ts'
 import { TestClock, systemClock } from '../src/clock.ts'
 import type Db from '../src/db.ts'
 import type { Clock, ClockTimer } from '../src/types.ts'
@@ -187,6 +188,95 @@ describe('claim timer', function () {
       expect(clock.live).toBe(1)
     })
 
+    it('arms the next attempt at the wait a caller names, not at the interval', async function () {
+      const clock = new RecordingClock(0)
+
+      // What a refused cron claim does: it knows when the row it lost to comes due, so it says how
+      // long to wait rather than taking the interval it would otherwise measure from its own
+      // failure. The last attempt names nothing, which is the winner's path.
+      const waits: Array<number | undefined> = [7_000, 0]
+      const timer = new ClaimTimer(clock, 30, async () => { timer.anchor(waits.shift()) })
+
+      timer.start()
+
+      clock.run(30_000)
+      await settle()
+
+      clock.run(7_000)
+      await settle()
+
+      clock.run(0)
+      await settle()
+
+      expect(clock.armed.map(({ at, due }) => due - at)).toEqual([30_000, 7_000, 0, 30_000])
+    })
+
+    /**
+     * A Timekeeper over a claim that answers however the caller says, on a clock that records what
+     * its pass arms next. Nothing else about the instance is real: a pass that did not take the
+     * claim returns at it, and one that did finds no schedules.
+     */
+    function claimAnswering (seconds: number, elapsed: unknown, claimed: unknown = false) {
+      const clock = new RecordingClock(0)
+      const db = { executeSql: async () => ({ rows: [{ claimed, elapsed, priorCronOn: null }] }) }
+      const config = { schema: 'test', clock, cronMonitorIntervalSeconds: seconds }
+      const tk = new Timekeeper(db as any, {} as any, config as any) as any
+
+      tk.stopped = false
+      tk.cronMonitorTimer = new ClaimTimer(clock, seconds, async () => {})
+      tk.cronMonitorTimer.start()
+
+      return { tk, clock }
+    }
+
+    /** What the pass armed, which is every attempt after the one start() put on the clock. */
+    const armedAfter = async (seconds: number, elapsed: unknown, claimed: unknown = false) => {
+      const { tk, clock } = claimAnswering(seconds, elapsed, claimed)
+
+      tk.getSchedules = async () => []
+
+      await tk.onCron()
+
+      const [, next] = clock.armed
+
+      return next.due - next.at
+    }
+
+    it('comes back when the row it lost the claim to is due, plus a beat', async function () {
+      // The beat is a quarter of the interval capped at a second, so it stays a beat at the smallest
+      // configurable interval instead of doubling it. Without it the retry lands on the due instant
+      // itself, where the holder's own attempt lands and where the row can still be a microsecond
+      // short.
+      expect(await armedAfter(30, 10), 'a third of the way into the interval').toBe(21_000)
+      expect(await armedAfter(30, 29.5), 'most of the way through it').toBe(1_500)
+      expect(await armedAfter(2, 1), 'an interval whose quarter is under a second').toBe(1_500)
+
+      // node-postgres hands EXTRACT() back as a numeric, which is a string
+      expect(await armedAfter(30, '10.25'), 'the age as a driver renders it').toBe(20_750)
+
+      // Refused against a row already past the interval: a winner committed between this statement's
+      // snapshot and its UPDATE, so the wait is the beat alone and the next attempt measures again.
+      expect(await armedAfter(30, 45), 'a row the snapshot saw as already due').toBe(1_000)
+
+      // A row no pass has stamped reads as no age at all. No claim is refused in that state, so the
+      // answer only has to be sane: one interval, which is what the timer would have taken anyway.
+      expect(await armedAfter(30, null), 'no timestamp on the row').toBe(31_000)
+      expect(await armedAfter(30, undefined), 'no column at all').toBe(31_000)
+    })
+
+    it('reads a taken claim in every shape a driver hands one back', async function () {
+      // A boolean from every driver that parses one, its text or an integer from an adapter over a
+      // backend that speaks JSON. A winner anchors to its own stamp, so it arms one interval out
+      // where a refused instance would have armed the 21 seconds left on the row plus a beat.
+      for (const claimed of [true, 'true', 'TRUE', 't', 1, '1']) {
+        expect(await armedAfter(30, 10, claimed), `claimed as ${JSON.stringify(claimed)}`).toBe(30_000)
+      }
+
+      for (const refused of [false, 'false', 'f', 0, '0', null, undefined]) {
+        expect(await armedAfter(30, 10, refused), `refused as ${JSON.stringify(refused)}`).toBe(21_000)
+      }
+    })
+
     it('holds one timer at a time, however often a pass anchors', async function () {
       const clock = new RecordingClock(0)
       const timer = new ClaimTimer(clock, 10, async () => {
@@ -273,7 +363,7 @@ describe('claim timer', function () {
       // bam claims bam_on the moment the instance starts; let that land before writing the column
       await helper.until(async () => (await readClaims(db, '')).bam !== null)
 
-      const claim = async () => (await db.executeSql(plans.trySetCronTime(ctx.schema, seconds))).rows.length === 1
+      const claim = async () => (await db.executeSql(plans.trySetCronTime(ctx.schema, seconds))).rows[0].claimed === true
       const write = async (ago: number) => {
         await db.executeSql(`UPDATE ${ctx.schema}.version SET cron_on = ${ctx.schema}.job_now() - interval '${ago} seconds'`)
       }
@@ -469,7 +559,10 @@ describe('claim timer', function () {
       write: async (db, ago) => {
         await db.executeSql(`UPDATE ${ctx.schema}.version SET ${column} = ${ctx.schema}.job_now() - interval '${ago} seconds'`)
       },
-      current: async db => (await db.executeSql(current(ctx.schema, SECONDS))).rows.length === 1,
+      // This release's cron claim answers on both outcomes and says which in a column; the previous
+      // one answered with a row only when it took the claim. The two shapes are what makes the
+      // reads differ here - the decision they encode is the same, which is what this asserts.
+      current: async db => (await db.executeSql(current(ctx.schema, SECONDS))).rows[0]?.claimed === true,
       before: async db => (await db.executeSql(previous.version(column)(ctx.schema, SECONDS))).rows.length === 1
     })
 
@@ -563,7 +656,7 @@ describe('claim timer', function () {
       const byPrevious = await cronOn()
       const current = await db.executeSql(plans.trySetCronTime(ctx.schema, SECONDS))
 
-      expect(current.rows).toHaveLength(1)
+      expect(current.rows[0].claimed).toBe(true)
       expect(new Date(current.rows[0].priorCronOn).getTime(), 'this release reads what the previous one left').toBe(byPrevious.getTime())
 
       await db.executeSql(`UPDATE ${ctx.schema}.version SET cron_on = ${ctx.schema}.job_now() - interval '${SECONDS * 2} seconds'`)
@@ -585,9 +678,63 @@ describe('claim timer', function () {
       await db.executeSql(`UPDATE ${ctx.schema}.version SET cron_on = now() - interval '60 seconds'`)
 
       const results = await Promise.all([1, 2, 3].map(async () =>
-        (await db.executeSql(plans.trySetCronTime(ctx.schema, 30))).rows.length === 1))
+        (await db.executeSql(plans.trySetCronTime(ctx.schema, 30))).rows[0].claimed === true))
 
       expect(results.filter(Boolean)).toHaveLength(1)
+    })
+
+    it('covers the deployment when the instance holding the cron claim stops', async function () {
+      // A refused claim used to re-arm an interval after its own failure, so the deployment's next
+      // pass was an interval after whenever the losing instance happened to try - up to two
+      // intervals after the pass that beat it. While the holder keeps running that phase is nobody's
+      // business, and the moment it stops it is the deployment's: at the configurable ceiling the
+      // gap runs past the 60-second window a cron occurrence is due in, and the occurrences inside
+      // the excess are sent by nobody.
+      const seconds = 4
+      const config = {
+        ...ctx.bossConfig,
+        noDefault: true,
+        supervise: false,
+        schedule: true,
+        cronMonitorIntervalSeconds: seconds,
+        cronWorkerIntervalSeconds: 1
+      }
+
+      const holder = await helper.start(config)
+      const db = holder.getDb() as Db
+      const cronOn = async () => {
+        const { rows: [{ cron_on: value }] } = await db.executeSql(`SELECT cron_on FROM ${ctx.schema}.version`)
+        return value === null ? null : new Date(value).getTime()
+      }
+
+      await helper.until(async () => await cronOn() !== null)
+
+      // Let the row age most of the way through the interval before the second instance tries, which
+      // is the phase that used to cost the deployment a second interval. The wait it arms is the
+      // same either way: what the fix measures is the row, not the attempt.
+      await new Promise(resolve => setTimeout(resolve, seconds * 750))
+
+      ctx.boss = await helper.start(config)
+
+      try {
+        // The deploy: the instance that has been running the passes goes away, leaving one whose
+        // claim was refused most of an interval ago. Not graceful, and holding its pool open, since
+        // the read below is on it.
+        await holder.stop({ graceful: false, close: false })
+
+        const peer = await cronOn() as number
+
+        await helper.until(async () => (await cronOn() as number) > peer, seconds * 3000)
+
+        const gap = (await cronOn() as number) - peer
+
+        expect(gap, 'a pass never runs before its interval is up').toBeGreaterThanOrEqual(seconds * 1000)
+        // The beat is a second here; the rest of the allowance is the round trip and whatever the
+        // machine running this was doing. Two intervals - what this used to be - is 8000.
+        expect(gap, `one interval and a beat, not two intervals (${gap}ms)`).toBeLessThan(seconds * 1000 + 2000)
+      } finally {
+        await holder.stop({ close: true })
+      }
     })
 
     it('keeps the passes an interval apart under a claim that takes its time', async function () {
@@ -611,7 +758,7 @@ describe('claim timer', function () {
 
         timer.anchor()
 
-        if (rows.length === 1) {
+        if (rows[0].claimed === true) {
           const { rows: [v] } = await db.executeSql(`SELECT cron_on FROM ${ctx.schema}.version`)
           stamps.push(new Date(v.cron_on).getTime())
         }

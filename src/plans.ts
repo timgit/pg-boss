@@ -1101,23 +1101,29 @@ export function trySetQueueDeletionTime (schema: string, queues: string[], secon
   return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds)
 }
 
-// The cron claim, which also answers with the timestamp it replaced. That timestamp is when an
-// instance last ran a pass, so the pass reads it to find out how long scheduling was off, which is
-// the window a schedule's `missed` policy catches up over. Null on a database no pass has ever run
-// against, where there is no gap to catch up on.
+// The cron claim, which also answers with the timestamp it replaced and how old that timestamp was.
+// The timestamp is when an instance last ran a pass, so the pass reads it to find out how long
+// scheduling was off, which is the window a schedule's `missed` policy catches up over. Null on a
+// database no pass has ever run against, where there is no gap to catch up on.
 //
-// The prior value has to come from a CTE of its own: RETURNING sees the row as the UPDATE leaves
+// Both answers have to come from a CTE of their own: RETURNING sees the row as the UPDATE leaves
 // it, while a WITH sub-statement reads the snapshot the whole statement was planned against, so it
-// sees the value the UPDATE is replacing. Zero rows still means another instance holds the claim,
-// which is all the caller checked before.
+// sees the value the UPDATE is replacing.
+//
+// This answers on both outcomes rather than on a claim alone, which is why `claimed` is a column
+// and not the row count: an instance that was refused needs to know when the row it lost to comes
+// due, so its next attempt can be measured from the claim that beat it rather than from its own
+// failure. See Timekeeper.onCron(). Reading `claim` through EXISTS does not make the UPDATE
+// conditional - a data-modifying CTE always runs, exactly once, whether or not the outer query
+// reads it.
 export function trySetCronTime (schema: string, seconds: number) {
   return `
     WITH prior AS (
-      SELECT cron_on FROM ${schema}.version
+      SELECT cron_on, EXTRACT( EPOCH FROM (${schema}.job_now() - cron_on) ) as elapsed FROM ${schema}.version
     ), claim AS (
       ${trySetTimestamp(schema, 'cron_on', seconds)}
     )
-    SELECT prior.cron_on as "priorCronOn" FROM prior, claim
+    SELECT prior.cron_on as "priorCronOn", prior.elapsed as "elapsed", EXISTS (SELECT 1 FROM claim) as "claimed" FROM prior
   `
 }
 

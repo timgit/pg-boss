@@ -116,6 +116,24 @@ function throttleSlot (instant: Date): string {
 }
 
 /**
+ * Whether the cron claim went through, as the driver in front of this instance hands the column
+ * back: a boolean from anything that parses one, and its text or an integer from an adapter over a
+ * backend that speaks JSON.
+ *
+ * Read liberally on purpose. The two ways to be wrong are not worth the same: a `true` read as
+ * `false` leaves this instance believing it never wins the claim, so a single-instance deployment
+ * runs no pass at all and no schedule ever fires. The other way costs a pass that another instance
+ * also ran, whose occurrences the throttle slot collapses into the one job they would have been.
+ */
+function claimTaken (value: unknown): boolean {
+  if (typeof value === 'string') {
+    return ['true', 't', '1'].includes(value.toLowerCase())
+  }
+
+  return value === true || value === 1
+}
+
+/**
  * A timestamp column as the driver in front of this instance hands it back: node-postgres parses
  * one into a Date, and an adapter over a backend that speaks JSON hands back the string it was
  * sent. Null for anything that is neither, which is what an absent column reads as.
@@ -385,12 +403,26 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       if (!this.stopped) {
         const { rows } = await this.db.executeSql(sql)
 
-        // cron_on is stamped; the next attempt is measured from here rather than from the tick that
-        // started this one, which is what keeps two passes an interval apart instead of letting one
-        // land a few milliseconds short and lose the claim for a whole interval. See ClaimTimer.
-        this.cronMonitorTimer?.anchor()
+        // The claim answers on both outcomes now, so `claimed` says which one this was. Before it
+        // did, the answer was the row count, and an instance that lost learned nothing else.
+        const claimed = claimTaken(rows[0]?.claimed)
 
-        if (!this.stopped && rows.length === 1) {
+        if (claimed) {
+          // cron_on is stamped; the next attempt is measured from here rather than from the tick
+          // that started this one, which is what keeps two passes an interval apart instead of
+          // letting one land a few milliseconds short and lose the claim for a whole interval. See
+          // ClaimTimer.
+          this.cronMonitorTimer?.anchor()
+        } else {
+          // Another instance holds the claim, and the row it stamped is what the next pass is owed
+          // against - not this attempt. Measured from here the next attempt lands an interval after
+          // a failure that was already some way into the interval, so the moment the holder stops,
+          // the deployment's next pass is up to two intervals after its last one: wider than the
+          // 60-second due window, and the occurrences inside the excess are sent by nobody.
+          this.cronMonitorTimer?.anchor(this.claimRetryDelay(rows[0]?.elapsed))
+        }
+
+        if (!this.stopped && claimed) {
           // The claim answers with the timestamp it replaced, which is when an instance last ran a
           // pass. Anything older than the due window between then and now is a gap no pass covered,
           // and a schedule's `missed` policy decides what it owes for it.
@@ -402,6 +434,35 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     } finally {
       this.timekeeping = false
     }
+  }
+
+  /**
+   * How long an instance whose claim was refused waits before trying again: until the row it lost
+   * to comes due, plus a beat.
+   *
+   * The beat keeps the retry off the due instant itself, where the holder's own attempt lands and
+   * where the row can still be a microsecond short of the interval. A quarter of the interval,
+   * capped at a second, so it stays a beat at every configurable interval instead of doubling the
+   * smallest one.
+   *
+   * No jitter. What it would buy is a spread the retries already have: each is measured from its
+   * own statement's snapshot and its own round trip, so several instances do not land on one
+   * instant, and a refused claim is a single-row UPDATE whose predicate fails. What it would cost
+   * is the one thing in this path a TestClock cannot drive to a known instant, which is what the
+   * regression test for this needs.
+   *
+   * `elapsed` is how old the row was in the snapshot the claim read, so a winner that commits
+   * between that snapshot and this statement's UPDATE leaves it measured against the previous
+   * stamp: the retry then comes back early, is refused, and measures again. Self-correcting, and it
+   * costs one extra statement in a race that has to happen inside a round trip. A null reads as a
+   * full interval, which is the row a pass has never stamped - a state no claim is refused in.
+   */
+  private claimRetryDelay (elapsed: unknown): number {
+    const interval = this.config.cronMonitorIntervalSeconds! * 1000
+    const age = Number(elapsed)
+    const remaining = Number.isFinite(age) && age > 0 ? Math.max(0, interval - age * 1000) : interval
+
+    return remaining + Math.min(1000, interval / 4)
   }
 
   /**
@@ -591,14 +652,18 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * The gap is (lastPass, windowStart]: older than the due window, so no pass has sent it, and
    * newer than the moment an instance last ran a pass, so no pass has skipped it either. A pass
    * claims `cronMonitorIntervalSeconds` after the one before it plus the round trip the claim
-   * itself cost, 45 seconds and change at the configurable ceiling, against a 60-second window, so
-   * the range is empty while passes keep running and fills up when they stop: a deployment that is
-   * down, between deploys, or running with scheduling switched off.
+   * itself cost and the beat a refused instance waits past the due moment, 46 seconds and change at
+   * the configurable ceiling, against a 60-second window, so the range is empty while passes keep
+   * running and fills up when they stop: a deployment that is down, between deploys, or running
+   * with scheduling switched off.
    *
-   * That the spacing is an interval and not two of them is the claim timer's doing: it schedules
-   * each attempt from the moment the previous claim stamped the row rather than on a grid, so a
-   * statement that lands quickly cannot measure the row short of the interval and lose the claim
-   * for a whole one. See ClaimTimer.
+   * That the spacing is an interval and not two of them takes both halves of onCron()'s answer. The
+   * claim timer schedules a winner's next attempt from the moment its claim stamped the row rather
+   * than on a grid, so a statement that lands quickly cannot measure the row short of the interval
+   * and lose the claim for a whole one. A loser schedules its next attempt for when the row it lost
+   * to comes due rather than an interval after its own failure, so the deployment keeps the spacing
+   * when the instance holding the claim stops rather than waiting out that instance's phase as
+   * well. See ClaimTimer and claimRetryDelay().
    *
    * The most recent occurrence rather than all of them, which is the whole of what `once` promises:
    * a job carries the schedule's `data` and nothing else, so a job per missed occurrence would be
