@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/*
+ * A Pro seam, like `app/lib/pro-overlay.ts` and `app/lib/pro-server-stub.ts`.
+ *
+ * `app/pro` is gitignored, because an overlay must never be committed here, and
+ * Tailwind v4 skips what the repository ignores — so a class used only by Pro
+ * would silently never be generated. An explicit `@source` outranks
+ * `.gitignore`, which is why it has to be written out.
+ *
+ * Carried here rather than appended by the Pro build, which meant editing a
+ * tracked file on every mount: naming a path that does not exist is inert, so
+ * free builds are unaffected.
+ */
+@source "./pro";
+
 @variant dark (&:where(.dark, .dark *));
 
 /* ============================================================

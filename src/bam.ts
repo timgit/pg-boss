@@ -9,6 +9,15 @@ const events = {
   bam: 'bam'
 }
 
+// What the claim UPDATE overwrote, captured in the same statement. Internal to the runner - the public
+// BamEntry describes a stored row, and these two only describe the moment it was claimed.
+type BamClaim = types.BamEntry & {
+  priorStatus: types.BamEntry['status']
+  priorStartedOn: string | null
+  // The started_on this claim wrote, used to release only a claim that is still ours.
+  claimedStartedOn: string
+}
+
 class Bam extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #working: boolean
@@ -51,10 +60,8 @@ class Bam extends EventEmitter implements types.EventsMixin {
   async stop () {
     if (this.#stopped) return
     this.#stopped = true
-    if (this.#pollTimer) {
-      this.#pollTimer.stop()
-      this.#pollTimer = undefined
-    }
+    this.#pollTimer!.stop()
+    this.#pollTimer = undefined
     while (this.#working) {
       await delay(10)
     }
@@ -98,7 +105,25 @@ class Bam extends EventEmitter implements types.EventsMixin {
     if (this.#stopped) return
 
     const entry = await this.#getNextCommand()
-    if (!entry || this.#stopped) return
+    if (!entry) return
+
+    if (this.#config.__test__delay_bam_claim_ms) {
+      await delay(this.#config.__test__delay_bam_claim_ms)
+    }
+
+    if (this.#stopped) {
+      // The claim landed on the wrong side of a stop. The command has not run, so hand the row back
+      // exactly as it was found rather than leaving it in_progress - an in_progress row blocks the
+      // whole BAM queue until it goes stale, which is the grace window on native Postgres and 24
+      // hours on the timeout-only backends. If the release itself fails the row keeps that claim and
+      // recovers on the stale path, so surface it rather than throwing into #onPoll.
+      try {
+        await this.#releaseCommand(entry)
+      } catch (err) {
+        this.emit(events.error, err)
+      }
+      return
+    }
 
     this.emit(events.bam, {
       id: entry.id,
@@ -108,43 +133,54 @@ class Bam extends EventEmitter implements types.EventsMixin {
       table: entry.table
     })
 
-    let built = false
-
     try {
+      let alreadyBuilt = false
+
       // A re-attempted command (a stale in_progress reclaim, or a retry of a prior 'failed' — including
-      // failed rows left by older releases) may have an INVALID index behind it from an interrupted or
-      // failed CREATE INDEX CONCURRENTLY. Drop it first (best-effort, IF EXISTS) so the re-run rebuilds
-      // cleanly instead of the command's own IF NOT EXISTS skipping over a broken index forever. Only on
-      // the liveness path — CockroachDB/YugabyteDB roll interrupted builds back, so there's nothing to
-      // heal and DROP ... CONCURRENTLY isn't their model.
-      if (entry.reattempt && !this.#config.noIndexProgressView) {
-        const dropSql = plans.bamHealDrop(this.#config.schema, entry.command)
-        if (dropSql) {
-          // Only heal an index the previous attempt left INVALID. A re-attempt can also fire for a
-          // build that actually SUCCEEDED but whose row was never marked completed (a graceful stop
-          // landed between the CREATE and markCompleted) — that index is VALID and in use, so dropping
-          // it would tear down a live production index for the whole rebuild window. Probe indisvalid
-          // first; skip the drop for a valid (or absent) index and let the command's IF NOT EXISTS re-run
-          // no-op it and mark the row done.
-          const probeSql = plans.bamHealProbe(this.#config.schema, entry.command)
-          const { rows } = await this.#db.executeSql(probeSql!)
+      // failed rows left by older releases) needs the catalog consulted before the command is re-run,
+      // because the row keeps the text it was enqueued with and that text may not be idempotent.
+      // Probe indisvalid on every backend: pg_index is readable everywhere, and both outcomes matter.
+      if (entry.reattempt) {
+        const probeSql = plans.bamHealProbe(this.#config.schema, entry.command)
+        if (probeSql) {
+          const { rows } = await this.#db.executeSql(probeSql)
+
           if (rows[0]?.invalid) {
-            await this.#db.executeSql(dropSql)
-          } else if (rows.length === 1) {
-            // The two oldest index commands (job_i7, job_i8) were queued without IF NOT EXISTS, and a
-            // row keeps the text it was queued with. Re-running one against its own valid index fails
-            // with "already exists", and a failed row is retried forever.
-            built = true
+            // An interrupted or failed CREATE INDEX CONCURRENTLY left an INVALID stub. Drop it
+            // (best-effort, IF EXISTS) so the re-run rebuilds cleanly instead of the command's own
+            // IF NOT EXISTS skipping over a broken index forever. Only on the liveness path —
+            // CockroachDB/YugabyteDB roll interrupted builds back, so there is nothing to heal and
+            // DROP ... CONCURRENTLY isn't their model.
+            if (!this.#config.noIndexProgressView) {
+              // Non-null wherever the probe was: both recognise the same CONCURRENTLY commands.
+              await this.#db.executeSql(plans.bamHealDrop(this.#config.schema, entry.command)!)
+            }
+          } else if (rows[0]) {
+            // The index is VALID, so the build already succeeded and only the row was never marked (a
+            // stop landed between the CREATE and markCompleted). Dropping it would tear down a live
+            // production index for the whole rebuild window, and re-running is not safe either: the two
+            // oldest index commands (job_i7, job_i8) were queued without IF NOT EXISTS, so re-running
+            // one against its own valid index fails with "already exists" and the failed row is retried
+            // forever. Short-circuit to marking the row done instead. This half is deliberately NOT
+            // gated on the liveness path — the timeout-only backends need it most, because their stale
+            // window is BAM_STALE_SECONDS (24 hours) rather than the grace window.
+            alreadyBuilt = true
           }
         }
       }
 
-      if (!built) {
+      if (!alreadyBuilt) {
         await this.#db.executeSql(entry.command)
       }
 
-      if (this.#stopped) return
-
+      // Record the outcome even when a stop landed while the command was running. stop() waits out
+      // #working and index.ts closes the pool only after #bam.stop() resolves, so the UPDATE is safe
+      // here. Bailing out instead would strand a VALID index behind an unmarked row: on native
+      // Postgres the whole BAM queue then waits out BAM_LIVENESS_GRACE_SECONDS, and on the
+      // timeout-only backends (CockroachDB/YugabyteDB) every other command is blocked for
+      // BAM_STALE_SECONDS - 24 hours - before anything is retried. A failure here falls through to
+      // the catch, which marks the row failed - the next attempt's probe finds the VALID index and
+      // completes it.
       await this.#markCompleted(entry.id)
 
       this.emit(events.bam, {
@@ -155,9 +191,16 @@ class Bam extends EventEmitter implements types.EventsMixin {
         table: entry.table
       })
     } catch (err) {
-      if (this.#stopped) return
-
-      await this.#markFailed(entry.id, err)
+      // Same reasoning as the completed path: a stop must not leave the row in_progress. This write
+      // is guarded because it commonly runs on the connection that just failed - a terminated backend
+      // or dropped connection fails the command AND the UPDATE that would record it. Letting that
+      // throw would replace the real failure with the write's error and lose which command failed,
+      // so report both and let the stale path reclaim the row.
+      try {
+        await this.#markFailed(entry.id, err)
+      } catch (markErr) {
+        this.emit(events.error, markErr)
+      }
 
       this.emit(events.error, err)
 
@@ -172,10 +215,21 @@ class Bam extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async #getNextCommand (): Promise<types.BamEntry | null> {
+  async #getNextCommand (): Promise<BamClaim | null> {
     const sql = plans.getNextBamCommand(this.#config.schema, { useLiveness: !this.#config.noIndexProgressView })
     const { rows } = await this.#db.executeSql(sql)
     return rows[0] || null
+  }
+
+  async #releaseCommand (entry: BamClaim): Promise<void> {
+    const sql = plans.releaseBamCommand(
+      this.#config.schema,
+      entry.id,
+      entry.priorStatus,
+      entry.priorStartedOn ?? null,
+      entry.claimedStartedOn
+    )
+    await this.#db.executeSql(sql)
   }
 
   async #markCompleted (id: string): Promise<void> {

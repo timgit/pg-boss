@@ -168,12 +168,42 @@ describe('queueStatsHistory', function () {
     expect(limited.length).toBeLessThanOrEqual(2)
   })
 
+  // Production only ever writes captured_on = job_now(), so ensureQueueStatsPartitions covers today
+  // and tomorrow and nothing else. These fixtures deliberately backdate rows by up to a few minutes,
+  // which lands in YESTERDAY's UTC partition for any run starting within that window of UTC midnight
+  // — and an unensured partition fails the insert outright with "no partition of relation
+  // queue_stats found for row". Ensure the day before as well, for the fixture only.
+  async function ensureSeedPartitions (db: Awaited<ReturnType<typeof helper.getDb>>) {
+    await db.executeSql(plans.ensureQueueStatsPartitions(ctx.schema))
+    await db.executeSql(`
+      DO $$
+      DECLARE
+        d date := (now() AT TIME ZONE 'UTC')::date - 1;
+        part_name text := 'queue_stats_' || to_char(d, 'YYYYMMDD');
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = '${ctx.schema}' AND c.relname = part_name
+        ) THEN
+          EXECUTE format(
+            'CREATE TABLE ${ctx.schema}.%I PARTITION OF ${ctx.schema}.queue_stats FOR VALUES FROM (%L) TO (%L)',
+            part_name,
+            to_char(d, 'YYYY-MM-DD') || ' 00:00:00+00',
+            to_char(d + 1, 'YYYY-MM-DD') || ' 00:00:00+00'
+          );
+        END IF;
+      END;
+      $$
+    `)
+  }
+
   // Seed queue_stats rows directly with controlled captured_on/counts so bucketing is deterministic.
-  // All timestamps are `agoSeconds` before now (kept within today's UTC partition), and the partition
-  // is ensured first so partitioned Postgres accepts the inserts.
+  // All timestamps are `agoSeconds` before now, and the partitions they can land in are ensured first
+  // so partitioned Postgres accepts the inserts.
   async function seedStats (q: string, rows: Array<{ ago: number, queued?: number, total?: number }>) {
     const db = await helper.getDb()
-    await db.executeSql(plans.ensureQueueStatsPartitions(ctx.schema))
+    await ensureSeedPartitions(db)
     for (const r of rows) {
       await db.executeSql(
         `INSERT INTO ${ctx.schema}.queue_stats
@@ -228,6 +258,31 @@ describe('queueStatsHistory', function () {
     expect(bucket.queuedCount).toBe(21)
   })
 
+  helper.itPostgresOnly('seeds a row that falls on the previous UTC day', async function () {
+    // Guards the fixture itself at any hour. Every other seed here is a couple of minutes back, which
+    // only crosses into yesterday's partition for a run starting just after UTC midnight - so the
+    // whole file used to fail for the first few minutes of each UTC day, and vitest emits no coverage
+    // report at all when a test fails. Backdating past the boundary on purpose makes that permanent.
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+
+    const now = new Date()
+    const sinceUtcMidnight = now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds()
+    await seedStats(q, [{ ago: sinceUtcMidnight + 60, queued: 7 }])
+
+    const db = await helper.getDb()
+    const { rows } = await db.executeSql(
+      `SELECT count(*)::int as c, (max(captured_on) AT TIME ZONE 'UTC')::date as day
+       FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])
+    await db.close()
+
+    expect(rows[0].c).toBe(1)
+    // And it really did land on the day before, not merely insert.
+    const yesterday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1))
+    expect(rows[0].day.toISOString().slice(0, 10)).toBe(yesterday.toISOString().slice(0, 10))
+  })
+
   helper.itPostgresOnly('maxDataPoints fits the series into ~N points', async function () {
     const q = `q${randomUUID().replaceAll('-', '')}`
     ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
@@ -250,7 +305,7 @@ describe('queueStatsHistory', function () {
     // epoch boundary. With maxDataPoints=8 the derived width is ceil(80/8)=10s, and because the span
     // starts on a boundary and is exactly 8*10s wide, the epoch-aligned buckets number 9 (N+1).
     const db = await helper.getDb()
-    await db.executeSql(plans.ensureQueueStatsPartitions(ctx.schema))
+    await ensureSeedPartitions(db)
     const base = Math.floor((Math.floor(Date.now() / 1000) - 200) / 10) * 10 // 10s-aligned, ~200s ago
     for (let i = 0; i < 9; i++) {
       await db.executeSql(

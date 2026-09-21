@@ -540,6 +540,8 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__delay_bam_ms?: number;
   /** @internal */
+  __test__delay_bam_claim_ms?: number;
+  /** @internal */
   __test__delay_flow_ms?: number;
   /** @internal */
   __test__delay_clock_skew_ms?: number;

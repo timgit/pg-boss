@@ -3316,23 +3316,31 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
     // a stuck in_progress row is reclaimed purely on the 24h fallback. No CONCURRENTLY healing, so no
     // reclaimed flag is emitted (bam.ts skips healing when noIndexProgressView is set anyway).
     return `
-      UPDATE ${schema}.bam
-      SET status = 'in_progress', started_on = ${schema}.job_now()
-      WHERE id = (
-        SELECT id FROM ${schema}.bam
+      WITH candidate AS (
+        SELECT c.id, c.status AS prior_status, c.started_on AS prior_started_on
+        FROM ${schema}.bam c
         WHERE (
-          status IN ('pending', 'failed')
-          OR (status = 'in_progress' AND started_on < ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds')
+          c.status IN ('pending', 'failed')
+          OR (c.status = 'in_progress' AND c.started_on < ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds')
         )
         AND NOT EXISTS (
-          SELECT 1 FROM ${schema}.bam
-          WHERE status = 'in_progress' AND started_on >= ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds'
+          SELECT 1 FROM ${schema}.bam g
+          WHERE g.status = 'in_progress' AND g.started_on >= ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds'
         )
-        ORDER BY (status != 'pending'), created_on
+        ORDER BY (c.status != 'pending'), c.created_on
         LIMIT 1
       )
-      RETURNING id, name, version, status, queue, table_name as "table", command, error,
-                created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
+      UPDATE ${schema}.bam b
+      SET status = 'in_progress', started_on = ${schema}.job_now()
+      FROM candidate
+      WHERE b.id = candidate.id
+        AND b.status = candidate.prior_status
+        AND b.started_on IS NOT DISTINCT FROM candidate.prior_started_on
+      RETURNING b.id, b.name, b.version, b.status, b.queue, b.table_name as "table", b.command, b.error,
+                b.created_on as "createdOn", b.started_on as "startedOn", b.completed_on as "completedOn",
+                (candidate.prior_status <> 'pending') as reattempt,
+                candidate.prior_status as "priorStatus", candidate.prior_started_on::text as "priorStartedOn",
+                b.started_on::text as "claimedStartedOn"
     `
   }
 
@@ -3391,7 +3399,7 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
   // 'pending' rows have nothing to heal.
   return `
     WITH candidate AS (
-      SELECT c.id, c.status AS prior_status
+      SELECT c.id, c.status AS prior_status, c.started_on AS prior_started_on
       FROM ${schema}.bam c
       WHERE (
         c.status IN ('pending', 'failed')
@@ -3409,9 +3417,13 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
     SET status = 'in_progress', started_on = ${schema}.job_now()
     FROM candidate
     WHERE b.id = candidate.id
+      AND b.status = candidate.prior_status
+      AND b.started_on IS NOT DISTINCT FROM candidate.prior_started_on
     RETURNING b.id, b.name, b.version, b.status, b.queue, b.table_name as "table", b.command, b.error,
               b.created_on as "createdOn", b.started_on as "startedOn", b.completed_on as "completedOn",
-              (candidate.prior_status <> 'pending') as reattempt
+              (candidate.prior_status <> 'pending') as reattempt,
+              candidate.prior_status as "priorStatus", candidate.prior_started_on::text as "priorStartedOn",
+              b.started_on::text as "claimedStartedOn"
   `
 }
 
@@ -3447,10 +3459,41 @@ export function bamHealProbe (schema: string, command: string): string | null {
   `
 }
 
-export function setBamCompleted (schema: string, id: string) {
+// Undoes a claim that never ran: hands the row back exactly as getNextBamCommand found it, restoring
+// both the status and the started_on the claim overwrote. Used when a stop lands between the claim
+// UPDATE returning and the runner picking the command up. Leaving the row in_progress instead would
+// block every other BAM command until it went stale - BAM_LIVENESS_GRACE_SECONDS on native Postgres,
+// BAM_STALE_SECONDS (24 hours) on the timeout-only backends - and restoring started_on is what makes a
+// released stale-in_progress row immediately reclaimable again rather than starting that clock over.
+export function releaseBamCommand (schema: string, id: string, priorStatus: string, priorStartedOn: string | null, claimedStartedOn: string) {
+  // priorStartedOn arrives as the text rendering of the original timestamptz (the claim casts it in
+  // SQL rather than round-tripping a JS Date), so it carries its offset and full precision back.
+  const startedOn = priorStartedOn == null
+    ? 'NULL'
+    : `'${priorStartedOn.replace(SINGLE_QUOTE_REGEX, "''")}'::timestamptz`
+
+  // Compare-and-swap on the claim this runner actually took, not on the id alone. The timeout-only
+  // claim has no SKIP LOCKED (see getNextBamCommand), so two overlapping claims can both return the
+  // same row - verified: both get rowCount 1 and the same prior_status. Releasing on the id alone
+  // would then reset a row a peer is actively building back to 'pending', and the next poll would
+  // start a second CREATE INDEX CONCURRENTLY on the same index. Matching started_on makes the release
+  // a no-op unless the claim is still ours.
   return `
     UPDATE ${schema}.bam
-    SET status = 'completed', completed_on = ${schema}.job_now()
+    SET status = '${priorStatus.replace(SINGLE_QUOTE_REGEX, "''")}', started_on = ${startedOn}
+    WHERE id = '${id}'
+      AND status = 'in_progress'
+      AND started_on = '${claimedStartedOn.replace(SINGLE_QUOTE_REGEX, "''")}'::timestamptz
+  `
+}
+
+export function setBamCompleted (schema: string, id: string) {
+  // error is cleared: a row reaching 'completed' is commonly a retry of a prior 'failed' attempt, and
+  // getBamEntries() returns error for every status - a stale message would keep reading as a failure
+  // on a command that succeeded.
+  return `
+    UPDATE ${schema}.bam
+    SET status = 'completed', completed_on = ${schema}.job_now(), error = NULL
     WHERE id = '${id}'
   `
 }
