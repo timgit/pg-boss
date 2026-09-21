@@ -98,6 +98,23 @@ describe('Sidebar', () => {
     })
   })
 
+  describe('the wordmark', () => {
+    it('sets the name in the wordmark face', () => {
+      const { container } = renderWithRouter()
+
+      expect(container.querySelector('.pgboss-wordmark')?.textContent).toBe('pg-boss')
+    })
+
+    // These tests run against `pro-stub.ts`, which is what a free build gets.
+    // The badge appearing here would mean it appears in the free dashboard.
+    it('shows no tier badge without an overlay', () => {
+      const { container } = renderWithRouter()
+
+      expect(container.querySelector('.pgboss-tier')).not.toBeInTheDocument()
+      expect(screen.queryByText('Pro')).not.toBeInTheDocument()
+    })
+  })
+
   describe('theme controls', () => {
     // Light and dark moved to the topbar, which this does not render. What is
     // asserted here is that the sidebar no longer carries it — the old test

@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import overlay from '~pro'
 import { ProSlot } from '~/components/pro-slot'
+import { proPresent } from '~/lib/pro-present'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
 import type { PublicDatabase } from '~/lib/types'
@@ -310,9 +311,24 @@ export function AppSidebar () {
             />
           </ColorThemePicker>
           <div className="leading-tight whitespace-nowrap group-data-[state=collapsed]:hidden">
-            <div className="font-semibold text-sm text-sidebar-accent-foreground">pg-boss</div>
+            <div className="pgboss-wordmark text-sm text-sidebar-accent-foreground">pg-boss</div>
             <div className="font-mono text-[9px] tracking-[0.15em] text-sidebar-foreground/60">CONSOLE</div>
           </div>
+          {/*
+            Beside the whole lockup rather than on the wordmark's line: the
+            badge labels the product, and the product here is a mark with two
+            lines of type next to it. Sitting it on the first line alone left it
+            riding high against the square. The row's own `items-center` is what
+            centres it once it is a sibling of the mark.
+
+            Only in a build that carries the overlay — the free dashboard has no
+            tier to announce, and a badge reading PRO on it would be a lie about
+            what somebody is running. See `pro-present.ts` for why this is
+            derived from the overlay rather than from the build flag.
+          */}
+          {proPresent && (
+            <span className="pgboss-tier group-data-[state=collapsed]:hidden">Pro</span>
+          )}
         </div>
         {databases && currentDb && databases.length > 1 && (
           <div className="group-data-[state=collapsed]:hidden">

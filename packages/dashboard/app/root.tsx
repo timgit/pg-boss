@@ -60,7 +60,7 @@ function MainContent ({ children }: { children: React.ReactNode }) {
                 aria-hidden="true"
                 dangerouslySetInnerHTML={{ __html: markWhite }}
               />
-              <span className="font-semibold text-sidebar-foreground md:hidden">pg-boss</span>
+              <span className="pgboss-wordmark text-sidebar-foreground md:hidden">pg-boss</span>
             </>
           )}
           {/*
@@ -225,6 +225,9 @@ export function links() {
     { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
     {
       rel: "stylesheet",
+      // Geist and Geist Mono only. The wordmark's face is Space Grotesk and it
+      // is not requested here — seven glyphs of it are inlined in `app.css`,
+      // which is a smaller thing to carry than a round trip to fetch.
       href: "https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap",
     },
   ];

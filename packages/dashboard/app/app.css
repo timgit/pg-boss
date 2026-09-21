@@ -454,6 +454,119 @@
 
 /* Sidebar theme-control labels (rendered from attributes set by the inline
    theme script before first paint, so they never flash the wrong value). */
+/*
+ * Space Grotesk Bold, subset to the seven glyphs the wordmark uses and carried
+ * in this file rather than fetched.
+ *
+ * The full face is ~13KB per subset range and arrives from fonts.gstatic.com on
+ * every cold load, for a product name of seven characters that is on screen
+ * before anything else. Subset to `-bgops` it is 1,244 bytes — small enough
+ * that a data URI costs less than the DNS lookup it replaces, and the console
+ * then renders its own name with no third-party request at all, which is worth
+ * more here than elsewhere: this thing runs inside private networks.
+ *
+ * Not drawn as SVG paths, which was the other option. Outlines would be about
+ * the same size and would turn the product's name into artwork — unselectable,
+ * invisible to find-in-page, and needing a second copy at every weight or
+ * colour treatment. This stays text.
+ *
+ * The coverage is exactly `U+2d, U+62, U+67, U+6f-70, U+73`, which spells
+ * "pg-boss" and nothing else. Any other character set in `.pgboss-wordmark`
+ * falls through to the UI face without warning, so if the name ever changes,
+ * the subset has to be regenerated with it. `tests/frontend/sidebar.test.tsx`
+ * pins the string for that reason.
+ *
+ * Regenerate with:
+ *   curl "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&text=pg-bos"
+ * then fetch the woff2 it names and base64 it into the `src` below.
+ *
+ * SIL Open Font License 1.1 — Copyright 2020 The Space Grotesk Project Authors.
+ * The licence travels with these bytes in `app/assets/fonts/SpaceGrotesk-OFL.txt`.
+ */
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 700;
+  src: url(data:font/woff2;charset=utf-8;base64,d09GMgABAAAAAATcABAAAAAACUAAAASCAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhwbgUAcKAZgP1NUQVQqAFwRCAqGLIU8CxIAATYCJAMgBCAFhDoHIAwHG6gHyMSgnOms4OKsTCHWEckOkGwnbc2ywyD7gEBqWSoh+K6MVhHfhPr/71c6kTxnjkcB4H8xeSeiLBqzBAckarOwgIbWllYTcHWFE/iJWuqZONdaEABONKoJGPAgVSumT1OUYBWYSCy9G+42ta9DXOAu1DtGVWt9TwccTTyWcWDgCDaB1mENds67cRJYFGBQIODBOBKhkRSApUdMpM5lrISC0ehSzN/DcIjYPyzJFLNLy1DGn40ren6y1mICTA58HWMw+wGk5kvIUawixbysG9T2doij4ljqLddDRC/70f+fAdwEKRFBLrqK4A9MzqwiOThIYO60cimYwcamvhUhxiCXw9thgIWsLBzkkDBwP9DbCyCiFhk0ogu95HrjdN5pf21/Yl9vX21fYl+UZrvhhxK24QngqIM3zQDIPPUSFbBzU30ZcDUB8XqdJQvcy92z3fJlqznVsAivfyi4zDw47QOacZnvE1Z/jzqNd8Bo7+4zpon+tGBOQcvtJfp95Qtuu4vo09TIAZToH34omPlnAe3+x0vmXnw5oBpWFQXlBUa46qnXBTOfB7QPPthrfkiIblHjA0DL74v0b4sEInDaO9RJXCYh9OLcK9SwLNXE8qphWQSdlU9nwR5egHDXmRNS47XpxZQ5lMAr9u67ZupVwXyK6E+uK3vJeo/o+Dus3H3ta9R4HNoTa0tfzL8L7YN9xAVRP9BUnynLNNUfSC/vWXtMDHQG/w92BmqFl82lJy0dfb7UdfOLpv59+LN/Fi25vrjk5yLvwbmSdOLWYr8/VTRVxZa/98XwwzdpHg86XeF4rTA7OJab4GffsO2F2mC9HOre4d0R6q6X1XZ5i5KgibQSaB9+i4La37xbQx0NcigS9f01OziWWJ1ble4Qly7XZ1/nf0QKNcihDj4gb0mGaSSdkOckIjS8JYmVLqU/EO7e7t0e7pYJZeOuZKecUmI0pigB/VtKQfTlx8eCs53xmnBh7grWvnDC9bPJaeWBdM0uM33kHJc6usu5pXdZZgaW1Vy7YMHQYw9v3FMUWqm0bt2/qz0p9BX3e0pK9s9fODDv4eGDYnrN1q7dCL/YU9Hz+ZKf48arWK73mCf4m4NlfzqU+fTqoivm95yTte/5/zPO4jpcQheD/pon5mHf85+fs34LbQd7Lo7h/1uZCcSYCUhMHaR1tRNV5H5E4GoHDsOBjAN1DIDNI0Qx8bs6uZn16Av4c60iWIwvsCtaLVWxWIMb4xxK4ql4LEZduABFrolV6cY6OC3ErekauPRu24d6NKMRTegbm/u84QWQ4YMPvciiB83oQl8wScboIdogoRM9aIQP2xBDGrvQBRVZ1COOHnSir/aWXrSiFiehE22ow17UoyfmbZ3ogIhVkOAftnWmiXWh2AZuN4AYUgjkpg99pm0K18JdGL41euOYCfzjrIjdaML7ZoPt2+wWyMYMn4j+x4cfjKk3TK94lOFGNJ8t70cGErKhuh0+NKANZ5SthluhxsV5QMfj1+duqg0dCpVOj5pz7auxqmysfJzYp93PnQM=) format("woff2");
+  unicode-range: U+2d, U+62, U+67, U+6f-70, U+73;
+}
+
+/*
+ * The wordmark, wherever the product's name is set beside the mark.
+ *
+ * Space Grotesk Bold is the face the `pgb` letterforms inside the mark's square
+ * are drawn from, so the name and the logo are one set of letters rather than
+ * two that happen to sit together. Loaded with Geist in `root.tsx`; the stack
+ * falls through to the UI face while it arrives.
+ */
+.pgboss-wordmark {
+  font-family: "Space Grotesk", var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/*
+ * The tier pill — one class, used everywhere the product is labelled Pro.
+ *
+ * Geist SemiBold on purpose, and stated rather than inherited: the pill sits
+ * next to the wordmark, which is set in Space Grotesk, and a pill that
+ * inherited that face would read as part of the name instead of a label for the
+ * edition. Uppercase in CSS rather than in the markup, so a screen reader says
+ * "Pro" instead of spelling it.
+ *
+ * Centring the two letters is the whole reason this is a class rather than four
+ * utilities, and `line-height` is the part that gets it wrong.
+ *
+ * `line-height: 1` is the obvious thing to write on a pill and it is the bug:
+ * Geist's own content area is about 1.25em, so on a 10px font the glyphs want
+ * 12.5px and a 1em line box gives them 10. The missing 2.5px becomes negative
+ * half-leading, which drops the baseline to roughly 8.75px from the top of the
+ * line box and leaves the capitals sitting low in it — and `align-items`
+ * centres the line box, not the letters, so no amount of flex reaches it. A
+ * padding nudge only pushed them further down.
+ *
+ * `normal` lets the font state its own metrics, the half-leading goes positive,
+ * and the capitals land centred with symmetric padding. The number is Geist's
+ * to decide rather than this file's, which is also why it is not a hand-picked
+ * 13px: the fallback stack has different metrics and would be wrong by a
+ * different amount.
+ *
+ * Sideways is a separate story with a simpler fix: `letter-spacing` adds its
+ * gap after the last letter as well as between them, so the text sits
+ * fractionally left of centre in a symmetric pill, and the right padding gives
+ * that 0.1em back.
+ *
+ * `text-box: trim-both cap alphabetic` would make the capitals the box outright
+ * and was tried. It centres beautifully at 200% and visibly wrong at 100%: cap
+ * height is fractional (Geist's caps at 10px are about 7.2), and on a 1x
+ * display that centre snaps to the nearest device pixel.
+ */
+.pgboss-tier {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 3px 7px 3px 8px;
+  color: #fff;
+  background: var(--primary-600);
+}
+
+/*
+ * Dark: a filled pill is the brightest thing on a dark panel, and beside a
+ * wordmark it reads as a button somebody forgot to make clickable. The design
+ * system's dark variant is the same colour at 18% with light text.
+ */
+.dark .pgboss-tier {
+  color: var(--primary-300);
+  background: color-mix(in srgb, var(--primary-500) 18%, transparent);
+}
+
 /* The theme and colour labels these rules fed are gone: light and dark is an
    icon button in the topbar, and the palette hangs off the sidebar mark with no
    label at all. The attributes themselves are still set before first paint and
