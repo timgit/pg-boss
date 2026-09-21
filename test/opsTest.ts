@@ -277,7 +277,7 @@ describe('ops', function () {
 
     spy.mockRestore()
 
-    // stop() must tear down what did start rather than no-oping — no leaked timers
+    // stop() must tear down what did start rather than no-oping. No leaked timers
     await ctx.boss.stop()
     await new Promise(resolve => setImmediate(resolve))
     expect(process.getActiveResourcesInfo().length).toBeLessThanOrEqual(resourcesBefore.length)
@@ -294,7 +294,7 @@ describe('ops', function () {
     ctx.boss = new PgBoss(ctx.bossConfig)
 
     // The second start() sees #startingPromise already set and returns it, rather than kicking off
-    // a second #doStart — both callers resolve to the same instance.
+    // a second #doStart. Both callers resolve to the same instance.
     const first = ctx.boss.start()
     const second = ctx.boss.start()
 
@@ -316,7 +316,7 @@ describe('ops', function () {
     await startP
     await stopP
 
-    // A fresh start() must then succeed — the instance is genuinely stopped, not wedged.
+    // A fresh start() must then succeed. The instance is genuinely stopped, not wedged.
     await ctx.boss.start()
     await ctx.boss.stop()
   })

@@ -128,7 +128,7 @@ describe('bun adapter', () => {
   })
 
   it('moves the SQLSTATE onto code, where pg-boss reads it', async () => {
-    // 23505 from a lost fetch race is control flow, not a failure — pg-boss only recognises it
+    // 23505 from a lost fetch race is control flow, not a failure. Pg-boss only recognises it
     // as such if the state is where node-postgres puts it
     const { client } = fakeBunSql(() => {
       throw Object.assign(new Error('duplicate key value violates unique constraint'), {

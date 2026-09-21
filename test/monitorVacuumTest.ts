@@ -7,7 +7,7 @@ import type { PgBoss } from '../src/index.ts'
 import type { Warning } from '../src/types.ts'
 
 // Opens a second connection, pins the MVCC horizon with a REPEATABLE READ snapshot, and holds it
-// until released. A plain BEGIN is not enough — the snapshot has to be taken (hence the SELECT) for
+// until released. A plain BEGIN is not enough. The snapshot has to be taken (hence the SELECT) for
 // backend_xmin to be set, and repeatable read is what keeps it set while the backend sits idle.
 async function holdHorizon (applicationName?: string) {
   const client = new pg.Client(helper.getConnectionString())
@@ -101,7 +101,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
     // of reach. Nothing here is worth reporting: Postgres would not vacuum this table yet either.
     //
     // The budget is pinned with a storage parameter rather than by relying on vacuum reclaiming
-    // everything, because the suite shares one database — a long transaction in another worker is
+    // everything, because the suite shares one database. A long transaction in another worker is
     // itself a horizon holder, so "no holder exists" is not a state a test can assert.
     await setStorage('autovacuum_vacuum_scale_factor = 100')
 
@@ -149,7 +149,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
       await boss.supervise()
 
       // Repeated passes with no vacuum in between add no evidence, however much garbage is sitting
-      // there — an unvacuumed table says nothing about whether vacuum *could* have reclaimed it.
+      // there. An unvacuumed table says nothing about whether vacuum *could* have reclaimed it.
       await boss.supervise()
       await boss.supervise()
 
@@ -181,7 +181,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
       // Identifies the individual backend, not just its class, which is what an operator needs to go
       // and look at the thing. Only the pid is asserted here: which backend wins max(age(backend_xmin))
       // is not this test's to decide on a shared database, and an autovacuum worker that started its
-      // per-table transaction before the held horizon qualifies and wins — carrying a NULL usename,
+      // per-table transaction before the held horizon qualifies and wins, carrying a NULL usename,
       // since pg_stat_activity leaves usename NULL for every non-client backend. The role, the
       // application_name and the wording built from them are pinned by the staged-holder cases below,
       // where the row is not a race.
@@ -190,7 +190,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
       expect(stored.message).toContain('has held a transaction open')
       expect(stored.message).toContain('could not reclaim')
 
-      // Also emitted, not only persisted — an instance running with persistWarnings off still
+      // Also emitted, not only persisted. An instance running with persistWarnings off still
       // needs the signal.
       const emitted = warnings.filter(w => w.message.includes('transaction horizon is pinned'))
       expect(emitted).toHaveLength(1)
@@ -203,7 +203,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
   // Which backend wins max(age(backend_xmin)) is not a test's to decide: the suite shares one
   // database and every other worker's pg-boss is a holder too. So the identity half of the warning
   // is staged by rewriting the horizon row, which also stands in for the case a shared database
-  // cannot produce — a backend owned by a different role, whose xact_start reads NULL.
+  // cannot produce. A backend owned by a different role, whose xact_start reads NULL.
   async function withStagedHolder (row: Record<string, unknown>) {
     const realDb = await helper.getDb()
 
@@ -239,7 +239,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
 
   it('separates another application from this one by application_name', async function () {
     // A reporting tool holding a long transaction open on the same database is the most common
-    // cause of a pinned horizon and the one pg-boss cannot fix for the operator — so it has to be
+    // cause of a pinned horizon and the one pg-boss cannot fix for the operator, so it has to be
     // told apart from pg-boss pinning its own horizon, which has an entirely different remedy.
     const boss = await withStagedHolder({
       backendHolder: { pid: 4242, applicationName: 'metabase', userName: 'analytics', state: 'active', age: 900, xactSeconds: 412 },
@@ -264,7 +264,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
 
   it('says so when the holder shares this application_name', async function () {
     // Db sets application_name to 'pgboss' on the pool it owns, so a holder carrying this
-    // connection's own value is pg-boss doing it to itself — its own stats aggregate most likely.
+    // connection's own value is pg-boss doing it to itself. Its own stats aggregate most likely.
     const boss = await withStagedHolder({
       backendHolder: { pid: 4243, applicationName: 'pgboss', userName: 'app', state: 'active', age: 900, xactSeconds: 30 },
       selfApplicationName: 'pgboss'
@@ -337,7 +337,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
     await release()
 
     // Back under budget: the latch clears rather than staying set for the life of the instance.
-    // Moved with a storage parameter for the same reason as above — whether a vacuum can actually
+    // Moved with a storage parameter for the same reason as above, whether a vacuum can actually
     // reclaim depends on every other worker sharing this database, and is not ours to decide.
     await setStorage('autovacuum_vacuum_scale_factor = 100')
     await churn(boss, 'garbage')
@@ -345,7 +345,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
 
     // Deliberately far below the 0.2 default for the second episode. By this point the table holds
     // enough live rows that the default budget (50 + 0.2 x live) sits within ~20% of the dead count
-    // one churn produces — and n_live_tup / n_dead_tup are collector estimates that drift under a
+    // one churn produces, and n_live_tup / n_dead_tup are collector estimates that drift under a
     // loaded suite, so that margin is thin enough to flip the result. The latch is what this test
     // is about; the budget just needs to be unambiguously exceeded.
     await setStorage('autovacuum_vacuum_scale_factor = 0.01')
@@ -413,7 +413,7 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
     await churn(boss, 'garbage', { vacuum: false })
     await boss.supervise()
 
-    // Over budget and unvacuumed, but static — an operator vacuuming on their own schedule sits
+    // Over budget and unvacuumed, but static. An operator vacuuming on their own schedule sits
     // here between runs, and has nothing to be told.
     await boss.supervise()
     await boss.supervise()

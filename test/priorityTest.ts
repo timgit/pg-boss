@@ -8,7 +8,7 @@ import { assertTruthy } from './testHelper.ts'
 // once per option per instance; Node does not dedupe.
 //
 // The setImmediate is load-bearing. process.emitWarning defers emission past the microtask queue,
-// so awaiting the calls that trigger it is not enough to observe it — against a real server the
+// so awaiting the calls that trigger it is not enough to observe it, against a real server the
 // query I/O happens to provide the macrotask turn, but against an in-process backend (PGlite)
 // everything resolves in microtasks and the listener would come off before the warning arrives.
 async function captureDeprecations (fn: () => Promise<void>) {
@@ -66,7 +66,7 @@ describe('priority', function () {
     const jobs: string[] = []
 
     // priority: false used to skip the priority sort. The fetch index is now ordered to match the
-    // fetch, so there is nothing to skip and the option is ignored — highest priority comes first.
+    // fetch, so there is nothing to skip and the option is ignored, highest priority comes first.
     const deprecations = await captureDeprecations(async () => {
       for (let i = 0; i < 3; i++) {
         const [job] = await ctx.boss!.fetch(ctx.schema, { priority: false })

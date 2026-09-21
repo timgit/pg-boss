@@ -49,7 +49,7 @@ function getPgliteDb (): IDatabase & { close: () => Promise<void> } {
 
 // Distributed database mode is the atomic-UPDATE fetch strategy used by CockroachDB et al. It is a
 // pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise the
-// whole suite under it on Postgres via DISTRIBUTED=true — fast, reliable coverage of the distributed
+// whole suite under it on Postgres via DISTRIBUTED=true, fast, reliable coverage of the distributed
 // code paths without paying CockroachDB's slow per-test DDL. CockroachDB always implies it.
 const isDistributed = isCockroachDb || process.env.DISTRIBUTED === 'true'
 
@@ -142,7 +142,7 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   }
 
   // Route every boss built from this config at the shared in-process PGlite instance. A fresh
-  // fromPglite wrapper per call is fine — it is a stateless adapter over the one instance.
+  // fromPglite wrapper per call is fine. It is a stateless adapter over the one instance.
   if (isPglite && !('db' in options)) {
     config.db = fromPglite(getPgliteInstance())
   }
@@ -154,7 +154,7 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
 // Maps the active DB_TYPE to the docker compose command that starts its container(s). The default
 // Postgres lives in docker-compose.yaml; each alternative backend has its own compose file/project
 // so it never starts alongside the default. CockroachDB is a three-node cluster (plus init/setup
-// jobs that create the database) — starting a single node leaves it uninitialized — so it uses `--wait`.
+// jobs that create the database) (starting a single node leaves it uninitialized) so it uses `--wait`.
 function dockerStartHint (): string {
   if (isCockroachDb) return 'docker compose -f docker-compose.cockroach.yaml up -d --wait'
   if (isYugabyteDb) return 'docker compose -f docker-compose.yugabyte.yaml up -d'

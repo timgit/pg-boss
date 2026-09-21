@@ -71,7 +71,7 @@ function inlineAsyncCommand (schema: string, asyncMigration: string | types.Asyn
   return targetTables.map(table => {
     // Add IF NOT EXISTS so the exported script is re-runnable. The negative lookahead keeps it
     // idempotent when the async command already spells out IF NOT EXISTS (the live BAM path needs it
-    // there for its own idempotency — e.g. migration v36's job_i9 build), avoiding a double insert.
+    // there for its own idempotency, e.g. migration v36's job_i9 build), avoiding a double insert.
     const ddl = formatJobTable(body, table).replace(
       /(CREATE (?:UNIQUE )?INDEX CONCURRENTLY)(?! IF NOT EXISTS) /,
       '$1 IF NOT EXISTS '
@@ -134,7 +134,7 @@ function rollback (schema: string, version: number, migrations?: types.Migration
   assert(result, `Version ${version} not found.`)
 
   // Async (BAM) index builds are enqueued as bam rows, and the BAM runner does not filter by schema
-  // version — so a row left unfinished by a rollback would rebuild, one version later, the very index
+  // version, so a row left unfinished by a rollback would rebuild, one version later, the very index
   // the rollback just dropped. Clear this version's unfinished rows as part of the same transaction.
   // Only migrations that enqueue async commands can have any, and the migration that introduced BAM
   // is also the first one with async commands, so bam is guaranteed to exist here; ordering the delete
@@ -168,7 +168,7 @@ function migrateCommands (schema: string, version: number, migrations?: types.Mi
 
   // Refuse to migrate from a real DB version older than the oldest migration can start from.
   // Without this floor, `filter(i => i.previous >= version)` happily selects the whole chain for any
-  // version below the minimum `previous`, applying migrations over missing intermediate steps — a
+  // version below the minimum `previous`, applying migrations over missing intermediate steps. A
   // cryptic mid-transaction failure, or worse a "success" that stamps the latest version onto an
   // incomplete schema. Version 0 is the sentinel for a full "from scratch" export (getMigrationPlans)
   // and is intentionally exempt.
@@ -1529,7 +1529,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
         )
         `,
         `CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`,
-        // NOTE: the v31 job_i5 rebuild (adding `AND NOT blocked`) is intentionally omitted — v33
+        // NOTE: the v31 job_i5 rebuild (adding `AND NOT blocked`) is intentionally omitted, v33
         // drops and rebuilds job_i5 again (slimming off the covering INCLUDE), so on a multi-version
         // upgrade (<= v31 -> >= v33, applied as one migration transaction) this only built a covering
         // index that v33 immediately throws away. The whole migration runs in a single transaction,
@@ -1574,13 +1574,13 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
       install: [
         `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS flow_on timestamp with time zone`,
         // The job_i9 build and job_i5 reshape are run OFF the migration transaction, via BAM as
-        // CONCURRENTLY DDL — see the `async` block below. The original v33 ran them synchronously here
+        // CONCURRENTLY DDL, see the `async` block below. The original v33 ran them synchronously here
         // via job_table_run(), taking SHARE/ACCESS EXCLUSIVE locks on job_common + every partition
         // inside the migration transaction, which deadlocked live workers polling job_common during a
         // rolling deploy (issue #832).
         //
         // Only databases that have NOT yet passed v33 execute this install, and they always have the
-        // covering job_i5 (the slim form is introduced here) — so the reshape never needlessly
+        // covering job_i5 (the slim form is introduced here), so the reshape never needlessly
         // rebuilds an already-slim index. Databases already past v33 keep what they built then; they
         // pick up only the bam default change, carried separately by migration v36.
         //
@@ -1679,7 +1679,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
       // identical to a fresh install (plans.create builds the bam table with this default), and lets a
       // future async migration enqueue an ordered drop-then-rebuild without the now() tie. The ALTER
       // is idempotent, so databases that just ran v33's copy of it (a multi-version upgrade) are
-      // unaffected. No index work here — that lives in v33, which the deadlock-affected (pre-v33)
+      // unaffected. No index work here. That lives in v33, which the deadlock-affected (pre-v33)
       // databases run; databases already past v33 keep the indexes they built and skip the churn.
       install: [
         `ALTER TABLE ${schema}.bam ALTER COLUMN created_on SET DEFAULT clock_timestamp()`
@@ -1691,7 +1691,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
       release: '12.26.0',
       version: 37,
       previous: 36,
-      // Only installed where partitioning is enabled — plans.create() creates job_table_format()
+      // Only installed where partitioning is enabled, plans.create() creates job_table_format()
       // solely in that case, so a noPartitioning database has none to replace.
       install: noPartitioning
         ? []
@@ -1778,7 +1778,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
             }
           ],
       // Restore before retire, the mirror of the install. Rollback can land at any point in the async
-      // sequence — before the build, between build and retire, or after both — and IF NOT EXISTS is
+      // sequence (before the build, between build and retire, or after both) and IF NOT EXISTS is
       // what makes all three the same statement: v40 never reshapes job_i5, it only drops it, so a
       // job_i5 still present is already the v39 shape and is left exactly where it is rather than
       // being dropped and rebuilt for nothing.

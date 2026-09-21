@@ -104,7 +104,7 @@ helper.describeListenNotify('listen/notify', function () {
       // Two immediate jobs + one future job: exactly one NOTIFY should fire (single-fire),
       // and the future job must not contribute an extra notification. insert() also defaults
       // returnId to false, so this exercises the wrapper's `< 0` branch where the outer SELECT
-      // returns no rows — proving pg_notify still fires independent of the returned row set.
+      // returns no rows, proving pg_notify still fires independent of the returned row set.
       await ctx.boss.insert(queue, [
         { data: { n: 1 } },
         { data: { n: 2 } },
@@ -321,7 +321,7 @@ helper.describeListenNotify('listen/notify', function () {
 describe('notify producer bypass (all backends)', function () {
   it('send/insert/flow to a notify-enabled queue succeed and deliver via polling', async function () {
     // supervise:true runs the background resolver so the flow child unblocks once its parent
-    // completes (unblocking moved off the completion hot path — issue #824).
+    // completes (unblocking moved off the completion hot path, issue #824).
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: true, flowIntervalSeconds: 1, __test__bypass_flow_interval_check: true })
     const boss = ctx.boss
     const queue = ctx.schema

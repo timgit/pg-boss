@@ -171,7 +171,7 @@ describe('queueStatsHistory', function () {
   // Production only ever writes captured_on = job_now(), so ensureQueueStatsPartitions covers today
   // and tomorrow and nothing else. These fixtures deliberately backdate rows by up to a few minutes,
   // which lands in YESTERDAY's UTC partition for any run starting within that window of UTC midnight
-  // — and an unensured partition fails the insert outright with "no partition of relation
+  //, and an unensured partition fails the insert outright with "no partition of relation
   // queue_stats found for row". Ensure the day before as well, for the fixture only.
   async function ensureSeedPartitions (db: Awaited<ReturnType<typeof helper.getDb>>) {
     await db.executeSql(plans.ensureQueueStatsPartitions(ctx.schema))
@@ -328,7 +328,7 @@ describe('queueStatsHistory', function () {
     await seedStats(q, Array.from({ length: 20 }, (_, i) => ({ ago: i, queued: i })))
 
     // a from/to window ~5x wider than the seeded data. The old behavior sized the width to this
-    // 100s window (ceil(100/10)=10s), collapsing the 20s of data into ~2 buckets — the undershoot.
+    // 100s window (ceil(100/10)=10s), collapsing the 20s of data into ~2 buckets. The undershoot.
     const to = new Date(Math.floor(Date.now() / 1000) * 1000 + 1000)
     const from = new Date(to.getTime() - 100_000) // 100s window
     const maxDataPoints = 10
@@ -366,7 +366,7 @@ describe('queueStatsHistory', function () {
     await seedStats(q, Array.from({ length: 120 }, (_, i) => ({ ago: i, queued: i })))
 
     // a 20s window strictly inside the 120s of data: from/to stay within the data, so they (not the
-    // full 120s extent) drive the width — the clamp's zoom-in half.
+    // full 120s extent) drive the width. The clamp's zoom-in half.
     const to = new Date(Math.floor((Date.now() - 40_000) / 1000) * 1000)
     const from = new Date(to.getTime() - 20_000)
     const maxDataPoints = 10

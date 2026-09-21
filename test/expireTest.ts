@@ -42,7 +42,7 @@ describe('expire', function () {
 
     await ctx.boss.fetch(ctx.schema)
 
-    // Backdate started_on past the expiration window instead of sleeping — deterministic and fast.
+    // Backdate started_on past the expiration window instead of sleeping, deterministic and fast.
     const db = await helper.getDb()
     await db.executeSql(`UPDATE ${ctx.schema}.job SET started_on = now() - interval '1 hour' WHERE id = $1`, [jobId])
     await db.close()

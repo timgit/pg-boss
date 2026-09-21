@@ -15,7 +15,7 @@ async function fillAndDrain (schema: string, queue: string, rows = BLOAT_ROWS) {
   const db = await helper.getDb()
 
   try {
-    // start_after is spread so the leading index column varies — a constant would let btree
+    // start_after is spread so the leading index column varies. A constant would let btree
     // deduplication compress the entries into posting lists and the index would never grow.
     await db.executeSql(`
       INSERT INTO ${schema}.job (id, name, data, start_after, keep_until, policy)
@@ -301,7 +301,7 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
     expect(first).toBeGreaterThan(0)
 
     // Two further passes over the same still-bloated indexes. The waits are so the one-second
-    // interval claim is actually available again — otherwise the passes would return early and the
+    // interval claim is actually available again, otherwise the passes would return early and the
     // assertion would hold for the wrong reason.
     await delay(1100)
     await boss.supervise()
@@ -312,8 +312,8 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
   })
 
   it('skips the whole pass on a backend that stores data outside the heap', async function () {
-    // CockroachDB and YugabyteDB cannot run the detection query meaningfully — CockroachDB throws
-    // on it, YugabyteDB reports every relation as zero pages — so the flag has to skip detection
+    // CockroachDB and YugabyteDB cannot run the detection query meaningfully. CockroachDB throws
+    // on it, YugabyteDB reports every relation as zero pages, so the flag has to skip detection
     // too, not just the rebuild. Nothing at all should happen here: no rebuild, no warning, no
     // error, and no interval claim consumed.
     const events: string[] = []
@@ -390,7 +390,7 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
     expect(rows[0].reindex_on).not.toBeNull()
 
     // A second pass inside the same window finds the claim taken and returns without querying the
-    // catalog at all — proven by re-bloating and observing that nothing is rebuilt.
+    // catalog at all, proven by re-bloating and observing that nothing is rebuilt.
     await fillAndDrain(ctx.schema, 'churn')
     const before = await indexSizes(ctx.schema)
     await boss.supervise()
@@ -439,7 +439,7 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
       await db.executeSql(`DELETE FROM ${ctx.schema}.job WHERE name = 'churn'`)
       await db.executeSql(`VACUUM (ANALYZE) ${ctx.schema}.${table}`)
 
-      // Postgres does not append `_ccnew` — it truncates the base so the whole name fits in 63
+      // Postgres does not append `_ccnew`. It truncates the base so the whole name fits in 63
       // bytes. A partition table is `'j' || sha224(queue_name)` (57 chars), so its `_i11` index is
       // 61 and the stub loses the `i11` entirely. Pairing a stub to its index by name prefix would
       // therefore miss every partitioned queue.
@@ -510,7 +510,7 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
       expect(after.job_common_pkey).toBe(before.job_common_pkey)
       expect(warnings.some(m => m.includes('does not own the index'))).toBe(true)
 
-      // The command list is for an operator who may run it as the owner, so it withholds nothing —
+      // The command list is for an operator who may run it as the owner, so it withholds nothing,
       // including the DROP for a stub owned by someone else, which has to precede its REINDEX.
       const db2 = await helper.getDb()
 
@@ -593,7 +593,7 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
 
       await boss.supervise()
 
-      // Dropping stale stubs is best effort — the rebuild it precedes must not be lost with it.
+      // Dropping stale stubs is best effort. The rebuild it precedes must not be lost with it.
       expect(errors.length).toBeGreaterThan(0)
       expect((await indexSizes(ctx.schema)).job_common_i11).toBeLessThan(64 * 1024)
     } finally {
@@ -687,12 +687,12 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
     }
   })
 
-  // Needs two extra connections — one to hold a snapshot open, one to sit in the blocked rebuild —
+  // Needs two extra connections. One to hold a snapshot open, one to sit in the blocked rebuild,
   // which PGlite (single in-process instance) cannot provide.
   helper.itPglite('leaves a stub alone while a rebuild is actually running', async function () {
     // An in-flight REINDEX CONCURRENTLY's transient index is invalid too, and nothing in the catalog
     // separates it from the wreckage of one that died. force skips the interval claim, so two passes
-    // can overlap — without the liveness check one would drop the index the other is building.
+    // can overlap. Without the liveness check one would drop the index the other is building.
     const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: false })
     await boss.createQueue('churn')
     await fillAndDrain(ctx.schema, 'churn')
@@ -714,8 +714,8 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
       expect(await boss.getReindexCommands()).toContain(drop)
 
       // A real build, held in its wait phase rather than raced: REINDEX CONCURRENTLY waits out every
-      // transaction older than itself, so an open snapshot on another connection keeps it running —
-      // and registered in pg_stat_progress_create_index — for as long as the test needs.
+      // transaction older than itself, so an open snapshot on another connection keeps it running,
+      // and registered in pg_stat_progress_create_index, for as long as the test needs.
       await holder.connect()
       await holder.query('BEGIN')
       await holder.query(`SELECT 1 FROM ${ctx.schema}.job_common LIMIT 1`)

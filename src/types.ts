@@ -123,11 +123,11 @@ export interface SchedulingOptions {
  * behavior it needs (`noSkipLocked`, `noMultiMutationCte`, `noTablePartitioning`, etc.).
  * Those flags are derived from the backend and are not individually configurable.
  *
- * Backends fall into three kinds — standard, distributed, and embedded:
+ * Backends fall into three kinds, standard, distributed, and embedded:
  * - `postgres` (default): standard PostgreSQL, all flags off.
  * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, `noListenNotify`, and all four `no*` schema gates.
  * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`. Supports cluster-wide
- *   LISTEN/NOTIFY (early access, off by default — enable the `ysql_yb_enable_listen_notify` flag).
+ *   LISTEN/NOTIFY (early access, off by default, enable the `ysql_yb_enable_listen_notify` flag).
  * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local); LISTEN/NOTIFY works on the coordinator.
  * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
  *
@@ -145,7 +145,7 @@ export interface MaintenanceOptions {
    * from it only by case already holds a pg-boss installation.
    *
    * That check exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different
-   * schemas — PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim —
+   * schemas. PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim,
    * so mis-spelling the quoting installs an empty second schema and every existing job appears to
    * vanish. Set this only if you genuinely intend two installations whose names differ by case.
    * @default false
@@ -172,7 +172,7 @@ export interface MaintenanceOptions {
    * healthy installation never runs one.
    *
    * Set `false` to disable rebuilds entirely. Bloat detection and the `index_bloat` warning are
-   * unaffected — use `getReindexCommands()` to run the statements yourself.
+   * unaffected, use `getReindexCommands()` to run the statements yourself.
    * @default true
    */
   reindex?: boolean | ReindexOptions;
@@ -185,7 +185,7 @@ export interface MaintenanceOptions {
   /**
    * Whether to check that vacuum is keeping up with the queues. Covers two warnings, because the
    * fixes are opposite: `xmin_horizon` when vacuum runs and reclaims nothing (something is pinning
-   * the MVCC horizon — an idle-in-transaction backend, a lagging replication slot, a standby with
+   * the MVCC horizon. An idle-in-transaction backend, a lagging replication slot, a standby with
    * `hot_standby_feedback`, a prepared transaction), and `autovacuum_disabled` when nothing is
    * vacuuming the table at all. Either way dead tuples and index bloat accumulate without bound,
    * which is the precondition for every documented Postgres-queue collapse.
@@ -213,8 +213,8 @@ export interface IndexBloatOptions {
   maxEntriesPerPage?: number;
   /**
    * How many times larger than its live entries need an index must be before it counts as bloated.
-   * The size those entries need is estimated from `pg_stats`, so a legitimately sparse index — a
-   * long `singletonKey` packs fewer than five entries per page while perfectly packed — is not
+   * The size those entries need is estimated from `pg_stats`, so a legitimately sparse index. A
+   * long `singletonKey` packs fewer than five entries per page while perfectly packed, is not
    * mistaken for a bloated one.
    * @default 4
    */
@@ -288,7 +288,7 @@ export interface QueueStatsOptions {
   bucketSeconds?: number;
   /**
    * persistQueueStats on: auto-downsample. Derive {@link bucketSeconds} so the series fits in
-   * roughly this many points — e.g. a chart's pixel width. Must be a positive integer. The window
+   * roughly this many points, e.g. a chart's pixel width. Must be a positive integer. The window
    * spanned is `from`/`to` when supplied (so an explicit x-axis range yields stable buckets even
    * with sparse data), falling back to the data's own `min`/`max` captured timestamps for any
    * open side. Ignored when `bucketSeconds` is set (explicit resolution wins).
@@ -312,7 +312,7 @@ export interface QueueStatsOptions {
 /**
  * Options for running pg-boss against a specific database backend.
  *
- * `backend` is the only knob — it expands to the correct internal compatibility flags
+ * `backend` is the only knob. It expands to the correct internal compatibility flags
  * for that database (fetch strategy, mutation strategy, schema shape). Those flags are
  * derived from the backend and are not individually configurable, so a deployment can't
  * end up with an inconsistent combination.
@@ -332,7 +332,7 @@ export interface BackendOptions {
 
 /**
  * Internal compatibility flags derived from {@link BackendOptions.backend}. These are
- * resolved from the backend profile and are not part of the public constructor input —
+ * resolved from the backend profile and are not part of the public constructor input,
  * read them off the resolved config, never set them directly.
  * @internal
  */
@@ -382,7 +382,7 @@ export interface CompatibilityFlags {
   noIndexProgressView?: boolean;
   /**
    * The engine stores data outside PostgreSQL's heap, so there is no btree page bloat to reclaim
-   * and no `REINDEX` in any form — the `CONCURRENTLY` modifier is irrelevant, both engines reject
+   * and no `REINDEX` in any form. The `CONCURRENTLY` modifier is irrelevant. Both engines reject
    * the plain statement too. Skips the index-bloat maintenance pass entirely, detection included.
    * Set for CockroachDB/YugabyteDB, where the check is not merely useless but unusable: CockroachDB
    * has no `pg_relation_size()` and rejects `reltuples / relpages`, while YugabyteDB reports both
@@ -436,7 +436,7 @@ export interface PlanOptions {
   /**
    * The backend the SQL is meant to run against, named the way the constructor names it. Exported
    * SQL is run by hand, so it has to be the SQL that engine accepts: without this, plans are stock
-   * PostgreSQL and a distributed backend rejects them partway through — table partitioning,
+   * PostgreSQL and a distributed backend rejects them partway through, table partitioning,
    * advisory locks, covering indexes, a column written in the transaction that added it.
    * `pglite` is stock PostgreSQL and needs nothing here.
    * @default 'postgres'
@@ -501,7 +501,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * the moment a job is created, instead of waiting out their polling interval. This
    * holds one dedicated database connection for listening. Polling always remains active
    * as a correctness floor. Requires a pg-boss-owned pool (or an adapter that supports
-   * `listen`) and a session-pinned connection — it will not work through PgBouncer in
+   * `listen`) and a session-pinned connection. It will not work through PgBouncer in
    * transaction pooling mode. When it can't be established, pg-boss emits a `warning` and
    * continues polling only. Opt in per queue via the queue's `notify` option.
    * @default false
@@ -531,7 +531,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__force_clock_monitoring_error?: string;
   /**
    * Enables job spies for deterministic testing (see `getSpy`). Adds per-transition
-   * tracking overhead — **NOT for production.**
+   * tracking overhead, **NOT for production.**
    * @default false
    */
   __test__enableSpies?: boolean;
@@ -569,7 +569,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__noAdvisoryLocks?: boolean;
   /**
    * Force `noIndexProgressView` on top of the current backend, so the timeout-only BAM reclaim path
-   * (no liveness, no CONCURRENTLY healing — the one CockroachDB/YugabyteDB take) can be exercised on
+   * (no liveness, no CONCURRENTLY healing. The one CockroachDB/YugabyteDB take) can be exercised on
    * a plain Postgres instance.
    * @internal
    */
@@ -858,7 +858,7 @@ export interface QueueResult extends Queue {
   queuedCount: number;
   /**
    * Jobs ready to be processed now: `queuedCount - deferredCount` (clamped at 0). This is the
-   * true backlog — `queuedCount` includes deferred (future-dated) jobs that are not yet runnable.
+   * true backlog, `queuedCount` includes deferred (future-dated) jobs that are not yet runnable.
    */
   readyCount: number;
   activeCount: number;
@@ -917,7 +917,7 @@ export interface PreviewScheduleOptions {
 
 /**
  * How long a worker waits between fetches. The delay before each fetch is chosen by
- * precedence — **burst → notify → base**:
+ * precedence, **burst → notify → base**:
  *
  * 1. **burst** (fetch continuously): a `burstWhen*` trigger is active and the last fetch
  *    came back full, so there is clearly more work to pull.
@@ -937,7 +937,7 @@ export interface JobPollingOptions {
   pollingIntervalSeconds?: number;
   /**
    * Interval to check for new jobs, in seconds, used only while NOTIFY is active for the
-   * queue — i.e. the queue has `notify: true` and the instance-level LISTEN/NOTIFY
+   * queue, i.e. the queue has `notify: true` and the instance-level LISTEN/NOTIFY
    * listener is established. Since NOTIFY wakes workers immediately, polling only needs to
    * run as a slow backstop, so this can be much larger than `pollingIntervalSeconds`. When
    * notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >= `0.5`.
@@ -976,7 +976,7 @@ export interface JobFetchOptions {
    * priority order.
    *
    * This existed to skip the priority sort for throughput, but the fetch index is now ordered to
-   * match the fetch, so there is no sort to skip — setting it `false` was measured ~180x *slower*
+   * match the fetch, so there is no sort to skip, setting it `false` was measured ~180x *slower*
    * than leaving it alone, since no index leads with `created_on`.
    */
   priority?: boolean;
@@ -1362,7 +1362,7 @@ export interface CommandResponse {
 /**
  * The result of `update()`. Unlike the target-a-list mutators
  * (`cancel`/`resume`/etc.), `update()` discovers how many jobs a target
- * resolves to. `update()` never inserts, so there is no `inserted` count —
+ * resolves to. `update()` never inserts, so there is no `inserted` count,
  * see {@link UpsertResponse} for `upsert()`.
  */
 export interface UpdateResponse {
@@ -1395,8 +1395,8 @@ export interface BamEntry {
   createdOn: Date
   startedOn?: Date
   completedOn?: Date
-  // True when getNextBamCommand re-picked a command that was already attempted — a stale in_progress
-  // row (prior claimer died mid-run) or a prior 'failed' row (including ones left by older releases) —
+  // True when getNextBamCommand re-picked a command that was already attempted. A stale in_progress
+  // row (prior claimer died mid-run) or a prior 'failed' row (including ones left by older releases),
   // signalling that healing (drop-then-rebuild) may be needed. Only set on the liveness path.
   reattempt?: boolean
 }
@@ -1423,7 +1423,7 @@ export interface ManagedIndex {
 
 /**
  * A managed index that is present in the catalog but marked INVALID. Its definition is correct (an
- * interrupted build, not a wrong shape), so only the expected `definition` is carried — there is no
+ * interrupted build, not a wrong shape), so only the expected `definition` is carried. There is no
  * meaningful actual-vs-expected diff to show.
  */
 export interface InvalidIndex extends ManagedIndex {
@@ -1447,7 +1447,7 @@ export interface MismatchedIndex extends ManagedIndex {
   actualPredicate: string
   /** The index's current definition from pg_get_indexdef, for side-by-side comparison with `definition`. */
   actualDefinition: string
-  /** Which parts differ — any of 'keys', 'include', 'predicate'. */
+  /** Which parts differ, any of 'keys', 'include', 'predicate'. */
   differs: Array<'keys' | 'include' | 'predicate'>
 }
 
@@ -1521,13 +1521,13 @@ export interface SchemaDriftReport {
   missingTables: string[]
   /** Expected indexes with no matching catalog entry (excludes ones a BAM row is still building). */
   missing: ManagedIndex[]
-  /** Expected indexes still being built by a pending/in_progress/failed BAM row — not yet drift. */
+  /** Expected indexes still being built by a pending/in_progress/failed BAM row, not yet drift. */
   building: ManagedIndex[]
   /** Present indexes marked INVALID (interrupted CREATE INDEX CONCURRENTLY). */
   invalid: InvalidIndex[]
   /**
    * Standalone (non-constraint-backing) indexes present on a managed table that the expected set does
-   * not account for — a stale pg-boss index or one a user added. Informational only: an extra index is
+   * not account for. A stale pg-boss index or one a user added. Informational only: an extra index is
    * harmless, so this is surfaced as a warning and does not make the schema "not ok".
    */
   extraIndexes: Array<{ name: string, table: string }>

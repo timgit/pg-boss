@@ -168,7 +168,7 @@ class Contractor {
     // Function-body and enum drift are best-effort: pg_get_functiondef is unsupported on some backends
     // (CockroachDB), so a failure here SKIPS the function check rather than aborting the whole scan.
     // `functionsSupported` must be tracked separately from an empty result: an empty `liveFunctions`
-    // means "query failed / unsupported", which is NOT the same as "no functions found" — feeding
+    // means "query failed / unsupported", which is NOT the same as "no functions found", feeding
     // `live: []` to the drift check would report every expected function as missing and flip `ok` to
     // false on every CockroachDB scan. So the check is gated (passed `undefined`) when the query throws.
     let liveFunctions: Array<{ name: string, def: string }> = []
@@ -190,7 +190,7 @@ class Contractor {
 
     // Table presence is read from a catalog-only query independent of the column diff below. The column
     // query uses pg_get_expr (unsupported on some backends) and is best-effort; if it throws, the column
-    // check is skipped — but table presence must NOT collapse to "everything missing", so it comes from
+    // check is skipped, but table presence must NOT collapse to "everything missing", so it comes from
     // its own pg_class probe. pg_class is available everywhere, so this rarely throws; if it somehow
     // does, fall back to the columns-derived set rather than aborting the scan.
     let liveTables: string[] | null = null

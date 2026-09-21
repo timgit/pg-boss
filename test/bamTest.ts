@@ -288,7 +288,7 @@ describe('bam', function () {
       // skip, leaving the wrong index in place; healing must drop it and rebuild on the right column.
       await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
       await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
-      // Make it INVALID, as a crashed CREATE INDEX CONCURRENTLY leaves it — healing only drops an
+      // Make it INVALID, as a crashed CREATE INDEX CONCURRENTLY leaves it, healing only drops an
       // invalid leftover, so a valid same-named index would (correctly) be left alone and not rebuilt.
       await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.heal_idx'::regclass`)
 
@@ -321,7 +321,7 @@ describe('bam', function () {
       await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.heal_idx'::regclass`)
 
       // A 'failed' row (as an older release, or a genuinely-failed CONCURRENTLY build, would leave)
-      // must also heal on retry — otherwise the command's IF NOT EXISTS skips the stale index forever.
+      // must also heal on retry, otherwise the command's IF NOT EXISTS skips the stale index forever.
       const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (b)`
       await insertBamRow(ctx.schema, 'failed_cmd', 'failed', command)
 
@@ -342,14 +342,14 @@ describe('bam', function () {
     it('does NOT drop a VALID leftover index on reattempt (build succeeded but row was never marked)', async function () {
       // The dangerous case: a CREATE INDEX CONCURRENTLY that actually succeeded (VALID index, in use)
       // but whose bam row stayed in_progress because a graceful stop landed between the CREATE and
-      // markCompleted. On reattempt, healing must NOT drop this live index — it should skip the drop,
+      // markCompleted. On reattempt, healing must NOT drop this live index. It should skip the drop,
       // let the command's IF NOT EXISTS no-op, and mark the row completed with the index intact.
       const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
       boss.on('error', () => {})
 
       const db = await helper.getDb()
       await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
-      // Valid index matching what the command builds — stands in for the already-succeeded build.
+      // Valid index matching what the command builds, stands in for the already-succeeded build.
       await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
 
       const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (a)`
@@ -368,7 +368,7 @@ describe('bam', function () {
       )
       await db.close()
 
-      // Index untouched: still valid, still on (a) — it was never dropped.
+      // Index untouched: still valid, still on (a). It was never dropped.
       expect(rows).toHaveLength(1)
       expect(rows[0].valid).toBe(true)
       expect(rows[0].indexdef).toContain('(a)')
@@ -495,7 +495,7 @@ describe('bam', function () {
 
     it('should recover the already-exists row on a timeout-only backend too', async function () {
       // CockroachDB/YugabyteDB take the timeout-only claim, where a stuck row is reclaimable only
-      // after BAM_STALE_SECONDS (24 hours) — so they need this recovery more than native Postgres,
+      // after BAM_STALE_SECONDS (24 hours), so they need this recovery more than native Postgres,
       // not less. Only the DROP half depends on liveness detection; the probe is a plain pg_index
       // read, so it runs here as well and short-circuits the un-rerunnable command.
       const boss = ctx.boss = await helper.start({
@@ -537,7 +537,7 @@ describe('bam', function () {
 
       // Same reclaim, but no liveness backend → no drop-then-rebuild. The probe still runs (it only
       // reads pg_index), finds a VALID index and short-circuits, so the pre-existing (a) index
-      // survives untouched — the (b) rebuild the liveness path would do never happens.
+      // survives untouched. The (b) rebuild the liveness path would do never happens.
       const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (b)`
       await insertBamRow(ctx.schema, 'heal_cmd', 'in_progress', command, 25 * 60 * 60)
 
@@ -580,8 +580,8 @@ describe('bam', function () {
   // The liveness signal for reclaiming a stale in_progress build is pg_locks (cluster-wide, visible
   // across DB roles), not pg_stat_progress_create_index (filtered to the caller's own backends). This
   // is what lets pg-boss instances run under different roles without a peer's in-flight build reading
-  // as "dead" and getting its live index dropped by the heal step. A held ShareUpdateExclusiveLock —
-  // the exact lock CREATE INDEX CONCURRENTLY holds for the whole build — must therefore block reclaim.
+  // as "dead" and getting its live index dropped by the heal step. A held ShareUpdateExclusiveLock,
+  // the exact lock CREATE INDEX CONCURRENTLY holds for the whole build, must therefore block reclaim.
   helper.describeMultiConnectionOnly('pg_locks liveness (cross-role safe)', function () {
     it('should not reclaim a stale build while a ShareUpdateExclusiveLock is held on its table, then reclaim once released', async function () {
       const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
@@ -592,7 +592,7 @@ describe('bam', function () {
       await db.close()
 
       // A separate backend stands in for an in-flight CREATE INDEX CONCURRENTLY by holding the very lock
-      // one takes — ShareUpdateExclusiveLock — on the build's table for the whole window.
+      // one takes (ShareUpdateExclusiveLock) on the build's table for the whole window.
       const holder = new pg.Client({ connectionString: helper.getConnectionString() })
       await holder.connect()
       await holder.query('BEGIN')

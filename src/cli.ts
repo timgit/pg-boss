@@ -223,7 +223,7 @@ async function createDb (config: types.DatabaseOptions): Promise<Db> {
 }
 
 // Like getConnectionConfig, but returns null instead of exiting when no connection is
-// configured — used by commands (e.g. `plans`) where a connection is optional.
+// configured, used by commands (e.g. `plans`) where a connection is optional.
 function tryGetConnectionConfig (args: ReturnType<typeof parseCliArgs>): types.ResolvedConstructorOptions | null {
   const fileConfig = loadConfigFile(args.config)
 
@@ -341,7 +341,7 @@ async function cmdMigrate (args: ReturnType<typeof parseCliArgs>): Promise<void>
 
     // Render from the DB's actual version so the printed SQL is exactly what `migrate` would run.
     // Offline (or not yet installed) we can't know it, so fall back to the oldest supported starting
-    // version — the full chain — instead of a bogus "from 0" that fails on non-idempotent steps.
+    // version (the full chain) instead of a bogus "from 0" that fails on non-idempotent steps.
     const fromVersion = version ?? migrationStore.getMinVersion(schema)
     const sql = migrationStore.migrate(schema, fromVersion, migrationStore.getAllForConfig(config), config.noAdvisoryLocks, { inlineAsync: true, partitionTables })
     console.log(`-- SQL to migrate pg-boss from version ${fromVersion} to ${schemaVersion}:`)
@@ -433,7 +433,7 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
 
     console.log(`Schema "${schema}" version ${version} (latest: ${schemaVersion})`)
     if (version < schemaVersion) {
-      console.log(`⚠ Migrations pending: ${schemaVersion - version} — run "pg-boss migrate" before trusting drift results`)
+      console.log(`⚠ Migrations pending: ${schemaVersion - version}. Run "pg-boss migrate" before trusting drift results`)
     }
 
     // Reuse the same drift scan the boss.detectSchemaDrift() API runs, rather than duplicating the
@@ -458,7 +458,7 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
 
       if (override) {
         console.log('\njob_now() carries a TestClock override, left behind by a test run that was')
-        console.log('killed before releasing its clock. Restoring it — make sure no instance is')
+        console.log('killed before releasing its clock. Restoring it, so make sure no instance is')
         console.log('holding a live TestClock against this schema.')
         await contractor.restoreClockFunction()
         console.log('  restored.')
@@ -470,7 +470,7 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
     }
 
     if (report.building.length) {
-      console.log(`\nBuilding (async index build in progress — not yet drift) (${report.building.length}):`)
+      console.log(`\nBuilding (async index build in progress, not yet drift) (${report.building.length}):`)
       for (const i of report.building) console.log(`  ${i.table}.${i.name}`)
     }
 
@@ -484,18 +484,18 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
         console.log(`\n⚠ INDEX BLOAT (rebuild with "pg-boss reindex") (${bloated.length}):`)
         for (const i of bloated) {
           const mb = Math.round(Number(i.bytes) / 1024 / 1024)
-          console.log(`  ${i.table}.${i.name} — ${mb} MB across ${i.pages} pages, ~${i.entries} live entries`)
+          console.log(`  ${i.table}.${i.name}: ${mb} MB across ${i.pages} pages, ~${i.entries} live entries`)
           if (!i.owned) console.log('    note: the connected role does not own this index and cannot reindex it')
         }
       }
     } catch {
-      // Best effort — a role without catalog visibility should not fail the whole drift report.
+      // Best effort. A role without catalog visibility should not fail the whole drift report.
     }
 
-    // Extra indexes are informational (a stale pg-boss index or a user-added one) — a warning, not
+    // Extra indexes are informational (a stale pg-boss index or a user-added one). A warning, not
     // drift. Printed regardless of overall status; it never changes the exit code.
     if (report.extraIndexes.length) {
-      console.log(`\n⚠ EXTRA INDEXES (present on a managed table but not expected — harmless) (${report.extraIndexes.length}):`)
+      console.log(`\n⚠ EXTRA INDEXES (present on a managed table but not expected, harmless) (${report.extraIndexes.length}):`)
       for (const i of report.extraIndexes) console.log(`  ${i.table}.${i.name}`)
     }
 
@@ -520,9 +520,10 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
     }
 
     if (report.invalid.length) {
-      // The definition is correct — the index is just invalid (interrupted build) — so show the DDL to
-      // drop and rebuild it, not an expected-vs-actual comparison (they would be identical).
-      console.log(`\nINVALID (present but marked invalid — drop and rebuild) (${report.invalid.length}):`)
+      // The definition is correct, since an invalid index is an interrupted build rather than a
+      // wrong shape. So show the DDL to drop and rebuild it, not an expected-vs-actual comparison,
+      // which would be identical.
+      console.log(`\nINVALID (present but marked invalid, drop and rebuild) (${report.invalid.length}):`)
       for (const i of report.invalid) {
         console.log(`  ${i.table}.${i.name}`)
         if (i.definition) console.log(`    rebuild: ${i.definition}`)
@@ -656,7 +657,7 @@ async function cmdReindex (args: ReturnType<typeof parseCliArgs>): Promise<void>
       // The check reads pg_class.relpages and pg_relation_size(). CockroachDB has neither (it
       // rejects `reltuples / relpages` as an unsupported binary operator) and YugabyteDB reports
       // zeroes for every relation. --backend catches those up front (above); this stays for a target
-      // that was not declared — say what happened instead of surfacing a raw catalog error.
+      // that was not declared, say what happened instead of surfacing a raw catalog error.
       console.error(`Could not read index statistics from schema "${schema}": ${err.message}`)
       console.error('The bloat check reads pg_class.relpages and pg_relation_size(), which CockroachDB and YugabyteDB do not provide.')
       process.exitCode = 1
@@ -691,7 +692,7 @@ async function cmdReindex (args: ReturnType<typeof parseCliArgs>): Promise<void>
 
     for (const index of rows) {
       const mb = Math.round(Number(index.bytes) / 1024 / 1024)
-      console.log(`  ${index.table}.${index.name} — ${mb} MB across ${index.pages} pages, ~${index.entries} live entries`)
+      console.log(`  ${index.table}.${index.name}: ${mb} MB across ${index.pages} pages, ~${index.entries} live entries`)
     }
 
     // Executing is different from printing: REINDEX needs ownership, so an index this role cannot

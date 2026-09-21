@@ -70,7 +70,7 @@ describe('navigator (flow resolver)', function () {
     expect(parent.id).toBe(flow.parent)
     await ctx.boss.complete(ctx.schema, flow.parent)
 
-    // Completion alone must not unblock the child — that inline work was the #824 regression.
+    // Completion alone must not unblock the child. That inline work was the #824 regression.
     const stillBlocked = await ctx.boss.getJobById(ctx.schema, flow.child)
     helper.assertTruthy(stillBlocked)
     expect(stillBlocked.blocked).toBe(true)
@@ -130,7 +130,7 @@ describe('navigator (flow resolver)', function () {
     const child = await ctx.boss.getJobById(ctx.schema, flow.child)
     helper.assertTruthy(child)
     expect(child.blocked).toBe(false)
-    // pending_dependencies clamps at 0 — no parent is ever decremented twice.
+    // pending_dependencies clamps at 0. No parent is ever decremented twice.
     expect(child.pendingDependencies).toBe(0)
   })
 
