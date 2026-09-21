@@ -72,7 +72,7 @@ The following options can be set as properties in an object for additional confi
 
     Database schema that contains all required storage objects. Unquoted, only alphanumeric and underscore are allowed, and the name may not start with a number. Quoted (see below), any character is allowed except double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters. Either way the limit is <= 50 bytes.
 
-    To use a name that isn't a legal bare identifier — one containing dashes, or a reserved word — quote it yourself:
+    To use a name that isn't a legal bare identifier, such as one containing dashes or a reserved word, quote it yourself:
 
     ```js
     new PgBoss({ schema: '"My-Schema"' })
@@ -101,7 +101,7 @@ The following options can be set as properties in an object for additional confi
 
 * **useListenNotify**, bool, default false
 
-  Enables a `LISTEN/NOTIFY` listener so that workers on notify-enabled queues are woken the moment a job is created, instead of waiting out their `pollingIntervalSeconds`. This is a latency optimization layered on top of polling — polling always remains active as a fallback, so jobs are never lost if a notification is missed. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for the full picture and the per-queue `notify` option that controls which queues emit notifications.
+  Enables a `LISTEN/NOTIFY` listener so that workers on notify-enabled queues are woken the moment a job is created, instead of waiting out their `pollingIntervalSeconds`. This is a latency optimization layered on top of polling. Polling always remains active as a fallback, so jobs are never lost if a notification is missed. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for the full picture and the per-queue `notify` option that controls which queues emit notifications.
 
   This option holds one dedicated database connection open for listening. It requires a session-pinned connection: it works with the built-in connection pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, pg-boss emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only.
 
@@ -115,7 +115,7 @@ The following configuration options should not normally need to be changed, but 
 
   If set to true, `start()` will install into `schema` even when another schema differing from it only by case already holds a pg-boss installation.
 
-  The check this disables exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different schemas — PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim. Mis-spelling the quoting is not an error on its own: pg-boss simply finds no installation, creates an empty second schema, and every existing job appears to have vanished. Only set this if two installations whose names differ by case are intended.
+  The check this disables exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different schemas. PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim. Mis-spelling the quoting is not an error on its own: pg-boss simply finds no installation, creates an empty second schema, and every existing job appears to have vanished. Only set this if two installations whose names differ by case are intended.
 
 * **superviseIntervalSeconds**, int, default 60 seconds
 
@@ -139,7 +139,7 @@ The following configuration options should not normally need to be changed, but 
 
   Autovacuum reclaims heap space but never shrinks a btree, so a job index stays at the size of the largest backlog its queue has ever held. Every later vacuum then walks all of those pages, which becomes the dominant cost on a queue that has drained. Rebuilds are gated on an index density check, so a healthy installation never runs one.
 
-  Set to `false` to disable rebuilds. Detection is unaffected: bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) still returns the statements to run by hand. The same applies to indexes the connected role does not own, and to `db` adapters that wrap queries in a transaction — `REINDEX CONCURRENTLY` cannot run inside one.
+  Set to `false` to disable rebuilds. Detection is unaffected: bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) still returns the statements to run by hand. The same applies to indexes the connected role does not own, and to `db` adapters that wrap queries in a transaction, since `REINDEX CONCURRENTLY` cannot run inside one.
 
   CockroachDB and YugabyteDB skip this entirely, detection included. They store data outside PostgreSQL's heap, so there is no btree page bloat to reclaim, they reject `REINDEX`, and neither reports the page counts the check reads.
 
@@ -149,7 +149,7 @@ The following configuration options should not normally need to be changed, but 
   | --- | --- | --- | --- |
   | `minPages` | int | 128 | Ignore indexes smaller than this many 8 kB pages |
   | `maxEntriesPerPage` | number | 5 | Live entries per page below which an index counts as bloated. A freshly built job index holds 140-170 |
-  | `minSizeRatio` | number | 4 | How many times larger than its live entries need an index must be. The needed size is estimated from `pg_stats`, so a wide `singletonKey` — which legitimately packs fewer than five entries per page — is not mistaken for bloat |
+  | `minSizeRatio` | number | 4 | How many times larger than its live entries need an index must be. The needed size is estimated from `pg_stats`, so a wide `singletonKey`, which legitimately packs fewer than five entries per page, is not mistaken for bloat |
   | `maxIndexBytes` | int | 2147483648 | Never rebuild an index larger than this |
 
   ```js
@@ -159,7 +159,7 @@ The following configuration options should not normally need to be changed, but 
   })
   ```
 
-  `force` is only accepted by [`supervise()`](./ops.md#supervisename-options), not here — a timer that rebuilt every job index on every interval is never what you want.
+  `force` is only accepted by [`supervise()`](./ops.md#supervisename-options), not here. A timer that rebuilt every job index on every interval is never what you want.
 
 * **reindexIntervalSeconds**, int, default 1 day
 
@@ -176,32 +176,15 @@ The following configuration options should not normally need to be changed, but 
   | `xmin_horizon` | vacuum runs and reclaims nothing | find and release whatever is pinning the horizon |
   | `autovacuum_disabled` | nothing is vacuuming the table at all | turn autovacuum back on, or vacuum on a schedule that keeps up |
 
-  While something holds the horizon back — a backend sitting in an open transaction, a lagging replication slot, a standby with `hot_standby_feedback` enabled, or a prepared transaction — autovacuum cannot reclaim anything your queues delete. Dead tuples accumulate, indexes bloat, and every later vacuum pass gets more expensive. This is the precondition behind most reports of a Postgres queue degrading over time, and it is invisible from the queue's own counters: a backlog caused by too few workers and a backlog caused by a pinned horizon look identical and have opposite fixes.
+  A pinned horizon is the precondition behind most reports of a Postgres queue degrading over time, and it is invisible from the queue's own counters: a backlog caused by too few workers looks exactly like one caused by vacuum reclaiming nothing. The check reads `pg_stat_user_tables` for pg-boss's own job tables across two supervise passes, so it measures the damage rather than guessing at it, and the first pass after a horizon is pinned never warns. [Warning types](./events.md#warning-types) has what each one fires on and what it carries.
 
-  There is no threshold to tune, because the check measures the damage rather than guessing at it. It reads `pg_stat_user_tables` for pg-boss's own job tables. Both warnings share a first condition:
-
-  1. a job table is past the point Postgres itself would vacuum it — `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor × n_live_tup`, honouring per-table storage parameters over the cluster settings.
-
-  Two consecutive passes then decide which diagnosis applies. For `xmin_horizon`:
-
-  2. a vacuum has since run on that table and the dead-tuple count did not fall, so vacuum tried and reclaimed nothing — this is what separates a pinned horizon from ordinary churn, where a vacuum drops the count sharply;
-  3. a horizon holder exists that is old enough to explain it — for a backend, one whose transaction was already open when that vacuum ran; for a replication slot, standby or prepared transaction, any at all, since those advertise an xmin only while something is genuinely stuck.
-
-  For `autovacuum_disabled`, instead:
-
-  2. the table has `autovacuum_enabled = false`, no vacuum ran between the two passes, and the dead-tuple count grew.
-
-  Turning autovacuum off on a queue table and vacuuming on your own schedule is a legitimate setup, and it stays quiet: a manual vacuum both moves the timestamp and drops the count, so neither branch matches. The warning is for the case where nothing is running at all.
-
-  Sensitivity is therefore tuned with Postgres's own autovacuum settings, per table if you want a particular queue watched more or less closely:
+  There is no threshold here to tune. A table qualifies at the point Postgres itself would vacuum it, which is `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor × n_live_tup`, reading per-table storage parameters before cluster settings. Sensitivity therefore comes from those settings, per table if you want one queue watched more or less closely:
 
   ```sql
   ALTER TABLE pgboss.job_common SET (autovacuum_vacuum_scale_factor = 0.05);
   ```
 
-  Because the second condition compares two observations, the first supervise pass after a horizon is pinned never warns; the warning arrives on a later pass, once a vacuum has actually failed.
-
-  The `xmin_horizon` warning names which holder is responsible so it can be tracked down — start with `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. If the connected role cannot read one of those catalogs, the warning's `unreadableSources` lists what could not be checked, so a partial answer is never reported as a clean one.
+  An `xmin_horizon` warning names the holder it found; track it down through `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. Where the connected role cannot read one of those catalogs, `unreadableSources` says so, rather than reporting a partial answer as a clean one.
 
   Not available on CockroachDB or YugabyteDB, which reclaim on their own schedule rather than from the oldest live snapshot.
 

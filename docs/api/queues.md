@@ -51,9 +51,9 @@ Allowed policy values:
 > - **retry**: waiting to be retried after a failure
 > - **failed**: permanently failed (exhausted all retries)
 >
-> Blocking is scoped to the individual key, so jobs with other keys remain fetchable. Priority can order work across keys but cannot reorder jobs within a key. A job that is not currently fetchable is skipped when choosing a key's FIFO head, so a later job can run ahead of it: this covers jobs deferred by `startAfter` and jobs held by an unmet flow dependency. If that later job fails into `retry`, it keeps the key's head position until it completes or permanently fails — even once the earlier job becomes eligible — since a job that has started must finish before any sibling runs. Fetch filters such as `minPriority` and `maxPriority` are applied after the head is selected and cannot skip it.
+> Blocking is scoped to the individual key, so jobs with other keys remain fetchable. Priority can order work across keys but cannot reorder jobs within a key. A job that is not currently fetchable is skipped when choosing a key's FIFO head, so a later job can run ahead of it: this covers jobs deferred by `startAfter` and jobs held by an unmet flow dependency. If that later job fails into `retry`, it keeps the key's head position until it completes or permanently fails, even once the earlier job becomes eligible. A job that has started must finish before any sibling runs. Fetch filters such as `minPriority` and `maxPriority` are applied after the head is selected and cannot skip it.
 >
-> **Fetch cost.** Each fetch selects one head per key across the whole queue before applying priority and the batch limit, so its cost scales with the number of *distinct keys that have queued jobs* — not with `batchSize`, and not with the total number of queued jobs. A few keys each holding a long backlog is the cheap case: 200 keys holding 1,000 jobs each means only 200 heads to rank. Many keys holding one job each is the expensive case, because every job is its own head. At 200,000 distinct keys with a single job each, a fetch measures roughly 1s against 0.1s for a `standard` queue over the same rows. If your keys are that numerous and never accumulate a backlog, they are never waiting on each other in the first place, and `standard` might be a better policy.
+> **Fetch cost.** Each fetch selects one head per key across the whole queue before applying priority and the batch limit, so its cost scales with the number of *distinct keys that have queued jobs*, not with `batchSize` and not with the total number of queued jobs. A few keys each holding a long backlog is the cheap case: 200 keys holding 1,000 jobs each means only 200 heads to rank. Many keys holding one job each is the expensive case, because every job is its own head. At 200,000 distinct keys with a single job each, a fetch measures roughly 1s against 0.1s for a `standard` queue over the same rows. If your keys are that numerous and never accumulate a backlog, they are never waiting on each other in the first place, and `standard` might be a better policy.
 >
 > To unblock a key after a permanent failure, you can either delete the failed job using `deleteJob()` or retry it using `retry()`. Use `getBlockedKeys()` to discover which keys are currently blocked due to failed jobs.
 
@@ -63,7 +63,7 @@ Allowed policy values:
 
 * **deadLetter**, string
 
-  When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue. The copy is a job on the dead letter queue and runs under *that* queue's configuration — retry, retention, expiration, and heartbeat all come from the dead letter queue, not the original job. What travels with the job is its identity: `priority`, `singletonKey`, and `group`, so ordering weight and group concurrency limits still apply. The dead-lettered job also records where it came from via the `sourceName`, `sourceId`, `sourceCreatedOn`, and `sourceRetryCount` fields, which power [`redrive()`](jobs#redrivename-options) for moving jobs back to their source queue.
+  When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue. The copy is a job on the dead letter queue and runs under *that* queue's configuration. Retry, retention, expiration, and heartbeat all come from the dead letter queue, not the original job. What travels with the job is its identity: `priority`, `singletonKey`, and `group`, so ordering weight and group concurrency limits still apply. The dead-lettered job also records where it came from via the `sourceName`, `sourceId`, `sourceCreatedOn`, and `sourceRetryCount` fields, which power [`redrive()`](jobs#redrivename-options) for moving jobs back to their source queue.
 
 * **warningQueueSize**, int
 
@@ -71,7 +71,7 @@ Allowed policy values:
 
 * **notify**, boolean, default false
 
-  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#newoptions) option, which runs the listener. Jobs scheduled for the future (for example via `sendAfter()` or throttling/debouncing) do **not** emit a notification — they are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
+  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#newoptions) option, which runs the listener. Jobs scheduled for the future (for example via `sendAfter()` or throttling/debouncing) do **not** emit a notification. They are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
 
 **Retry options**
 
@@ -101,14 +101,14 @@ Allowed policy values:
 
 Heartbeat and expiration are two independent mechanisms that address different failure modes:
 
-- **Expiration** (`expireInSeconds`) is the maximum time a job is allowed to remain active. After this period, the job attempt is considered stale — regardless of whether the worker is alive or dead, the attempt has taken too long and is no longer relevant. Set this to the upper bound of how long the job should ever take.
+- **Expiration** (`expireInSeconds`) is the maximum time a job is allowed to remain active. After this period, the job attempt is considered stale. Whether the worker is alive or dead, the attempt has taken too long and is no longer relevant. Set this to the upper bound of how long the job should ever take.
 
-- **Heartbeat** (`heartbeatSeconds`) is a worker liveness check. The worker periodically signals "I'm still alive and working on this job." If the signal stops, it means the worker has died (crash, OOM, network partition, node shutdown) — but the job itself may still be perfectly valid and should be retried on another worker as soon as possible.
+- **Heartbeat** (`heartbeatSeconds`) is a worker liveness check. The worker periodically signals "I'm still alive and working on this job." If the signal stops, it means the worker has died (crash, OOM, network partition, node shutdown). The job itself may still be perfectly valid, and should be retried on another worker as soon as possible.
 
 | | Heartbeat | Expiration |
 | - | - | - |
 | **Purpose** | Detect dead workers quickly | Abandon stale job attempts |
-| **What it means** | The worker stopped responding — the job is still valid, retry it elsewhere | The job has been active too long — this attempt is no longer relevant |
+| **What it means** | The worker stopped responding, so the job is still valid and should be retried elsewhere | The job has been active too long, so this attempt is no longer relevant |
 | **Failure scenario** | Worker crash, OOM kill, network partition, node shutdown | Infinite loop, deadlock, unresponsive external dependency, or simply exceeding the time budget |
 | **Detection speed** | Fast (seconds to minutes) | Matches expected job duration |
 | **Default** | Disabled | 15 minutes |
@@ -117,7 +117,7 @@ Both mechanisms operate independently and can be used together. When a job fails
 
 **When to use heartbeat:** Long-running jobs where the gap between "worker died" and "job expired" would be unacceptably large. For example, a 2-hour video processing job with `expireInSeconds: 7200` won't be detected as failed until 2 hours after it started, even if the worker crashed immediately. Adding `heartbeatSeconds: 60` means a dead worker is detected within a minute.
 
-**When expiration alone is sufficient:** Only when the expiration time is already short enough that waiting for it to trigger a retry is acceptable. In practice, `expireInSeconds` is set conservatively — well above the typical job duration — to account for slowdowns, rate limiting, and transient issues. The default is 15 minutes. This means even a quick task like sending an email could wait 15 minutes before a dead worker is detected via expiration. Heartbeat closes this gap by detecting the dead worker in seconds, regardless of how long the expiration is set.
+**When expiration alone is sufficient:** Only when the expiration time is already short enough that waiting for it to trigger a retry is acceptable. In practice, `expireInSeconds` is set conservatively, well above the typical job duration, to account for slowdowns, rate limiting, and transient issues. The default is 15 minutes. This means even a quick task like sending an email could wait 15 minutes before a dead worker is detected via expiration. Heartbeat closes this gap by detecting the dead worker in seconds, regardless of how long the expiration is set.
 
 #### Recommended values
 
@@ -158,7 +158,7 @@ Updates options on an existing queue, with the exception of the `policy` and `pa
 await boss.updateQueue('email-send', { retryLimit: 5, retryDelay: 120 })
 ```
 
-Only the options included in the call are changed. The nullable options—`deadLetter`, `retryDelayMax`, and `heartbeatSeconds`—are cleared by passing `null`.
+Only the options included in the call are changed. The nullable options `deadLetter`, `retryDelayMax`, and `heartbeatSeconds` are cleared by passing `null`.
 
 ```js
 await boss.updateQueue('email-send', { deadLetter: null })
@@ -200,24 +200,24 @@ if (!queue) {
 
 Returns an array of queue-depth snapshots, most recent first. Each snapshot has the queue `name`, a `capturedOn` timestamp, and these counts:
 
-* `queuedCount` — jobs waiting to run, **including** deferred (future-dated) jobs; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
-* `deferredCount` — jobs scheduled to start in the future (`startAfter` not yet reached)
-* `readyCount` — jobs ready to be processed now (`queuedCount - deferredCount`); the true runnable backlog
-* `activeCount` — jobs currently being processed
-* `failedCount` — failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
-* `totalCount` — all jobs currently stored for the queue
+* `queuedCount`: jobs waiting to run, **including** deferred (future-dated) jobs; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
+* `deferredCount`: jobs scheduled to start in the future (`startAfter` not yet reached)
+* `readyCount`: jobs ready to be processed now (`queuedCount - deferredCount`); the true runnable backlog
+* `activeCount`: jobs currently being processed
+* `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
+* `totalCount`: all jobs currently stored for the queue
 
 Behavior depends on whether stats are being persisted:
 
-* When [`persistQueueStats`](./constructor.md) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1–100000).
+* When [`persistQueueStats`](./constructor.md) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
 
   Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets:
 
-  * `bucketSeconds` (int) — group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
-  * `maxDataPoints` (int) — auto-downsample: derive the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set — explicit resolution wins.
-  * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`) — how each count column is collapsed within a bucket: `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
+  * `bucketSeconds` (int): group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
+  * `maxDataPoints` (int): auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
+  * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count column is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
 
-  `limit` still caps the number of buckets returned, so size the bucket so the bucket count stays within it. The covering index on `queue_stats` plus daily partition pruning keeps these aggregates fast with no extra setup; for sustained high-frequency monitoring over long retention you can layer pre-aggregated rollup tables or point `queue_stats` at a TimescaleDB hypertable with a continuous aggregate.
+  `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
 * When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
 
 ```js

@@ -1,13 +1,13 @@
 # Database Backends
 
 pg-boss runs on stock single-node PostgreSQL by default, but it also supports several
-PostgreSQL-compatible backends — distributed SQL engines like CockroachDB, YugabyteDB, and Citus,
-and the embedded WASM build [PGlite](https://pglite.dev). You select one with the `backend` option,
+PostgreSQL-compatible backends. Those are distributed SQL engines like CockroachDB, YugabyteDB
+and Citus, plus the embedded WASM build [PGlite](https://pglite.dev). You select one with the `backend` option,
 which applies all the compatibility behavior that backend needs.
 
 ## Backend profiles
 
-`backend` is the **only** option you set — it selects the database pg-boss is running against and
+`backend` is the **only** option you set. It selects the database pg-boss is running against and
 turns on the right combination of internal compatibility behavior for it:
 
 ```typescript
@@ -19,18 +19,18 @@ const boss = new PgBoss({
 })
 ```
 
-Each backend has a *kind* — `standard` (stock PostgreSQL), `distributed` (clustered
+Each backend has a *kind*: `standard` (stock PostgreSQL), `distributed` (clustered
 Postgres-compatible engines), or `embedded` (in-process PostgreSQL):
 
 | `backend` | Kind | What it enables |
 |-----------|------|-----------------|
-| `postgres` *(default)* | standard | *(none — full PostgreSQL)* |
+| `postgres` *(default)* | standard | *(none, full PostgreSQL)* |
 | `cockroachdb` | distributed | Lock-free fetch, split-statement writes, single shared table, immediate constraints, lock-free schema setup, plain indexes (+ numeric coercion), default-only column adds, no LISTEN/NOTIFY |
 | `yugabytedb` | distributed | Lock-free schema setup + single shared table |
-| `citus` | distributed | *(none — coordinator-local tables behave like plain PostgreSQL)* |
-| `pglite` | embedded | *(none — full PostgreSQL; see [PGlite](#pglite-embedded))* |
+| `citus` | distributed | *(none, coordinator-local tables behave like plain PostgreSQL)* |
+| `pglite` | embedded | *(none, full PostgreSQL; see [PGlite](#pglite-embedded))* |
 
-`backend` is the only option you set — pg-boss derives everything above from it, so a deployment
+`backend` is the only option you set. pg-boss derives everything above from it, so a deployment
 can't end up with an inconsistent combination. The rest of this page explains each behavior (and
 names the internal flag it maps to, for anyone reading the source). Databases without a profile
 (Aurora DSQL, Spanner) are **not yet supported**.
@@ -38,7 +38,7 @@ names the internal flag it maps to, for anyone reading the source). Databases wi
 ## Database compatibility
 
 The matrix shows which PostgreSQL features each backend supports (✅). Where a feature isn't
-available (❌), pg-boss automatically switches to the compatible alternative — see the
+available (❌), pg-boss automatically switches to the compatible alternative. See the
 [compatibility flags](#compatibility-flags) below.
 
 | Database | Status | `backend` | SKIP LOCKED | Multi-mutation CTEs | Table partitioning | Deferrable constraints | Advisory locks | Covering indexes | Writes to a column it just added | LISTEN/NOTIFY |
@@ -54,17 +54,17 @@ multi-master startup, and live migrations fail ([#21833](https://github.com/yuga
 
 ² In standard mode (coordinator-local table) Citus supports these like plain PostgreSQL. A
 deliberately sharded job table would lose `SKIP LOCKED` compatibility and need the atomic-`UPDATE`
-fetch instead — see [Citus](#tested-citus-compatible-in-standard-mode).
+fetch instead. See [Citus](#tested-citus-compatible-in-standard-mode).
 
 ³ YugabyteDB supports cluster-wide LISTEN/NOTIFY as an early-access feature that is **off by
-default** — enable the `ysql_yb_enable_listen_notify` flag on TServers and Masters. When it's off,
+default**, so enable the `ysql_yb_enable_listen_notify` flag on TServers and Masters. When it's off,
 leave `useListenNotify` disabled and avoid the queue `notify` option; pg-boss delivers via polling.
 
 ⁴ PGlite is embedded single-connection PostgreSQL, so LISTEN/NOTIFY works entirely in-process. The
 `fromPglite` adapter wires it up automatically, so `useListenNotify` works with no extra setup.
 
 Bun's `Bun.SQL` client has no row of its own: it is a different *driver* against PostgreSQL, not a
-different database, so it runs on the `postgres` profile with every feature above — LISTEN/NOTIFY
+different database, so it runs on the `postgres` profile with every feature above, LISTEN/NOTIFY
 included, on Bun 1.4.0 and later. See [Bun](#bun-driver).
 
 ## Compatibility flags
@@ -78,7 +78,7 @@ in the source.
 | Split-statement writes | Run `complete`, `fail`, and supervisor expiry as split statements inside a transaction rather than a single multi-mutation CTE. | A few extra round-trips per command; negligible for normal workloads. | `noMultiMutationCte` |
 | Single shared table | Create the job table without `PARTITION BY LIST`. | Per-queue partitioning (`partition: true`) is unavailable; all jobs share one table. | `noTablePartitioning` |
 | Immediate constraints | Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. | Constraints check immediately rather than at commit (no effect on normal operation). | `noDeferrableConstraints` |
-| Lock-free schema setup | Disable `pg_advisory_xact_lock` (used to coordinate schema creation/migration). | Concurrent instances may occasionally do redundant maintenance — a performance, not correctness, concern. | `noAdvisoryLocks` |
+| Lock-free schema setup | Disable `pg_advisory_xact_lock` (used to coordinate schema creation/migration). | Concurrent instances may occasionally do redundant maintenance, which is a performance concern rather than a correctness one. | `noAdvisoryLocks` |
 | Plain indexes | Omit the `INCLUDE` clause on covering indexes. | Slightly less efficient index-only scans during fetch; minimal for most workloads. | `noCoveringIndexes` |
 | Default-only column adds | Leave out the `UPDATE` that seeds a column the same migration added, for engines that refuse to write a column in the transaction that added it. | Rows carry the column's default until something rewrites them: after v41, a schedule holding an RRULE reads as `cron` from `getSchedules()` until the next scheduling pass relabels it. | `noAddColumnBackfill` |
 | No transactional heartbeat | Refuse a [`transactional`](./api/workers.md#workname-options-handler) worker on a queue configuring `heartbeatSeconds`, for engines that will not let a transaction write a row another session wrote after it began. | The two cannot be combined on that engine; `expireInSeconds` is the liveness bound for a transactional worker there. | `noTransactionalHeartbeat` |
@@ -96,9 +96,9 @@ CockroachDB but are independent in principle:
 
 - **`noSkipLocked`** is about the *fetch* path. By default pg-boss claims jobs with `SELECT FOR
   UPDATE SKIP LOCKED`. In some distributed engines that has problems:
-  1. **Performance degradation under concurrency** — with 500 workers, mean latency for `SELECT FOR
+  1. **Performance degradation under concurrency.** With 500 workers, mean latency for `SELECT FOR
      UPDATE SKIP LOCKED` can reach 311ms or higher ([CockroachDB #97135](https://github.com/cockroachdb/cockroach/issues/97135)).
-  2. **Unexpected row skipping** — `SKIP LOCKED` can skip unlocked rows, causing workers to miss
+  2. **Unexpected row skipping.** `SKIP LOCKED` can skip unlocked rows, causing workers to miss
      available work ([CockroachDB #121917](https://github.com/cockroachdb/cockroach/issues/121917)).
 
   With `noSkipLocked`, pg-boss instead claims jobs with an atomic `UPDATE ... RETURNING` and a
@@ -134,10 +134,10 @@ CockroachDB but are independent in principle:
   same table "job" are not supported`. With `noMultiMutationCte`, those operations run as separate
   statements inside one transaction instead, so a job can't be lost between them.
 
-Only `SKIP LOCKED` is replaced in the fetch path — other operations still use ordinary
+Only `SKIP LOCKED` is replaced in the fetch path. Other operations still use ordinary
 `SELECT ... FOR UPDATE` (without `SKIP LOCKED`), which distributed engines support fine.
 
-A third CockroachDB quirk — it returns integer columns (`INT8`) as text — is handled separately:
+A third CockroachDB quirk is handled separately: it returns integer columns (`INT8`) as text.
 pg-boss `Number()`-coerces the numeric job and queue fields on read **whenever `backend ===
 'cockroachdb'`**, not via a compatibility flag. It's a wire-format property of the database, so it's
 keyed on the backend identity rather than piggybacking on a behavioral flag. (Stock Postgres returns
@@ -146,7 +146,7 @@ these as `int4` numbers, so no coercion is needed there.)
 ### Transaction isolation
 
 For optimal correctness with `noSkipLocked`, SERIALIZABLE isolation ensures exactly-once job
-processing — the recommended level for distributed work queues. With READ COMMITTED (PostgreSQL or
+processing, which is the recommended level for distributed work queues. With READ COMMITTED (PostgreSQL or
 YugabyteDB defaults), the `state < 'active'` recheck in the `UPDATE` still prevents duplicate claims.
 
 ## Per-database notes
@@ -155,7 +155,7 @@ Testing status, setup, and caveats for each supported backend.
 
 ### Tested: PostgreSQL
 
-PostgreSQL is the primary supported database with full feature support. Use standard mode — no
+PostgreSQL is the primary supported database with full feature support. Use standard mode, with no
 special options needed.
 
 ### Tested: CockroachDB
@@ -172,7 +172,7 @@ const boss = new PgBoss({
 Internally that enables atomic-`UPDATE` fetch (`noSkipLocked`), split-statement mutations
 (`noMultiMutationCte`), a non-partitioned table (`noTablePartitioning`), non-deferrable constraints
 (`noDeferrableConstraints`), no advisory locks (`noAdvisoryLocks`), no covering-index `INCLUDE`
-(`noCoveringIndexes`), and numeric coercion on read — see
+(`noCoveringIndexes`), and numeric coercion on read. See
 [compatibility flags](#compatibility-flags).
 
 **Transactional workers on CockroachDB** work, with two differences from PostgreSQL:
@@ -203,16 +203,16 @@ that requires partition columns in the PRIMARY KEY and partitions defined inline
 In `noMultiMutationCte` mode the supervisor's expiry (`failJobsByTimeout` / `failJobsByHeartbeat`)
 uses CockroachDB-safe split statements instead of the multi-mutation `failJobs()` CTE (which
 CockroachDB rejects), so timed-out and heartbeat-timed-out jobs are correctly moved to
-`retry`/`failed` rather than stranded in `active`. Separately — keyed on `backend === 'cockroachdb'`
-rather than a flag — numeric job and queue fields (including `heartbeatSeconds`) are coerced back to
-numbers on read, because CockroachDB returns integers as text.
+`retry`/`failed` rather than stranded in `active`. Separately, numeric job and queue fields (including `heartbeatSeconds`) are coerced back to
+numbers on read, because CockroachDB returns integers as text. That one is keyed on
+`backend === 'cockroachdb'` rather than on a flag.
 
 **Verified on CockroachDB** (full-suite run, PostgreSQL-only tests skipped): job send/fetch,
 complete, fail (by id), retry of an explicitly failed job (including exponential backoff and
 `retryDelayMax`), maintenance expiration of timed-out jobs (`expireInSeconds`), heartbeat config +
 heartbeat-timeout (`heartbeatSeconds`), queue policies (`short`/`singleton`/`stately` with
 `partition: false`), throttle/debounce, deferral, cancellation, flow dependency
-blocking/unblocking — including a blocking parent that fails and retries — and schema migration to
+blocking/unblocking, including a blocking parent that fails and retries, and schema migration to
 latest (with rollback on error).
 
 #### Testing the runtime toggles
@@ -220,18 +220,18 @@ latest (with rollback on error).
 `noSkipLocked` and `noMultiMutationCte` are pure runtime behaviors (no schema impact) that work on
 plain PostgreSQL, so the project exercises them two ways:
 
-- **`npm run test:distributed`** — runs the **entire** test suite on Postgres with
+- **`npm run test:distributed`** runs the **entire** test suite on Postgres with
   `DISTRIBUTED=true`, which makes `test/testHelper.ts`'s `getConfig()` set the internal
   `__test__distributed` hook for every test (forcing `noSkipLocked` + `noMultiMutationCte` on top of
   the plain-Postgres schema, since the flags are not publicly configurable). This is the primary
   safety net: any new test is automatically exercised against the distributed code paths, fast and
   reliably, without paying CockroachDB's slow per-test DDL. It runs as its own CI job.
-- **`npm run test:cockroachdb`** — runs `test/distributedDatabaseTest.ts` against a real CockroachDB
+- **`npm run test:cockroachdb`** runs `test/distributedDatabaseTest.ts` against a real CockroachDB
   cluster (`DB_TYPE=cockroachdb`, which also enables the compatibility flags above). A focused smoke
   test confirming actual CockroachDB compatibility; runs on every push/PR.
-- **`npm run test:cockroachdb:full`** — runs the **entire** suite against a real CockroachDB cluster
-  (`--no-file-parallelism`). This is the compatibility-matrix / regression signal. It's slow —
-  CockroachDB rebuilds the schema per test and pays ~8–19s of online schema changes each — so it
+- **`npm run test:cockroachdb:full`** runs the **entire** suite against a real CockroachDB cluster
+  (`--no-file-parallelism`). This is the compatibility-matrix / regression signal. It is slow,
+  since CockroachDB rebuilds the schema per test and pays ~8-19s of online schema changes each, so it
   runs **nightly and on demand** (`workflow_dispatch`) rather than gating PRs. The per-test timeout
   is raised automatically under CockroachDB (see `vitest.config.ts`).
 
@@ -252,7 +252,7 @@ YugabyteDB is a PostgreSQL-compatible distributed database (reports as PostgreSQ
 been tested against a single-node YugabyteDB (`docker compose -f docker-compose.yugabyte.yaml up -d`,
 `npm run test:yugabytedb:full`). Basic queueing works, but there is a significant caveat.
 
-**Use `backend: 'yugabytedb'`** — it enables `noAdvisoryLocks` + `noTablePartitioning` and keeps the
+**Use `backend: 'yugabytedb'`.** It enables `noAdvisoryLocks` + `noTablePartitioning` and keeps the
 standard fetch mode. YugabyteDB does **not** need `noSkipLocked` or `noMultiMutationCte` (it has
 neither CockroachDB's `SKIP LOCKED` issues nor the multi-mutation CTE restriction). With this
 backend, standard (non-partitioned) queueing works: send / fetch / complete, retries, job
@@ -271,17 +271,17 @@ behaviors make this fail:
 
 1. It cannot transparently retry a multi-statement transaction sent over the *simple* query
    protocol on a conflict ([yugabyte-db#21833](https://github.com/yugabyte/yugabyte-db/issues/21833))
-   — and pg-boss wraps these operations in a `BEGIN; … ; COMMIT;` text block, so the conflict surfaces
+   and pg-boss wraps these operations in a `BEGIN; … ; COMMIT;` text block, so the conflict surfaces
    as `current transaction is expired or aborted`.
 2. DDL is **not rolled back transactionally**, so the partition table survives the aborted
-   transaction — a retry then fails with `relation "…" already exists`.
+   transaction, and a retry then fails with `relation "…" already exists`.
 
 `noTablePartitioning` keeps all jobs in one table and skips the per-queue DDL, sidestepping both.
 Advisory locks are a [Tech Preview](https://github.com/yugabyte/yugabyte-db/issues/3642) on
 YugabyteDB, hence `noAdvisoryLocks`.
 
 **Still not reliable on YugabyteDB:** partitioned queues (`partition: true`), multi-master
-concurrent startup, and live schema migrations between pg-boss versions — all involve DDL under
+concurrent startup, and live schema migrations between pg-boss versions all involve DDL under
 contention. A fresh install (`createSchema`) is fine; upgrading an existing deployment is not.
 
 For the partitioned-queue case specifically, this is **not** just a query-protocol problem and
@@ -297,7 +297,7 @@ Citus is a PostgreSQL extension that can shard tables across nodes. pg-boss neve
 `create_distributed_table()`, so its tables stay **local to the coordinator** and behave like plain
 PostgreSQL. The **full pg-boss test suite passes** against a single-node Citus coordinator
 (`citusdata/citus`, PostgreSQL 18 + Citus 14) with the `citus` extension loaded and **no special
-flags** — partitioning, queue policies, flows, heartbeat, multi-master, and migrations all work.
+flags**. Partitioning, queue policies, flows, heartbeat, multi-master, and migrations all work.
 
 ```typescript
 const boss = new PgBoss({
@@ -311,17 +311,17 @@ Run it yourself: `docker compose -f docker-compose.citus.yaml up -d` then `npm r
 **The one caveat is opt-in.** If you deliberately shard the pg-boss job table with
 `create_distributed_table()`, `SELECT FOR UPDATE SKIP LOCKED`
 [only works for single-shard queries](https://docs.citusdata.com/en/stable/develop/reference_workarounds.html)
-— so a *distributed* job table would need the CockroachDB-style atomic-`UPDATE` fetch, which the
+so a *distributed* job table would need the CockroachDB-style atomic-`UPDATE` fetch, which the
 `citus` profile does not enable. There is no profile for sharded Citus today; a **reference table**
 (replicated to all nodes) or the default coordinator-local table both work with `backend: 'citus'`.
 
 ### PGlite (embedded)
 
 [PGlite](https://pglite.dev) is a complete PostgreSQL build packaged as a WASM library that runs
-embedded in your Node.js (or browser) process — no separate database server. Because PGlite is real
+embedded in your Node.js (or browser) process, with no separate database server. Because PGlite is real
 PostgreSQL, pg-boss runs against it with **no compatibility flags**: declarative partitioning,
 deferrable constraints, advisory locks, covering indexes, `SELECT FOR UPDATE SKIP LOCKED`, and the
-multi-statement migration DDL all work. It is **not** a distributed backend — it is embedded
+multi-statement migration DDL all work. It is **not** a distributed backend. It is embedded
 single-connection PostgreSQL, reached through the `@electric-sql/pglite` client rather than the `pg`
 connection pool, via the `fromPglite` adapter.
 
@@ -358,8 +358,7 @@ await boss.complete('email', job.id)
 
 #### Lifecycle is yours to manage
 
-Unlike the default `pg`-pool connection, pg-boss does **not** open or close the PGlite instance —
-you own it. Construct it before `boss.start()` and close it after `boss.stop()`:
+Unlike the default `pg`-pool connection, pg-boss does **not** open or close the PGlite instance. You own it. Construct it before `boss.start()` and close it after `boss.stop()`:
 
 ```ts
 await boss.stop()
@@ -373,7 +372,7 @@ object you provide.
 
 PGlite serializes everything through one connection. pg-boss's background loops (maintenance,
 scheduling, monitoring) and your workers all share that single connection, so queries are processed
-one at a time. This is fine functionally — PGlite queues requests internally — but you should keep
+one at a time. This is fine functionally, since PGlite queues requests internally, but you should keep
 concurrency modest:
 
 - There is no benefit to large `batchSize` or many concurrent workers; they cannot run in parallel.
@@ -382,14 +381,14 @@ concurrency modest:
 
 #### Persistence
 
-PGlite supports in-memory, IndexedDB (browser), and filesystem persistence — see the
+PGlite supports in-memory, IndexedDB (browser), and filesystem persistence. See the
 [PGlite docs](https://pglite.dev/docs/filesystems). pg-boss treats all of them identically; the job
 schema and data persist wherever the PGlite instance stores its data directory.
 
 ### Bun (driver)
 
 [Bun](https://bun.sh) ships its own PostgreSQL client, `Bun.SQL`. It talks to an ordinary PostgreSQL
-server, so this is not a backend profile — the default `postgres` profile applies and every feature
+server, so this is not a backend profile. The default `postgres` profile applies and every feature
 works. It is a different *driver*, reached through an adapter instead of the `pg` connection pool.
 
 You do not need it to run pg-boss on Bun: the bundled `pg` driver works under the Bun runtime, and a
@@ -472,7 +471,7 @@ its own, and reports each subscribe through the callback pg-boss uses to close t
 notification missed while the listener was down is recovered by the next fetch.
 
 On an earlier Bun the adapter exposes no listener at all, and pg-boss emits a
-`listen_notify_unavailable` warning and delivers by polling — the default, and never more than a
+`listen_notify_unavailable` warning and delivers by polling, which is the default and never more than a
 latency difference.
 
 ### Not supported: Aurora DSQL
@@ -486,7 +485,7 @@ is a serverless distributed SQL database with PostgreSQL compatibility. However,
 instead of traditional pessimistic locking, which fundamentally changes how locking works.
 
 **Feature support:**
-- Table partitioning: ❌ [Not supported](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-migration-guide.html) — Aurora DSQL auto-manages distribution
+- Table partitioning: ❌ [Not supported](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-migration-guide.html), since Aurora DSQL auto-manages distribution
 - Foreign key constraints: ❌ Not supported
 - Deferrable constraints: ❌ N/A (no FK constraints)
 - Advisory locks: ❌ Not supported (OCC model)
@@ -494,22 +493,22 @@ instead of traditional pessimistic locking, which fundamentally changes how lock
 - Synchronous CREATE INDEX: ❌ Only [`CREATE INDEX ASYNC`](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-create-index-async.html) supported
 
 **Key concerns:**
-1. **OCC vs pessimistic locking**: `SELECT FOR UPDATE` in Aurora DSQL doesn't lock rows — it flags
+1. **OCC vs pessimistic locking**: `SELECT FOR UPDATE` in Aurora DSQL doesn't lock rows. It flags
    them for conflict detection at commit time. `SKIP LOCKED` is not meaningful in this model.
 2. **Async-only index creation**: pg-boss uses synchronous `CREATE INDEX` during schema migrations.
    Aurora DSQL only supports `CREATE INDEX ASYNC`, which may cause migration failures.
 3. **Retry logic required**: OCC returns serialization errors on conflict instead of blocking.
    Applications must implement retry logic.
 
-**A profile would need** the CockroachDB-style behavior — `noSkipLocked` (OCC doesn't support
+**A profile would need** the CockroachDB-style behavior: `noSkipLocked` (OCC doesn't support
 `SKIP LOCKED` semantics), `noMultiMutationCte`, `noTablePartitioning`, `noDeferrableConstraints`, and
-`noAdvisoryLocks` — but compatibility is **uncertain** regardless, because of async-only index
+`noAdvisoryLocks`. Compatibility is **uncertain** regardless, because of async-only index
 creation and OCC behavior. If you experiment with Aurora DSQL, please report your findings.
 
 ### Not supported: Spanner
 
 There is no `backend` profile for Spanner, so it cannot currently be configured. **Spanner (with
-PGAdapter)** — Google Cloud Spanner provides PostgreSQL wire compatibility via
+PGAdapter)**: Google Cloud Spanner provides PostgreSQL wire compatibility via
 [PGAdapter](https://cloud.google.com/spanner/docs/pgadapter). A profile would likely need
 `noSkipLocked`, `noMultiMutationCte`, `noTablePartitioning`, `noDeferrableConstraints`, and
 `noAdvisoryLocks` like CockroachDB, but Spanner's more limited PostgreSQL support may pose other
@@ -560,9 +559,9 @@ to distribute write load across ranges. This helps avoid hotspots when inserting
 - Fire-and-forget semantics are acceptable
 
 **Throughput reference points:**
-- PostgreSQL job queues: 7–30k jobs/sec ([benchmarks](https://gist.github.com/chanks/7585810), [Tembo MQ](https://legacy.tembo.io/blog/mq-stack-benchmarking/))
-- Kafka: 1–2M messages/sec ([LinkedIn](https://engineering.linkedin.com/kafka/benchmarking-apache-kafka-2-million-writes-second-three-cheap-machines), [Honeycomb](https://developer.confluent.io/learn-more/podcasts/handling-2-million-apache-kafka-messages-per-second-at-honeycomb/))
-- Redis Streams: 1–7M messages/sec ([benchmarks](https://goatreview.com/building-a-high-performance-message-queue-with-redis-streams/))
+- PostgreSQL job queues: 7-30k jobs/sec ([benchmarks](https://gist.github.com/chanks/7585810), [Tembo MQ](https://legacy.tembo.io/blog/mq-stack-benchmarking/))
+- Kafka: 1-2M messages/sec ([LinkedIn](https://engineering.linkedin.com/kafka/benchmarking-apache-kafka-2-million-writes-second-three-cheap-machines), [Honeycomb](https://developer.confluent.io/learn-more/podcasts/handling-2-million-apache-kafka-messages-per-second-at-honeycomb/))
+- Redis Streams: 1-7M messages/sec ([benchmarks](https://goatreview.com/building-a-high-performance-message-queue-with-redis-streams/))
 
 ## Known limitations and race conditions
 
@@ -577,7 +576,7 @@ pg-boss caches queue metadata (including active singleton keys) with a configura
 - Both attempt to claim jobs with the same singleton key
 - The `state < 'active'` recheck prevents duplicate claims, but one worker receives empty results
 
-This is a performance issue, not a correctness issue — no job is processed twice.
+This is a performance issue, not a correctness issue. No job is processed twice.
 
 ### Serialization errors (CockroachDB)
 
@@ -595,11 +594,11 @@ With `noSkipLocked`, when multiple workers fetch concurrently:
 4. Failed workers receive empty results
 
 This is the documented trade-off. For job queues where processing time >> fetch time, this is
-acceptable — workers simply poll again.
+acceptable, since workers simply poll again.
 
 ### Compatibility notes
 
 - All pg-boss features (priorities, groups, singletons, retries, etc.) work on every backend.
-- The atomic-`UPDATE` fetch (`noSkipLocked`) offers no benefit on stock PostgreSQL — under contention
-  workers receive empty results instead of efficiently skipping to unlocked rows — which is why it is
+- The atomic-`UPDATE` fetch (`noSkipLocked`) offers no benefit on stock PostgreSQL. Under contention
+  workers receive empty results instead of efficiently skipping to unlocked rows, which is why it is
   only enabled for backends that need it, never on `backend: 'postgres'`.

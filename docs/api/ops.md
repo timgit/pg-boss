@@ -120,7 +120,7 @@ Steps within a pass are individually rate-limited by their own intervals (`maint
 
 Returns the SQL statements that would rebuild the currently bloated job indexes, in the order they should be run, including a `DROP INDEX CONCURRENTLY` for any invalid stub left behind by an interrupted rebuild.
 
-Use this where pg-boss cannot run the rebuild itself — the connected role does not own the indexes, or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` cannot run inside one). Returns an empty array on CockroachDB and YugabyteDB, which have no btree bloat to reclaim and reject `REINDEX` in any form. Unlike the background pass, no ownership filter and no size cap are applied unless `maxIndexBytes` is passed, since the commands are intended for an operator who may run them as a different role.
+Use this where pg-boss cannot run the rebuild itself, because the connected role does not own the indexes or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` cannot run inside one). Returns an empty array on CockroachDB and YugabyteDB, which have no btree bloat to reclaim and reject `REINDEX` in any form. Unlike the background pass, no ownership filter and no size cap are applied unless `maxIndexBytes` is passed, since the commands are intended for an operator who may run them as a different role.
 
 ```js
 const commands = await boss.getReindexCommands()
@@ -235,21 +235,21 @@ Array of objects with the following properties:
 
 ### `detectSchemaDrift()`
 
-Compares what pg-boss installed against what the database actually has — tables, indexes, functions, columns, constraints, and the `job_state` enum — and reports anything that diverged: a manual schema change, a failed migration, an index left `INVALID` by an interrupted build.
+Compares what pg-boss installed against what the database actually has: tables, indexes, functions, columns, constraints, and the `job_state` enum. It reports anything that diverged, such as a manual schema change, a failed migration, an index left `INVALID` by an interrupted build.
 
-The scan is catalog-only, so no locks and no table scans. Presence checks — tables, indexes, column names, functions, enum — cover every managed table, including `job_common` and each per-queue partition. Default, type, nullability and constraint checks are limited to the fixed tables (version, queue, schedule, subscription, bam, warning, queue_stats, job_dependency), since the job tables' `DEFERRABLE` foreign keys and interval-typed `keep_until` default would false-positive. Anything needing `pg_get_functiondef`/`pg_get_constraintdef` is skipped where a backend lacks it, and CockroachDB skips the type, default and constraint checks entirely — its `INT8` typing and constraint rendering diverge from standard Postgres — leaving the presence checks active.
+The scan is catalog-only, so no locks and no table scans. Presence checks cover every managed table, including `job_common` and each per-queue partition. Those are the checks on tables, indexes, column names, functions and the enum. Default, type, nullability and constraint checks are limited to the fixed tables (version, queue, schedule, subscription, bam, warning, queue_stats, job_dependency), since the job tables' `DEFERRABLE` foreign keys and interval-typed `keep_until` default would false-positive. Anything needing `pg_get_functiondef`/`pg_get_constraintdef` is skipped where a backend lacks it, and CockroachDB skips the type, default and constraint checks entirely, since its `INT8` typing and constraint rendering diverge from standard Postgres. The presence checks stay active there.
 
-For example, when an index has been altered so its definition no longer matches — here `job_common_i9`'s predicate was changed from `state = 'completed'` to `state = 'active'` — it is flagged under `mismatched`, with the expected `definition` and the current `actualDefinition` side by side:
+An index altered so its definition no longer matches is flagged under `mismatched`, with the expected `definition` and the current `actualDefinition` side by side. Here `job_common_i9`'s predicate was changed from `state = 'completed'` to `state = 'active'`:
 
 ```js
 const report = await boss.detectSchemaDrift()
 // {
 //   ok: false,
-//   missingTables: [],        // e.g. ['warning'] — an expected managed table is absent
+//   missingTables: [],        // e.g. ['warning'], an expected managed table is absent
 //   missing: [],
 //   building: [],
 //   invalid: [],
-//   extraIndexes: [],       // warning only — e.g. [{ name: 'job_custom_idx', table: 'job_common' }]
+//   extraIndexes: [],       // warning only, e.g. [{ name: 'job_custom_idx', table: 'job_common' }]
 //   mismatched: [
 //     {
 //       name: 'job_common_i9',
@@ -276,9 +276,9 @@ const report = await boss.detectSchemaDrift()
 // }
 ```
 
-Every entry carries the `definition` that repairs it — the full, schema-qualified statement, ready to run. `mismatched` entries add `actualDefinition` for a side-by-side read. `invalid` and `missing` entries have nothing to put beside it: an invalid index already *has* the right definition (an interrupted build, not a wrong shape), and a missing one has no catalog entry at all.
+Every entry carries the `definition` that repairs it, which is the full schema-qualified statement, ready to run. `mismatched` entries add `actualDefinition` for a side-by-side read. `invalid` and `missing` entries have nothing to put beside it: an invalid index already *has* the right definition (an interrupted build, not a wrong shape), and a missing one has no catalog entry at all.
 
-Comparison is normalized throughout, so only a real difference is reported. Index keys are order-significant but insensitive to casing, casts, parentheses and whitespace. A function body is compared whitespace-normalized, so re-indentation alone is never drift. A column default is compared with its casts folded (`'pending'::text` matches `'pending'`) and a type in its canonical `format_type` spelling (`int` matches `integer`; `bigint` does not), and constraints compare as a normalized set of definitions. A primary-key column counts as NOT NULL. Enum order *is* significant — the enum's numeric base type makes it load-bearing for state comparisons. What gets printed is tidied for reading: the default `USING btree`, the outer parentheses pg wraps a predicate in, and the casts it adds to every literal are all removed.
+Comparison is normalized throughout, so only a real difference is reported. Index keys are order-significant but insensitive to casing, casts, parentheses and whitespace. A function body is compared whitespace-normalized, so re-indentation alone is never drift. A column default is compared with its casts folded (`'pending'::text` matches `'pending'`) and a type in its canonical `format_type` spelling (`int` matches `integer`; `bigint` does not), and constraints compare as a normalized set of definitions. A primary-key column counts as NOT NULL. Enum order *is* significant, since the enum's numeric base type makes it load-bearing for state comparisons. What gets printed is tidied for reading: the default `USING btree`, the outer parentheses pg wraps a predicate in, and the casts it adds to every literal are all removed.
 
 **Returns**
 
@@ -289,9 +289,9 @@ An object with the following properties:
 | `ok` | boolean | `true` when nothing differs across tables, indexes, functions, columns, defaults, types, constraints, or enum |
 | `missingTables` | array | Expected managed tables with no matching catalog table |
 | `missing` | array | Expected indexes with no matching catalog entry (excludes any a BAM row is still building) |
-| `building` | array | Expected indexes still being built by a pending/in&#95;progress/failed BAM row — not yet drift |
+| `building` | array | Expected indexes still being built by a pending/in&#95;progress/failed BAM row, so not yet drift |
 | `invalid` | array | Present indexes marked `INVALID` by an interrupted `CREATE INDEX CONCURRENTLY` (each has a `building` flag) |
-| `extraIndexes` | array | **Warning, not drift** (does not affect `ok`). Standalone (non-constraint-backing) indexes present on a managed table that aren't expected — a stale pg-boss index or one you added. Each has `name`, `table` |
+| `extraIndexes` | array | **Warning, not drift** (does not affect `ok`). Standalone (non-constraint-backing) indexes present on a managed table that aren't expected, either a stale pg-boss index or one you added. Each has `name`, `table` |
 | `mismatched` | array | Present indexes whose key columns/order or predicate differ from the expected definition |
 | `missingFunctions` | array | Expected managed functions with no catalog entry |
 | `mismatchedFunctions` | array | Present managed functions whose body differs from the expected definition |
@@ -305,16 +305,16 @@ The [`doctor`](../cli#doctor) CLI command runs this same check without writing a
 
 **Remediation**
 
-`detectSchemaDrift()` only reports — it never modifies the schema. Note that `start()` and `migrate` rebuild indexes *only* as part of a version change, so on a schema that is already at the latest version they will not repair drift; the fixes below are manual. Run `DROP`/`CREATE INDEX` with `CONCURRENTLY` on a live database so job processing is not blocked.
+`detectSchemaDrift()` only reports. It never modifies the schema. Note that `start()` and `migrate` rebuild indexes *only* as part of a version change, so on a schema that is already at the latest version they will not repair drift; the fixes below are manual. Run `DROP`/`CREATE INDEX` with `CONCURRENTLY` on a live database so job processing is not blocked.
 
 | Category | What it means | How to fix |
 | --- | --- | --- |
-| `missingTables` | An expected managed table is absent | Restore it — usually by running the schema migration for the version that adds it (or restore from backup). |
-| `building` | An async index build is still in progress | No action — re-check later. `getBamStatus()` shows build progress. |
+| `missingTables` | An expected managed table is absent | Restore it, usually by running the schema migration for the version that adds it (or restore from backup). |
+| `building` | An async index build is still in progress | No action. Re-check later, and `getBamStatus()` shows build progress. |
 | `invalid` | An interrupted build left the index `INVALID` (the definition is correct) | If `building` is `true` (or `getBamStatus()` shows a `pending`/`failed` row for it), it heals on the next `start()`. Otherwise `DROP INDEX CONCURRENTLY <schema>.<name>` and re-run the entry's `definition`. |
-| `missing` | An expected index is absent | Run the entry's `definition` — a restart alone will not, since the schema is already current. |
+| `missing` | An expected index is absent | Run the entry's `definition`. A restart alone will not, since the schema is already current. |
 | `mismatched` | A present index diverges from the expected `keys` or `predicate` | Drop the divergent index (`actualDefinition` shows it) and run the entry's `definition` to recreate it. |
-| `extraIndexes` | A standalone index on a managed table that pg-boss doesn't expect — a stale pg-boss index (e.g. after a queue's policy changed) or one you added. Informational; never fails the check | Harmless (extra space only). `DROP INDEX CONCURRENTLY` if it is a stale pg-boss index; otherwise leave your own indexes in place. |
+| `extraIndexes` | A standalone index on a managed table that pg-boss doesn't expect, either a stale pg-boss index (e.g. after a queue's policy changed) or one you added. Informational; never fails the check | Harmless (extra space only). `DROP INDEX CONCURRENTLY` if it is a stale pg-boss index; otherwise leave your own indexes in place. |
 | `missingFunctions` | An expected managed function is absent | Run the entry's `definition` (`CREATE FUNCTION …`) to recreate it. |
 | `mismatchedFunctions` | A present function's body was altered | Re-run the entry's `definition` as `CREATE OR REPLACE FUNCTION …` to restore it. |
 | `columnDrift` | A managed table has a missing/unexpected column, or a changed default, type, or nullability | Restore a `missingColumns` entry with `ALTER TABLE … ADD COLUMN`; investigate an `unexpectedColumns` entry before dropping it (it may be one you added); fix a `defaultMismatches` entry with `ALTER TABLE … ALTER COLUMN … SET DEFAULT <expected>`, a `typeMismatches` entry with `ALTER COLUMN … TYPE <expected>`, and a `nullabilityMismatches` entry with `ALTER COLUMN … SET/DROP NOT NULL`. |

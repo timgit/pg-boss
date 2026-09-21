@@ -33,7 +33,7 @@ Every command reads its connection from the same sources (see [Connection Config
 
 ### `migrate`
 
-Brings the schema up to the latest version, running any pending migrations in order. If pg-boss is not yet installed, it creates the schema first (equivalent to `create`). If the schema is already current, it reports that and does nothing. Async index builds (normally run by the background worker) are inlined as `CREATE INDEX CONCURRENTLY` statements and fanned out across every partitioned queue table, so a migration run needs no live worker. Pass `--dry-run` to print the SQL — rendered from the database's actual current version — without executing it.
+Brings the schema up to the latest version, running any pending migrations in order. If pg-boss is not yet installed, it creates the schema first (equivalent to `create`). If the schema is already current, it reports that and does nothing. Async index builds (normally run by the background worker) are inlined as `CREATE INDEX CONCURRENTLY` statements and fanned out across every partitioned queue table, so a migration run needs no live worker. Pass `--dry-run` to print the SQL without executing it. It is rendered from the database's actual current version.
 
 ```bash
 pg-boss migrate --connection-string postgres://localhost/myapp
@@ -79,10 +79,10 @@ MISMATCHED (definition differs) (1):
 ✗ Schema drift detected
 ```
 
-Every other category prints under a heading of its own — `MISSING TABLES`, `MISSING FUNCTIONS`, `MISMATCHED FUNCTIONS`, `COLUMN DRIFT`, `CONSTRAINT DRIFT`, `ENUM DRIFT`, and `⚠ EXTRA INDEXES` for indexes pg-boss does not expect, which are harmless and leave the exit code at `0`:
+Every other category prints under a heading of its own: `MISSING TABLES`, `MISSING FUNCTIONS`, `MISMATCHED FUNCTIONS`, `COLUMN DRIFT`, `CONSTRAINT DRIFT`, `ENUM DRIFT`, and `⚠ EXTRA INDEXES` for indexes pg-boss does not expect, which are harmless and leave the exit code at `0`:
 
 ```
-⚠ EXTRA INDEXES (present on a managed table but not expected — harmless) (1):
+⚠ EXTRA INDEXES (present on a managed table but not expected, harmless) (1):
   job_common.job_common_custom_idx
 
 MISSING TABLES (expected but absent) (1):
@@ -99,11 +99,11 @@ CONSTRAINT DRIFT (missing or unexpected constraints) (1):
     missing:    CHECK ((dead_letter IS DISTINCT FROM name))
 ```
 
-`doctor` diagnoses; the only thing it repairs is a leftover clock override, and only when asked with `--fix` (below). The schema it checks is already at the latest version, so a restart or `migrate` will not repair what it finds — run the printed statement yourself, inserting `CONCURRENTLY` on a live table. [Remediation](api/ops#detectschemadrift) covers every category.
+`doctor` diagnoses; the only thing it repairs is a leftover clock override, and only when asked with `--fix` (below). The schema it checks is already at the latest version, so a restart or `migrate` will not repair what it finds. Run the printed statement yourself, inserting `CONCURRENTLY` on a live table. [Remediation](api/ops#detectschemadrift) covers every category.
 
 #### `doctor --fix`
 
-Repairs exactly one thing: a `job_now()` left overridden by a [TestClock](api/testing) whose run was killed before it released the clock. The override keeps time correct — the body falls through to real time for any session that never opted in — but it no longer inlines, so every statement that reads the clock pays a per-row function call. `--fix` restores the canonical body and drops the clock table, then re-runs the scan so the summary and exit code describe the repaired schema.
+Repairs exactly one thing: a `job_now()` left overridden by a [TestClock](api/testing) whose run was killed before it released the clock. The override keeps time correct, since the body falls through to real time for any session that never opted in. What it no longer does is inline, so every statement that reads the clock pays a per-row function call. `--fix` restores the canonical body and drops the clock table, then re-runs the scan so the summary and exit code describe the repaired schema.
 
 ```bash
 pg-boss doctor --connection-string postgres://localhost/myapp --fix
@@ -133,7 +133,7 @@ pg-boss rollback --connection-string postgres://localhost/myapp --dry-run
 
 ### `plans <subcommand>`
 
-Prints SQL to stdout without touching the database — useful for review, manual execution, or checking into version control. Subcommands:
+Prints SQL to stdout without touching the database, which is useful for review, manual execution, or checking into version control. Subcommands:
 
 | Subcommand | Output |
 |------------|--------|
@@ -219,9 +219,9 @@ The CLI supports multiple ways to configure the database connection, in order of
 
 ## Backends
 
-A connection string does not say which engine is on the other end of it, and the engines do not accept the same schema. `--backend` (or `PGBOSS_BACKEND`, or `"backend"` in the config file) names the profile, and every command that writes or prints schema — `create`, `migrate`, `rollback`, `plans`, `doctor`, `reindex` — uses it to pick the statements that backend supports. It is the same profile the library constructor takes, so the CLI and a running `PgBoss` produce the same schema.
+A connection string does not say which engine is on the other end of it, and the engines do not accept the same schema. `--backend` (or `PGBOSS_BACKEND`, or `"backend"` in the config file) names the profile. Every command that writes or prints schema uses it to pick the statements that backend supports: `create`, `migrate`, `rollback`, `plans`, `doctor`, `reindex`. It is the same profile the library constructor takes, so the CLI and a running `PgBoss` produce the same schema.
 
-Without it the CLI assumes stock PostgreSQL, which on CockroachDB means table partitioning, advisory locks, covering indexes and a column written in the transaction that added it — a migration that fails partway rather than up front.
+Without it the CLI assumes stock PostgreSQL. On CockroachDB that means table partitioning, advisory locks, covering indexes and a column written in the transaction that added it, so the migration fails partway rather than up front.
 
 ```bash
 # CockroachDB
