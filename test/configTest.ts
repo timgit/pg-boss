@@ -182,7 +182,7 @@ describe('config', function () {
   })
 
   it('compatibility flags are derived from the backend, not user-settable', function () {
-    // The individual flags are internal; supplying them directly has no effect — only
+    // The individual flags are internal; supplying them directly has no effect, only
     // `backend` determines them. (Passed through `as any` since they are not public options.)
     const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', noSkipLocked: true, noTablePartitioning: true } as any)
     expect(resolved.backend).toBe('postgres')

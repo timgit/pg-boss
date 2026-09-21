@@ -100,7 +100,7 @@ A pass sends the occurrences of the preceding 60 seconds, so an occurrence that 
 await boss.schedule('report', '0 3 * * *', null, { missed: 'once' })
 ```
 
-The gap runs from the last time any instance ran a cron pass, which pg-boss records on its version row, to the moment the due window opens. Passes claim every `cronMonitorIntervalSeconds` (30 by default, 45 at the ceiling) against a 60-second window, so a deployment whose passes keep running has no gap and the option costs it nothing. Each pass is scheduled from the moment the one before it claimed, so the spacing is the interval and never a multiple of it. A gap opens when the passes stop: the deployment is down, in the middle of a deploy, or running with `schedule: false`.
+The gap runs from the last time any instance ran a cron pass, which pg-boss records on its version row, to the moment the due window opens. Passes run every `cronMonitorIntervalSeconds` (30 by default, 45 at the ceiling) against a 60-second window, so a deployment that keeps running has no gap and the option costs it nothing. A gap opens when the passes stop: the deployment is down, in the middle of a deploy, or running with `schedule: false`.
 
 A schedule never reaches back past its own row. `created_on` bounds the range, so a schedule written while nothing was running starts from when it was written rather than from the start of the outage. Re-running `schedule()` for an existing `(name, key)` leaves that bound where it is, which is what lets a deployment that registers its schedules on every boot still catch up on the outage it just ended.
 
@@ -108,15 +108,11 @@ The option applies to both formats, and a rule is read backwards over the gap th
 
 Worth knowing before choosing `once`:
 
-* **A caught-up job is indistinguishable from an on-time one.** It carries the schedule's `data` unchanged and is created when the pass catches up, so a handler cannot tell it is late or which occurrence it stands for. That is what makes `once` the whole of the option: a job whose meaning is "catch up to now" needs no occurrence identity, and a policy sending a job per missed occurrence would need one the payload has no way to carry.
+* **One job for the whole gap, and it looks like any other.** It carries the schedule's `data` unchanged, so a handler cannot tell it is late or which occurrence it stands for. Three days down sends one job for last night's occurrence and nothing for the two nights before it.
 
-* **The occurrence it names is the most recent one in the gap.** Three days down sends one job for last night's occurrence, and the two nights before it are not sent at all.
+* **It can arrive beside the occurrence that is due now.** Those are two jobs, filed under different minutes, unless the missed occurrence happens to share a minute with the due one. A `singletonKey`, or a queue policy that allows one queued job (`short`, `stately`, `exclusive`), collapses them like any other pair.
 
-* **It can arrive beside the occurrence that is due now.** Those are two jobs: the catch-up job is filed under the minute its occurrence fell in and the due one under the minute the pass is running in, so the two do not collapse into one. A schedule whose most recent missed occurrence shares a minute with a due one sends a single job, since they share that slot.
-
-* **Queue policy and send options apply to it like any other job.** A `singletonKey` in the schedule's options, or a queue whose policy allows one queued job (`short`, `stately`, `exclusive`), can collapse the catch-up job and the due one into whichever the policy allows.
-
-The pass that reads a gap is also the one that closes it, so an occurrence lost to a pass that claimed and then failed is not caught up by the next one. During a rolling upgrade, an instance on a release without catch-up runs passes that close a gap without catching up on it.
+* **A gap is closed by the pass that reads it.** An occurrence lost to a pass that claimed and then failed is not caught up by the next one, and an instance on a release without catch-up closes gaps without catching up on them.
 
 ## Managing schedules
 

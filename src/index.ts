@@ -40,7 +40,7 @@ export function getMigrationPlans (schema?: string, version?: number, options?: 
 
 /**
  * The catalog query pg-boss uses to find bloated job indexes, as SQL text. Runnable in psql with no
- * pg-boss instance and no connection from this process. PostgreSQL only — the heap-less engines
+ * pg-boss instance and no connection from this process. PostgreSQL only. The heap-less engines
  * (CockroachDB, YugabyteDB) do not answer it.
  */
 export function getIndexBloatPlans (schema?: string, options?: types.IndexBloatOptions) {
@@ -128,7 +128,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#stoppingPromise.catch(() => {})
     }
 
-    // Return the SAME in-flight promise to a concurrent caller instead of a fresh `this` — a
+    // Return the SAME in-flight promise to a concurrent caller instead of a fresh `this`. A
     // second caller must observe the actual outcome (including a rejection), not silently no-op
     // while the first call is still mid-flight.
     if (this.#startingPromise) {
@@ -529,7 +529,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
    * indexes, in the order they should be run, including any `DROP INDEX CONCURRENTLY` for stubs
    * left by an interrupted rebuild.
    *
-   * For installations where pg-boss cannot run them itself — a role that doesn't own the indexes,
+   * For installations where pg-boss cannot run them itself. A role that doesn't own the indexes,
    * or an adapter that wraps queries in a transaction. Pass `{ force: true }` for every job index
    * rather than only the bloated ones. Empty on CockroachDB and YugabyteDB, which have no btree
    * bloat to reclaim and reject `REINDEX` in any form.

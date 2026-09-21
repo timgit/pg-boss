@@ -6,7 +6,7 @@ The following functions are exported from the package and are not required durin
 import { getConstructionPlans, getMigrationPlans, getRollbackPlans, getIndexBloatPlans } from 'pg-boss'
 ```
 
-All three plan functions take an optional `backend`, which names the engine the SQL is meant to run against — the same profile the [constructor](../database-backends.md) takes, and the same one [`pg-boss migrate --backend`](../cli.md#backends) takes. Without it plans are stock PostgreSQL, which a distributed engine rejects partway through: table partitioning, advisory locks, covering indexes, a column written in the transaction that added it. `postgres` is the default, and `pglite` needs nothing here since it is stock PostgreSQL.
+All three plan functions take an optional `backend`, which names the engine the SQL is meant to run against. It is the same profile the [constructor](../database-backends.md) takes, and the same one [`pg-boss migrate --backend`](../cli.md#backends) takes. Without it plans are stock PostgreSQL, which a distributed engine rejects partway through: table partitioning, advisory locks, covering indexes, a column written in the transaction that added it. `postgres` is the default, and `pglite` needs nothing here since it is stock PostgreSQL.
 
 ### `getConstructionPlans(schema, options)`
 
@@ -60,7 +60,7 @@ const sql = getRollbackPlans('pgboss', 36)
 - `schema`: string, database schema name
 - `options`: object, optional. Accepts `minPages` (default 128), `maxEntriesPerPage` (default 5) and `minSizeRatio` (default 4).
 
-Returns the catalog query pg-boss uses to find bloated job indexes, as SQL text. PostgreSQL only — CockroachDB and YugabyteDB do not answer it. Unlike [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) this needs no instance and no connection from this process — it is meant to be pasted into psql or handed to a monitoring tool.
+Returns the catalog query pg-boss uses to find bloated job indexes, as SQL text. PostgreSQL only, since CockroachDB and YugabyteDB do not answer it. Unlike [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) this needs no instance and no connection from this process. It is meant to be pasted into psql or handed to a monitoring tool.
 
 ```js
 const sql = getIndexBloatPlans('pgboss')

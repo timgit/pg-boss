@@ -31,7 +31,7 @@ const SEVEN_DAYS = 60 * 60 * 24 * 7
 // A bam row stuck at 'in_progress' past this means the process that claimed it died or was
 // stopped mid-command (bam.ts #processCommands returns without marking the row on #stopped or a
 // crash), and getNextBamCommand needs to reclaim it or every future async migration wedges forever.
-// This is the *fallback* backstop only — deliberately long (24h) because false-reclaim is the worse
+// This is the *fallback* backstop only, deliberately long (24h) because false-reclaim is the worse
 // failure: reclaiming a still-running CREATE INDEX CONCURRENTLY runs two builds on the same index at
 // once, and an interrupted CONCURRENTLY leaves an INVALID index needing manual cleanup. The intended
 // *primary* trigger is a liveness check against pg_stat_progress_create_index (reclaim as soon as no
@@ -41,7 +41,7 @@ const BAM_STALE_SECONDS = 60 * 60 * 24
 // Liveness grace window: on the native-Postgres path we don't trust a "no build running" reading
 // until a claimed command has had time to actually start and register in pg_stat_progress_create_index
 // (pool latency between claiming the row and issuing the build). Below this age, an in_progress row is
-// only reclaimed via the 24h fallback, never via liveness — so a genuinely-running build is never
+// only reclaimed via the 24h fallback, never via liveness, so a genuinely-running build is never
 // yanked out from under itself.
 const BAM_LIVENESS_GRACE_SECONDS = 60 * 5
 
@@ -384,7 +384,7 @@ function createTableSubscription (schema: string) {
 }
 
 // created_on defaults to clock_timestamp(), not ${schema}.job_now(), so multiple job_table_run_async() enqueues
-// within a single migration transaction keep their insertion order — BAM applies queued commands in
+// within a single migration transaction keep their insertion order, BAM applies queued commands in
 // created_on order, and some migrations enqueue an ordered drop-then-rebuild pair (see v33).
 /* eslint-enable no-restricted-syntax */
 
@@ -917,14 +917,14 @@ function createIndexJobFetch (schema: string, noCoveringIndex = false) {
   //    linearly. INCLUDE cannot help: FOR UPDATE forces an Index Scan, never an Index Only Scan.
   //
   //  - `id` is deliberately NOT a key column. The obvious shape, (name, priority DESC, created_on,
-  //    id), also satisfies the ordering — but id is a random uuid, so it defeats btree
+  //    id), also satisfies the ordering, but id is a random uuid, so it defeats btree
   //    deduplication and dominates size: 24 MB against 19 MB for this shape at 500k rows, on the
   //    hot insert path and on every vacuum's bulkdelete. It buys nothing, because fetchNextJob
   //    dropped id from its ORDER BY for the same reason (a random uuid was never creation order);
   //    with the ordering ending at created_on, this index satisfies it outright and the plan
   //    carries no sort node at all.
   //
-  // Also measured: neutral for key_strict_fifo (that fetch never reaches this index — the
+  // Also measured: neutral for key_strict_fifo (that fetch never reaches this index. The
   // strict_fifo_heads CTE on job_i10 feeds the outer CTE), and a ~7x win on CockroachDB, which
   // takes the noSkipLocked path and so does not depend on Incremental Sort at all.
   //
@@ -1101,23 +1101,29 @@ export function trySetQueueDeletionTime (schema: string, queues: string[], secon
   return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds)
 }
 
-// The cron claim, which also answers with the timestamp it replaced. That timestamp is when an
-// instance last ran a pass, so the pass reads it to find out how long scheduling was off, which is
-// the window a schedule's `missed` policy catches up over. Null on a database no pass has ever run
-// against, where there is no gap to catch up on.
+// The cron claim, which also answers with the timestamp it replaced and how old that timestamp was.
+// The timestamp is when an instance last ran a pass, so the pass reads it to find out how long
+// scheduling was off, which is the window a schedule's `missed` policy catches up over. Null on a
+// database no pass has ever run against, where there is no gap to catch up on.
 //
-// The prior value has to come from a CTE of its own: RETURNING sees the row as the UPDATE leaves
+// Both answers have to come from a CTE of their own: RETURNING sees the row as the UPDATE leaves
 // it, while a WITH sub-statement reads the snapshot the whole statement was planned against, so it
-// sees the value the UPDATE is replacing. Zero rows still means another instance holds the claim,
-// which is all the caller checked before.
+// sees the value the UPDATE is replacing.
+//
+// This answers on both outcomes rather than on a claim alone, which is why `claimed` is a column
+// and not the row count: an instance that was refused needs to know when the row it lost to comes
+// due, so its next attempt can be measured from the claim that beat it rather than from its own
+// failure. See Timekeeper.onCron(). Reading `claim` through EXISTS does not make the UPDATE
+// conditional - a data-modifying CTE always runs, exactly once, whether or not the outer query
+// reads it.
 export function trySetCronTime (schema: string, seconds: number) {
   return `
     WITH prior AS (
-      SELECT cron_on FROM ${schema}.version
+      SELECT cron_on, EXTRACT( EPOCH FROM (${schema}.job_now() - cron_on) ) as elapsed FROM ${schema}.version
     ), claim AS (
       ${trySetTimestamp(schema, 'cron_on', seconds)}
     )
-    SELECT prior.cron_on as "priorCronOn" FROM prior, claim
+    SELECT prior.cron_on as "priorCronOn", prior.elapsed as "elapsed", EXISTS (SELECT 1 FROM claim) as "claimed" FROM prior
   `
 }
 
@@ -1455,8 +1461,8 @@ export function createIndexQueueStats (schema: string, noCoveringIndex = false):
 // explicit `+00` timestamptz literals. This keeps partitioning correct regardless of the database
 // session TimeZone (a bare date literal like '2026-06-25' would otherwise be cast to timestamptz in
 // the session TZ, so rows written near UTC midnight could fall outside every existing partition).
-// Computing the date in SQL (rather than interpolating new Date()) also keeps emitted DDL — including
-// the v35 migration and exported create plans — deterministic and apply-time accurate.
+// Computing the date in SQL (rather than interpolating new Date()) also keeps emitted DDL, including
+// the v35 migration and exported create plans, deterministic and apply-time accurate.
 export function ensureQueueStatsPartitions (schema: string): string {
   return `
     DO $$
@@ -1535,7 +1541,7 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
 }
 
 // Cheap single-row read of the cached counts the monitor maintains on the queue table. capturedOn
-// is monitor_on — the moment those counts were last refreshed, or NULL if the queue has never been
+// is monitor_on. The moment those counts were last refreshed, or NULL if the queue has never been
 // monitored (so the caller knows to recompute rather than trust default-zero counts).
 //
 // monitorBackoff rides along because the caller must serve this cache even when it is stale while
@@ -1581,7 +1587,7 @@ export function getQueueStatsHistory (schema: string): string {
 }
 
 // Per-bucket aggregate over a count column. The function name can't be a bind parameter, so it's
-// interpolated — safe because the manager validates `aggregate` against this whitelist first. Every
+// interpolated, safe because the manager validates `aggregate` against this whitelist first. Every
 // result is cast back to int: it honors the int count contract (avg rounds) and keeps Postgres
 // returning the value as a JS number rather than a numeric string.
 const STATS_AGG = {
@@ -1594,8 +1600,8 @@ const STATS_AGG = {
 // bucket's counts with `aggregate`, so a wide window returns a manageable, representative sample
 // instead of just the newest `limit` raw rows.
 //
-//   mode 'bucket' — $5 is the bucket width in seconds (explicit resolution).
-//   mode 'auto'   — $5 is maxDataPoints; the width is derived so the series fits in $5 points.
+//   mode 'bucket', $5 is the bucket width in seconds (explicit resolution).
+//   mode 'auto', $5 is maxDataPoints; the width is derived so the series fits in $5 points.
 //                   from/to sets the range, but they cannot exceed the data's own min/max values.
 //
 // The bucket key avoids date_bin() (PG14+): pg-boss supports PostgreSQL 13+ and CockroachDB/
@@ -1870,7 +1876,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   // state DESC (retry > created in the enum) makes a retry job its key's head. job_i8
   // guarantees at most one job per key in active/retry/failed, and the NOT EXISTS blocker
-  // below rejects every sibling of a retry job — so if created_on picked the head, an older
+  // below rejects every sibling of a retry job, so if created_on picked the head, an older
   // deferred job whose start_after has since arrived would claim the head slot while being
   // unfetchable, and the retry job (fetchable but not the head) would deadlock the key.
   const strictFifoHeadsCte = keyStrictFifo
@@ -1919,13 +1925,13 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   //
   // The two conditionals this replaces existed only to serve the `priority` and `orderByCreatedOn`
   // fetch options, which were requested as performance escapes from this sort. job_i11 now satisfies
-  // the ordering directly, so the escapes have nothing to escape — see the deprecation in
+  // the ordering directly, so the escapes have nothing to escape. See the deprecation in
   // manager.fetch(). Dropping them also deletes two branches from the hottest SQL builder here.
   //
   // `id` goes too. It is a random uuid, so it never provided creation order: a batch insert shares
   // one ${schema}.job_now() and therefore ties on created_on, and those ties resolve today in random uuid order,
   // not insertion order. Without it the index satisfies the ordering outright rather than through
-  // an Incremental Sort — 0.097 -> 0.031 ms and 50 -> 5 buffers at limit=1 — and ties fall back to
+  // an Incremental Sort (0.097 -> 0.031 ms and 50 -> 5 buffers at limit=1) and ties fall back to
   // index order, which tracks insertion order better than a uuid does.
   //
   // key_strict_fifo keeps its own id tiebreak in strict_fifo_heads, where DISTINCT ON does need a
@@ -2150,7 +2156,7 @@ export function restoreJobs (schema: string, table: string) {
 // A `startAfter` string is either an absolute date time or a delay expressed as a Postgres
 // interval. A trailing 'Z' has always marked a date time; a leading ISO 8601 calendar date
 // (YYYY-MM-DD) marks one as well, which is what lets the other 8601 zone designators through
-// ('+00:00', '+05:30', '-08:00') along with zone-less and date-only strings — all of which
+// ('+00:00', '+05:30', '-08:00') along with zone-less and date-only strings, all of which
 // used to reach the interval cast and fail as 'invalid input syntax for type interval'.
 //
 // Recognition is only ever widened, so anything that resolves as an interval today still
@@ -2797,17 +2803,17 @@ export function insertDeadLetterJob (schema: string): string {
 // Dead-letter redrive. Moves un-started jobs out of a dead-letter queue and
 // re-creates them as fresh jobs on their original source queue (or $2 destination override),
 // oldest-first, capped at $4. The JOIN in `candidates` only matches jobs whose destination queue
-// exists, so legacy/orphaned jobs (NULL source_name, no override) are never deleted — they stay
+// exists, so legacy/orphaned jobs (NULL source_name, no override) are never deleted. They stay
 // in the DLQ rather than being lost. Re-created jobs get a new id, `created` state, retry_count 0,
 // cleared output, NULL source_*, and every queue-config column (retry/retention/policy/expiry/
-// heartbeat/dead_letter) from the destination queue as it is configured now — per-job overrides
+// heartbeat/dead_letter) from the destination queue as it is configured now, per-job overrides
 // from the original send() are not preserved, since the DLQ copy never stored them. `dead_letter`
 // is the same value send() falls back to, so a second terminal failure re-enters the DLQ.
 // Job-identity columns (priority, singleton_key, group_id, group_tier) are carried over instead.
 //
 // The insert's ON CONFLICT DO NOTHING is load-bearing: a destination queue's short/stately policy
 // can still collide on (name, singleton_key) if two redriven jobs share a key (job_i1/job_i3), and
-// dropping just that row — matching retried_jobs' ON CONFLICT DO NOTHING elsewhere — is preferable
+// dropping just that row (matching retried_jobs' ON CONFLICT DO NOTHING elsewhere) is preferable
 // to aborting the whole batch. The dropped job has already been deleted from the DLQ by the moved
 // CTE and is not restored.
 export function redriveJobs (schema: string, table: string): string {
@@ -2991,7 +2997,7 @@ export function getQueueStats (schema: string, table: string, queues: string[]):
 // Length of the recent-ready-count sliding window kept on queue.ready_history for the dashboard
 // sparkline. One sample is appended per monitor cycle (default 60s), so this is roughly the last
 // READY_HISTORY_SIZE minutes of trend. Sized to comfortably render the sparkline (the widest is the
-// ~160px detail card) without over-collecting — more points than pixels add nothing visible.
+// ~160px detail card) without over-collecting, more points than pixels add nothing visible.
 export const READY_HISTORY_SIZE = 60
 
 /* eslint-disable no-restricted-syntax -- how long this transaction has held its snapshot: real elapsed time, not job time */
@@ -3183,7 +3189,7 @@ function advisoryLock (schema: string, key?: string) {
 // winning the race to duplicate a scan nobody asked for costs the job table.
 //
 // The guard is a one-time filter, so a lost race skips the scan rather than running and discarding
-// it — verified on the plan: `Parallel Seq Scan on job (never executed)`. It also has to gate the
+// it, verified on the plan: `Parallel Seq Scan on job (never executed)`. It also has to gate the
 // UPDATE, not just the aggregate: an empty stats CTE still LEFT JOINs, and the COALESCE(…, 0) would
 // write every count to zero.
 function tryAdvisoryLock (schema: string, key: string, noAdvisoryLocks?: boolean) {
@@ -3346,27 +3352,27 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
 
   // Native-Postgres liveness path. An in_progress row counts as "stale" (reclaimable) when it is past
   // the grace window AND no backend is actually building its index right now. The same predicate,
-  // negated, defines a genuinely-live command that must still block the queue — so a running build is
+  // negated, defines a genuinely-live command that must still block the queue, so a running build is
   // NEVER reclaimed (no matter how long it runs), and a dead one recovers within the grace window.
   // There is deliberately no 24h absolute cap here: liveBuild=true always means a build is in flight, so
   // capping on elapsed time would reclaim a genuinely-running build and start a second
-  // CREATE INDEX CONCURRENTLY on the same index — the exact double-build this path exists to prevent.
+  // CREATE INDEX CONCURRENTLY on the same index. The exact double-build this path exists to prevent.
   // (The timeout-only path's BAM_STALE_SECONDS fallback covers engines with no way to detect liveness.)
   //
   // liveBuild(tableCol): is a CREATE INDEX CONCURRENTLY actively building this table's index right now?
-  // Detected via pg_locks, NOT pg_stat_progress_create_index — and that choice is load-bearing for
+  // Detected via pg_locks, NOT pg_stat_progress_create_index, and that choice is load-bearing for
   // multi-instance safety. pg_stat_progress_* is filtered to the querying role's OWN backends (only a
   // superuser or a member of pg_read_all_stats sees another role's builds), so a progress-view check
   // silently reads a peer's live build as "dead" whenever pg-boss instances connect under different DB
-  // roles — and the heal step (bamHealProbe/bamHealDrop in bam.ts) would then DROP INDEX CONCURRENTLY a
+  // roles, and the heal step (bamHealProbe/bamHealDrop in bam.ts) would then DROP INDEX CONCURRENTLY a
   // live index mid-build, racing the builder into a double CREATE. pg_locks, by contrast, is cluster-wide
   // and visible to every role (verified empirically). CREATE INDEX CONCURRENTLY holds a
   // ShareUpdateExclusiveLock on the target table for the ENTIRE build and releases it the instant the
   // statement finishes or the backend dies, so a granted SUExclusive lock on the row's table is a
-  // crash-safe, role-agnostic "build in flight" signal — instances may run under different roles with no
+  // crash-safe, role-agnostic "build in flight" signal, instances may run under different roles with no
   // loss of safety. Ordinary queue DML never takes SUExclusive (it uses AccessShare/RowShare/
   // RowExclusive), so it can't false-trigger; a concurrent autovacuum/ANALYZE on the same table DOES take
-  // SUExclusive and reads as "live", but that false positive is in the SAFE direction — it only briefly
+  // SUExclusive and reads as "live", but that false positive is in the SAFE direction. It only briefly
   // DEFERS a reclaim, never drops a live index. Scoped to the current database (l.database) because
   // pg_locks is cluster-wide while relation OIDs are only unique per database. Correlating on the table
   // is enough because the queue runs only one in_progress command at a time.
@@ -3441,8 +3447,8 @@ export function bamHealDrop (schema: string, command: string): string | null {
 
 // Probe run before bamHealDrop: returns `invalid = true` only when the index the re-attempted command
 // would build already exists AND is INVALID (an interrupted CREATE INDEX CONCURRENTLY left a stub).
-// A build that actually finished but whose BAM row was never marked completed — e.g. a graceful stop
-// landed between the CREATE succeeding and markCompleted — leaves a VALID index; dropping that would
+// A build that actually finished but whose BAM row was never marked completed, e.g. a graceful stop
+// landed between the CREATE succeeding and markCompleted, leaves a VALID index; dropping that would
 // tear down a live production index for the whole rebuild window, so the caller must NOT heal it (the
 // re-run's own IF NOT EXISTS then no-ops and just marks the row done). Returns null for non-index
 // commands and for an absent index (no row), where there is nothing to drop. Mirrors bamHealDrop's
@@ -3541,7 +3547,7 @@ export function getManagedQueuePartitions (schema: string) {
   return `SELECT table_name as "table", policy FROM ${schema}.queue WHERE partition = true`
 }
 
-// The CREATE INDEX command text of every BAM row not yet completed — used to tell a genuinely-missing
+// The CREATE INDEX command text of every BAM row not yet completed, used to tell a genuinely-missing
 // index apart from one an async build is still working on (or retrying after a failure).
 export function getIncompleteBamCommands (schema: string) {
   return `SELECT command FROM ${schema}.bam WHERE status <> 'completed'`
@@ -3558,7 +3564,7 @@ export function bamCommandIndexName (command: string): string | null {
 //
 // The expected tables/columns/constraints/functions/indexes/enum pg-boss compares the live catalog
 // against. Every one is read from schema.json (regenerate with `npm run gen:manifest` after a
-// DDL change) with the placeholder schema substituted back — so nothing here duplicates the DDL as
+// DDL change) with the placeholder schema substituted back, so nothing here duplicates the DDL as
 // hand-written literals. The only hand-maintained pg-boss knowledge is the per-queue partition index
 // distribution rule just below. These produce the `expected` inputs to drifter.ts's generic diff.
 
@@ -3579,7 +3585,7 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
   8: QUEUE_POLICIES.key_strict_fifo,
   10: QUEUE_POLICIES.key_strict_fifo
 }
-// job_iN indexes with no policy gate — created on every job table regardless of policy
+// job_iN indexes with no policy gate, created on every job table regardless of policy
 // (throttle i4, fetch i11, group-concurrency i7, blocking i9). 5 is absent, not missing: the fetch
 // index was replaced in v40 and the retired number is not reused.
 const BASE_JOB_INDEXES = [4, 7, 9, 11]
@@ -3598,7 +3604,7 @@ function applyManifestSchema (text: string, schema: string): string {
 }
 
 // The job_state enum values in declaration order, from the manifest (both sections carry the same enum).
-// Order is significant — the numeric base type makes created < retry < … < failed load-bearing.
+// Order is significant. The numeric base type makes created < retry < … < failed load-bearing.
 export const EXPECTED_JOB_STATES: readonly string[] = schemaManifest.partitioned.enum
 
 // The tables pg-boss expects to exist. The manifest lists the fixed tables plus job (and job_common in
@@ -3612,7 +3618,7 @@ export function expectedManagedTables (schema: string, partitioned: boolean, par
 // The columns pg-boss expects on each managed table, taken from the manifest (introspected column type,
 // nullability, and default). Fixed tables carry the full defaults + types maps so column defaults, data
 // types, and nullability are diffed; the job table (shared by job_common and every per-queue partition
-// in partitioned mode) is name-only — its FKs are profile-dependent and keep_until's interval default is
+// in partitioned mode) is name-only. Its FKs are profile-dependent and keep_until's interval default is
 // not worth pinning per-partition. A table with no live columns is skipped by the diff, so listing one
 // that does not exist yet is harmless.
 export function expectedManagedColumns (schema: string, partitioned: boolean, partitions: QueuePartition[] = []): ExpectedColumns[] {
@@ -3678,7 +3684,7 @@ export function expectedManagedFunctions (schema: string, partitioned: boolean, 
 // `partitioned` reflects the live database (job_common present ⇒ partitioned architecture), so this
 // needs no boss config. The manifest holds every fixed index (the static ones plus the job_iN set on
 // job/job_common); each per-queue partition is dynamic, so its indexes are templated here from the
-// job_common set — the base indexes always, plus the one for the queue's policy. keys/predicate/
+// job_common set. The base indexes always, plus the one for the queue's policy. keys/predicate/
 // definition are derived from the catalog-canonical pg_get_indexdef the manifest stores.
 export function expectedManagedIndexes (schema: string, partitioned: boolean, partitions: QueuePartition[] = []): ManagedIndex[] {
   const managed = (name: string, table: string, indexdef: string): ManagedIndex => {
@@ -3715,13 +3721,13 @@ export function expectedManagedIndexes (schema: string, partitioned: boolean, pa
 //
 // Autovacuum reclaims heap space but never returns btree pages to the OS, so a job index sizes
 // itself to the largest backlog its queue has ever held and stays there. A drained 1M-job peak
-// leaves job_common_i11 at 38 MB and job_common_pkey at 51 MB holding 1k live rows — and every
+// leaves job_common_i11 at 38 MB and job_common_pkey at 51 MB holding 1k live rows, and every
 // subsequent vacuum with dead tuples to clean does a full physical scan of every one of those
 // pages (measured: 17,969 buffer hits + 3,892 reads vs 750 hits / 0 reads after a rebuild), which
 // is what drains IO burst credits on managed Postgres.
 //
-// The bloat is a high-water mark rather than an unbounded leak — empty pages ARE recycled by later
-// inserts — so the trigger is density, not elapsed time.
+// The bloat is a high-water mark rather than an unbounded leak, empty pages ARE recycled by later
+// inserts, so the trigger is density, not elapsed time.
 
 export const REINDEX_DEFAULTS = {
   // 1 MB. Below this the absolute waste is irrelevant and reltuples/relpages is noisy.
@@ -3752,8 +3758,8 @@ export const REINDEX_DEFAULTS = {
 // int4 is not an option - the index that exceeds maxIndexBytes is exactly the one that overflows it.
 // float8 is exact to 2^53 bytes, and reltuples is a float4 estimate to begin with.
 // The pages the index's *live* entries actually need, from the average width of what it indexes.
-// pg_stats carries that per column, and — the part that matters here, since i1-i4 and i6 key on
-// `COALESCE(singleton_key, '')` — ANALYZE also collects it for an index's expression columns, keyed
+// pg_stats carries that per column, and. The part that matters here, since i1-i4 and i6 key on
+// `COALESCE(singleton_key, '')`, ANALYZE also collects it for an index's expression columns, keyed
 // by the index relation. Plain attnums read the table's stats, attnum 0 (an expression) falls back
 // to the index's own. 20 bytes covers the btree tuple header and line pointer.
 const INDEX_WIDTH_JOIN = `LEFT JOIN LATERAL (
@@ -3803,15 +3809,15 @@ function jobTableScope (schema: string, tables?: string[]) {
  * healthy one by three orders of magnitude on their own.
  *
  * PostgreSQL-only (including PGlite, where both the bloat and REINDEX CONCURRENTLY behave normally).
- * Callers must gate on noReindex — see the note in boss.ts #reindex.
+ * Callers must gate on noReindex. See the note in boss.ts #reindex.
  *
  * `owned` is returned rather than filtered on, so an installation whose role cannot reindex still
- * gets told what is bloated. Only leaf indexes (relkind 'i') are candidates — pg-boss creates
+ * gets told what is bloated. Only leaf indexes (relkind 'i') are candidates. pg-boss creates
  * i1..i10 directly on each partition, and a partitioned index (relkind 'I') cannot be reindexed
  * except through its leaves anyway.
  *
  * Caveat: relpages/reltuples are refreshed by VACUUM/ANALYZE, so they go stale where autovacuum is
- * disabled for the table. That is acceptable — the entire failure mode assumes autovacuum runs.
+ * disabled for the table. That is acceptable. The entire failure mode assumes autovacuum runs.
  */
 export function getBloatedIndexes (schema: string, tables?: string[], options?: IndexBloatOptions): string {
   // These are interpolated into the statement, and supervise()/getReindexCommands() accept them
@@ -3851,7 +3857,7 @@ export function getBloatedIndexes (schema: string, tables?: string[], options?: 
 }
 
 /**
- * Every owned leaf index on the job tables, ignoring the density gate — the target list for
+ * Every owned leaf index on the job tables, ignoring the density gate. The target list for
  * `{ force: true }`.
  */
 export function getJobIndexes (schema: string, tables?: string[]): string {
@@ -3930,13 +3936,13 @@ function quoteIdentifier (name: string) {
  *
  * `pg_stat_activity.backend_xmin` is readable by an unprivileged role (it is not one of the columns
  * restricted to the owning user), as are the other three views, so the degraded path is defensive
- * rather than expected — a managed provider may still revoke them.
+ * rather than expected. A managed provider may still revoke them.
  */
 /* eslint-disable no-restricted-syntax -- these measure real backend and vacuum age against pg_stat_* timestamps Postgres wrote; a fake clock would compare two different clocks */
 export const XMIN_HORIZON_SOURCES = {
   // Restricted to backends whose transaction was already open when the failed vacuum ran ($1).
   // Every backend executing a query advertises a backend_xmin, including the one asking this
-  // question, so presence alone is not evidence — the ordering against a vacuum that reclaimed
+  // question, so presence alone is not evidence. The ordering against a vacuum that reclaimed
   // nothing is. Compared as timestamps inside one statement rather than as two ages read from two
   // queries a moment apart, which would let a connection that started after the vacuum qualify.
   //
@@ -3945,7 +3951,7 @@ export const XMIN_HORIZON_SOURCES = {
   // ordinary role only pid, application_name, usename and backend_xmin for a backend owned by a
   // *different* role; xact_start reads NULL and query reads '<insufficient privilege>' (measured on
   // PG18). Since `NULL < $1` is NULL, the strict form silently discarded exactly the holder an
-  // operator most needs named — another application's analytical query — leaving every source NULL,
+  // operator most needs named (another application's analytical query) leaving every source NULL,
   // no holder attributable, and the warning withheld. Admitting them costs a possible false
   // positive from a young foreign backend, which in practice loses the max(age()) to any real
   // holder, and opaqueBackends below reports how many could not be timed.
@@ -3966,7 +3972,7 @@ export const XMIN_HORIZON_QUERY_SOURCES = Object.keys(XMIN_HORIZON_SOURCES) as r
  * `age()` measures transactions elapsed since the pinned xid, not wall time, which is the metric
  * that matters: dead tuples accumulate per transaction, so a horizon pinned across an idle night
  * costs nothing while the same age on a busy queue is a backlog of rows autovacuum cannot reclaim.
- * Measured directly — a REPEATABLE READ holder open on an idle database reports 0, and 2,000 after
+ * Measured directly. A REPEATABLE READ holder open on an idle database reports 0, and 2,000 after
  * 2,000 transactions with the same holder still open.
  *
  * Also returns the oldest in-transaction backend's wall-clock age, purely so the warning can say
@@ -4101,7 +4107,7 @@ export function dropIndexConcurrently (schema: string, name: string): string {
  * The statement list an operator runs by hand: every stale stub dropped first, then the rebuilds.
  *
  * Stubs are emitted whole rather than paired to the index they came from. Postgres does not append
- * `_ccnew` — it truncates the *base* so the result fits in 63 bytes, so `j<sha224>_i11` (61 chars)
+ * `_ccnew`. It truncates the *base* so the result fits in 63 bytes, so `j<sha224>_i11` (61 chars)
  * leaves behind `j<sha224>__ccnew` with the `i11` gone, and a prefix match never fires on a
  * partitioned queue (every partition table name is `'j' || sha224(queue_name)`, 57 chars). Dropping
  * them unconditionally is also what the background pass does: an invalid stub is dead weight that

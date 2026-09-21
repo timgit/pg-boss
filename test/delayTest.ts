@@ -184,7 +184,7 @@ describe('delayed jobs', function () {
   })
 
   // Forms that reached the date time path only via the trailing 'Z' check, so they keep working:
-  // ISO 8601 basic format, and a value with leading whitespace. Basic format is Postgres-only —
+  // ISO 8601 basic format, and a value with leading whitespace. Basic format is Postgres-only,
   // CockroachDB's timestamp parser rejects '20270101T080000Z', on master as well as here.
   for (const [label, startAfter, testFn] of [
     ['in ISO 8601 basic format', '20270101T080000Z', helper.itPostgresOnly],

@@ -479,13 +479,13 @@ describe('schedule', function () {
       }
     }
 
-    // the healthy schedule must still fire — it did not before, because evaluating the broken row
+    // the healthy schedule must still fire. It did not before, because evaluating the broken row
     // threw straight out of the cron pass
     expect(job).toBeTruthy()
   })
 })
 
-// Pure unit tests for the clock-domain logic — no database or running instance needed.
+// Pure unit tests for the clock-domain logic. No database or running instance needed.
 describe('timekeeper clock domain', function () {
   // `manager` is only supplied by the tests that drive onSendIt; the clock-domain methods never
   // touch it. Statements land on `db.executed` so those tests can assert what was written without
@@ -693,7 +693,7 @@ describe('timekeeper clock domain', function () {
     tk.clockSkew = 120_000
 
     // a yearly cron: the previous Jan-1 midnight is (except in the 60s after New Year UTC) far more
-    // than 60s ago, so it must not fire — proving the window check isn't simply always-true.
+    // than 60s ago, so it must not fire, proving the window check isn't simply always-true.
     expect(tk.shouldSendIt('0 0 1 1 *', 'UTC')).toBe(false)
   })
 
@@ -923,7 +923,7 @@ describe('timekeeper clock domain', function () {
     const warnings: any[] = []
     tk.on('warning', (w: any) => warnings.push(w))
 
-    // Every other warning type describes something that clears itself — skew converges, a backlog
+    // Every other warning type describes something that clears itself, skew converges, a backlog
     // drains, a slow query is a one-off. A bad schedule row sits there until a human edits it, so
     // warning per pass would persist a row every cronMonitorIntervalSeconds forever, and
     // warningRetentionDays has no default to bound it.
@@ -956,7 +956,7 @@ describe('timekeeper clock domain', function () {
     await tk.cron()
     expect(warnings.length).toBe(1)
 
-    // broken again — a fresh occurrence the operator has not seen
+    // broken again. A fresh occurrence the operator has not seen
     timezone = 'Mars/Phobos'
     await tk.cron()
     expect(warnings.length).toBe(2)

@@ -110,7 +110,7 @@ interface TableGarbage {
 }
 
 // SQLSTATE 25001 (active_sql_transaction): "REINDEX CONCURRENTLY cannot run inside a transaction
-// block". Raised when a user-supplied adapter wraps executeSql in a transaction — a property of the
+// block". Raised when a user-supplied adapter wraps executeSql in a transaction. A property of the
 // adapter, not of this pass, so it disables rebuilds for the life of the instance rather than
 // retrying every interval.
 const IN_TRANSACTION_ERROR = '25001'
@@ -129,7 +129,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // keeps running; only the DDL is abandoned.
   #reindexUnavailable: string | null = null
   // Warn once per bloated index rather than on every pass. An index leaves the set as soon as it
-  // stops qualifying — rebuilt, dropped, or refilled — so a later episode warns again.
+  // stops qualifying (rebuilt, dropped, or refilled) so a later episode warns again.
   #warnedBloat = new Set<string>()
   // Local rate limit for passes that only report bloat, which deliberately leave the shared interval
   // claim to whichever instance can act on it.
@@ -305,7 +305,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     // Ensure today's/tomorrow's partitions exist before any insertQueueStats below. Retention
     // (#maintainWarnings/#maintainQueueStats) runs at the tail. Both live here, in the public
     // supervise() path that also performs the writes, rather than in the timer-only #onSupervise
-    // wrapper — so manual supervise() callers (instances run with the built-in supervisor disabled)
+    // wrapper, so manual supervise() callers (instances run with the built-in supervisor disabled)
     // get partitions provisioned and old data pruned, not just job retention.
     if (this.#config.persistQueueStats && !this.#config.noTablePartitioning && !this.#stopping) {
       await this.#ensureQueueStatsPartitions()
@@ -714,7 +714,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
         holder: describeXminHolder(holder.source, horizon.row),
         holderClass: XMIN_HOLDERS[holder.source],
         // Null unless the holder is a backend this role could read a row for. `self` says whether it
-        // shares this connection's application_name — pg-boss pinning its own horizon and an
+        // shares this connection's application_name. A pg-boss instance pinning its own horizon and an
         // external reporting tool pinning it have opposite fixes.
         holderPid: backend?.pid ?? null,
         holderApplicationName: backend?.applicationName ?? null,
@@ -740,10 +740,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   /**
-   * The widest holder in the row. Every source the query returns has already been qualified — the
+   * The widest holder in the row. Every source the query returns has already been qualified. The
    * backends column is filtered server-side to transactions that predate the failed vacuum, and a
    * slot, standby or prepared transaction advertises an xmin only while something is genuinely
-   * stuck — so this is a straight maximum. The horizon is pinned to the oldest of them, which makes
+   * stuck, so this is a straight maximum. The horizon is pinned to the oldest of them, which makes
    * the widest the one worth naming.
    */
   #attributeXminHorizon (row: XminHorizonRow) {
@@ -818,7 +818,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     return readable
   }
 
-  // DDL runs outside the slow-query timer. A REINDEX is expected to take seconds — routing it
+  // DDL runs outside the slow-query timer. A REINDEX is expected to take seconds, routing it
   // through #executeQuery would emit a bogus slow_query warning on every rebuild.
   async #executeDdl (sql: string) {
     return unwrapSQLResult(await this.#db.executeSql(sql))
@@ -841,7 +841,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
    * Detection still runs where the rebuild cannot: a role that does not own the indexes, an adapter
    * that wraps queries in a transaction, and `reindex: false` all still produce the `index_bloat`
    * warning and can act on getReindexCommands(). The one exception is a backend that stores data
-   * outside PostgreSQL's heap — see the noReindex gate below.
+   * outside PostgreSQL's heap. See the noReindex gate below.
    */
   async #reindex (tables: string[], options?: types.SuperviseOptions) {
     if (this.#stopping) return
@@ -851,7 +851,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     // rejects `reltuples / relpages` outright ("unsupported binary operator: <float4> / <int4>"),
     // so running the check would throw once per interval; YugabyteDB answers but reports relpages
     // and pg_relation_size as 0 for every relation, so nothing could ever match. Both store data in
-    // an LSM that compacts on its own, and both reject REINDEX in either form — CockroachDB with
+    // an LSM that compacts on its own, and both reject REINDEX in either form. CockroachDB with
     // the hint "CockroachDB does not require reindexing."
     if (this.#config.noReindex) return
 
@@ -862,7 +862,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     // An explicit force is a request to run now; everything else waits for an interval.
     //
     // Which interval depends on whether this instance can do the work. The shared claim exists so
-    // exactly one instance in the cluster rebuilds per window — an instance that is only ever going
+    // exactly one instance in the cluster rebuilds per window. An instance that is only ever going
     // to report bloat has no business taking it, or a peer configured to rebuild would find the
     // window gone and skip the rebuild for a whole day. Detection-only passes throttle themselves
     // locally instead, on the same interval.
@@ -913,7 +913,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
         if (code === IN_TRANSACTION_ERROR) {
           this.#reindexUnavailable = (err as Error).message
           failed.set(target.name, this.#reindexUnavailable)
-          // Every remaining index would fail identically — the transaction wrapper is a property of
+          // Every remaining index would fail identically. The transaction wrapper is a property of
           // the adapter, not of this index.
           break
         }
@@ -959,7 +959,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       // Ownership first: an index the role cannot touch was never a candidate, so it has no entry in
       // `failed` no matter why the pass stopped. #reindexUnavailable comes next and covers the
-      // indexes the 25001 giveup skipped without attempting — they are neither failed nor rebuilt,
+      // indexes the 25001 giveup skipped without attempting. They are neither failed nor rebuilt,
       // and reporting a size cap they are nowhere near would point at the wrong knob.
       const reason = failed.get(index.name) ??
         (!index.owned
@@ -982,11 +982,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
   /**
    * The REINDEX statements this instance would run, for installations where it cannot run them
    * itself. Unlike the background pass this applies no ownership filter and no size cap unless one
-   * is passed — the commands are for an operator, who may run them as a different role.
+   * is passed. The commands are for an operator, who may run them as a different role.
    */
   async getReindexCommands (options?: types.ReindexOptions): Promise<string[]> {
     // The catalog query reads pg_class.relpages and pg_relation_size(), which the heap-less engines
-    // either reject outright or answer with zeroes — same gate as #reindex, and there is nothing to
+    // either reject outright or answer with zeroes, same gate as #reindex, and there is nothing to
     // rebuild on them anyway.
     if (this.#config.noReindex) return []
 

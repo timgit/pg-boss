@@ -1,6 +1,6 @@
 # ORM Transaction Adapters
 
-pg-boss operations such as `send()`, `insert()`, `fetch()`, and `complete()` accept a `db` option that lets you run them inside an existing database transaction. This is how you ensure that job creation (or completion) is atomic with your application's own writes — if the transaction rolls back, so does the job.
+pg-boss operations such as `send()`, `insert()`, `fetch()`, and `complete()` accept a `db` option that lets you run them inside an existing database transaction. This is how you ensure that job creation (or completion) is atomic with your application's own writes. If the transaction rolls back, so does the job.
 
 Each adapter wraps the ORM's transaction object as a pg-boss `Db` (the `executeSql` interface), so pg-boss can execute its own SQL within your transaction.
 
@@ -38,7 +38,7 @@ await db.transaction().execute(async (trx) => {
 
 ## Drizzle
 
-The Drizzle adapter requires the `sql` tagged-template function from `drizzle-orm` as a second argument. This allows pg-boss to construct parameterised queries through Drizzle's public API without adding `drizzle-orm` as a runtime dependency. The `node-postgres`, `postgres-js` and `bun-sql` drivers are supported — for `bun-sql`, see [Bun](../database-backends.md#bun-driver), which covers running pg-boss on Bun's client as well as enqueueing through it.
+The Drizzle adapter requires the `sql` tagged-template function from `drizzle-orm` as a second argument. This allows pg-boss to construct parameterised queries through Drizzle's public API without adding `drizzle-orm` as a runtime dependency. The `node-postgres`, `postgres-js` and `bun-sql` drivers are supported. For `bun-sql`, see [Bun](../database-backends.md#bun-driver), which covers running pg-boss on Bun's client as well as enqueueing through it.
 
 ```ts
 import { fromDrizzle } from 'pg-boss'
@@ -67,4 +67,4 @@ await prisma.$transaction(async (tx) => {
 
 ## Rollback behaviour
 
-When the ORM transaction is rolled back (either explicitly or by throwing an error), all pg-boss operations executed through the adapter are rolled back as well. This is the primary reason to use these adapters — to guarantee atomicity between your application writes and job scheduling.
+When the ORM transaction is rolled back (either explicitly or by throwing an error), all pg-boss operations executed through the adapter are rolled back as well. This is the primary reason to use these adapters: it guarantees atomicity between your application writes and job scheduling.

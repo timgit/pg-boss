@@ -148,7 +148,7 @@ describe('work', function () {
     await delay(500)
     expect(processed).toBe(1)
 
-    // A second job sent now is not picked up early — it waits on the 30s poll.
+    // A second job sent now is not picked up early. It waits on the 30s poll.
     await ctx.boss.send(ctx.schema)
     await delay(1200)
     expect(processed).toBe(1)
@@ -173,7 +173,7 @@ describe('work', function () {
     let processed = 0
     // batchSize 10 > the 5 seeded jobs, so the first fetch comes back short (5 < 10). Even
     // though the cached ready count (5) exceeds burstWhenReadyExceeds (1), a short fetch must NOT
-    // keep the worker in burst mode — it should fall back to the 3s poll.
+    // keep the worker in burst mode. It should fall back to the 3s poll.
     await ctx.boss.work(ctx.schema, { batchSize: 10, pollingIntervalSeconds: 3, burstWhenReadyExceeds: 1 }, async (jobs) => { processed += jobs.length })
 
     // The first fetch grabs all seeded jobs in one batch.

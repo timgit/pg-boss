@@ -109,7 +109,7 @@ describe('migration', function () {
 
   itPostgresOnly('job_table_format() (plpgsql) handles a schema name containing the job_i token (v37)', async function () {
     // The installed SQL function used the same naive replace() as formatJobTable did. A schema like
-    // `job_intake` (contains `job_i`) got rewritten to `job_common_intake` — an index build against a
+    // `job_intake` (contains `job_i`) got rewritten to `job_common_intake`. An index build against a
     // nonexistent schema. The v37 anchored regexp_replace version rewrites only the base table
     // reference and bare job_iN tokens.
     const db = await getDb()
@@ -595,7 +595,7 @@ describe('migration', function () {
     await contractor.create()
 
     // A dedicated partition per policy, so the comparison covers the per-partition fan-out and the
-    // policy-scoped index builds — not just job_common. Without these, a migration that built the
+    // policy-scoped index builds, not just job_common. Without these, a migration that built the
     // wrong index on the wrong partition would round-trip clean.
     const db = await getDb()
     try {
@@ -730,7 +730,7 @@ describe('migration', function () {
 
         // An index the uninstall also creates is being *reshaped* by this migration, not introduced
         // by it (v33 rebuilds job_i5 in place), and is meant to survive the rollback. Only what a
-        // migration adds outright is expected to disappear — for v40 that is job_i11, which the
+        // migration adds outright is expected to disappear, for v40 that is job_i11, which the
         // rollback drops, while the job_i5 its uninstall recreates is a restoration, not a leak.
         const restored = indexNames((migration.uninstall ?? []) as string[])
         const created = [...indexNames(commands)].filter(name => !restored.has(name))
@@ -1010,10 +1010,10 @@ describe('migration', function () {
     }
   })
 
-  it('patch upgrade from schema 35 carries only the bam default — no job-index churn (issue #832)', function () {
+  it('patch upgrade from schema 35 carries only the bam default, no job-index churn (issue #832)', function () {
     // A database already past v33 (schema 35) upgrading to 36 runs only v36, which carries the
     // bam.created_on default change and NO index work. So it never re-drops/rebuilds its existing
-    // job_i5/job_i9 — the slim job_i5 it already has stays put. The index fix lives in v33, which only
+    // job_i5/job_i9. The slim job_i5 it already has stays put. The index fix lives in v33, which only
     // pre-v33 (deadlock-affected) databases run.
     const sql = next('custom', 35)
     expect(sql).toContain('ALTER TABLE custom.bam ALTER COLUMN created_on SET DEFAULT clock_timestamp()')
@@ -1075,7 +1075,7 @@ describe('migration', function () {
   })
 
   // Walks every migration down and back up, waiting on BAM index builds at each end, so its cost
-  // grows with the migration list — it was already landing at 8-10s against the 10s default before
+  // grows with the migration list. It was already landing at 8-10s against the 10s default before
   // schema v39, and tipped over under the contention of a full parallel run. Budgeted explicitly
   // rather than left to tip again on the next schema bump.
   itPostgresOnly('should have identical schema after rolling back all migrations and replaying them', { timeout: 60000 }, async function () {
@@ -1253,8 +1253,8 @@ describe('migration', function () {
 
       expect(await indexNames()).toHaveLength(0)
 
-      // apply the inlined migration exactly as `pg-boss migrate` does — the transactional
-      // block, then each CONCURRENTLY build separately — with no BAM worker running anywhere
+      // apply the inlined migration exactly as `pg-boss migrate` does. The transactional
+      // block, then each CONCURRENTLY build separately, with no BAM worker running anywhere
       const { sql, concurrent } = migrateCommands(dbSchema, versionWithAsyncMigrations - 1, getAll(dbSchema), false, { inlineAsync: true, partitionTables: [] })
       await db.executeSql(sql)
       for (const statement of concurrent) {

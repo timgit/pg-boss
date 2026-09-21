@@ -3,11 +3,11 @@ import type { ManagedIndex, InvalidIndex, MismatchedIndex, ManagedFunction, Mism
 
 const SINGLE_QUOTE_REGEX = /'/g
 
-// Extracts the first balanced parenthesised group from a CREATE INDEX statement — the key-column
+// Extracts the first balanced parenthesised group from a CREATE INDEX statement. The key-column
 // list. Stops at the matching close paren, so a trailing INCLUDE(...) or WHERE(...) is excluded and
 // an inner COALESCE(...) is kept. Works on both hand-written DDL and pg_get_indexdef output (whose
 // leading `USING btree (` opens the same first group). The INCLUDE payload is not ignored, just
-// compared separately — see extractIndexIncludeList.
+// compared separately. See extractIndexIncludeList.
 function extractIndexKeyList (ddl: string): string | null {
   const open = ddl.indexOf('(')
   if (open === -1) return null
@@ -21,12 +21,12 @@ function extractIndexKeyList (ddl: string): string | null {
 
 // Strips SQL type casts, including schema-qualified enum casts (Postgres renders a job_state literal
 // as `'active'::pgboss.job_state` and a text literal as `''::text`). Run before whitespace removal is
-// fine — casts never contain spaces.
+// fine, casts never contain spaces.
 const CAST_REGEX = /::(?:[a-z_][a-z0-9_$]*\.)?[a-z_][a-z0-9_$]*(?:\[\])?/g
 
 // Normalises a key-column list so an expected list and a pg_get_indexdef list compare equal when they
 // mean the same thing: lower-cased, quotes and whitespace stripped, and type casts removed. Column
-// ORDER is preserved — an index on (a, b) must not normalise equal to (b, a), which is exactly the
+// ORDER is preserved. An index on (a, b) must not normalise equal to (b, a), which is exactly the
 // index-ordinal significance the drift check needs. Parens are kept so COALESCE(...) survives.
 function normalizeKeyList (keyList: string): string {
   return keyList
@@ -80,14 +80,14 @@ export function indexIncludeRaw (ddl: string): string {
   return list === null ? '' : list.replace(CAST_REGEX, '').replace(/\s+/g, ' ').trim()
 }
 
-// Everything after the top-level WHERE — the partial-index predicate — or '' for a non-partial index.
+// Everything after the top-level WHERE (the partial-index predicate) or '' for a non-partial index.
 function extractPredicate (ddl: string): string {
   const m = ddl.match(/\bWHERE\b/i)
   return m ? ddl.slice(m.index! + m[0].length) : ''
 }
 
-// Normalises a predicate for comparison. Both sides originate from pg_get_indexdef — expected from the
-// manifest, live from the catalog — so both carry pg's canonical form; this only undoes the cosmetic
+// Normalises a predicate for comparison. Both sides originate from pg_get_indexdef, expected from the
+// manifest, live from the catalog, so both carry pg's canonical form; this only undoes the cosmetic
 // differences pg can vary between two equal predicates:
 //   - casts added to every literal (`'active'::pgboss.job_state`, `'x'::text`) → stripped
 //   - `IN (a, b)` rendered as `= ANY (ARRAY[a, b])` → folded back to `IN (a, b)`
@@ -137,7 +137,7 @@ function outerParensWrapWhole (s: string): boolean {
 }
 
 // Removes the redundant outer parentheses pg_get_indexdef wraps a whole predicate in. Only the
-// outermost pair is stripped — inner grouping (which may be meaningful) is left intact.
+// outermost pair is stripped, inner grouping (which may be meaningful) is left intact.
 function stripOuterParens (s: string): string {
   let out = s.trim()
   while (outerParensWrapWhole(out)) {
@@ -159,12 +159,12 @@ export function displayIndexDefinition (def: string): string {
   return `${head} ${predicate}`
 }
 
-// Extracts the body of a function definition — the text between the outer dollar-quote tags. Works on
+// Extracts the body of a function definition. The text between the outer dollar-quote tags. Works on
 // both pg-boss's own `CREATE FUNCTION ... AS $$ … $$` and Postgres's `pg_get_functiondef` output
 // (which wraps the body in `$function$ … $function$`). Postgres stores prosrc verbatim, so the two
 // bodies are byte-identical for an un-drifted function, modulo the dollar-quote tag name. Nested
 // dollar quotes with a different tag (pg-boss uses `$cmd$`) live inside the body and are preserved.
-// Returns '' when no dollar-quoted body is found — an un-diffable definition is skipped, not flagged.
+// Returns '' when no dollar-quoted body is found. An un-diffable definition is skipped, not flagged.
 export function extractFunctionBody (def: string): string {
   const open = def.match(/\$[A-Za-z0-9_]*\$/)
   if (!open) return ''
@@ -176,7 +176,7 @@ export function extractFunctionBody (def: string): string {
 
 // Normalises a function body so a hand-written definition and pg_get_functiondef's stored copy compare
 // equal despite cosmetic reindentation: runs of whitespace collapse to a single space and the ends are
-// trimmed. Case is preserved — a changed string literal or identifier is real drift.
+// trimmed. Case is preserved. A changed string literal or identifier is real drift.
 export function normalizeFunctionBody (body: string): string {
   return body.replace(/\s+/g, ' ').trim()
 }
@@ -225,7 +225,7 @@ export function getSchemaFunctions (schema: string) {
 }
 
 // The ordered value list of an enum type, for the enum-definition diff. ORDER BY enumsortorder
-// preserves declaration order — reordering the enum is itself drift (the numeric base type makes
+// preserves declaration order, reordering the enum is itself drift (the numeric base type makes
 // created < retry < … < failed load-bearing for state comparisons).
 export function getEnumDefinition (schema: string, typeName = 'job_state') {
   return `
@@ -260,7 +260,7 @@ export function getSchemaColumns (schema: string) {
 
 // Every ordinary ('r') or partitioned ('p') table in the schema, catalog-only (pg_class), for the
 // table-presence check. Deliberately independent of getSchemaColumns: that query uses pg_get_expr,
-// which is unsupported on some backends and is wrapped in a best-effort try/catch — deriving table
+// which is unsupported on some backends and is wrapped in a best-effort try/catch, deriving table
 // presence from its (possibly empty-on-failure) result would false-report every managed table as
 // missing whenever the column query throws. pg_class is available everywhere, so table presence stays
 // reliable even when the column diff is skipped.
@@ -357,7 +357,7 @@ function computeFunctionDrift (expected: ManagedFunction[], live: LiveFunction[]
 }
 
 // Column presence / default / type / nullability diff per managed table. A table with no live columns
-// is skipped (it does not exist — table presence is reported separately), so a missing table never
+// is skipped (it does not exist, table presence is reported separately), so a missing table never
 // floods the report with every column. Default, type, and nullability drift are only checked for
 // expected tables that carry the corresponding `defaults`/`types` maps (the fixed managed tables); the
 // job/partition tables omit them and are name-only.
@@ -394,7 +394,7 @@ export function computeColumnDrift (expected: ExpectedColumns[], live: LiveColum
 
       if (types && types[col]) {
         // Both sides are the canonical format_type() form (expected from the manifest, actual from the
-        // live catalog), so a direct comparison suffices — no alias folding needed.
+        // live catalog), so a direct comparison suffices. No alias folding needed.
         const actualType = liveCol.type ?? ''
         if (types[col].type !== actualType) {
           typeMismatches.push({ column: col, expected: types[col].type, actual: actualType })
@@ -439,7 +439,7 @@ export function computeConstraintDrift (expected: ExpectedConstraints[], live: L
   return drift
 }
 
-// Enum diff: ordered value-set comparison. An absent enum (empty actual — pre-enum schema or a backend
+// Enum diff: ordered value-set comparison. An absent enum (empty actual, pre-enum schema or a backend
 // without enums) is not treated as drift. Order is significant; the numeric base type relies on it.
 function computeEnumDrift (name: string, expected: readonly string[], actual: string[]): EnumDrift | null {
   if (actual.length === 0) return null
@@ -449,13 +449,13 @@ function computeEnumDrift (name: string, expected: readonly string[], actual: st
 
 // Presence + index definition diff: which managed indexes exist, plus (for present, valid ones) a
 // key-column-order and partial-predicate comparison. Ordinals are treated asymmetrically, the same
-// convention test/pgSchemaHelper.ts encodes — index column ORDER is significant here (an index on
+// convention test/pgSchemaHelper.ts encodes, index column ORDER is significant here (an index on
 // (a, b) differs from (b, a)); the table-column diff instead normalises ordinal position away.
 //
 // Generic engine: it carries no pg-boss knowledge. Every dimension is one optional `{ expected, live }`
-// entry — none is privileged. `indexes.building` names async builds still in progress (pulled out of
+// entry, none is privileged. `indexes.building` names async builds still in progress (pulled out of
 // "missing"); `tables.expected` is the managed table set that scopes the extra-index warning. Each
-// dimension is best-effort — callers omit the ones a backend can't support.
+// dimension is best-effort, callers omit the ones a backend can't support.
 export function computeSchemaDrift (
   opts: {
     indexes?: { expected: ManagedIndex[], live: LiveIndex[], building?: ReadonlySet<string> }
@@ -487,7 +487,7 @@ export function computeSchemaDrift (
     } else if (idx.keys && found.def) {
       // Definition-diff: a present, valid index whose key columns/order or predicate differ from the
       // expected shape. Comparison is on the normalised forms (order-significant, format-insensitive),
-      // but the report carries the readable raw text. Only when the key list parses — an unparseable
+      // but the report carries the readable raw text. Only when the key list parses. An unparseable
       // def is skipped, not falsely flagged. (An empty normalised key list means we could not parse the
       // def; '' is never a real key list, whereas an empty predicate is legitimate for a non-partial
       // index.)
@@ -509,7 +509,7 @@ export function computeSchemaDrift (
   }
 
   // Extra indexes: standalone (non-constraint-backing) indexes on a managed table that the expected set
-  // does not account for — a stale pg-boss index or one a user added. These are informational (an extra
+  // does not account for. A stale pg-boss index or one a user added. These are informational (an extra
   // index is harmless), so they are surfaced as a warning and do NOT flip `ok`. Scoped to managed tables
   // so a user's indexes on their own tables in the schema are never reported.
   const managedTables = new Set(opts.tables?.expected ?? expectedIndexes.map(i => i.table))

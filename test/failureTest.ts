@@ -311,7 +311,7 @@ describe('failure', function () {
 
     await ctx.boss.fetch(ctx.schema)
     // fail() routes the job to the dead letter queue synchronously, leaving it in the created
-    // state. Don't fetch from the DLQ here — that would activate it and make it ineligible.
+    // state. Don't fetch from the DLQ here. That would activate it and make it ineligible.
     await ctx.boss.fail(ctx.schema, jobId)
 
     const moved = await ctx.boss.redrive(deadLetter)
@@ -385,7 +385,7 @@ describe('failure', function () {
     await ctx.boss.fetch(ctx.schema)
     await ctx.boss.fail(ctx.schema, jobId)
 
-    // inspect the dead letter copy without fetching it — activating it would make it
+    // inspect the dead letter copy without fetching it, activating it would make it
     // ineligible for the redrive below
     const dlqRows = await helper.findJobs(ctx.schema, 'name = $1', [deadLetter])
     expect(dlqRows.rows.length).toBe(1)
@@ -419,7 +419,7 @@ describe('failure', function () {
     await ctx.boss.fetch(ctx.schema)
     await ctx.boss.fail(ctx.schema, jobId)
 
-    // the copy is a job on the dead letter queue, so it is worked under that queue's config —
+    // the copy is a job on the dead letter queue, so it is worked under that queue's config,
     // it used to inherit the source queue's heartbeat instead
     const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
     const dlqMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
@@ -448,7 +448,7 @@ describe('failure', function () {
     const [destJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, destination)
     const destMeta = await ctx.boss.getJobById(destination, destJob.id)
     assertTruthy(destMeta)
-    // every queue-config column follows the destination queue, heartbeat included —
+    // every queue-config column follows the destination queue, heartbeat included,
     // it used to be copied off the dead letter row instead
     expect(destMeta.heartbeatSeconds).toBe(900)
   })

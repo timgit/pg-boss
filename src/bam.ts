@@ -136,7 +136,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
     try {
       let alreadyBuilt = false
 
-      // A re-attempted command (a stale in_progress reclaim, or a retry of a prior 'failed' — including
+      // A re-attempted command (a stale in_progress reclaim, or a retry of a prior 'failed', including
       // failed rows left by older releases) needs the catalog consulted before the command is re-run,
       // because the row keeps the text it was enqueued with and that text may not be idempotent.
       // Probe indisvalid on every backend: pg_index is readable everywhere, and both outcomes matter.
@@ -148,7 +148,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
           if (rows[0]?.invalid) {
             // An interrupted or failed CREATE INDEX CONCURRENTLY left an INVALID stub. Drop it
             // (best-effort, IF EXISTS) so the re-run rebuilds cleanly instead of the command's own
-            // IF NOT EXISTS skipping over a broken index forever. Only on the liveness path —
+            // IF NOT EXISTS skipping over a broken index forever. Only on the liveness path,
             // CockroachDB/YugabyteDB roll interrupted builds back, so there is nothing to heal and
             // DROP ... CONCURRENTLY isn't their model.
             if (!this.#config.noIndexProgressView) {
@@ -162,7 +162,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
             // oldest index commands (job_i7, job_i8) were queued without IF NOT EXISTS, so re-running
             // one against its own valid index fails with "already exists" and the failed row is retried
             // forever. Short-circuit to marking the row done instead. This half is deliberately NOT
-            // gated on the liveness path — the timeout-only backends need it most, because their stale
+            // gated on the liveness path. The timeout-only backends need it most, because their stale
             // window is BAM_STALE_SECONDS (24 hours) rather than the grace window.
             alreadyBuilt = true
           }

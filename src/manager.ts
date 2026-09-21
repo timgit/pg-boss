@@ -137,7 +137,7 @@ const events = {
 }
 
 // The fetch options that were performance escapes from the fetch's sort. The index is now ordered to
-// match the fetch, so they escape nothing — `priority: false` is the only remaining shape that
+// match the fetch, so they escape nothing, `priority: false` is the only remaining shape that
 // still full-sorts, making it slower than the default it was meant to beat. Accepted and ignored
 // for now; removed in the next major.
 const DEPRECATED_FETCH_OPTIONS = ['priority', 'orderByCreatedOn'] as const
@@ -318,7 +318,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       } else if (!persisted) {
         // The handler deleted the job itself (e.g. boss.deleteJob in the handler), so there is
         // no persisted row to inspect. The handler still returned normally, so from the spy's
-        // perspective the work succeeded — record 'completed', matching the behavior before
+        // perspective the work succeeded, record 'completed', matching the behavior before
         // manual-failure tracking was added.
         spy.addJob(job.id, name, job.data as object, 'completed', undefined)
       }
@@ -333,10 +333,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // A handler throw routes through fail(), but fail() only lands the job in the terminal
     // 'failed' state once its retries are exhausted (retry_count >= retry_limit). While retries
     // remain the job goes back to 'retry' and will run again, so recording 'failed' here would be
-    // wrong — the spy would report a permanent failure for a job that may yet succeed on retry,
+    // wrong. The spy would report a permanent failure for a job that may yet succeed on retry,
     // and (if the retry does succeed) it would hold contradictory 'failed' + 'completed' entries.
     // Read the real persisted state and only record 'failed' when the job actually failed for good.
-    // The eventual outcome of a retried job — success, or terminal failure when retries run out —
+    // The eventual outcome of a retried job (success, or terminal failure when retries run out)
     // is recorded by whichever attempt produces it. Mirrors the slow path in #trackJobsCompleted.
     for (const job of jobs) {
       const persisted = await this.getJobById<object>(name, job.id)
@@ -689,7 +689,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Spy tracking runs after the completion/failure logic so a spy lookup error can never
     // be mistaken for a handler failure and re-route the job through fail(). The flag is
     // gated here, not just inside the trackers, so the production hot path (spies off) never
-    // even calls the async tracker — no promise allocated, no microtask tick. The checks
+    // even calls the async tracker. No promise allocated, no microtask tick. The checks
     // inside the trackers stay as a safety net.
     if (this.config.__test__enableSpies && this.#spies.has(name)) {
       if (didFail) {
@@ -1009,7 +1009,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // A burst trigger only engages while the last fetch came back full (>= batchSize). That is
     // both the meaning of burstWhenBatchFull and the anti-hot-loop guard for burstWhenReadyExceeds:
     // the cached ready count lags reality, so a short fetch (including 0 < 1 at the default batchSize)
-    // means the queue has likely caught up — fall back to normal polling instead of spinning on
+    // means the queue has likely caught up, fall back to normal polling instead of spinning on
     // empty fetches. burstWhenBatchFull is ignored at batchSize 1 (every fetch would be "full").
     const resolveInterval = (lastFetchCount: number) => {
       const fullBatch = lastFetchCount >= batchSize
@@ -1180,7 +1180,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     assert(typeof name === 'string', 'queue name must be a string')
 
     // work() returns only the first spawned worker's id (shared as `workId` across every worker
-    // it spawned under localConcurrency), so { id } must match on workId too — otherwise only
+    // it spawned under localConcurrency), so { id } must match on workId too, otherwise only
     // worker 0 of a localConcurrency > 1 call ever stops, and the rest poll forever with no other
     // way to reach them. i.id is still checked so a specific worker id from getWipData() still
     // targets just that one worker. name is always required so a stray/mismatched id can't stop
@@ -1445,7 +1445,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // Edits the mutable fields of not-yet-active (created/retry) jobs in place, preserving their
   // id/state/singleton identity. Only the fields present in `options` (plus `data` when supplied)
   // are changed; everything else is left as-is. Targets by id or singletonKey; never inserts.
-  // Returns the ids that were updated ([] when nothing matched — missing or already active).
+  // Returns the ids that were updated ([] when nothing matched, missing or already active).
   update (request: types.UpdateRequest): Promise<types.UpdateResponse>
   update (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
   async update (...args: any[]): Promise<types.UpdateResponse> {
@@ -1488,7 +1488,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const match = opts.match ?? 'newest'
 
     // The insert-on-miss path needs a singletonKey on key_strict_fifo queues (a keyless job would
-    // violate the queue's check constraint), so reject upfront — including the id-target case.
+    // violate the queue's check constraint), so reject upfront, including the id-target case.
     if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !opts.singletonKey) {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
@@ -1576,7 +1576,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
 
     // insertJobs ends in ON CONFLICT DO NOTHING, so skipped rows shift the returned rows out of
-    // alignment with the input jobs — a positional rows[i] <-> jobs[i] pairing attributes the wrong
+    // alignment with the input jobs. A positional rows[i] <-> jobs[i] pairing attributes the wrong
     // data to the wrong id. When a spy is watching, assign every job an explicit id up front (the
     // insert COALESCEs id, so this is equivalent to letting the DB generate one) and index data by
     // id, so returned rows can be matched back to their job regardless of any conflicts.
@@ -1601,7 +1601,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // Flatten group to the column names insertJobs' json_to_recordset declares, matching
       // send()/upsert()/flow(). Assigned only when a group is present: those same raw column
       // names are accepted by the recordset directly, and unconditional keys would overwrite
-      // them with undefined — silently breaking anyone who passed groupId/groupTier as a
+      // them with undefined, silently breaking anyone who passed groupId/groupTier as a
       // workaround while insert() was dropping `group` entirely.
       if (group) {
         Object.assign(rest, { groupId: group.id, groupTier: group.tier })
@@ -1617,7 +1617,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (dataById) {
         // Best-effort spy bookkeeping, only reached when __test__enableSpies is set (a test-intended
         // opt-in, off by default). The id we assign here is exactly what the DB would otherwise
-        // COALESCE in, so generating it client-side is harmless — and if randomUUID ever fell short,
+        // COALESCE in, so generating it client-side is harmless, and if randomUUID ever fell short,
         // only spy attribution would degrade, never the insert itself.
         rest.id ??= randomUUID()
         dataById.set(rest.id, j.data ?? {})
@@ -1784,7 +1784,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (options[option] === false && !this.#warnedFetchOptions.has(option)) {
         this.#warnedFetchOptions.add(option)
         process.emitWarning(
-          `${option}: false is deprecated and now ignored — jobs are always fetched in priority and creation order. Remove it; it will be rejected in the next major.`,
+          `${option}: false is deprecated and now ignored. Jobs are always fetched in priority and creation order. Remove it; it will be rejected in the next major.`,
           'DeprecationWarning',
           DEPRECATED_FETCH_OPTIONS_CODE
         )
@@ -1822,7 +1822,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       result = await db.executeSql(query.text, query.values)
     } catch (err: any) {
       // The only fetch error we tolerate is a unique-constraint violation (SQLSTATE 23505) from a
-      // policy/singleton index when a concurrent fetch won the same slot — treat that as an empty
+      // policy/singleton index when a concurrent fetch won the same slot, treat that as an empty
       // fetch. Anything else (a DB outage, a malformed query) must surface: swallowing it turned
       // every failed fetch into a silent [] with no error event, indistinguishable from an empty
       // queue. Rethrowing routes it to the worker's onError (emits `error`) or to a direct caller.
@@ -2048,7 +2048,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       // CockroachDB returns INT8 columns as strings. These rows come straight from a SELECT *, so
       // unlike fetch/getJobById they are never normalized. Coerce the fields used in arithmetic and
-      // comparison below — otherwise `retry_count < retry_limit` is a lexicographic string compare
+      // comparison below, otherwise `retry_count < retry_limit` is a lexicographic string compare
       // ("9" < "10" === false, wrongly failing a retriable job) and `retry_count + 1` concatenates.
       const retryCount = Number(job.retry_count)
       const retryLimit = Number(job.retry_limit)
@@ -2304,7 +2304,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     Attorney.assertQueueName(name)
 
     // Scope the catch to the cache lookup only: a queue that doesn't exist is a no-op. The DELETE
-    // and cache eviction must NOT be swallowed — a transient connection error there previously
+    // and cache eviction must NOT be swallowed. A transient connection error there previously
     // resolved as success while the queue (and its stale cache entry) survived.
     try {
       await this.getQueueCache(name)
@@ -2354,7 +2354,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   //
   // With persistQueueStats enabled this returns the recorded history, optionally bounded by
   // from/to/limit. With it disabled there's no series, so it returns a single datapoint built from
-  // the cached counts the monitor maintains on the queue table — cheap, and avoids re-running the
+  // the cached counts the monitor maintains on the queue table, cheap, and avoids re-running the
   // job-table aggregate on every call. The aggregate runs only when { force: true } is passed or the
   // cache is missing/stale; either way the fresh counts are written back to the cache so later reads
   // stay cheap. Throws if the queue doesn't exist. For the cached counts as a single value, use
@@ -2420,7 +2420,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     // persistQueueStats disabled: serve the cached counts the monitor keeps on the queue table.
-    // capturedOn is monitor_on — NULL if never monitored, or old if monitoring has since been turned
+    // capturedOn is monitor_on, NULL if never monitored, or old if monitoring has since been turned
     // off. Serve the cache while it's within budget; otherwise recompute and re-cache. { force: true }
     // applies a much tighter budget (a fresh reading), but still reuses a value computed in the last
     // minute so repeated forced calls don't each re-run the aggregate.
@@ -2463,7 +2463,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     // A queue with no capture yet has no cache to fall back on, so its first scan is exempt from the
-    // try-lock — see refreshQueueStats. Every later read has real counts to serve and can lose.
+    // try-lock. See refreshQueueStats. Every later read has real counts to serve and can lose.
     const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name, {
       noAdvisoryLocks: this.config.noAdvisoryLocks,
       firstCapture: cached.capturedOn == null

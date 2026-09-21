@@ -33,7 +33,7 @@ type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
 //  - 'standard'    stock single-node PostgreSQL
 //  - 'distributed' clustered Postgres-compatible engines (CockroachDB, YugabyteDB, Citus)
 //  - 'embedded'    in-process single-connection PostgreSQL (PGlite)
-// PGlite is deliberately 'embedded', NOT 'distributed' — it is full PostgreSQL and sets no flags.
+// PGlite is deliberately 'embedded', NOT 'distributed'. It is full PostgreSQL and sets no flags.
 interface BackendDefinition {
   kind: 'standard' | 'distributed' | 'embedded'
   flags: Partial<Record<CompatibilityFlag, boolean>>
@@ -57,10 +57,10 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       noAddColumnBackfill: true,
       noListenNotify: true,
       // Online DDL runs as a schema-change job, not the PG CONCURRENTLY path, and
-      // pg_stat_progress_create_index isn't available — so BAM can't use liveness-based reclaim.
+      // pg_stat_progress_create_index isn't available, so BAM can't use liveness-based reclaim.
       noIndexProgressView: true,
-      // REINDEX is rejected in either form — "CockroachDB does not require reindexing" with
-      // CONCURRENTLY, "unimplemented: this syntax" without — and the bloat check itself cannot run:
+      // REINDEX is rejected in either form, "CockroachDB does not require reindexing" with
+      // CONCURRENTLY, "unimplemented: this syntax" without, and the bloat check itself cannot run:
       // there is no pg_relation_size(), and reltuples / relpages is an "unsupported binary
       // operator: <float4> / <int4>".
       noReindex: true,
@@ -90,7 +90,7 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
   // No noIndexProgressView: pg-boss keeps its tables coordinator-local (it never calls
   // create_distributed_table), so CREATE INDEX CONCURRENTLY runs against ordinary local Postgres tables
   // on the coordinator, where pg_stat_progress_create_index is accurate and liveness-based reclaim is
-  // valid. This holds ONLY while the tables stay coordinator-local — if they are ever distributed, the
+  // valid. This holds ONLY while the tables stay coordinator-local. If they are ever distributed, the
   // coordinator's progress view would misread in-flight worker builds as dead and BAM could double-build.
   citus: { kind: 'distributed', flags: {} },
   pglite: { kind: 'embedded', flags: {} }
@@ -126,8 +126,9 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
 
 // Matched against the remainder past YYYY-MM-DD, and deliberately a whitelist of the zone-less
 // spellings rather than a test for a missing zone: a trailing '-01' would read as an offset, and
-// forms Postgres resolves on its own — a named zone ('... UTC', '... America/New_York'), a
-// single-digit offset ('+5:30') — must be left exactly as they are rather than pinned to UTC.
+// forms Postgres resolves on its own must be left exactly as they are rather than pinned to UTC.
+// Those forms are a named zone ('... UTC', '... America/New_York') and a single-digit offset
+// ('+5:30').
 const ZONELESS_TIME = /^(?:[T ]\d{2}(?::\d{2}(?::\d{2}(?:[.,]\d+)?)?)?)?$/
 
 function pinZonelessDateTime (value: string) {
@@ -218,8 +219,8 @@ function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
   const { id, singletonKey, match } = options as types.UpdateOptions
 
   // Both update() and upsert() target by exactly one of id or singletonKey. (upsert() may also
-  // require a singletonKey at runtime on key_strict_fifo queues — enforced in the manager, which
-  // knows the policy — because an insert-on-miss there needs a key.)
+  // require a singletonKey at runtime on key_strict_fifo queues, enforced in the manager, which
+  // knows the policy, because an insert-on-miss there needs a key.)
   assert((!!id) !== (!!singletonKey), `${verb} requires exactly one of id or singletonKey`)
   assert(!(id && match !== undefined), 'match is only valid when targeting jobs by singletonKey')
 
@@ -228,7 +229,7 @@ function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
   assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
 
   if ('startAfter' in options) {
-    // Unlike send(), update() must honor a numeric startAfter of 0 (or negative) — the caller is
+    // Unlike send(), update() must honor a numeric startAfter of 0 (or negative). The caller is
     // explicitly pulling a deferred job forward to now. The send-style `+startAfter > 0` guard
     // coerced 0 to undefined, which JSON.stringify then dropped, silently making the edit a no-op.
     // Any finite number is passed through as a seconds interval ('0' -> now()); a string is kept.
@@ -556,7 +557,7 @@ function validateWarningConfig (config: any) {
 }
 
 // Expands config.backend into the internal compatibility flags. The flags are derived
-// solely from the backend profile — they are not part of the public input, so a
+// solely from the backend profile. They are not part of the public input, so a
 // deployment can't end up with an inconsistent combination.
 function resolveBackend (config: any) {
   const backend = ('backend' in config) ? config.backend : 'postgres'
@@ -722,7 +723,7 @@ function applyPollingInterval (config: any) {
     `configuration assert: notifyPollingIntervalSeconds must be at least every ${POLICY.MIN_POLLING_INTERVAL_MS}ms`)
 
   // Relaxed backstop poll used only while NOTIFY is active for the queue; falls back to
-  // pollingInterval when notify is unavailable. It must never be smaller than the base poll —
+  // pollingInterval when notify is unavailable. It must never be smaller than the base poll,
   // that would make a notify-active queue poll more aggressively than an idle one, the opposite
   // of the intent. When explicit, reject a value below the base; when defaulted, floor it at the
   // base so bumping pollingIntervalSeconds past 30s can't silently leave notify smaller.
@@ -807,7 +808,7 @@ function validateReindexConfig (config: any) {
     // force belongs to an explicit supervise() call, not to a background timer that would then
     // rebuild every job index on every interval.
     assert(force === undefined || force === false,
-      'configuration assert: reindex.force cannot be set in constructor options — pass it to supervise()')
+      'configuration assert: reindex.force cannot be set in constructor options. Pass it to supervise()')
   }
 
   assert(!('reindexIntervalSeconds' in config) || config.reindexIntervalSeconds >= 1,

@@ -117,7 +117,7 @@ All retry, expiration, and retention options can also be set on the queue and wi
   A string naming a time zone instead of an offset (`'2027-01-01 08:00:00 America/New_York'`) is
   left for the database to resolve, and observes that zone's rules including daylight saving.
 
-  Any other string is read as a relative delay from now, using Postgres interval syntax — so
+  Any other string is read as a relative delay from now, using Postgres interval syntax, so
   `'5 minutes'`, `'1 hour'`, `'PT1H'` and `'90'` (bare seconds) are all valid. A string that begins
   with a calendar date but is not a valid date time (`'2027-13-45'`) is an error rather than a delay.
 
@@ -252,8 +252,8 @@ Updates the payload and options of one or more **not-yet-active** jobs (state `c
 
 Target the job with **exactly one** of:
 
-- `options.id` — a single job by id.
-- `options.singletonKey` — jobs sharing that key.
+- `options.id`: a single job by id.
+- `options.singletonKey`: jobs sharing that key.
 
 Only the fields you supply are changed, and any option you omit is left at the job's current value. Passing just a new `data` payload with a target replaces the payload without disturbing the job's existing `startAfter`, `priority`, retry settings, etc. 
 
@@ -289,15 +289,15 @@ await boss.update('article', { articleId: 42, body: '…latest…' }, { singleto
 
 Because a `singletonKey` is only guaranteed unique per state under the `short` and `stately` policies, several pre-active jobs can share a key (for example under throttling/debouncing, or with a manually-assigned key on a `standard` queue). Use `options.match` to choose which are updated, ordered by `createdOn`:
 
-- `newest` (default) — overwrite the most recently created match.
-- `oldest` — overwrite the earliest created match.
-- `all` — overwrite every match.
+- `newest` (default): overwrite the most recently created match.
+- `oldest`: overwrite the earliest created match.
+- `all`: overwrite every match.
 
 `match` is only valid when targeting by `singletonKey`.
 
 ### `update({ name, data, options })`
 
-This overload supports updating a job with a single object with name, data, and options properties. `data` is optional — omit it to edit only options.
+This overload supports updating a job with a single object with name, data, and options properties. `data` is optional, so omit it to edit only options.
 
 ```js
 await boss.update({
@@ -435,11 +435,11 @@ Returns an array of jobs from a queue
 
     Number of jobs to return
 
-  * `priority`, bool — **deprecated, ignored since 12.30.0**
+  * `priority`, bool, **deprecated, ignored since 12.30.0**
 
-    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput; the fetch index is now ordered to match the fetch, so there is no sort to skip. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. Emits a Node `DeprecationWarning` (code `PGBOSS_DEP_FETCH_SORT`) once per option per instance — run with `--trace-deprecation` to find the call site — and will be rejected in the next major.
+    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput; the fetch index is now ordered to match the fetch, so there is no sort to skip. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. Emits a Node `DeprecationWarning` (code `PGBOSS_DEP_FETCH_SORT`) once per option per instance, and will be rejected in the next major. Run with `--trace-deprecation` to find the call site.
 
-  * `orderByCreatedOn`, bool — **deprecated, ignored since 12.30.0**
+  * `orderByCreatedOn`, bool, **deprecated, ignored since 12.30.0**
 
     Jobs are always fetched in creation order. Same reasoning: the fetch index now provides that order directly, so disabling it saved nothing measurable.
 
@@ -556,7 +556,7 @@ so a single dead letter queue that collects from many source queues fans back ou
 correctly. Re-created jobs get a new id, a reset retry count, cleared output, and
 the destination queue's current retry, retention, policy, expiration, heartbeat, and
 deadLetter configuration. Per-job overrides passed to the original `send()` (such as
-`expireInSeconds` or `retryLimit`) are not restored — the queue's configuration wins.
+`expireInSeconds` or `retryLimit`) are not restored, since the queue's configuration wins.
 The job's `priority`, `singletonKey`, and `group` are carried through, so a redriven
 job keeps its ordering weight and stays subject to its group concurrency limits. Only
 jobs that are not currently being processed (still in the `created`/`retry` state)
@@ -569,12 +569,12 @@ such a job runs it again standalone; the original flow does not resume.
 
 `options`:
 
-- `destination` — override queue to move all matched jobs into, instead of each
+- `destination`: override queue to move all matched jobs into, instead of each
   job's original source queue. Required to redrive jobs that have no recorded
   source queue (e.g. jobs dead-lettered before this feature existed); such jobs are
   left in place otherwise.
-- `sourceName` — only redrive jobs that originated from this source queue.
-- `limit` — maximum number of jobs to move in this call, oldest first (default
+- `sourceName`: only redrive jobs that originated from this source queue.
+- `limit`: maximum number of jobs to move in this call, oldest first (default
   `1000`). Loop or schedule repeated calls to drain large dead letter queues at a
   controlled rate.
 

@@ -42,7 +42,7 @@ Schedules registered with `boss.schedule()`, showing the target queue, optional 
 
 ### Migrations
 
-Status of background async migrations (BAM) — schema changes such as concurrent index builds that pg-boss runs outside the install transaction. Shows pending, in-progress, completed and failed counts, and for each command its version, target table, timestamps and the SQL that was (or will be) executed, including any error message.
+Status of background async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. Shows pending, in-progress, completed and failed counts, and for each command its version, target table, timestamps and the SQL that was (or will be) executed, including any error message.
 
 ![Migrations page](./images/dashboard-migrations.png)
 
@@ -114,7 +114,7 @@ npx pg-boss-dashboard
 
 Every page still loads and every query still runs. What changes:
 
-- The server rejects every non-`GET`/`HEAD` request with `403`, so sending, retrying, cancelling, resuming, deleting, creating queues, and scheduling are all refused — including a request crafted by hand.
+- The server rejects every non-`GET`/`HEAD` request with `403`, so sending, retrying, cancelling, resuming, deleting, creating queues, and scheduling are all refused, including a request crafted by hand.
 - The controls for those actions are not rendered, and `/send`, `/queues/create`, and `/schedules/new` explain themselves instead of showing a form.
 
 This is a global switch rather than a permission system: everyone who can reach the dashboard sees the same read-only view. It is independent of basic authentication and can be combined with it.

@@ -399,7 +399,7 @@ describePglite('cli', function () {
         expect(await indexNames()).toHaveLength(0)
 
         // `pg-boss migrate` re-applies v27..latest, running the inlined CONCURRENTLY builds
-        // one at a time after the migration transaction — no BAM worker involved
+        // one at a time after the migration transaction. No BAM worker involved
         await execCommand(
           `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully migrated' }

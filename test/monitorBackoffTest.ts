@@ -65,7 +65,7 @@ helper.describePostgresOnly('monitor backoff', function () {
 
     await boss.supervise()
 
-    // A second of aggregate against a 60s naptime leaves 59s of every interval free — a window no
+    // A second of aggregate against a 60s naptime leaves 59s of every interval free. A window no
     // autovacuum launcher phase can keep missing. Nothing to defend against, so nothing is written.
     expect(await backoffUntil(ctx.schema)).toBeNull()
     expect(await warnings(ctx.schema)).toHaveLength(0)
@@ -146,7 +146,7 @@ helper.describePostgresOnly('monitor backoff', function () {
 
     helper.assertTruthy(claimed)
 
-    // monitorIntervalSeconds is 1, so the interval gate alone would wave this straight through —
+    // monitorIntervalSeconds is 1, so the interval gate alone would wave this straight through,
     // which is exactly the tuned-too-low case the backoff exists for. Manual supervise() is the
     // same path a cron or a CLI process takes, and the gate is a column, so it holds for all of it.
     await new Promise(resolve => setTimeout(resolve, 1500))
@@ -292,7 +292,7 @@ helper.describePostgresOnly('monitor backoff', function () {
 
       // One connection, and something else already holding it. This is the shape a busy app hands the
       // supervisor: the same pool serves every fetch and complete, so the wait for a connection lands
-      // inside any stopwatch the client wraps around the call — while pinning nothing, because the
+      // inside any stopwatch the client wraps around the call, while pinning nothing, because the
       // transaction has not begun yet. Deferring on that number would blame the job table for pool
       // contention, and deferring monitoring would do nothing to relieve it.
       const pool = new pg.Pool({ connectionString: helper.getConnectionString(), max: 1 })
@@ -390,7 +390,7 @@ helper.describePostgresOnly('monitor backoff', function () {
 
       try {
         // The lock key is global, not per-queue, so any supervise aggregate anywhere in the schema
-        // collides with a first read. Losing it would answer with the queue columns' default zeros —
+        // collides with a first read. Losing it would answer with the queue columns' default zeros,
         // a fabricated count, not a stale one, because this queue has no capture to fall back on.
         const [stats] = await boss.getQueueStats('backoff')
 

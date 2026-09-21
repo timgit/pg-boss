@@ -112,7 +112,7 @@ class Worker<T = unknown> {
 
       // Resolve the effective delay each iteration: burst (continuous), NOTIFY backstop, or
       // the base poll (see Manager.work). fetchedCount lets the resolver keep going only while
-      // fetches come back full — a short fetch resumes normal polling. A returned interval
+      // fetches come back full. A short fetch resumes normal polling. A returned interval
       // <= duration + 100 (0 in burst mode) skips the delay and re-fetches immediately.
       const interval = this.resolveInterval(fetchedCount)
 

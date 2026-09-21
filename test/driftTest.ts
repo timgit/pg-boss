@@ -58,7 +58,7 @@ describe('drift', function () {
     it('attaches the expected key-column list to each index', function () {
       const byName = new Map(plans.expectedManagedIndexes('pgboss', true, []).map(i => [i.name, i]))
       // Sampled on indexes whose shape is settled. The fetch index is deliberately not asserted
-      // here — it is the one that gets replaced, and pinning its column list makes every index
+      // here. It is the one that gets replaced, and pinning its column list makes every index
       // change edit this test for no gain. Its *rewriting* is covered structurally below.
       expect(byName.get('job_common_i9')!.keys).toBe('name, id')
       expect(byName.get('job_common_i1')!.keys).toBe("name, COALESCE(singleton_key, '')")
@@ -781,7 +781,7 @@ describe('drift', function () {
       await db.executeSql(`DROP INDEX ${schema}.${table}_i11`)
       // Insert as a fresh in_progress build, not pending: the started boss runs a live BAM worker, and a
       // 'pending' row would be picked up and actually built (CREATE INDEX CONCURRENTLY) before the drift
-      // scan runs — a race that leaves `building` empty. A non-stale in_progress row is neither a pending
+      // scan runs. A race that leaves `building` empty. A non-stale in_progress row is neither a pending
       // pickup nor stale-reclaimable, so the worker leaves it alone while it still counts as an
       // incomplete build the drift check reports as `building`.
       await db.executeSql(
@@ -862,10 +862,10 @@ describe('drift', function () {
 
     it('detectDrift tolerates catalog queries that throw (best-effort fallbacks)', async function () {
       // A backend that rejects the function/enum/column/constraint catalog queries must not abort the
-      // whole scan — each falls back to empty. Stub db throws on those four, returns empty otherwise.
+      // whole scan. Each falls back to empty. Stub db throws on those four, returns empty otherwise.
       const throwOn = [/pg_get_functiondef/, /pg_enum/, /pg_attribute/, /pg_get_constraintdef/]
       // Table presence comes from its own pg_class probe (relkind IN ('r','p'), no pg_attribute), which
-      // stays available even though the column query throws — return the real managed tables for it so
+      // stays available even though the column query throws, return the real managed tables for it so
       // the decoupling can be asserted below.
       const managedTables = plans.expectedManagedTables('pgboss', false)
       const db = {
@@ -880,7 +880,7 @@ describe('drift', function () {
       const report = await contractor.detectDrift()
 
       // the throwing queries SKIP their checks; the scan still produced a report and did not false-flag.
-      // A thrown function query means "unsupported / could not read", NOT "no functions exist" — so the
+      // A thrown function query means "unsupported / could not read", NOT "no functions exist", so the
       // function check is skipped, not reported as every expected function missing (which would flip `ok`
       // to false on every scan against a backend like CockroachDB that rejects pg_get_functiondef).
       expect(report.missingFunctions).toHaveLength(0)
@@ -914,7 +914,7 @@ describe('drift', function () {
       const contractor = new Contractor(db as any, Attorney.getConfig({ schema: 'pgboss' }))
       const report = await contractor.detectDrift()
 
-      // fell back to the column-derived table set (which covers every expected table) — no false missing.
+      // fell back to the column-derived table set (which covers every expected table). No false missing.
       expect(report.missingTables).toHaveLength(0)
     })
 

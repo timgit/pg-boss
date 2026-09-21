@@ -188,7 +188,7 @@ describe('insert', function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     // insertJobs' json_to_recordset declares groupId/groupTier columns directly, so passing those
-    // raw names through insert() has always worked — it was the natural workaround while insert()
+    // raw names through insert() has always worked. It was the natural workaround while insert()
     // was dropping `group`. Not a documented contract, but flattening `group` must not overwrite
     // them with undefined, or that workaround breaks in exactly the way it was compensating for.
     const input = { id: randomUUID(), groupId: 'group1', groupTier: 'tier1' }
@@ -238,7 +238,7 @@ describe('insert', function () {
   it('should attribute insert spy data to the right id when ON CONFLICT skips a job', async function () {
     // insertJobs ends in ON CONFLICT DO NOTHING; on a short-policy queue a duplicate singletonKey is
     // skipped, so the returned rows no longer align positionally with the input jobs. The spy must
-    // map each returned id back to its own job's data — a positional rows[i] <-> jobs[i] pairing
+    // map each returned id back to its own job's data. A positional rows[i] <-> jobs[i] pairing
     // would attribute the skipped job's data to a surviving id.
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__enableSpies: true })
     await ctx.boss.createQueue(ctx.schema, { policy: 'short' })

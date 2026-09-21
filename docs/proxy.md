@@ -2,7 +2,7 @@
 
 An HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package, exposing pg-boss methods over a simple JSON API. It's useful for platform compatibility (calling pg-boss from non-Node runtimes or serverless functions) and for connection pooling and scalability.
 
-By default the proxy runs statelessly — job supervision, scheduling, and migrations are all disabled, so it only opens a database connection and serves requests. A pg-boss instance is started via `start()`, which opens the database connection.
+By default the proxy runs statelessly. Job supervision, scheduling, and migrations are all disabled, so it only opens a database connection and serves requests. A pg-boss instance is started via `start()`, which opens the database connection.
 
 ## Features
 
@@ -22,9 +22,9 @@ DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-proxy
 
 Then visit:
 
-- `http://localhost:3000` — proxy home page with links to all endpoints
-- `http://localhost:3000/docs` — interactive Swagger documentation
-- `http://localhost:3000/openapi.json` — OpenAPI spec
+- `http://localhost:3000`: proxy home page with links to all endpoints
+- `http://localhost:3000/docs`: interactive Swagger documentation
+- `http://localhost:3000/openapi.json`: OpenAPI spec
 
 Or embed it in your own Node app:
 
@@ -446,8 +446,8 @@ services:
 
 ## API Reference
 
-- `http://localhost:3000/docs` — Swagger UI for exploring all endpoints
-- `http://localhost:3000/openapi.json` — machine-readable OpenAPI specification
+- `http://localhost:3000/docs`: Swagger UI for exploring all endpoints
+- `http://localhost:3000/openapi.json`: machine-readable OpenAPI specification
 
 ## Contributing
 

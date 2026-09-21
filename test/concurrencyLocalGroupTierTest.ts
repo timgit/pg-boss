@@ -127,7 +127,7 @@ describe('localGroupConcurrency (tier & retry)', function () {
     // Several polling cycles for the available workers to pick up enterprise jobs.
     await delay(3000)
 
-    // Both enterprise jobs should be processed — the group is at its default limit
+    // Both enterprise jobs should be processed. The group is at its default limit
     // but the enterprise tier still has capacity.
     expect(enterpriseJobsProcessed).toBe(2)
   })

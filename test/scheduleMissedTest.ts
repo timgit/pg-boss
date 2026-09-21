@@ -236,9 +236,10 @@ describe('schedule missed', function () {
     const tk = makeTk()
     const now = Date.now()
 
-    // The steady state: a pass claims at most cronMonitorIntervalSeconds after the one before it,
-    // 45 at the ceiling, and the window is 60 wide, so there is never a gap between them to catch
-    // up on and the policy costs nothing.
+    // The steady state: a pass claims cronMonitorIntervalSeconds after the one before it, plus the
+    // round trip and, when the instance that ran it has stopped, the beat a refused instance waits
+    // past the due moment - 46 and change at the 45-second ceiling. The window is 60 wide, so there
+    // is never a gap between two passes to catch up on and the policy costs nothing.
     for (const seconds of [1, 30, 45, 60]) {
       const inserted = await pass(tk, now, new Date(now - seconds * 1000), [row('* * * * * *', 'once')])
 
@@ -395,14 +396,17 @@ describe('schedule missed', function () {
       // on.
       const first = await db.executeSql(plans.trySetCronTime(ctx.schema, 30))
 
-      expect(first.rows).toHaveLength(1)
+      expect(first.rows[0].claimed).toBe(true)
       expect(first.rows[0].priorCronOn).toBeNull()
 
       // A second claim inside the interval takes nothing, which is what keeps two instances from
-      // running the same pass.
+      // running the same pass. It still answers - with how old the row it lost to is, which is what
+      // the refused instance measures its next attempt from.
       const contended = await db.executeSql(plans.trySetCronTime(ctx.schema, 30))
 
-      expect(contended.rows).toHaveLength(0)
+      expect(contended.rows[0].claimed).toBe(false)
+      expect(Number(contended.rows[0].elapsed)).toBeGreaterThanOrEqual(0)
+      expect(Number(contended.rows[0].elapsed)).toBeLessThan(30)
 
       const gapStart = new Date(Date.now() - 5 * MINUTE)
 
@@ -410,8 +414,10 @@ describe('schedule missed', function () {
 
       const claimed = await db.executeSql(plans.trySetCronTime(ctx.schema, 30))
 
-      expect(claimed.rows).toHaveLength(1)
+      expect(claimed.rows[0].claimed).toBe(true)
       expect(new Date(claimed.rows[0].priorCronOn).getTime()).toBe(gapStart.getTime())
+      // The age of the row the claim replaced, which is the gap it just closed.
+      expect(Number(claimed.rows[0].elapsed)).toBeGreaterThanOrEqual(5 * 60)
     } finally {
       await db.close()
     }

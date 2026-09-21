@@ -148,13 +148,13 @@ Only sessions that set `pgboss.test_clock = 'on'` see the fake time. An instance
 
 `start()` declares that `SET` through the adapter's `setSessionStatements()`, before it opens a connection or runs a statement.
 
-An adapter that does not implement `setSessionStatements()` is refused a `TestClock`. A pooled adapter that skipped the setup would read fake time on some connections and real time on others — silently, and differently on every checkout.
+An adapter that does not implement `setSessionStatements()` is refused a `TestClock`. A pooled adapter that skipped the setup would read fake time on some connections and real time on others. It would do so silently, and differently on every checkout.
 
 pg-boss's own pool applies the statements in its `connect` handler. The bundled PGlite adapter runs them once, which is all a single-session driver needs.
 
 Releasing the clock restores the plain function body, drops the clock table, and issues `disableClockOverride()`.
 
-One caveat for `PGliteWorker`: a single leader instance serves every tab, so the session setting is shared by all of them — a `TestClock` attached through one tab puts every tab on fake time. pg-boss reapplies the setting when leadership moves to a new tab, which would otherwise silently drop the schema back to real time, but it cannot scope the setting to one instance.
+One caveat for `PGliteWorker`: a single leader instance serves every tab, so the session setting is shared by all of them. A `TestClock` attached through one tab puts every tab on fake time. pg-boss reapplies the setting when leadership moves to a new tab, which would otherwise silently drop the schema back to real time, but it cannot scope the setting to one instance.
 
 `start()` attaches the clock after the schema is installed, and `stop()` releases it, restoring the real clock for that schema. One `TestClock` may be shared by several instances; the schema stays on fake time until the last of them stops.
 

@@ -33,7 +33,7 @@ Every command reads its connection from the same sources (see [Connection Config
 
 ### `migrate`
 
-Brings the schema up to the latest version, running any pending migrations in order. If pg-boss is not yet installed, it creates the schema first (equivalent to `create`). If the schema is already current, it reports that and does nothing. Async index builds (normally run by the background worker) are inlined as `CREATE INDEX CONCURRENTLY` statements and fanned out across every partitioned queue table, so a migration run needs no live worker. Pass `--dry-run` to print the SQL — rendered from the database's actual current version — without executing it.
+Brings the schema up to the latest version, running any pending migrations in order. If pg-boss is not yet installed, it creates the schema first (equivalent to `create`). If the schema is already current, it reports that and does nothing. Async index builds (normally run by the background worker) are inlined as `CREATE INDEX CONCURRENTLY` statements and fanned out across every partitioned queue table, so a migration run needs no live worker. Pass `--dry-run` to print the SQL without executing it. It is rendered from the database's actual current version.
 
 ```bash
 pg-boss migrate --connection-string postgres://localhost/myapp
@@ -58,13 +58,15 @@ pg-boss version --connection-string postgres://localhost/myapp
 
 ### `doctor`
 
-Compares the tables, indexes, functions, table columns (name, default, type, nullability), table constraints, and `job_state` enum pg-boss expects against the live database and reports any missing, invalid, or mismatched (dropped table, wrong index key order/predicate, altered function body, added/dropped columns, changed column defaults/types/nullability, added/dropped constraints, or changed enum values) objects, plus a warning for extra indexes. It exits `0` when the schema is clean and `1` when drift is found (or pg-boss is not installed), so it can gate a deploy — extra-index warnings do not affect the exit code. This is the CLI wrapper around [`detectSchemaDrift()`](api/ops#detectschemadrift). Default/type/nullability and constraint checks cover the fixed tables only (job/job_common/partitions are excluded); function, constraint, and enum checks are skipped on backends without `pg_get_functiondef`/`pg_get_constraintdef`, and type/default/constraint checks are skipped entirely on CockroachDB (its `INT8` typing and constraint rendering diverge from standard Postgres).
+Reports anything in the live schema that no longer matches what pg-boss expects. The CLI wrapper around [`detectSchemaDrift()`](api/ops#detectschemadrift), which documents what is compared and what each backend skips.
+
+Exits `0` when the schema is clean and `1` when drift is found or pg-boss is not installed, so it can gate a deploy. Extra-index warnings never change the exit code.
 
 ```bash
 pg-boss doctor --connection-string postgres://localhost/myapp
 ```
 
-Each drifted index is printed with the `CREATE INDEX` statement needed to fix it. A `mismatched` index — one whose definition was altered — shows the expected statement and the actual one side by side:
+Every entry prints with the statement that repairs it. A `mismatched` index shows the expected statement beside the one in the catalog:
 
 ```
 Schema "pgboss" version 37 (latest: 37)
@@ -77,10 +79,10 @@ MISMATCHED (definition differs) (1):
 ✗ Schema drift detected
 ```
 
-Dropped managed tables print under `MISSING TABLES`. A `missing` index prints the `create:` statement to run; an `invalid` one prints the `rebuild:` statement to drop and recreate it (its definition is already correct, so there is nothing to compare against). Drifted functions print under `MISSING FUNCTIONS`/`MISMATCHED FUNCTIONS` with the expected (and, for a mismatch, actual) `CREATE FUNCTION` body; tables with column drift print under `COLUMN DRIFT` with their `missing:`/`unexpected:` column lists plus a `default`/`type`/`nullability <col>: expected … actual …` line per changed attribute; tables with constraint drift print under `CONSTRAINT DRIFT` with their `missing:`/`unexpected:` constraint definitions; and a changed `job_state` enum prints under `ENUM DRIFT` with the expected vs. actual value list. Standalone indexes on a managed table that pg-boss doesn't expect print under `⚠ EXTRA INDEXES` — a **warning only** (a stale pg-boss index or one you added; harmless), which does **not** change the `0` exit code. Example:
+Every other category prints under a heading of its own: `MISSING TABLES`, `MISSING FUNCTIONS`, `MISMATCHED FUNCTIONS`, `COLUMN DRIFT`, `CONSTRAINT DRIFT`, `ENUM DRIFT`, and `⚠ EXTRA INDEXES` for indexes pg-boss does not expect, which are harmless and leave the exit code at `0`:
 
 ```
-⚠ EXTRA INDEXES (present on a managed table but not expected — harmless) (1):
+⚠ EXTRA INDEXES (present on a managed table but not expected, harmless) (1):
   job_common.job_common_custom_idx
 
 MISSING TABLES (expected but absent) (1):
@@ -97,11 +99,11 @@ CONSTRAINT DRIFT (missing or unexpected constraints) (1):
     missing:    CHECK ((dead_letter IS DISTINCT FROM name))
 ```
 
-`doctor` diagnoses; the only thing it ever repairs is a leftover clock override, and only when asked with `--fix` (below). Because it runs against a schema that is already at the latest version, a restart or `migrate` will not repair the drift it finds. Copy the printed statement to fix an index (insert `CONCURRENTLY` on a live table). See [Remediation](api/ops#detectschemadrift) for how to fix each category (recreate a missing index, drop a stale one, and so on).
+`doctor` diagnoses; the only thing it repairs is a leftover clock override, and only when asked with `--fix` (below). The schema it checks is already at the latest version, so a restart or `migrate` will not repair what it finds. Run the printed statement yourself, inserting `CONCURRENTLY` on a live table. [Remediation](api/ops#detectschemadrift) covers every category.
 
 #### `doctor --fix`
 
-Repairs exactly one thing: a `job_now()` left overridden by a [TestClock](api/testing) whose run was killed before it released the clock. The override keeps time correct — the body falls through to real time for any session that never opted in — but it no longer inlines, so every statement that reads the clock pays a per-row function call. `--fix` restores the canonical body and drops the clock table, then re-runs the scan so the summary and exit code describe the repaired schema.
+Repairs exactly one thing: a `job_now()` left overridden by a [TestClock](api/testing) whose run was killed before it released the clock. The override keeps time correct, since the body falls through to real time for any session that never opted in. What it no longer does is inline, so every statement that reads the clock pays a per-row function call. `--fix` restores the canonical body and drops the clock table, then re-runs the scan so the summary and exit code describe the repaired schema.
 
 ```bash
 pg-boss doctor --connection-string postgres://localhost/myapp --fix
@@ -131,7 +133,7 @@ pg-boss rollback --connection-string postgres://localhost/myapp --dry-run
 
 ### `plans <subcommand>`
 
-Prints SQL to stdout without touching the database — useful for review, manual execution, or checking into version control. Subcommands:
+Prints SQL to stdout without touching the database, which is useful for review, manual execution, or checking into version control. Subcommands:
 
 | Subcommand | Output |
 |------------|--------|
@@ -217,9 +219,9 @@ The CLI supports multiple ways to configure the database connection, in order of
 
 ## Backends
 
-A connection string does not say which engine is on the other end of it, and the engines do not accept the same schema. `--backend` (or `PGBOSS_BACKEND`, or `"backend"` in the config file) names the profile, and every command that writes or prints schema — `create`, `migrate`, `rollback`, `plans`, `doctor`, `reindex` — uses it to pick the statements that backend supports. It is the same profile the library constructor takes, so the CLI and a running `PgBoss` produce the same schema.
+A connection string does not say which engine is on the other end of it, and the engines do not accept the same schema. `--backend` (or `PGBOSS_BACKEND`, or `"backend"` in the config file) names the profile. Every command that writes or prints schema uses it to pick the statements that backend supports: `create`, `migrate`, `rollback`, `plans`, `doctor`, `reindex`. It is the same profile the library constructor takes, so the CLI and a running `PgBoss` produce the same schema.
 
-Without it the CLI assumes stock PostgreSQL, which on CockroachDB means table partitioning, advisory locks, covering indexes and a column written in the transaction that added it — a migration that fails partway rather than up front.
+Without it the CLI assumes stock PostgreSQL. On CockroachDB that means table partitioning, advisory locks, covering indexes and a column written in the transaction that added it, so the migration fails partway rather than up front.
 
 ```bash
 # CockroachDB

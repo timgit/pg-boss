@@ -8,14 +8,14 @@ import { isDistributedBackend, distributedTimeout } from './timeouts.ts'
 // distributed mode two ways: the whole suite under `DISTRIBUTED=true` on Postgres (fast, every push)
 // and under `DB_TYPE=cockroachdb` against a real cluster (`npm run test:cockroachdb:full`), where
 // testHelper.getConfig() turns on noSkipLocked + noMultiMutationCte for every test. Don't re-test
-// generic behavior here — add it to the relevant suite instead. What stays here:
+// generic behavior here, add it to the relevant suite instead. What stays here:
 //
-//   1. Concurrent-fetch deduplication — the core guarantee of the atomic UPDATE...RETURNING fetch
+//   1. Concurrent-fetch deduplication. The core guarantee of the atomic UPDATE...RETURNING fetch
 //      that replaces SKIP LOCKED; no generic test asserts "N concurrent workers, zero duplicates".
-//   2. Caller-supplied-transaction composition for completeDistributed/failDistributed — the
+//   2. Caller-supplied-transaction composition for completeDistributed/failDistributed. The
 //      ensureTransaction contract (compose inline, roll back with the caller's tx).
 //   3. Flag-gated schema construction (noTablePartitioning / noDeferrableConstraints /
-//      noCoveringIndexes / noAdvisoryLocks) — the ONLY Postgres-side coverage of that DDL, since the
+//      noCoveringIndexes / noAdvisoryLocks). The ONLY Postgres-side coverage of that DDL, since the
 //      `DISTRIBUTED=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.
 //
 // Every test here calls helper.start(), which on CockroachDB pays slow per-test DDL, leaving little
@@ -231,7 +231,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
   it('should retry, not fail, when the backend returns integer columns as strings', async function () {
     // Regression: reinsertFailedJobs read the raw SELECT * rows from the distributed fail path. On
     // CockroachDB, INT8 columns come back as strings, so `retry_count < retry_limit` was a
-    // lexicographic compare — "9" < "10" is false — which permanently failed a job that still had
+    // lexicographic compare ("9" < "10" is false) which permanently failed a job that still had
     // retries left. The DISTRIBUTED=true Postgres run can't catch this (node-pg returns numbers
     // there), so we simulate CockroachDB's string typing with a wrapper over a real connection.
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
@@ -305,7 +305,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
   it('should unblock dependents when completing a blocking parent in distributed mode', async function () {
     // Completion no longer unblocks dependents inline (that work moved off the hot path to the
-    // background resolver — see issue #824). resolveFlow() forces a resolution pass, which on a
+    // background resolver. See issue #824). resolveFlow() forces a resolution pass, which on a
     // distributed backend runs the split selectBlockingParents + decrementDependents + clearBlocking.
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
@@ -347,7 +347,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
   it('should construct schema with all distributed compatibility flags', async function () {
     // Exercises the CockroachDB-oriented construction branches (no partitioning,
     // non-deferrable constraints, non-covering indexes, no advisory locks) by selecting
-    // the cockroachdb backend — all of whose flags are PostgreSQL-compatible (they only
+    // the cockroachdb backend, all of whose flags are PostgreSQL-compatible (they only
     // remove features), so the full profile constructs and runs on a plain Postgres instance.
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
@@ -391,7 +391,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     // Exercises the noTablePartitioning + noAdvisoryLocks construction path on plain Postgres by
     // selecting the yugabytedb backend, whose only flags are those two (both PostgreSQL-compatible,
     // they just remove features). The compatibility flags are derived from `backend` and are not
-    // settable directly — resolveBackend() overwrites them — so the backend is the only way in.
+    // settable directly (resolveBackend() overwrites them) so the backend is the only way in.
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
       backend: 'yugabytedb'
@@ -415,7 +415,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
   it('should run maintenance without attempting the index bloat check', async function () {
     // The bloat check reads pg_class.relpages and pg_relation_size(), neither of which a
-    // heap-less engine answers usefully — CockroachDB has no pg_relation_size() at all and rejects
+    // heap-less engine answers usefully. CockroachDB has no pg_relation_size() at all and rejects
     // `reltuples / relpages` with "unsupported binary operator: <float4> / <int4>", so a supervise
     // pass that ran the check would throw once per reindex interval. Distributed backends must skip
     // it outright. Runs on Postgres too, via the backend profile, so the gate can't quietly rot.

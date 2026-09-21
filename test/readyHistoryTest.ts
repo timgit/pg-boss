@@ -19,7 +19,7 @@ describe('readyHistory', function () {
     }
     // The monitor only runs for queues whose monitor_claim_on is older than monitorIntervalSeconds;
     // age it so each manual supervise() actually performs a cycle. (monitor_on is written by the
-    // aggregate itself and does not pace anything — see plans.trySetQueueMonitorTime.)
+    // aggregate itself and does not pace anything. See plans.trySetQueueMonitorTime.)
     const makeDue = () => db.executeSql(
       `UPDATE ${ctx.schema}.queue SET monitor_claim_on = now() - interval '1 day' WHERE name = $1`, [queue])
 
