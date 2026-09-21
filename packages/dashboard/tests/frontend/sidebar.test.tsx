@@ -98,11 +98,25 @@ describe('Sidebar', () => {
     })
   })
 
-  describe('theme toggle', () => {
-    it('renders theme toggle button', () => {
+  describe('theme controls', () => {
+    // Light and dark moved to the topbar, which this does not render. What is
+    // asserted here is that the sidebar no longer carries it — the old test
+    // passed on a footer that has since been emptied on purpose.
+    it('leaves light and dark to the topbar', () => {
       renderWithRouter()
 
-      expect(screen.getAllByLabelText('Toggle theme').length).toBeGreaterThanOrEqual(1)
+      expect(screen.queryByLabelText('Toggle theme')).not.toBeInTheDocument()
+      expect(screen.queryByText('Theme')).not.toBeInTheDocument()
+    })
+
+    // The palette has no control of its own: the mark is the trigger, and
+    // nothing but the pointer cursor says so.
+    it('hangs the colour palette off the mark', () => {
+      renderWithRouter()
+
+      const trigger = screen.getByLabelText('Change color theme')
+      expect(trigger).toBeInTheDocument()
+      expect(trigger.querySelector('svg')).toBeInTheDocument()
     })
   })
 })

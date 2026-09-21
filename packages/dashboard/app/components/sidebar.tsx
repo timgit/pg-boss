@@ -3,7 +3,6 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import overlay from '~pro'
 import { ProSlot } from '~/components/pro-slot'
-import { ThemeToggle } from '~/components/ui/theme-toggle'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
 import type { PublicDatabase } from '~/lib/types'
@@ -298,11 +297,18 @@ export function AppSidebar () {
             portability check fails on it. The markup is the overlay's own SVG,
             not anything a request supplied.
           */}
-          <div
-            className="w-8 h-8 rounded-[7.2px] bg-primary-600 shrink-0 [&>svg]:w-full [&>svg]:h-full"
-            aria-hidden="true"
-            dangerouslySetInnerHTML={{ __html: markWhite }}
-          />
+          {/*
+            The mark is also the way into the colour palette — see
+            `color-theme-picker.tsx`. Nothing says so; the pointer cursor is the
+            only tell, and the picker no longer has a control of its own.
+          */}
+          <ColorThemePicker>
+            <div
+              className="w-8 h-8 rounded-[7.2px] bg-primary-600 shrink-0 [&>svg]:w-full [&>svg]:h-full"
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{ __html: markWhite }}
+            />
+          </ColorThemePicker>
           <div className="leading-tight whitespace-nowrap group-data-[state=collapsed]:hidden">
             <div className="font-semibold text-sm text-sidebar-accent-foreground">pg-boss</div>
             <div className="font-mono text-[9px] tracking-[0.15em] text-sidebar-foreground/60">CONSOLE</div>
@@ -336,13 +342,15 @@ export function AppSidebar () {
         </SidebarGroup>
       </SidebarContent>
 
+      {/*
+        Whoever is signed in, and nothing else. The footer used to carry a
+        "Theme" heading over a theme menu and a colour menu, which put two
+        settings — one of them decorative — at the bottom of the navigation on
+        every page. Light and dark is one button in the topbar now, and the
+        palette hangs off the mark above.
+      */}
       <SidebarFooter>
         <ProSlot name="sidebarFooter" />
-        <div className="flex flex-col px-2">
-          <p className="px-2 mb-1 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider group-data-[state=collapsed]:hidden">Theme</p>
-          <ThemeToggle />
-          <ColorThemePicker />
-        </div>
       </SidebarFooter>
     </Sidebar>
   )

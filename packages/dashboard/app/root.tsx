@@ -9,6 +9,7 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { AppSidebar } from "~/components/sidebar";
+import { ThemeToggle } from "~/components/ui/theme-toggle";
 import { LoadingBar } from "~/components/loading-bar";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Breadcrumbs } from "~/components/breadcrumbs";
@@ -43,23 +44,34 @@ function MainContent ({ children }: { children: React.ReactNode }) {
           <SidebarTrigger />
           <Breadcrumbs />
         </div>
-        {!open && (
-          <div className="flex items-center gap-2">
-            {/*
-              The same construction as the sidebar header: a themed square with
-              the knockout mark inlined on top, rather than an <img> whose square
-              no CSS of ours could reach. The radius is the brand's own 36/160 of
-              the width, 28 × 0.225 = 6.3, so it matches the sidebar at a
-              different size. This is the only mark a phone-width viewport shows.
-            */}
-            <div
-              className="w-7 h-7 rounded-[6.3px] bg-primary-600 shrink-0 md:hidden [&>svg]:w-full [&>svg]:h-full"
-              aria-hidden="true"
-              dangerouslySetInnerHTML={{ __html: markWhite }}
-            />
-            <span className="font-semibold text-sidebar-foreground md:hidden">pg-boss</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {!open && (
+            <>
+              {/*
+                The same construction as the sidebar header: a themed square
+                with the knockout mark inlined on top, rather than an <img>
+                whose square no CSS of ours could reach. The radius is the
+                brand's own 36/160 of the width, 28 × 0.225 = 6.3, so it matches
+                the sidebar at a different size. This is the only mark a
+                phone-width viewport shows.
+              */}
+              <div
+                className="w-7 h-7 rounded-[6.3px] bg-primary-600 shrink-0 md:hidden [&>svg]:w-full [&>svg]:h-full"
+                aria-hidden="true"
+                dangerouslySetInnerHTML={{ __html: markWhite }}
+              />
+              <span className="font-semibold text-sidebar-foreground md:hidden">pg-boss</span>
+            </>
+          )}
+          {/*
+            Light and dark live here rather than in the sidebar footer, where
+            they were one of three items under a "Theme" heading. A setting that
+            is flipped by feel — the room got dark — belongs where the eye
+            already is, and the sidebar is collapsed on half the widths this
+            runs at.
+          */}
+          <ThemeToggle />
+        </div>
       </div>
       <div className="px-6 py-6 lg:px-8 lg:py-8">
         {children}

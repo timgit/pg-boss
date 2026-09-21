@@ -1,86 +1,46 @@
-import { Moon, Sun, Monitor } from 'lucide-react'
-import { Menu } from '@base-ui/react/menu'
+import { Moon, Sun } from 'lucide-react'
 import { useTheme } from '~/components/theme-provider'
 import { cn } from '~/lib/utils'
 
-export function ThemeToggle () {
-  const { theme, setTheme } = useTheme()
+/**
+ * Light or dark, in one click, from the topbar.
+ *
+ * It used to be a three-item menu — Light, Dark, System — in the sidebar
+ * footer. Two of those three are the same decision made twice: somebody who
+ * wants the console to follow the OS sets it once and never opens the menu
+ * again, and everybody else is choosing between two states, which is a toggle
+ * and not a menu. The `system` value still exists in the provider and is still
+ * the default for a browser that has never chosen, so an install that follows
+ * the OS keeps following it until somebody clicks this.
+ *
+ * `resolvedTheme` rather than `theme` decides what the click does, because
+ * `system` is not a thing you can toggle away from without knowing what it
+ * currently resolves to: from system-dark, this sets light, which is what
+ * clicking a moon should do.
+ *
+ * Both icons render and CSS picks between them, which is the same contract the
+ * menu trigger had. The `.dark` class is set by the inline script in `root.tsx`
+ * before first paint, so the right icon is on screen in the first frame —
+ * choosing in React would show the light icon until hydration and then swap it.
+ */
+export function ThemeToggle ({ className }: { className?: string }) {
+  const { resolvedTheme, setTheme } = useTheme()
 
   return (
-    <Menu.Root>
-      <Menu.Trigger
-        className={cn(
-          'flex items-center gap-2 rounded-md p-2 w-full cursor-pointer',
-          'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent',
-          'focus:outline-none',
-          'transition-colors'
-        )}
-        aria-label="Toggle theme"
-      >
-        {/* Both icons render; CSS shows the right one based on the `.dark` class,
-            which the inline theme script sets before first paint — so there is no
-            flash of the wrong icon on load. */}
-        <Sun className="h-5 w-5 shrink-0 dark:hidden" />
-        <Moon className="hidden h-5 w-5 shrink-0 dark:block" />
-        {/* Label text is supplied by CSS from the html[data-theme-mode] attribute
-            (also set before paint) to avoid a server/client hydration mismatch. */}
-        <span className="theme-mode-label text-sm group-data-[state=collapsed]:hidden" />
-      </Menu.Trigger>
-
-      <Menu.Portal container={typeof document !== 'undefined' ? document.body : undefined}>
-        <Menu.Positioner className="z-[100]">
-          <Menu.Popup
-            className={cn(
-              'min-w-[8rem] rounded-md border p-1 shadow-md z-[100]',
-              'bg-white border-gray-200',
-              'dark:bg-gray-900 dark:border-gray-800',
-              'animate-in fade-in-0 zoom-in-95'
-            )}
-          >
-            <Menu.Item
-              className={cn(
-                'flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer',
-                'outline-none transition-colors',
-                'text-gray-700 data-highlighted:bg-gray-100',
-                'dark:text-gray-300 dark:data-highlighted:bg-gray-800',
-                theme === 'light' && 'bg-gray-100 dark:bg-gray-800'
-              )}
-              onClick={() => setTheme('light')}
-            >
-              <Sun className="h-4 w-4" />
-              Light
-            </Menu.Item>
-
-            <Menu.Item
-              className={cn(
-                'flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer',
-                'outline-none transition-colors',
-                'text-gray-700 data-highlighted:bg-gray-100',
-                'dark:text-gray-300 dark:data-highlighted:bg-gray-800',
-                theme === 'dark' && 'bg-gray-100 dark:bg-gray-800'
-              )}
-              onClick={() => setTheme('dark')}
-            >
-              <Moon className="h-4 w-4" />
-              Dark
-            </Menu.Item>
-
-            <Menu.Item
-              className={cn(
-                'flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer',
-                'outline-none transition-colors',
-                'text-gray-700 data-highlighted:bg-gray-100',
-                'dark:text-gray-300 dark:data-highlighted:bg-gray-800',
-                theme === 'system' && 'bg-gray-100 dark:bg-gray-800'
-              )}
-              onClick={() => setTheme('system')}
-            >
-              <Monitor className="h-4 w-4" />
-              System
-            </Menu.Item>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+    <button
+      type="button"
+      onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+      className={cn(
+        'flex items-center justify-center rounded-md p-2 cursor-pointer',
+        'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600',
+        'transition-colors',
+        className
+      )}
+      aria-label="Toggle theme"
+    >
+      <Sun className="h-5 w-5 shrink-0 dark:hidden" />
+      <Moon className="hidden h-5 w-5 shrink-0 dark:block" />
+    </button>
   )
 }

@@ -454,19 +454,10 @@
 
 /* Sidebar theme-control labels (rendered from attributes set by the inline
    theme script before first paint, so they never flash the wrong value). */
-[data-theme-mode="light"] .theme-mode-label::after { content: "Light"; }
-[data-theme-mode="dark"] .theme-mode-label::after { content: "Dark"; }
-[data-theme-mode="system"] .theme-mode-label::after { content: "System"; }
-
-[data-color-theme="cobalt"] .color-theme-label::after { content: "Cobalt"; }
-[data-color-theme="emerald"] .color-theme-label::after { content: "Emerald"; }
-[data-color-theme="teal"] .color-theme-label::after { content: "Teal"; }
-[data-color-theme="cyan"] .color-theme-label::after { content: "Cyan"; }
-[data-color-theme="sky"] .color-theme-label::after { content: "Sky"; }
-[data-color-theme="blue"] .color-theme-label::after { content: "Blue"; }
-[data-color-theme="indigo"] .color-theme-label::after { content: "Indigo"; }
-[data-color-theme="violet"] .color-theme-label::after { content: "Violet"; }
-[data-color-theme="purple"] .color-theme-label::after { content: "Purple"; }
+/* The theme and colour labels these rules fed are gone: light and dark is an
+   icon button in the topbar, and the palette hangs off the sidebar mark with no
+   label at all. The attributes themselves are still set before first paint and
+   still drive the icon and the accent tokens. */
 
 /* ============================================================
    Console sidebar tokens consumed by the Base UI sidebar (which

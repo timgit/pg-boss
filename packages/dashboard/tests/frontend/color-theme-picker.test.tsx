@@ -22,29 +22,39 @@ describe("ColorThemePicker", () => {
     });
   });
 
-  it("renders the color picker trigger", () => {
-    render(<ColorThemePicker />);
+  it("renders whatever it was given as the trigger", () => {
+    render(
+      <ColorThemePicker>
+        <span data-testid="mark" />
+      </ColorThemePicker>
+    );
+
+    expect(screen.getByTestId("mark")).toBeInTheDocument();
+  });
+
+  // Unadvertised, not unlabelled: the trigger carries no visible text, so the
+  // accessible name is the only thing naming it.
+  it("names the trigger for assistive technology", () => {
+    render(
+      <ColorThemePicker>
+        <span />
+      </ColorThemePicker>
+    );
 
     expect(screen.getByLabelText("Change color theme")).toBeInTheDocument();
   });
 
-  // The trigger swatch and label are driven by CSS from html[data-color-theme]
-  // (set by the inline theme script before first paint), not by React state, so
-  // they show the right color on load without a hydration flash.
-  it("renders the swatch using the CSS primary color", () => {
-    const { container } = render(<ColorThemePicker />);
+  // The swatch grid is the brand's oval, not a circle. It lives in the popup,
+  // which only mounts once opened, so this asserts what the closed trigger is
+  // *not*: a swatch of its own.
+  it("shows no swatch or label of its own", () => {
+    const { container } = render(
+      <ColorThemePicker>
+        <span data-testid="mark" />
+      </ColorThemePicker>
+    );
 
-    const swatch = container.querySelector("span.rounded-full");
-    expect(swatch).toBeInTheDocument();
-    expect(swatch).toHaveClass("bg-primary-500");
-  });
-
-  it("renders the CSS-driven color label placeholder", () => {
-    const { container } = render(<ColorThemePicker />);
-
-    const label = container.querySelector(".color-theme-label");
-    expect(label).toBeInTheDocument();
-    // Text is supplied by CSS ::after content, so the element itself is empty.
-    expect(label?.textContent).toBe("");
+    expect(container.querySelector(".bg-primary-500")).not.toBeInTheDocument();
+    expect(container.querySelector(".color-theme-label")).not.toBeInTheDocument();
   });
 });
