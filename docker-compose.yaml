@@ -8,7 +8,7 @@ services:
     ports:
       - 5432:5432
     volumes:
-      - db_volume:/var/lib/postgresql/data18
+      - db_volume:/var/lib/postgresql
     environment:
       - POSTGRES_DB=pgboss
       - POSTGRES_NAME=pgboss

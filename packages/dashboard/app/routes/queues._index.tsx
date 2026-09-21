@@ -150,9 +150,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
         title="Queues"
         subtitle={`${totalCount.toLocaleString()} queue${totalCount !== 1 ? 's' : ''} ${hasActiveFilters ? 'found' : 'configured'}`}
         action={!mayAct ? undefined : (
-          <DbLink to="/queues/create">
-            <Button variant="primary" size="md">Create Queue</Button>
-          </DbLink>
+          <Button variant="primary" size="md" render={<DbLink to="/queues/create" />}>Create Queue</Button>
         )}
       />
 

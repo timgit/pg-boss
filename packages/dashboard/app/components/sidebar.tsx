@@ -1,4 +1,4 @@
-import { NavLink, useRouteLoaderData, useSearchParams, useNavigate, useLocation } from 'react-router'
+import { NavLink, useRouteLoaderData, useSearchParams, useNavigate, useLocation, useMatch } from 'react-router'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import overlay from '~pro'
@@ -205,6 +205,44 @@ function DatabaseSelector ({
   )
 }
 
+/*
+  One nav row. `render` hands the menu button's props to the NavLink so the row is a
+  single <a>: rendered as siblings the way this used to be, the button nested inside
+  the anchor was interactive content inside a link — invalid HTML, and an accessibility
+  tree with a button buried in a link.
+
+  Losing NavLink's `isActive` render prop in the trade, the match is asked for directly.
+  `useMatch` is the same matcher NavLink uses, with `end` set the same way, so the two
+  cannot drift; it is a hook, which is why this is a component rather than inline JSX.
+  The href carries the `?db=` param but the match is asked about the path alone —
+  NavLink ignores the search string when matching, and so must this.
+*/
+function NavItem ({
+  item,
+  href,
+  onNavigate,
+}: {
+  item: (typeof navigation)[number]
+  href: string
+  onNavigate: () => void
+}) {
+  const end = item.href === '/'
+  const isActive = useMatch({ path: item.href, end }) !== null
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={isActive}
+        tooltip={item.name}
+        render={<NavLink to={href} end={end} onClick={onNavigate} />}
+      >
+        <item.icon className="h-5 w-5 flex-shrink-0" />
+        <span className="whitespace-nowrap group-data-[state=collapsed]:hidden">{item.name}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
+}
+
 export function AppSidebar () {
   const rootData = useRouteLoaderData('root') as RootLoaderData | undefined
   const [searchParams] = useSearchParams()
@@ -286,20 +324,12 @@ export function AppSidebar () {
           <SidebarGroupContent>
             <SidebarMenu>
               {navigation.map((item) => (
-                <SidebarMenuItem key={item.name}>
-                  <NavLink
-                    to={buildHref(item.href)}
-                    end={item.href === '/'}
-                    onClick={() => setOpenMobile(false)}
-                  >
-                    {({ isActive }: { isActive: boolean }) => (
-                      <SidebarMenuButton isActive={isActive} tooltip={item.name}>
-                        <item.icon className="h-5 w-5 flex-shrink-0" />
-                        <span className="whitespace-nowrap group-data-[state=collapsed]:hidden">{item.name}</span>
-                      </SidebarMenuButton>
-                    )}
-                  </NavLink>
-                </SidebarMenuItem>
+                <NavItem
+                  key={item.name}
+                  item={item}
+                  href={buildHref(item.href)}
+                  onNavigate={() => setOpenMobile(false)}
+                />
               ))}
             </SidebarMenu>
           </SidebarGroupContent>

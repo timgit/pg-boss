@@ -80,9 +80,7 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
         title="Overview"
         subtitle="Monitor your pg-boss job queues"
         action={!mayAct ? undefined : (
-          <DbLink to="/send">
-            <Button variant="primary" size="md">Send Job</Button>
-          </DbLink>
+          <Button variant="primary" size="md" render={<DbLink to="/send" />}>Send Job</Button>
         )}
       />
 

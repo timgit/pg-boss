@@ -136,9 +136,7 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
         title="Schedules"
         subtitle="Jobs queued automatically by pg-boss, on a cron expression or a recurrence rule"
         action={!mayAct ? undefined : (
-          <DbLink to="/schedules/new">
-            <Button variant="primary" size="md" className='cursor-pointer'>Schedule Job</Button>
-          </DbLink>
+          <Button variant="primary" size="md" className='cursor-pointer' render={<DbLink to="/schedules/new" />}>Schedule Job</Button>
         )}
       />
 

@@ -287,9 +287,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
         title="Jobs"
         subtitle={subtitle}
         action={!mayAct ? undefined : (
-          <DbLink to="/send">
-            <Button variant="primary" size="md">Send Job</Button>
-          </DbLink>
+          <Button variant="primary" size="md" render={<DbLink to="/send" />}>Send Job</Button>
         )}
       />
 

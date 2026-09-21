@@ -237,16 +237,20 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
         title={queue.name}
         action={
           <div className="flex items-center gap-2">
-            <DbLink to={`/queues/${encodeURIComponent(queue.name)}/metrics`}>
-              <Button variant="outline" size="md">
-                <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
-                View metrics
-              </Button>
-            </DbLink>
+            <Button
+              variant="outline"
+              size="md"
+              render={<DbLink to={`/queues/${encodeURIComponent(queue.name)}/metrics`} />}
+            >
+              <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
+              View metrics
+            </Button>
             {maySend && (
-              <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
-                <Button variant="primary" size="md">Send Job</Button>
-              </DbLink>
+              <Button
+                variant="primary"
+                size="md"
+                render={<DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`} />}
+              >Send Job</Button>
             )}
           </div>
         }

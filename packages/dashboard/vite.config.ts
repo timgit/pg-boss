@@ -33,6 +33,17 @@ const SERVER_RUNTIME_PACKAGES = [
   'react-router',
 ]
 
+// Packages that only ever run on the server. Listed so the dev client optimizer
+// leaves them alone; see the `optimizeDeps` note below for why it would otherwise
+// pick them up. `pg-boss` pulls in the other three transitively.
+const SERVER_ONLY_PACKAGES = [
+  'cron-parser',
+  'pg',
+  'pg-boss',
+  'rrule-temporal',
+  'serialize-error',
+]
+
 export default defineConfig(({ command }) => ({
   // Vite bakes `base` into asset URLs at build time, which is what production
   // deployments behind a sub-path need. In dev we keep it at `/`: the React
@@ -54,6 +65,34 @@ export default defineConfig(({ command }) => ({
   ssr: command === 'build'
     ? { noExternal: true, external: SERVER_RUNTIME_PACKAGES }
     : undefined,
+  // Dev only. Vite's dependency scanner crawls the client module graph before
+  // React Router's `.server` transform runs, so it follows every route module
+  // into `db.server.ts` and `boss.server.ts` and decides the browser needs `pg`,
+  // `pg-boss`, and everything `pg-boss` imports. Nothing server-side actually
+  // reaches the client bundle — the production build is clean — but the scanner
+  // does not know that, and the cost is paid on the first page view: it finds
+  // these packages late, pre-bundles them, and then tells the browser to reload
+  // ("optimized dependencies changed"), throwing away whatever the first visitor
+  // had already clicked.
+  //
+  // `include` settles the real client dependencies at server start instead of
+  // mid-request, and `exclude` keeps the server-only packages out of the browser's
+  // optimizer entirely. `uplot` is listed even though the scanner misses it: it is
+  // reached only from the metrics route, so discovering it on navigation would
+  // trigger the same reload later.
+  optimizeDeps: {
+    include: [
+      '@base-ui/react',
+      '@base-ui/react/dialog',
+      '@base-ui/react/menu',
+      'class-variance-authority',
+      'clsx',
+      'lucide-react',
+      'tailwind-merge',
+      'uplot',
+    ],
+    exclude: SERVER_ONLY_PACKAGES,
+  },
   resolve: {
     alias: {
       '~': '/app',
@@ -62,6 +101,11 @@ export default defineConfig(({ command }) => ({
       // Hono app production does; without the alias here it resolves to nothing
       // and the overlay's server half is silently absent from `npm run dev`.
       '~pro-server': proServerAlias(),
+      // The dashboard always builds against this repository's own pg-boss source,
+      // never an installed copy: the same redirect exists in tsconfig `paths` (which
+      // also covers `tsx` for the scripts) and in both vitest configs. That is why
+      // `pg-boss` is not in package.json — an entry there would install a second,
+      // published copy of this repo's own code that nothing ever resolves to.
       'pg-boss': resolve(import.meta.dirname, '../../src'),
     },
     // Force a single copy of React in the dev module graph. Without this, Vite's

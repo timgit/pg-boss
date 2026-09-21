@@ -219,12 +219,14 @@ export default function QueueMetrics ({ loaderData }: Route.ComponentProps) {
         title={`${name} metrics`}
         subtitle="Queue stats history"
         action={
-          <DbLink to={`/queues/${encodeURIComponent(name)}`}>
-            <Button variant="outline" size="md">
-              <ArrowLeft className="h-4 w-4 mr-1.5" aria-hidden="true" />
-              Back to queue
-            </Button>
-          </DbLink>
+          <Button
+            variant="outline"
+            size="md"
+            render={<DbLink to={`/queues/${encodeURIComponent(name)}`} />}
+          >
+            <ArrowLeft className="h-4 w-4 mr-1.5" aria-hidden="true" />
+            Back to queue
+          </Button>
         }
       />
 
