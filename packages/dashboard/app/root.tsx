@@ -13,6 +13,7 @@ import { ThemeToggle } from "~/components/ui/theme-toggle";
 import { LoadingBar } from "~/components/loading-bar";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Breadcrumbs } from "~/components/breadcrumbs";
+import { ProSlot } from "~/components/pro-slot";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 import { cn } from "~/lib/utils";
 import { dbContext } from "~/lib/db-context";
@@ -43,6 +44,7 @@ function MainContent ({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-4">
           <SidebarTrigger />
           <Breadcrumbs />
+          <ProSlot name="topbarStart" />
         </div>
         <div className="flex items-center gap-2">
           {!open && (

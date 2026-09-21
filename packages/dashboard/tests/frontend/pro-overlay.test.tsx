@@ -24,6 +24,10 @@ function DemoFooter () {
   return <div data-testid="pro-footer">overlay footer</div>
 }
 
+function DemoTrail () {
+  return <nav data-testid="pro-trail">overlay trail</nav>
+}
+
 async function renderSidebar () {
   // Import the providers from the same module graph as the sidebar: after
   // `vi.resetModules()` a statically imported provider would carry a different
@@ -80,6 +84,27 @@ describe('pro overlay', () => {
       render(<ProSlot name="sidebarFooter" />)
 
       expect(screen.getByTestId('pro-footer')).toBeInTheDocument()
+    })
+
+    it('renders the topbar slot the overlay fills', async () => {
+      mockOverlay({ nav: [], slots: { topbarStart: DemoTrail } })
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      render(<ProSlot name="topbarStart" />)
+
+      expect(screen.getByTestId('pro-trail')).toBeInTheDocument()
+    })
+
+    // Every slot is independent: an overlay that fills one and not the other
+    // gets exactly what it asked for, which is what lets a slot be added to
+    // this contract without touching an overlay already shipped against it.
+    it('renders nothing for the topbar slot when only the footer is filled', async () => {
+      mockOverlay({ nav: [], slots: { sidebarFooter: DemoFooter } })
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      const { container } = render(<ProSlot name="topbarStart" />)
+
+      expect(container).toBeEmptyDOMElement()
     })
 
     it('renders nothing for a slot the overlay leaves empty', async () => {
