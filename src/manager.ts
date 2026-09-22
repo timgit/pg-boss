@@ -2441,9 +2441,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       )
     ) * 1000
 
-    const cacheAgeMs = cached.capturedOn == null
-      ? Infinity
-      : this.config.clock.now() - new Date(cached.capturedOn).getTime()
+    const cacheAgeMs = cached.cacheAgeMs == null ? Infinity : Number(cached.cacheAgeMs)
 
     // The vacuum-safety backoff outranks staleness, including a caller's { force: true }. Refreshing
     // here runs the same whole-job-table aggregate the supervisor just backed away from, and a

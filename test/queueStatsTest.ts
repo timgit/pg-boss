@@ -3,6 +3,7 @@ import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
+import pg from 'pg'
 
 describe('queueStats', function () {
   const queue1 = `q${randomUUID().replaceAll('-', '')}`
@@ -99,6 +100,28 @@ describe('queueStats', function () {
     expect(queueData.queuedCount).toBe(0)
     expect(queueData.readyCount).toBe(0)
     expect(queueData.totalCount).toBe(1)
+  })
+
+  // Skipped on PGlite, whose adapter does not route through pg-types.
+  helper.describeMultiConnectionOnly('with a custom timestamptz parser on the pool', function () {
+    it('serves the cache without coercing capturedOn to a Date', async function () {
+      // Applications sharing their pool with pg-boss may parse timestamptz into a type whose
+      // valueOf throws (Temporal.Instant). Internal age arithmetic must not depend on new Date().
+      const types = new pg.TypeOverrides()
+      types.setTypeParser(pg.types.builtins.TIMESTAMPTZ, (raw: string) => ({
+        raw,
+        valueOf () { throw new TypeError('Do not use valueOf on this timestamp') }
+      }))
+
+      // Not a declared pg-boss option, but forwarded to pg.Pool like any other connection setting.
+      ctx.boss = await init({ ...ctx.bossConfig, types } as ConstructorOptions & { schema: string })
+
+      // First read finds no capture and refreshes. The second reads the capture back and ages it.
+      await ctx.boss.getQueueStats(queue1)
+      const [queueData] = await ctx.boss.getQueueStats(queue1)
+
+      expect(queueData.totalCount).toBe(2)
+    })
   })
 
   it('should get accurate stats on an empty queue', async function () {
