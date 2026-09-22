@@ -324,7 +324,14 @@ describe('schedule missed', function () {
     // Neither a timestamp nor anything that parses as one: an absent column, and a column holding
     // something a pass has no reading of. No last pass means no gap, so the pass sends the due
     // window and nothing else, which is what every release before catch-up sent.
-    for (const priorCronOn of [null, undefined, 'not a timestamp', new Date('not a timestamp'), {}]) {
+    //
+    // The last shape is the one that throws on the way out rather than reading as nothing: every
+    // Temporal type refuses valueOf, and the zoneless ones (PlainDateTime, what a parser for a
+    // `timestamp` column hands back) carry no epochMilliseconds either, so the read has nowhere
+    // left to go. It must still come back as no last pass instead of escaping the pass.
+    const zonelessTemporalLike = { toString: () => '2026-09-22T17:48:00', valueOf () { throw new TypeError('Do not use valueOf on this timestamp') } }
+
+    for (const priorCronOn of [null, undefined, 'not a timestamp', new Date('not a timestamp'), {}, zonelessTemporalLike]) {
       const inserted = await pass(makeTk(), now, priorCronOn, [row('* * * * *', 'once')])
 
       expect(slots(inserted)).toEqual([])

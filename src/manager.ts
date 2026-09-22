@@ -2055,6 +2055,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const retryDelay = Number(job.retry_delay)
       const retryDelayMax = job.retry_delay_max != null ? Number(job.retry_delay_max) : null
 
+      // Every timestamp this loop binds back into an insert is read from the text the select carries
+      // alongside it, never from the parsed column. See REBOUND_TIMESTAMPS_AS_TEXT: pg-boss shares
+      // the application's pool, and a pg-types parser returning anything but a Date leaves an object
+      // pg encodes as JSON, which Postgres rejects. The fallbacks keep a row selected some other way
+      // working.
+      const startedOn = job.started_on_text ?? job.started_on
+      const singletonOn = job.singleton_on_text ?? job.singleton_on
+      const createdOn = job.created_on_text ?? job.created_on
+      const keepUntil = job.keep_until_text ?? job.keep_until
+      const startAfterColumn = job.start_after_text ?? job.start_after
+
       // forceTerminal (perJobResults `deadletter`) skips retries so the job fails terminally and
       // routes straight to the dead letter queue below.
       const canRetry = !forceTerminal && retryCount < retryLimit
@@ -2062,7 +2073,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       if (canRetry) {
         // Calculate start_after for retry
-        let startAfter = job.start_after
+        let startAfter = startAfterColumn
         if (!job.retry_backoff) {
           startAfter = new Date(this.config.clock.now() + retryDelay * 1000)
         } else {
@@ -2079,9 +2090,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // (matches the non-distributed failJobs() CTE).
         const { rows } = await tx.executeSql(insertSql, [
           job.id, job.name, job.priority, job.data, 'retry', job.retry_limit, job.retry_count,
-          job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, job.started_on,
-          job.singleton_key, job.singleton_on, job.group_id, job.group_tier, job.expire_seconds,
-          job.deletion_seconds, job.created_on, null, job.keep_until, job.policy,
+          job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, startedOn,
+          job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
+          job.deletion_seconds, createdOn, null, keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies
         ])
@@ -2095,16 +2106,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (!retried) {
         await tx.executeSql(insertSql, [
           job.id, job.name, job.priority, job.data, 'failed', job.retry_limit, job.retry_count,
-          job.retry_delay, job.retry_backoff, job.retry_delay_max, job.start_after, job.started_on,
-          job.singleton_key, job.singleton_on, job.group_id, job.group_tier, job.expire_seconds,
-          job.deletion_seconds, job.created_on, new Date(this.config.clock.now()), job.keep_until, job.policy,
+          job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfterColumn, startedOn,
+          job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
+          job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, job.created_on, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier])
+          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier])
         }
       }
 

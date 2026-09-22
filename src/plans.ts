@@ -2624,9 +2624,23 @@ export function deadLetterJobsByIdWithOutputs (schema: string, table: string) {
 }
 
 // Distributed mode: separate queries to avoid CockroachDB's multi-mutation CTE limitation
+// The five timestamp columns a re-insert binds back are carried alongside the row as text. These rows
+// come straight from a `SELECT *`, so every column arrives through whatever parser the application
+// installed on the pool, and pg-boss shares that pool: a parser returning anything but a Date (a
+// Temporal type, a Luxon DateTime) leaves an object that `pg` encodes as JSON and Postgres rejects
+// with `invalid input syntax for type timestamp with time zone`. The text rendering carries the
+// offset and full precision, so it round-trips unchanged, which is what releaseBamCommand does with
+// a claim's started_on for the same reason.
+const REBOUND_TIMESTAMPS_AS_TEXT = `started_on::text as started_on_text,
+      singleton_on::text as singleton_on_text,
+      created_on::text as created_on_text,
+      keep_until::text as keep_until_text,
+      start_after::text as start_after_text`
+
 export function selectJobsToFailById (schema: string, table: string): SqlQuery {
   return {
-    text: `SELECT * FROM ${schema}.${table} WHERE name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`,
+    text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
+      FROM ${schema}.${table} WHERE name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`,
     values: []
   }
 }
@@ -2644,7 +2658,8 @@ export function deleteJobsToFail (schema: string, table: string): SqlQuery {
 // them separately (delete via deleteJobsByIds, re-insert via insertRetryJob), all in one transaction.
 export function selectJobsToFailByTimeout (schema: string, table: string, queues: string[]): SqlQuery {
   return {
-    text: `SELECT * FROM ${schema}.${table}
+    text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
+      FROM ${schema}.${table}
       WHERE state = '${JOB_STATES.active}'
         AND (started_on + expire_seconds * interval '1s') < ${schema}.job_now()
         AND name = ANY(${serializeArrayParam(queues)})`,
@@ -2654,7 +2669,8 @@ export function selectJobsToFailByTimeout (schema: string, table: string, queues
 
 export function selectJobsToFailByHeartbeat (schema: string, table: string, queues: string[]): SqlQuery {
   return {
-    text: `SELECT * FROM ${schema}.${table}
+    text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
+      FROM ${schema}.${table}
       WHERE state = '${JOB_STATES.active}'
         AND heartbeat_seconds IS NOT NULL
         AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.job_now()

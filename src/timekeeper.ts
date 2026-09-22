@@ -154,24 +154,27 @@ function toTime (value: unknown): number | null {
   }
 
   if (typeof value === 'object' && value !== null) {
-    const epoch = (value as { epochMilliseconds?: unknown }).epochMilliseconds
-
-    if (typeof epoch === 'number' && Number.isFinite(epoch)) {
-      return epoch
-    }
-
-    // Every other wrapper an application is likely to parse a timestamp into answers valueOf with
-    // epoch milliseconds. Read straight off it rather than through `new Date()`, so a value that
-    // refuses to be coerced throws here, where it is caught, rather than out of the cron pass.
-    // A plain object answers with itself, which is not a number, so it still reads as no instant.
+    // Both reads are inside the guard. epochMilliseconds is a getter on the types that have it, and
+    // a wrapper is free to brand-check or validate in one, so reading it is as able to throw as
+    // valueOf is. Either way a value this pass cannot make an instant of has to read as no instant
+    // rather than take the whole cron pass down with it.
     try {
+      const epoch = (value as { epochMilliseconds?: unknown }).epochMilliseconds
+
+      if (typeof epoch === 'number' && Number.isFinite(epoch)) {
+        return epoch
+      }
+
+      // Every other wrapper an application is likely to parse a timestamp into answers valueOf with
+      // epoch milliseconds. Read straight off it rather than through `new Date()`: Temporal refuses
+      // valueOf by design, and a plain object answers with itself, which is not a number.
       const millis = (value as { valueOf: () => unknown }).valueOf()
 
       if (typeof millis === 'number' && Number.isFinite(millis)) {
         return millis
       }
     } catch {
-      // Temporal.Instant throws from valueOf by design, and its epochMilliseconds was read above.
+      // Nothing here names an instant, which is what an absent column reads as.
     }
   }
 

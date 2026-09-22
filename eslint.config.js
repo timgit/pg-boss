@@ -1,10 +1,17 @@
 import neostandard from 'neostandard'
 import { defineConfig } from 'eslint/config'
 
+// resolveIgnoresFromGitignore() reads the root .gitignore only, so a nested one is invisible here.
+// packages/dashboard/app/pro is ignored by packages/dashboard/.gitignore: it is the Pro overlay,
+// mounted into a dashboard checkout from the separate Pro repository and owned by it. Linting a
+// working copy that happens to have the overlay mounted reports findings against source this
+// repository cannot fix, so the ignore has to be stated again for eslint.
+const PRO_OVERLAY = 'packages/dashboard/app/pro/**'
+
 const config = neostandard({
   ts: true,
   env: ['mocha'],
-  ignores: neostandard.resolveIgnoresFromGitignore(),
+  ignores: [...neostandard.resolveIgnoresFromGitignore(), PRO_OVERLAY],
   noJsx: true,
 })
 

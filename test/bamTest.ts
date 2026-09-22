@@ -720,12 +720,11 @@ describe('bam', function () {
       const priorStartedOn = await insertBamRow(ctx.schema, 'release_stale_cmd', 'in_progress', 'SELECT 1', 25 * 60 * 60)
 
       const db = await helper.getDb()
-      const before = { rows: [{ startedOn: priorStartedOn }] }
 
       await triggerBamPoll(ctx.schema)
       // Claimed means started_on moved to now(); wait for that rather than for the status, which was
       // already in_progress.
-      await waitForBamClaim(ctx.schema, 'release_stale_cmd', before.rows[0].startedOn)
+      await waitForBamClaim(ctx.schema, 'release_stale_cmd', priorStartedOn)
 
       await boss.stop()
 
@@ -735,7 +734,7 @@ describe('bam', function () {
       await db.close()
 
       expect(after.rows[0].status).toBe('in_progress')
-      expect(new Date(after.rows[0].startedOn).getTime()).toBe(new Date(before.rows[0].startedOn).getTime())
+      expect(new Date(after.rows[0].startedOn).getTime()).toBe(new Date(priorStartedOn).getTime())
     }, 20000)
   })
 

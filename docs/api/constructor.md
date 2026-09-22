@@ -68,7 +68,7 @@ The following options can be set as properties in an object for additional confi
     assert(rows[0].input === 'arg1')
     ```
 
-    pg-boss doesn't re-parse the values a shared pool hands back, so a global [`pg-types`](https://github.com/brianc/node-pg-types) parser reaches it, and reaches the public API, unchanged. A `timestamptz` parser returning something other than a `Date` is the common case: pg-boss does its own timestamp arithmetic in SQL rather than in JavaScript, so such a parser is safe, but types like `capturedOn` on [`getQueueStats()`](./queues.md#getqueuestatsname-options) are documented as `Date` and will hold whatever your parser returned.
+    See [Custom type parsers](#custom-type-parsers) for how a global `pg-types` parser interacts with pg-boss, whether you bring your own pool or not.
 
 * **schema** - string, defaults to "pgboss"
 
@@ -238,3 +238,12 @@ The following configuration options should not normally need to be changed, but 
 * **__test__enableSpies**, bool, default false
 
   Enables [`getSpy()`](./testing.md#getspyname) for deterministic tests. Adds per-transition tracking overhead, so leave unset in production.
+
+### Custom type parsers
+
+pg-boss doesn't re-parse the values it reads back, so a global [`pg-types`](https://github.com/brianc/node-pg-types) parser reaches it, and reaches the public API, unchanged. This applies whether you pass your own [`db`](#newoptions) or let pg-boss build the pool: `pg.types.setTypeParser()` is global to the `pg` module either way.
+
+A `timestamptz` parser returning something other than a `Date` is the common case, `Temporal.Instant` and Luxon's `DateTime` in particular. pg-boss does its own timestamp arithmetic in SQL rather than in JavaScript, so such a parser is supported, with two consequences worth knowing:
+
+* Types that document a `Date`, such as `capturedOn` on [`getQueueStats()`](./queues.md#getqueuestatsname-options) or `createdOn` on a job, will hold whatever your parser returned. The declared type is what the default parser produces, not a conversion pg-boss performs.
+* A value that throws on coercion, which every `Temporal` type does from `valueOf` by design, is safe to hand back. pg-boss never coerces one.

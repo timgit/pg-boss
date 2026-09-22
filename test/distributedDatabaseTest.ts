@@ -2,6 +2,9 @@ import { expect, it } from 'vitest'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import { isDistributedBackend, distributedTimeout } from './timeouts.ts'
+import pg from 'pg'
+import { randomUUID } from 'node:crypto'
+import { delay } from '../src/tools.ts'
 
 // This file holds ONLY the invariants the general suite structurally cannot express. General
 // behavioral coverage (fetch/complete/fail/retry/policies/flows/dead-letter/...) already runs in
@@ -432,5 +435,95 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     await db.close()
 
     expect(rows[0].reindex_on).toBeNull()
+  })
+  // Skipped on PGlite, whose adapter does not route through pg-types.
+  helper.describeMultiConnectionOnly('with a custom timestamptz parser on the pool', function () {
+    // The distributed fail path is the one place pg-boss reads a timestamp out of a row and binds it
+    // straight back into an insert: CockroachDB rejects the multi-mutation failJobs() CTE, so the
+    // job is selected, deleted and re-inserted instead. Those rows come from a `SELECT *`, so every
+    // column arrives through whatever parser the application installed on the shared pool, and an
+    // object pg encodes as JSON is rejected with `invalid input syntax for type timestamp with time
+    // zone`. The transaction rolls back, so fail() throws and the job is stranded active, and the
+    // same helper backs the maintenance expiry, so a supervise pass would throw every cycle.
+    const throwingTimestamps = () => {
+      const types = new pg.TypeOverrides()
+      const parse = (raw: string) => ({ raw, valueOf () { throw new TypeError('Do not use valueOf on this timestamp') } })
+
+      types.setTypeParser(pg.types.builtins.TIMESTAMPTZ, parse)
+      types.setTypeParser(pg.types.builtins.TIMESTAMP, parse)
+
+      return types
+    }
+
+    it('fails a job terminally, to its dead letter queue, without re-binding a parsed timestamp', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, types: throwingTimestamps() } as any)
+
+      const deadLetter = randomUUID()
+      const queue = randomUUID()
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.createQueue(queue, { retryLimit: 0, deadLetter })
+
+      const sent = await ctx.boss.send(queue)
+      helper.assertTruthy(sent)
+      const [job] = await ctx.boss.fetch(queue)
+
+      await ctx.boss.fail(queue, job.id)
+
+      const failed = await ctx.boss.getJobById(queue, job.id)
+      helper.assertTruthy(failed)
+      expect(failed.state).toBe('failed')
+
+      const [dead] = await ctx.boss.fetch(deadLetter)
+      expect(dead).not.toBe(undefined)
+    })
+
+    it('retries a job, keeping the timestamps the row was carrying', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, types: throwingTimestamps() } as any)
+
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue, { retryLimit: 1, retryDelay: 0 })
+
+      const sent = await ctx.boss.send(queue)
+      helper.assertTruthy(sent)
+      const [job] = await ctx.boss.fetch(queue)
+
+      // Read through the parser, so these are the parser's objects rather than Dates. What they
+      // carry is the raw text of the column, which is exactly what the re-insert has to put back.
+      const before = await ctx.boss.getJobById(queue, job.id)
+      helper.assertTruthy(before)
+
+      await ctx.boss.fail(queue, job.id)
+
+      // The retry insert re-binds created_on and keep_until, so they survive the delete and
+      // re-insert only if the text rendering was what went back in.
+      const retried = await ctx.boss.getJobById(queue, job.id)
+      helper.assertTruthy(retried)
+      expect(retried.state).toBe('retry')
+      expect((retried.createdOn as any).raw).toBe((before.createdOn as any).raw)
+      expect((retried.keepUntil as any).raw).toBe((before.keepUntil as any).raw)
+    })
+
+    it('expires a timed-out job during maintenance', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, supervise: false, types: throwingTimestamps() } as any)
+
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue, { retryLimit: 0, expireInSeconds: 1 })
+
+      const sent = await ctx.boss.send(queue)
+      helper.assertTruthy(sent)
+      await ctx.boss.fetch(queue)
+
+      await delay(1500)
+
+      const errors: Error[] = []
+      ctx.boss.on('error', err => errors.push(err))
+
+      await expect(ctx.boss.supervise()).resolves.toBeUndefined()
+      expect(errors).toEqual([])
+
+      const expired = await ctx.boss.getJobById(queue, sent)
+      helper.assertTruthy(expired)
+      expect(expired.state).toBe('failed')
+    })
   })
 })
