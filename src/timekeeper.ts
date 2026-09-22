@@ -136,9 +136,9 @@ function claimTaken (value: unknown): boolean {
 /**
  * A timestamp column as the driver in front of this instance hands it back: node-postgres parses
  * one into a Date, an adapter over a backend that speaks JSON hands back the string it was sent,
- * and an application sharing its pool may have installed a pg-types parser of its own. Temporal is
- * the usual choice there: its Instant carries epochMilliseconds and prints as ISO 8601, but throws
- * from valueOf, so `new Date(value)` is never called on an object here. Null for anything that
+ * and an application sharing its pool may have installed a pg-types parser of its own. An object
+ * is read by its epochMilliseconds (Temporal.Instant) or, failing that, by what it prints. Never
+ * `new Date(value)` on an object: Temporal.Instant throws from valueOf. Null for anything that
  * names no instant, which is what an absent column reads as.
  */
 function toTime (value: unknown): number | null {
