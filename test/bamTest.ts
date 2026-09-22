@@ -774,7 +774,12 @@ describe('bam', function () {
   // keeps async migrations sequential across instances.
   helper.describeMultiConnectionOnly('one command at a time', function () {
     it('should let only one of two concurrent claims win, and hold the next command until it finishes', async function () {
+      // Only here to build the schema. Its bam poller competes for the rows below: the startup poll
+      // is fire-and-forget (setImmediate in Bam.start), so on a loaded box it lands after these
+      // inserts and claims a row out from under the claims this test makes by hand. Shut the
+      // instance down and keep the schema.
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
 
       const db = await helper.getDb()
       await db.executeSql(`
@@ -869,7 +874,12 @@ describe('bam', function () {
       // Releasing on the id alone would then reset a row a peer is actively building back to 'pending'
       // and the next poll would start a second CREATE INDEX CONCURRENTLY on the same index. The peer's
       // claim is stood in for here by rewriting started_on, which is exactly what its claim would do.
+      // Only here to build the schema. Its bam poller competes for the rows below: the startup poll
+      // is fire-and-forget (setImmediate in Bam.start), so on a loaded box it lands after these
+      // inserts and claims a row out from under the claims this test makes by hand. Shut the
+      // instance down and keep the schema.
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
 
       const db = await helper.getDb()
       await insertBamRow(ctx.schema, 'contended_cmd', 'pending', 'SELECT 1')
