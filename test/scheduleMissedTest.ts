@@ -280,19 +280,29 @@ describe('schedule missed', function () {
     const lastPass = now - 10 * MINUTE
 
     // node-postgres parses a timestamp column into a Date, and an adapter over a backend that
-    // speaks JSON hands back the string or the epoch it was sent. All three name the same instant,
-    // so a catch-up owes the same occurrence whichever one the pass is holding.
-    const shapes: unknown[] = [
-      new Date(lastPass),
-      new Date(lastPass).toISOString(),
-      lastPass
+    // speaks JSON hands back the string or the epoch it was sent. An application sharing its pool
+    // may have installed a pg-types parser of its own, such as one returning Temporal.Instant,
+    // which carries epochMilliseconds and throws from valueOf so that
+    // new Date(instant) cannot be used on it. All name the same instant, so a catch-up owes the same
+    // occurrence whichever one the pass is holding.
+    const temporalLike = (epochMs: number) => ({
+      epochMilliseconds: epochMs,
+      toString: () => new Date(epochMs).toISOString(),
+      valueOf () { throw new TypeError('Do not use valueOf on this timestamp') }
+    })
+
+    const shapes: Array<(epochMs: number) => unknown> = [
+      epochMs => new Date(epochMs),
+      epochMs => new Date(epochMs).toISOString(),
+      epochMs => epochMs,
+      temporalLike
     ]
 
-    for (const priorCronOn of shapes) {
-      const inserted = await pass(makeTk(), now, priorCronOn, [
-        // A created_on in the string shape too, and older than the gap, so the bound it puts under
-        // the read is the last pass rather than the row.
-        row('* * * * *', 'once', { createdOn: new Date(lastPass - DAY).toISOString() })
+    for (const shape of shapes) {
+      const inserted = await pass(makeTk(), now, shape(lastPass), [
+        // A created_on in the same shape, and older than the gap, so the bound it puts under the
+        // read is the last pass rather than the row.
+        row('* * * * *', 'once', { createdOn: shape(lastPass - DAY) })
       ])
 
       expect(slots(inserted)).toEqual([slotOf(minute - MINUTE)])
