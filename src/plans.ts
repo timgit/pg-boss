@@ -1544,6 +1544,10 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
 // is monitor_on. The moment those counts were last refreshed, or NULL if the queue has never been
 // monitored (so the caller knows to recompute rather than trust default-zero counts).
 //
+// cacheAgeMs is computed here rather than from capturedOn on the client: pg-boss shares the
+// caller's pool, and a global pg-types parser (Temporal.Instant, say) returns timestamptz values
+// `new Date()` cannot coerce.
+//
 // monitorBackoff rides along because the caller must serve this cache even when it is stale while
 // the vacuum-safety backoff is in force: a forced refresh runs the same whole-table aggregate the
 // backoff exists to space out, and a dashboard polling { force: true } would otherwise walk
@@ -1560,6 +1564,7 @@ export function getQueueStatsCache (schema: string): string {
       total_count    as "totalCount",
       table_name     as "table",
       monitor_on     as "capturedOn",
+      (extract(epoch from (${schema}.job_now() - monitor_on)) * 1000)::float8 as "cacheAgeMs",
       (SELECT monitor_backoff_on > ${schema}.job_now() FROM ${schema}.version) as "monitorBackoff"
     FROM ${schema}.queue
     WHERE name = $1
