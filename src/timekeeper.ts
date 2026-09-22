@@ -764,7 +764,13 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       return occurrencesInWindow(expression, window, new Date(databaseTime), tz)
     }
 
-    const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(databaseTime) })
+    // cron-parser's prev() answers strictly before its reference date, so the reference is a
+    // millisecond past the window's upper bound to leave that bound included, exactly as
+    // latestOccurrenceBefore does. Without it an occurrence landing on databaseTime falls out of
+    // both ends at once: prev() steps back past it to the one 60 seconds earlier, which is the
+    // window's excluded lower bound, and the pass sends nothing at all. A pass whose clock reads a
+    // whole minute is rare (`databaseTime % 60000 === 0`) and entirely real.
+    const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(databaseTime + 1) })
 
     const previous = interval.prev().toDate()
 

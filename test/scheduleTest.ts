@@ -883,6 +883,33 @@ describe('timekeeper clock domain', function () {
     expect(warnings[0].message).toMatch(/broken/)
   })
 
+  it('sends an occurrence landing exactly on the pass clock', async function () {
+    // The due window is (databaseTime - 60s, databaseTime], and cron-parser's prev() answers
+    // strictly before its reference date. Reading it at databaseTime therefore stepped back past an
+    // occurrence sitting exactly on databaseTime to the one a minute earlier, which is the window's
+    // own excluded lower bound, so the pass sent nothing at all: not a late job, no job. It needs a
+    // pass whose clock reads a whole minute, which is roughly one run in sixty thousand, so it
+    // surfaced only as an occasional empty pass in CI. The rrule branch never had it.
+    for (const offsetMs of [0, -1, 1]) {
+      const tk = makeTk(0)
+      ;(tk as any).stopped = false
+
+      const inserted: any[] = []
+      ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+      ;(tk as any).getSchedules = async () => ([
+        { name: 'report', key: 'daily', data: null, options: {}, cron: '* * * * *', timezone: 'UTC' }
+      ])
+
+      // databaseTime is clock.now() + clockSkew, so the skew is what pins the pass to the boundary.
+      const now = Date.now()
+      tk.clockSkew = Math.ceil(now / 60_000) * 60_000 - now + offsetMs
+
+      await tk.cron()
+
+      expect(inserted.length, `offset ${offsetMs}ms from the minute`).toBe(1)
+    }
+  })
+
   it('cron() keeps two schedules apart when their name and key run together', async function () {
     const tk = makeTk(0)
     ;(tk as any).stopped = false
