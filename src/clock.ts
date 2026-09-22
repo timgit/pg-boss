@@ -75,9 +75,18 @@ export class TestClock implements AttachableClock {
     this.clearTimeout(handle)
   }
 
-  /** Jumps to a time, forwards or backwards, firing nothing. */
+  /**
+   * Jumps to a time, forwards or backwards, firing nothing. Pending timers keep their remaining
+   * delay, as real timers do across a wall-clock change, so a jump neither replays the periods it
+   * skipped nor stalls timers behind a backwards move.
+   */
   async setTime (t: Date | number | string): Promise<void> {
-    this.#now = toMillis(t)
+    const next = toMillis(t)
+    const delta = next - this.#now
+    for (const timer of this.#timers) {
+      timer.due += delta
+    }
+    this.#now = next
     await this.#push()
   }
 

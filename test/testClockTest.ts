@@ -3,6 +3,7 @@ import { TestClock } from '../src/clock.ts'
 import { clockDelay } from '../src/tools.ts'
 
 const T0 = Date.parse('2026-01-01T00:00:00Z')
+const DAY = 24 * 60 * 60 * 1000
 
 describe('TestClock (pure)', function () {
   it('starts at the given time and does not move on its own', async function () {
@@ -105,6 +106,33 @@ describe('TestClock (pure)', function () {
 
     await clock.tick(0)
     expect(fired).toBe(0)
+  })
+
+  it('setTime leaves an interval its remaining delay instead of replaying the periods it skipped', async function () {
+    const clock = new TestClock(T0)
+    let fired = 0
+    clock.setInterval(() => fired++, 2000)
+
+    await clock.tick(500)
+    await clock.setTime(T0 + DAY)
+
+    await clock.tick(1499)
+    expect(fired).toBe(0)
+
+    await clock.tick(1)
+    expect(fired).toBe(1)
+    expect(clock.now()).toBe(T0 + DAY + 1500)
+  })
+
+  it('setTime backwards leaves a timer its remaining delay', async function () {
+    const clock = new TestClock(T0)
+    let fired = 0
+    clock.setTimeout(() => fired++, 10)
+
+    await clock.setTime(T0 - DAY)
+    await clock.tick(10)
+
+    expect(fired).toBe(1)
   })
 
   it('a synchronous throw propagates out of tick and leaves the clock usable', async function () {
