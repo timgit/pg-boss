@@ -4065,6 +4065,8 @@ export function getXminHorizon (lastVacuum: Date, sources: readonly XminHorizonS
  *
  * `lastVacuum` is the later of the autovacuum and manual timestamps: what matters is that a vacuum
  * ran, not who asked for it. GREATEST ignores NULLs, so it is NULL only when neither has ever run.
+ * Returned as epoch milliseconds rather than timestamptz: pg-boss shares the caller's pool, and a
+ * global pg-types parser (Temporal.Instant, say) returns values `new Date()` cannot coerce.
  * Its age is computed server-side rather than against the client clock, so the check does not
  * inherit the skew that `clock_skew` exists to report.
  *
@@ -4075,7 +4077,7 @@ export function getJobTableGarbage (schema: string, tables?: string[]): string {
     SELECT t.relname as name,
       s.n_live_tup as "liveTuples",
       s.n_dead_tup as "deadTuples",
-      GREATEST(s.last_autovacuum, s.last_vacuum) as "lastVacuum",
+      (extract(epoch from GREATEST(s.last_autovacuum, s.last_vacuum)) * 1000)::float8 as "lastVacuum",
       extract(epoch from (now() - GREATEST(s.last_autovacuum, s.last_vacuum)))::int as "vacuumAgeSeconds",
       coalesce((SELECT option_value::int FROM pg_options_to_table(t.reloptions)
                  WHERE option_name = 'autovacuum_vacuum_threshold'),
