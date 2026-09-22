@@ -135,8 +135,11 @@ function claimTaken (value: unknown): boolean {
 
 /**
  * A timestamp column as the driver in front of this instance hands it back: node-postgres parses
- * one into a Date, and an adapter over a backend that speaks JSON hands back the string it was
- * sent. Null for anything that is neither, which is what an absent column reads as.
+ * one into a Date, an adapter over a backend that speaks JSON hands back the string it was sent,
+ * and an application sharing its pool may have installed a pg-types parser of its own. Temporal is
+ * the usual choice there: its Instant carries epochMilliseconds and prints as ISO 8601, but throws
+ * from valueOf, so `new Date(value)` is never called on an object here. Null for anything that
+ * names no instant, which is what an absent column reads as.
  */
 function toTime (value: unknown): number | null {
   if (value instanceof Date) {
@@ -145,6 +148,18 @@ function toTime (value: unknown): number | null {
 
   if (typeof value === 'string' || typeof value === 'number') {
     const time = new Date(value).getTime()
+
+    return Number.isNaN(time) ? null : time
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const epoch = (value as { epochMilliseconds?: unknown }).epochMilliseconds
+
+    if (typeof epoch === 'number') {
+      return Number.isFinite(epoch) ? epoch : null
+    }
+
+    const time = new Date(String(value)).getTime()
 
     return Number.isNaN(time) ? null : time
   }
