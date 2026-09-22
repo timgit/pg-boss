@@ -282,16 +282,11 @@ describe('schedule missed', function () {
     // node-postgres parses a timestamp column into a Date, and an adapter over a backend that
     // speaks JSON hands back the string or the epoch it was sent. An application sharing its pool
     // may have installed a pg-types parser of its own, such as one returning Temporal.Instant,
-    // which carries epochMilliseconds, prints as ISO 8601, and throws from valueOf so that
+    // which carries epochMilliseconds and throws from valueOf so that
     // new Date(instant) cannot be used on it. All name the same instant, so a catch-up owes the same
     // occurrence whichever one the pass is holding.
     const temporalLike = (epochMs: number) => ({
       epochMilliseconds: epochMs,
-      toString: () => new Date(epochMs).toISOString(),
-      valueOf () { throw new TypeError('Do not use valueOf on this timestamp') }
-    })
-    // An object that prints as a timestamp without exposing the epoch is read by what it prints.
-    const printsIso = (epochMs: number) => ({
       toString: () => new Date(epochMs).toISOString(),
       valueOf () { throw new TypeError('Do not use valueOf on this timestamp') }
     })
@@ -300,8 +295,7 @@ describe('schedule missed', function () {
       epochMs => new Date(epochMs),
       epochMs => new Date(epochMs).toISOString(),
       epochMs => epochMs,
-      temporalLike,
-      printsIso
+      temporalLike
     ]
 
     for (const shape of shapes) {

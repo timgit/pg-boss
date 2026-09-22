@@ -137,9 +137,9 @@ function claimTaken (value: unknown): boolean {
  * A timestamp column as the driver in front of this instance hands it back: node-postgres parses
  * one into a Date, an adapter over a backend that speaks JSON hands back the string it was sent,
  * and an application sharing its pool may have installed a pg-types parser of its own. An object
- * is read by its epochMilliseconds (Temporal.Instant) or, failing that, by what it prints. Never
- * `new Date(value)` on an object: Temporal.Instant throws from valueOf. Null for anything that
- * names no instant, which is what an absent column reads as.
+ * is read by its epochMilliseconds (Temporal.Instant). Never `new Date(value)` on an object:
+ * Temporal.Instant throws from valueOf. Null for anything that names no instant, which is what an
+ * absent column reads as.
  */
 function toTime (value: unknown): number | null {
   if (value instanceof Date) {
@@ -155,13 +155,9 @@ function toTime (value: unknown): number | null {
   if (typeof value === 'object' && value !== null) {
     const epoch = (value as { epochMilliseconds?: unknown }).epochMilliseconds
 
-    if (typeof epoch === 'number') {
-      return Number.isFinite(epoch) ? epoch : null
+    if (typeof epoch === 'number' && Number.isFinite(epoch)) {
+      return epoch
     }
-
-    const time = new Date(String(value)).getTime()
-
-    return Number.isNaN(time) ? null : time
   }
 
   return null
