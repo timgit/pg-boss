@@ -119,6 +119,31 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
     }
   })
 
+  it('does not depend on the client timestamptz parser returning a Date', async function () {
+    // Applications that share their pool with pg-boss may register a global pg-types parser for
+    // timestamptz (Temporal.Instant is the common case). Such values throw on valueOf, so any
+    // new Date(row.column) on a timestamptz read in pg-boss blows up the supervise pass.
+    const types = new pg.TypeOverrides()
+    types.setTypeParser(pg.types.builtins.TIMESTAMPTZ, (raw: string) => ({
+      raw,
+      valueOf () { throw new TypeError('Do not use valueOf on this timestamp') }
+    }))
+
+    const boss = await startBoss({ types })
+    const release = await holdHorizon()
+
+    try {
+      await churn(boss, 'garbage')
+      await boss.supervise()
+      await churn(boss, 'garbage')
+      await boss.supervise()
+
+      expect(await storedWarnings(ctx.schema, 'xmin_horizon')).toHaveLength(1)
+    } finally {
+      await release()
+    }
+  })
+
   it('needs a vacuum to have failed before it warns', async function () {
     const boss = await startBoss()
     const release = await holdHorizon()

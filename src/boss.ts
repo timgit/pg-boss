@@ -598,7 +598,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       // Compared only against the previous observation of the same table, so any monotonic clock
       // works; a table never vacuumed reads as 0 and stays there, which is exactly the state the
       // autovacuum_disabled branch is looking for.
-      const lastVacuum = row.lastVacuum ? new Date(row.lastVacuum).getTime() : 0
+      const lastVacuum = row.lastVacuum == null ? 0 : Number(row.lastVacuum)
 
       if (deadTuples <= budget) {
         this.#garbageEvidence.delete(name)
