@@ -96,7 +96,7 @@ describe('monitoring', function () {
     let eventCount = 0
 
     ctx.boss.on('warning', (event) => {
-      expect(event.message.includes('queue')).toBeTruthy()
+      expect(event.message).toContain(`queue "${ctx.schema}"`)
       eventCount++
     })
 
@@ -139,7 +139,7 @@ describe('monitoring', function () {
     let eventCount = 0
 
     ctx.boss.on('warning', (event) => {
-      expect(event.message.includes('queue')).toBeTruthy()
+      expect(event.message).toContain(`queue "${ctx.schema}"`)
       eventCount++
     })
 

@@ -14,7 +14,7 @@ const events = {
 // Default thresholds and warning messages
 const WARNINGS = {
   SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
-  LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' },
+  LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog' },
   // No threshold constant: the trigger is measured, not configured. See #checkVacuum.
   XMIN_HORIZON: { message: 'Warning: the database transaction horizon is pinned, so completed jobs cannot be cleaned up' },
   AUTOVACUUM_DISABLED: { message: 'Warning: autovacuum is disabled, so nothing is reclaiming completed jobs' },
@@ -409,13 +409,16 @@ class Boss extends EventEmitter implements types.EventsMixin {
         // Coerce with Number(): CockroachDB returns these integer columns as strings, so a bare `>`
         // would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
         // standard Postgres these are already numbers, so Number() is a no-op.
-        const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || this.#largeQueueSize))
+        const warnings = rowsCacheStats
+          .map(i => ({ row: i, threshold: Number(i.warningQueueSize) || this.#largeQueueSize }))
+          .filter(({ row, threshold }) => Number(row.queuedCount) > threshold)
 
-        for (const warning of warnings) {
+        for (const { row, threshold } of warnings) {
           await emitAndPersistWarning(this.#warningContext,
             WARNING_TYPES.QUEUE_BACKLOG,
-            WARNINGS.LARGE_QUEUE.message,
-            warning
+            `${WARNINGS.LARGE_QUEUE.message}: queue "${row.name}" has ${Number(row.queuedCount)} jobs in the ` +
+            `created or retry state, over its warning threshold of ${threshold}. Your queue should be reviewed`,
+            row
           )
         }
       }
