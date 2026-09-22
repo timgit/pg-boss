@@ -291,11 +291,19 @@ describe('schedule missed', function () {
       valueOf () { throw new TypeError('Do not use valueOf on this timestamp') }
     })
 
+    // The other wrappers an application parses timestamps into: no epochMilliseconds, but valueOf
+    // answers with epoch milliseconds, which is how Luxon, Moment and Day.js all read.
+    const wrapperLike = (epochMs: number) => ({
+      toString: () => new Date(epochMs).toISOString(),
+      valueOf: () => epochMs
+    })
+
     const shapes: Array<(epochMs: number) => unknown> = [
       epochMs => new Date(epochMs),
       epochMs => new Date(epochMs).toISOString(),
       epochMs => epochMs,
-      temporalLike
+      temporalLike,
+      wrapperLike
     ]
 
     for (const shape of shapes) {

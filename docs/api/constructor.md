@@ -68,6 +68,8 @@ The following options can be set as properties in an object for additional confi
     assert(rows[0].input === 'arg1')
     ```
 
+    pg-boss doesn't re-parse the values a shared pool hands back, so a global [`pg-types`](https://github.com/brianc/node-pg-types) parser reaches it, and reaches the public API, unchanged. A `timestamptz` parser returning something other than a `Date` is the common case: pg-boss does its own timestamp arithmetic in SQL rather than in JavaScript, so such a parser is safe, but types like `capturedOn` on [`getQueueStats()`](./queues.md#getqueuestatsname-options) are documented as `Date` and will hold whatever your parser returned.
+
 * **schema** - string, defaults to "pgboss"
 
     Database schema that contains all required storage objects. Unquoted, only alphanumeric and underscore are allowed, and the name may not start with a number. Quoted (see below), any character is allowed except double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters. Either way the limit is <= 50 bytes.

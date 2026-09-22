@@ -136,10 +136,11 @@ function claimTaken (value: unknown): boolean {
 /**
  * A timestamp column as the driver in front of this instance hands it back: node-postgres parses
  * one into a Date, an adapter over a backend that speaks JSON hands back the string it was sent,
- * and an application sharing its pool may have installed a pg-types parser of its own. An object
- * is read by its epochMilliseconds (Temporal.Instant). Never `new Date(value)` on an object:
- * Temporal.Instant throws from valueOf. Null for anything that names no instant, which is what an
- * absent column reads as.
+ * and an application sharing its pool may have installed a pg-types parser of its own. An object is
+ * read by its epochMilliseconds (Temporal.Instant) or by what valueOf answers with (Luxon, Moment
+ * and Day.js all coerce to epoch milliseconds that way). Never `new Date(value)` on an object:
+ * Temporal.Instant throws from valueOf, which is why the fallback reads it behind a guard instead.
+ * Null for anything that names no instant, which is what an absent column reads as.
  */
 function toTime (value: unknown): number | null {
   if (value instanceof Date) {
@@ -157,6 +158,20 @@ function toTime (value: unknown): number | null {
 
     if (typeof epoch === 'number' && Number.isFinite(epoch)) {
       return epoch
+    }
+
+    // Every other wrapper an application is likely to parse a timestamp into answers valueOf with
+    // epoch milliseconds. Read straight off it rather than through `new Date()`, so a value that
+    // refuses to be coerced throws here, where it is caught, rather than out of the cron pass.
+    // A plain object answers with itself, which is not a number, so it still reads as no instant.
+    try {
+      const millis = (value as { valueOf: () => unknown }).valueOf()
+
+      if (typeof millis === 'number' && Number.isFinite(millis)) {
+        return millis
+      }
+    } catch {
+      // Temporal.Instant throws from valueOf by design, and its epochMilliseconds was read above.
     }
   }
 

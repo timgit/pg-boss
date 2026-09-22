@@ -26,11 +26,14 @@ async function insertBamCommand (schema: string, name: string, command: string) 
 async function insertBamRow (schema: string, name: string, status: string, command: string, startedAgoSeconds?: number, error?: string) {
   const db = await helper.getDb()
   const startedOn = startedAgoSeconds != null ? `now() - interval '${startedAgoSeconds} seconds'` : 'NULL'
-  await db.executeSql(`
+  const { rows } = await db.executeSql(`
     INSERT INTO ${schema}.bam (name, version, status, table_name, command, started_on, error)
     VALUES ($1, 27, $2, 'job_common', $3, ${startedOn}, $4)
+    RETURNING started_on as "startedOn"
   `, [name, status, command, error ?? null])
   await db.close()
+
+  return rows[0].startedOn
 }
 
 async function insertBamRowOnTable (schema: string, name: string, status: string, command: string, tableName: string, startedAgoSeconds?: number) {
@@ -711,12 +714,13 @@ describe('bam', function () {
       })
       boss.on('error', () => {})
 
-      await insertBamRow(ctx.schema, 'release_stale_cmd', 'in_progress', 'SELECT 1', 25 * 60 * 60)
+      // Baseline from the insert itself. Reading it back in a second statement races the startup
+      // poll, which can claim the stale row in between and leave the baseline already equal to the
+      // claimed value, so nothing ever "moves" and the wait below times out.
+      const priorStartedOn = await insertBamRow(ctx.schema, 'release_stale_cmd', 'in_progress', 'SELECT 1', 25 * 60 * 60)
 
       const db = await helper.getDb()
-      const before = await db.executeSql(
-        `SELECT started_on as "startedOn" FROM ${ctx.schema}.bam WHERE name = 'release_stale_cmd'`
-      )
+      const before = { rows: [{ startedOn: priorStartedOn }] }
 
       await triggerBamPoll(ctx.schema)
       // Claimed means started_on moved to now(); wait for that rather than for the status, which was
