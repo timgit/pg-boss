@@ -700,6 +700,87 @@ describe('failure', function () {
     })
   })
 
+  // redrive has two implementations: one statement (a multi-mutation CTE), and three statements in a
+  // transaction for backends that reject that (noMultiMutationCte, CockroachDB). A coverage run
+  // reaches only one of them, so this block pins each with __test__distributed and runs the same
+  // cases through both, which also holds them to moving the same jobs.
+  for (const [path, distributed] of [['one statement', false], ['statements in a transaction', true]] as const) {
+    describe(`redrive as ${path}`, function () {
+      async function setup (sourceOptions: { policy?: 'short' } = {}) {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__distributed: distributed })
+        const deadLetter = `${ctx.schema}_dlq`
+        const queueA = `${ctx.schema}_a`
+        const queueB = `${ctx.schema}_b`
+        await ctx.boss.createQueue(deadLetter)
+        await ctx.boss.createQueue(queueA, { deadLetter, ...sourceOptions })
+        await ctx.boss.createQueue(queueB, { deadLetter })
+        return { boss: ctx.boss, deadLetter, queueA, queueB }
+      }
+
+      async function deadLetterOne (boss: NonNullable<typeof ctx.boss>, source: string, data: object) {
+        const id = await boss.send(source, data, { retryLimit: 0 })
+        assertTruthy(id)
+        await boss.fetch(source)
+        await boss.fail(source, id)
+      }
+
+      async function queued (boss: NonNullable<typeof ctx.boss>, name: string) {
+        const jobs = await boss.findJobs<{ n: number }>(name, { queued: true })
+        return jobs.map(job => job.data.n).sort()
+      }
+
+      it(`moves the oldest matching jobs, up to the limit, back to their sources (${path})`, async function () {
+        const { boss, deadLetter, queueA, queueB } = await setup()
+        await deadLetterOne(boss, queueA, { n: 1, tenant: 'acme' })
+        await deadLetterOne(boss, queueA, { n: 2, tenant: 'globex' })
+        await deadLetterOne(boss, queueB, { n: 3, tenant: 'acme' })
+        await deadLetterOne(boss, queueA, { n: 4, tenant: 'acme' })
+
+        expect(await boss.redrive(deadLetter, { data: { tenant: 'acme' }, limit: 2 })).toBe(2)
+
+        expect(await queued(boss, queueA)).toEqual([1])
+        expect(await queued(boss, queueB)).toEqual([3])
+        expect(await queued(boss, deadLetter)).toEqual([2, 4])
+      })
+
+      it(`sends every job to the destination override, including one with no source (${path})`, async function () {
+        const { boss, deadLetter, queueA, queueB } = await setup()
+        await deadLetterOne(boss, queueA, { n: 1 })
+        await boss.send(deadLetter, { n: 2 })
+
+        expect(await boss.redrive(deadLetter, { destination: queueB })).toBe(2)
+
+        expect(await queued(boss, queueB)).toEqual([1, 2])
+        expect(await queued(boss, queueA)).toEqual([])
+        expect(await queued(boss, deadLetter)).toEqual([])
+      })
+
+      it(`moves nothing when no job matches (${path})`, async function () {
+        const { boss, deadLetter, queueA } = await setup()
+        expect(await boss.redrive(deadLetter)).toBe(0)
+
+        await deadLetterOne(boss, queueA, { n: 1 })
+        expect(await boss.redrive(deadLetter, { sourceName: `${ctx.schema}_b` })).toBe(0)
+        expect(await queued(boss, deadLetter)).toEqual([1])
+      })
+
+      it(`drops a job whose re-insert collides and still drains it (${path})`, async function () {
+        // short: one created job per queue (job_i1), so the second redriven job collides.
+        const { boss, deadLetter, queueA } = await setup({ policy: 'short' })
+        await deadLetterOne(boss, queueA, { n: 1 })
+        await deadLetterOne(boss, queueA, { n: 2 })
+
+        expect(await boss.redrive(deadLetter)).toBe(1)
+
+        // Postgres keeps the older job; CockroachDB ignores the ORDER BY and keeps either one.
+        const kept = await queued(boss, queueA)
+        expect(kept).toHaveLength(1)
+        if (!helper.isCockroachDb) expect(kept).toEqual([1])
+        expect(await queued(boss, deadLetter)).toEqual([])
+      })
+    })
+  }
+
   it('should fail active jobs in a worker during shutdown', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
