@@ -494,7 +494,12 @@ export type ClockTimer = unknown
  * is installed, and disposes the returned handle on stop(). The handle is the only attachment state.
  */
 export interface AttachableClock extends Clock {
-  attach(target: { db: IDatabase, schema: string }): Promise<AsyncDisposable>
+  /**
+   * `idle`, when given, resolves once the instance has no statement in flight: `true` if it had to
+   * wait, `false` if it was already quiet. A clock that moves time by hand calls it before moving
+   * on, so work a timer started finishes first.
+   */
+  attach(target: { db: IDatabase, schema: string, idle?: () => Promise<boolean> }): Promise<AsyncDisposable>
 }
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {

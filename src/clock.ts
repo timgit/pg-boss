@@ -24,6 +24,7 @@ interface Timer {
 interface Target {
   db: IDatabase
   schema: string
+  idle?: () => Promise<boolean>
 }
 
 function toMillis (t: Date | number | string): number {
@@ -76,11 +77,11 @@ export class TestClock implements AttachableClock {
   }
 
   /**
-   * Jumps to a time, forwards or backwards, firing nothing. Postgres sees a forward jump as elapsed
-   * time, so JS timers do too: each one the jump passed fires once on the next tick, as if the
-   * process had slept, and an interval then keeps its period from there instead of replaying every
-   * period it skipped. A backward jump leaves timers alone, so JS deadlines still agree with the
-   * database's.
+   * Jumps to a time, forwards or backwards, firing nothing. Settles first, so work already in
+   * flight finishes on the time it started under. Postgres sees a forward jump as elapsed time, so
+   * JS timers do too: each one the jump passed fires once on the next tick, as if the process had
+   * slept, and an interval then keeps its period from there instead of replaying every period it
+   * skipped. A backward jump leaves timers alone, so JS deadlines still agree with the database's.
    */
   async setTime (t: Date | number | string): Promise<void> {
     if (this.#ticking) {
@@ -88,6 +89,8 @@ export class TestClock implements AttachableClock {
     }
 
     const next = toMillis(t)
+
+    await this.#settle()
 
     // #timers is sorted by due time, so the overdue timers are a prefix and stay sorted once moved.
     for (const timer of this.#timers) {
@@ -100,8 +103,10 @@ export class TestClock implements AttachableClock {
   }
 
   /**
-   * Advances by ms, firing each due timer in order at its own due time. Does not wait for I/O the
-   * callbacks start; observe effects with spies or by querying.
+   * Advances by ms, firing each due timer in order at its own due time. After each timer, and
+   * before and after the whole advance, waits until pg-boss has no statement in flight, so a poll
+   * the tick fired finishes, and anything it re-arms before the target fires in this same tick.
+   * Does not wait for job handlers; observe their effects with spies or by querying.
    */
   async tick (ms: number): Promise<void> {
     if (this.#ticking) {
@@ -111,31 +116,38 @@ export class TestClock implements AttachableClock {
     this.#ticking = true
 
     try {
+      await this.#settle()
+
       const target = this.#now + ms
 
-      while (this.#timers.length && this.#timers[0].due <= target) {
-        const timer = this.#timers.shift()!
+      for (;;) {
+        const timer = this.#timers[0]
 
-        if (timer.due > this.#now) {
-          this.#now = timer.due
+        if (timer && timer.due <= target) {
+          this.#timers.shift()
+
+          if (timer.due > this.#now) {
+            this.#now = timer.due
+            await this.#push()
+          }
+
+          // Reinsert the same object so the handle handed out by setInterval still clears it.
+          if (timer.interval !== null) {
+            timer.due += timer.interval
+            timer.seq = this.#seq++
+            this.#insert(timer)
+          }
+
+          timer.fn()
+        } else if (this.#now < target) {
+          this.#now = target
           await this.#push()
+        } else {
+          break
         }
 
-        // Reinsert the same object so the handle handed out by setInterval still clears it.
-        if (timer.interval !== null) {
-          timer.due += timer.interval
-          timer.seq = this.#seq++
-          this.#insert(timer)
-        }
-
-        timer.fn()
-
-        await setImmediate()
+        await this.#settle()
       }
-
-      this.#now = target
-      await this.#push()
-      await setImmediate()
     } finally {
       this.#ticking = false
     }
@@ -163,7 +175,7 @@ export class TestClock implements AttachableClock {
     // connections and migrated, so a SET on this one session would miss every other one. PgBoss
     // declares it through db.setSessionStatements() before anything opens; see #doStart.
 
-    const entry: Target = { db, schema }
+    const entry: Target = { db, schema, idle: target.idle }
     this.#targets.push(entry)
 
     let disposed = false
@@ -216,5 +228,15 @@ export class TestClock implements AttachableClock {
     await Promise.all(this.#targets.map(({ db, schema }) =>
       db.executeSql(`UPDATE ${plans.clockTable(schema)} SET now = to_timestamp($1)`, [seconds])
     ))
+  }
+
+  // Repeats until every target is quiet in the same pass: one instance going quiet can wake
+  // another, for example through a NOTIFY, after that one's idle() has already returned.
+  async #settle (): Promise<void> {
+    for (;;) {
+      await setImmediate()
+      const waited = await Promise.all(this.#targets.map(t => t.idle ? t.idle() : false))
+      if (!waited.includes(true)) return
+    }
   }
 }
