@@ -1252,18 +1252,18 @@ export function updateQueue (schema: string) {
       retry_limit = COALESCE((o.data->>'retryLimit')::int, retry_limit),
       retry_delay = COALESCE((o.data->>'retryDelay')::int, retry_delay),
       retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, retry_backoff),
-      retry_delay_max = CASE WHEN jsonb_exists(o.data, 'retryDelayMax')
+      retry_delay_max = CASE WHEN (o.data -> 'retryDelayMax') IS NOT NULL
         THEN (o.data->>'retryDelayMax')::int
         ELSE retry_delay_max END,
       expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, expire_seconds),
       retention_seconds = COALESCE((o.data->>'retentionSeconds')::int, retention_seconds),
       deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, deletion_seconds),
       warning_queued = COALESCE((o.data->>'warningQueueSize')::int, warning_queued),
-      heartbeat_seconds = CASE WHEN jsonb_exists(o.data, 'heartbeatSeconds')
+      heartbeat_seconds = CASE WHEN (o.data -> 'heartbeatSeconds') IS NOT NULL
         THEN (o.data->>'heartbeatSeconds')::int
         ELSE heartbeat_seconds END,
       notify = COALESCE((o.data->>'notify')::bool, notify),
-      dead_letter = CASE WHEN jsonb_exists(o.data, 'deadLetter')
+      dead_letter = CASE WHEN (o.data -> 'deadLetter') IS NOT NULL
         THEN o.data->>'deadLetter'
         ELSE dead_letter END,
       updated_on = ${schema}.job_now()
@@ -2975,7 +2975,9 @@ export function retryJobs (schema: string, table: string) {
 
 // Partial in-place edit of not-yet-active jobs, preserving id/state/singleton identity.
 // The payload ($1) is a jsonb object of ONLY the fields the caller supplied; each column is
-// left untouched unless its key is present (`jsonb_exists(o.data, 'key')`), so an update that carries just
+// left untouched unless its key is present (`(o.data -> 'key') IS NOT NULL`, which is true for a
+// key carrying JSON null and false only for an absent key, the same answer as jsonb_exists(); that
+// function does not exist on CockroachDB), so an update that carries just
 // `data` never clobbers an existing start_after/priority/etc. Targeting is by id or
 // singleton_key; when by key, `match` picks which of several pre-active matches to edit
 // (newest/oldest = one row via ORDER BY + LIMIT; all = every match). When `notify` is set the
@@ -3001,7 +3003,7 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
   // Resolve the incoming startAfter the same way insertJobs does (absolute date time vs.
   // relative interval), falling back to the row's current start_after when not supplied.
   const resolvedStartAfter = `
-        CASE WHEN jsonb_exists(o.data, 'startAfter')
+        CASE WHEN (o.data -> 'startAfter') IS NOT NULL
           THEN CASE WHEN ${isDateTimeString("o.data->>'startAfter'")}
                  THEN (o.data->>'startAfter')::timestamptz
                  ELSE ${schema}.job_now() + CAST(o.data->>'startAfter' AS interval) END
@@ -3028,13 +3030,13 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
     ),
     upd AS (
       UPDATE ${schema}.${table} job
-      SET data = CASE WHEN jsonb_exists(o.data, 'data') THEN o.data->'data' ELSE job.data END,
+      SET data = CASE WHEN (o.data -> 'data') IS NOT NULL THEN o.data->'data' ELSE job.data END,
           priority = COALESCE((o.data->>'priority')::int, job.priority),
           start_after = ${resolvedStartAfter},
           keep_until = CASE
-            WHEN jsonb_exists(o.data, 'retentionSeconds')
+            WHEN (o.data -> 'retentionSeconds') IS NOT NULL
               THEN (${resolvedStartAfter}) + ((o.data->>'retentionSeconds')::int * interval '1s')
-            WHEN jsonb_exists(o.data, 'startAfter')
+            WHEN (o.data -> 'startAfter') IS NOT NULL
               THEN (${resolvedStartAfter}) + (job.keep_until - job.start_after)
             ELSE job.keep_until END,
           expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, job.expire_seconds),
@@ -3042,11 +3044,11 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
           retry_limit = COALESCE((o.data->>'retryLimit')::int, job.retry_limit),
           retry_delay = COALESCE((o.data->>'retryDelay')::int, job.retry_delay),
           retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, job.retry_backoff),
-          retry_delay_max = CASE WHEN jsonb_exists(o.data, 'retryDelayMax') THEN (o.data->>'retryDelayMax')::int ELSE job.retry_delay_max END,
-          dead_letter = CASE WHEN jsonb_exists(o.data, 'deadLetter') THEN o.data->>'deadLetter' ELSE job.dead_letter END,
-          heartbeat_seconds = CASE WHEN jsonb_exists(o.data, 'heartbeatSeconds') THEN (o.data->>'heartbeatSeconds')::int ELSE job.heartbeat_seconds END,
-          group_id = CASE WHEN jsonb_exists(o.data, 'groupId') THEN o.data->>'groupId' ELSE job.group_id END,
-          group_tier = CASE WHEN jsonb_exists(o.data, 'groupTier') THEN o.data->>'groupTier' ELSE job.group_tier END
+          retry_delay_max = CASE WHEN (o.data -> 'retryDelayMax') IS NOT NULL THEN (o.data->>'retryDelayMax')::int ELSE job.retry_delay_max END,
+          dead_letter = CASE WHEN (o.data -> 'deadLetter') IS NOT NULL THEN o.data->>'deadLetter' ELSE job.dead_letter END,
+          heartbeat_seconds = CASE WHEN (o.data -> 'heartbeatSeconds') IS NOT NULL THEN (o.data->>'heartbeatSeconds')::int ELSE job.heartbeat_seconds END,
+          group_id = CASE WHEN (o.data -> 'groupId') IS NOT NULL THEN o.data->>'groupId' ELSE job.group_id END,
+          group_tier = CASE WHEN (o.data -> 'groupTier') IS NOT NULL THEN o.data->>'groupTier' ELSE job.group_tier END
       FROM o
       WHERE job.id IN (SELECT id FROM target)
         AND job.state < '${JOB_STATES.active}'
