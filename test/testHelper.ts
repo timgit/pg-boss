@@ -155,8 +155,9 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
 // Postgres lives in docker-compose.yaml; each alternative backend has its own compose file/project
 // so it never starts alongside the default. CockroachDB is a three-node cluster (plus init/setup
 // jobs that create the database) (starting a single node leaves it uninitialized) so it uses `--wait`.
+// docker-compose.cockroach-single.yaml is the faster single-node alternative on the same port.
 function dockerStartHint (): string {
-  if (isCockroachDb) return 'docker compose -f docker-compose.cockroach.yaml up -d --wait'
+  if (isCockroachDb) return 'docker compose -f docker-compose.cockroach.yaml up -d --wait (or docker-compose.cockroach-single.yaml for a faster single node)'
   if (isYugabyteDb) return 'docker compose -f docker-compose.yugabyte.yaml up -d'
   if (isCitus) return 'docker compose -f docker-compose.citus.yaml up -d'
   return 'docker compose up -d db'

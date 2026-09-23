@@ -230,10 +230,15 @@ plain PostgreSQL, so the project exercises them two ways:
   cluster (`DB_TYPE=cockroachdb`, which also enables the compatibility flags above). A focused smoke
   test confirming actual CockroachDB compatibility; runs on every push/PR.
 - **`npm run test:cockroachdb:full`** runs the **entire** suite against a real CockroachDB cluster
-  (`--no-file-parallelism`). This is the compatibility-matrix / regression signal. It is slow,
-  since CockroachDB rebuilds the schema per test and pays ~8-19s of online schema changes each, so it
-  runs **nightly and on demand** (`workflow_dispatch`) rather than gating PRs. The per-test timeout
-  is raised automatically under CockroachDB (see `vitest.config.ts`).
+  (`--no-file-parallelism`). This is the compatibility-matrix / regression signal. It is not part of
+  CI, so run it before a release or after touching SQL. A fresh schema installs in well under a
+  second (every table's indexes are declared inside its `CREATE TABLE`; see `inlineTableIndexes`),
+  so what remains is CockroachDB's latency on the test bodies themselves. The per-test timeout is
+  raised automatically under CockroachDB (see `vitest.config.ts`).
+- **`npm run test:cockroachdb:single`** starts a single-node, in-memory CockroachDB
+  (`docker-compose.cockroach-single.yaml`) and runs the same full suite against it, about twice as
+  fast as the three-node cluster. Use it for local iteration; the three-node cluster is still the one
+  that exercises replication. The two use the same port, so stop one before starting the other.
 
 For tests that depend on PostgreSQL-only features (table partitioning, covering indexes, or an exact
 PostgreSQL schema/migration shape), `test/testHelper.ts` exports `itPostgresOnly` /

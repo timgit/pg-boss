@@ -54,6 +54,7 @@
     "test:cockroachdb": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/distributedDatabaseTest.ts",
     "test:cockroachdb:migrations": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/migrationTest.ts",
     "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
+    "test:cockroachdb:single": "docker compose -f docker-compose.cockroach-single.yaml up -d --wait && cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
     "test:yugabytedb:full": "cross-env DB_TYPE=yugabytedb YUGABYTE_HOST=localhost npm test -- --no-file-parallelism",
     "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
     "test:pglite": "cross-env DB_TYPE=pglite npm test",
