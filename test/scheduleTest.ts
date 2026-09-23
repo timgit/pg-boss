@@ -17,16 +17,11 @@ describe('schedule', function () {
   })
 
   // Drives the cron chain on a TestClock until `expected` jobs reach the queue: each one-second tick
-  // fires the cron pass and the send-it worker's poll; the insert and send they start are real I/O,
-  // so give each tick a moment to land before the next.
+  // fires the cron pass and the send-it worker's poll, and waits for the statements they start.
   async function runCronCycle (clock: TestClock, expected = 1) {
     for (let i = 0; i < 20; i++) {
       await clock.tick(1000)
-      const settled = Date.now() + 500
-      while (Date.now() < settled) {
-        if ((await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])) >= expected) return
-        await delay(20)
-      }
+      if ((await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])) >= expected) return
     }
     throw new Error(`cron did not enqueue ${expected} job(s)`)
   }
