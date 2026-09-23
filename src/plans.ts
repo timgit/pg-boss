@@ -2470,6 +2470,10 @@ function settledCountAndIds () {
 // When `forceTerminal` is set, every re-inserted job goes straight to the terminal `failed` state
 // regardless of remaining retries, so the dlq_jobs CTE routes it to the dead letter queue (if any)
 // immediately. This backs the perJobResults `deadletter` disposition.
+//
+// Both re-inserts carry the source_* provenance columns. A job in a dead letter queue that its
+// own worker fails is deleted and re-inserted here like any other, and without them it would
+// forget which queue it came from and become unroutable for redrive.
 function failJobsBody (schema: string, table: string, where: string, output: string, forceTerminal = false) {
   const state = forceTerminal
     ? `'${JOB_STATES.failed}'::${schema}.job_state`
@@ -2516,7 +2520,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         heartbeat_seconds,
         blocked,
         blocking,
-        pending_dependencies
+        pending_dependencies,
+        source_name,
+        source_id,
+        source_created_on,
+        source_retry_count
       )
       SELECT
         id,
@@ -2556,7 +2564,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         heartbeat_seconds,
         blocked,
         blocking,
-        pending_dependencies
+        pending_dependencies,
+        source_name,
+        source_id,
+        source_created_on,
+        source_retry_count
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -2591,7 +2603,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         heartbeat_seconds,
         blocked,
         blocking,
-        pending_dependencies
+        pending_dependencies,
+        source_name,
+        source_id,
+        source_created_on,
+        source_retry_count
       )
       SELECT
         id,
@@ -2622,7 +2638,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         heartbeat_seconds,
         blocked,
         blocking,
-        pending_dependencies
+        pending_dependencies,
+        source_name,
+        source_id,
+        source_created_on,
+        source_retry_count
       FROM deleted_jobs
       WHERE id NOT IN (SELECT id from retried_jobs)
       RETURNING *

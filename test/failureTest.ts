@@ -620,6 +620,47 @@ describe('failure', function () {
       expect((await ctx.boss!.previewRedrive(deadLetter)).total).toBe(0)
     })
 
+    /**
+     * Failing a job deletes and re-inserts it. Before the fix the re-insert
+     * dropped the source_* columns, so a dead-lettered job that its dead letter
+     * queue's worker failed once forgot where it came from and could no longer
+     * be redriven.
+     */
+    it('keeps provenance when the dead letter queue retries a job, so it can still be redriven', async function () {
+      const { deadLetter, queueA } = await setup()
+      const [id] = await deadLetterAll(queueA, deadLetter, [{ n: 1 }])
+      const before = await ctx.boss!.getJobById(deadLetter, id)
+      assertTruthy(before)
+
+      await ctx.boss!.fetch(deadLetter)
+      await ctx.boss!.fail(deadLetter, id)
+
+      const after = await ctx.boss!.getJobById(deadLetter, id)
+      assertTruthy(after)
+      expect(after.state).toBe('retry')
+      expect(after.sourceName).toBe(queueA)
+      expect(after.sourceId).toBe(before.sourceId)
+      expect(after.sourceCreatedOn).toEqual(before.sourceCreatedOn)
+      expect(after.sourceRetryCount).toBe(before.sourceRetryCount)
+
+      expect(await ctx.boss!.previewRedrive(deadLetter)).toEqual({ total: 1, destinations: [{ name: queueA, count: 1 }], unroutable: 0 })
+      expect(await ctx.boss!.redrive(deadLetter)).toBe(1)
+    })
+
+    it('keeps provenance on a job the dead letter queue fails terminally', async function () {
+      const { deadLetter, queueA } = await setup()
+      await ctx.boss!.updateQueue(deadLetter, { retryLimit: 0 })
+      const [id] = await deadLetterAll(queueA, deadLetter, [{ n: 1 }])
+
+      await ctx.boss!.fetch(deadLetter)
+      await ctx.boss!.fail(deadLetter, id)
+
+      const after = await ctx.boss!.getJobById(deadLetter, id)
+      assertTruthy(after)
+      expect(after.state).toBe('failed')
+      expect(after.sourceName).toBe(queueA)
+    })
+
     it('previews the fan-out, and counts what the redrive then moves', async function () {
       const { deadLetter, queueA, queueB } = await setup()
       await deadLetterAll(queueA, deadLetter, [{ tenant: 'acme' }, { tenant: 'acme' }, { tenant: 'globex' }])
