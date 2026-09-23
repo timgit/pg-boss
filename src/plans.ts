@@ -126,6 +126,41 @@ interface CreateOptions {
   noDeferrableConstraints?: boolean
   noAdvisoryLocks?: boolean
   noCoveringIndexes?: boolean
+  inlineTableIndexes?: boolean
+}
+
+// Folds the statements that follow a CREATE TABLE (ADD PRIMARY KEY, ADD CONSTRAINT, CREATE
+// [UNIQUE] INDEX on that table) into the CREATE TABLE itself, in CockroachDB's inline syntax. See
+// inlineTableIndexes. It rewrites the same statements the standalone path runs rather than keeping
+// a second copy of every definition, so the two paths cannot drift apart. Anything it does not
+// recognise throws: silently dropping an index is the failure this must never have.
+export const SERVER_VERSION = 'SELECT version() AS version'
+
+export function inlineIntoCreateTable (createTable: string, statements: string[]): string {
+  const clauses = statements
+    .flatMap(statement => statement.split(';'))
+    .map(statement => statement.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .map(statement => {
+      let m = statement.match(/^ALTER TABLE \S+ ADD PRIMARY KEY (\(.+\))$/i)
+      if (m) return `PRIMARY KEY ${m[1]}`
+
+      m = statement.match(/^ALTER TABLE \S+ ADD CONSTRAINT (\S+) (.+)$/i)
+      if (m) return `CONSTRAINT ${m[1]} ${m[2]}`
+
+      m = statement.match(/^CREATE (UNIQUE )?INDEX (?:IF NOT EXISTS )?(\S+) ON \S+ (\(.+)$/i)
+      if (m) {
+        assert(!/\bINCLUDE\s*\(/i.test(m[3]), `inlineIntoCreateTable: covering index ${m[2]} has no inline form`)
+        return `${m[1] ?? ''}INDEX ${m[2]} ${m[3]}`
+      }
+
+      throw new Error(`inlineIntoCreateTable: cannot inline: ${statement}`)
+    })
+
+  const close = createTable.lastIndexOf(')')
+  assert(close > 0, 'inlineIntoCreateTable: no column list to extend')
+
+  return `${createTable.slice(0, close).trimEnd()},\n      ${clauses.join(',\n      ')}\n    ${createTable.slice(close)}`
 }
 
 export function create (schema: string, version: number, options?: CreateOptions) {
@@ -133,6 +168,12 @@ export function create (schema: string, version: number, options?: CreateOptions
   const noDeferrable = options?.noDeferrableConstraints ?? false
   const noLocks = options?.noAdvisoryLocks ?? false
   const noCovering = options?.noCoveringIndexes ?? false
+  // Only meaningful without partitioning: a partitioned job table's indexes live on the partitions.
+  const inline = (options?.inlineTableIndexes ?? false) && noPartitioning
+
+  if (inline) {
+    return locked(schema, createInline(schema, version, { createSchema: options?.createSchema, noDeferrable, noCovering }), undefined, noLocks)
+  }
 
   const commands = [
     options?.createSchema ? createSchema(schema) : '',
@@ -174,6 +215,35 @@ export function create (schema: string, version: number, options?: CreateOptions
   ]
 
   return locked(schema, commands, undefined, noLocks)
+}
+
+// The install for inlineTableIndexes (CockroachDB): the same objects as create(), non-partitioned,
+// with every table's indexes and constraints declared inside its CREATE TABLE.
+function createInline (schema: string, version: number, options: { createSchema?: boolean, noDeferrable: boolean, noCovering: boolean }) {
+  return [
+    options.createSchema ? createSchema(schema) : '',
+    createEnumJobState(schema),
+    createClockFunction(schema),
+
+    createTableVersion(schema),
+    createTableQueue(schema),
+    createTableSchedule(schema),
+    createTableSubscription(schema),
+    createTableBam(schema),
+
+    inlineIntoCreateTable(createTableJob(schema, true), [
+      createPrimaryKeyJob(schema),
+      createTableJobIndexes(schema, options.noDeferrable, options.noCovering)
+    ]),
+    inlineIntoCreateTable(createTableWarning(schema), [createIndexWarning(schema)]),
+    inlineIntoCreateTable(createTableQueueStats(schema, true), [createIndexQueueStats(schema, options.noCovering)]),
+    inlineIntoCreateTable(createTableJobDependency(schema), [createIndexJobDependencyParent(schema)]),
+
+    createQueueFunction(schema, true),
+    deleteQueueFunction(schema, true),
+
+    insertVersion(schema, version)
+  ]
 }
 
 function createSchema (schema: string) {

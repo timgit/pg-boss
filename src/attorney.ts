@@ -24,7 +24,8 @@ const COMPATIBILITY_FLAGS = [
   'noIndexProgressView',
   'noReindex',
   'noMonitorVacuum',
-  'noTransactionalHeartbeat'
+  'noTransactionalHeartbeat',
+  'inlineTableIndexes'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -69,7 +70,11 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       // serializable lands at a timestamp above the handler transaction's. The completion pg-boss
       // runs inside that transaction then cannot write the same row and the batch dies with a
       // WriteTooOldError. YugabyteDB's snapshot isolation waits instead, so it does NOT set this.
-      noTransactionalHeartbeat: true
+      noTransactionalHeartbeat: true,
+      // Each CREATE INDEX or ADD PRIMARY KEY after a CREATE TABLE is its own schema-change job,
+      // run after commit even inside the create transaction: ~0.4-2s apiece, ~15s for a fresh
+      // schema. Declared inside CREATE TABLE they cost nothing extra.
+      inlineTableIndexes: true
     }
   },
   yugabytedb: {

@@ -22,6 +22,19 @@ function planConfig (schema: string, backend?: types.BackendProfile): types.Reso
   return getConfig(backend ? { schema, backend } : { schema })
 }
 
+// Whether a live install may use inlineTableIndexes. The flag comes from the backend profile, but
+// the syntax it emits is CockroachDB's own, and the cockroachdb profile is otherwise safe to run on
+// plain Postgres (its other flags only remove features). So a live install asks the server what it
+// is before inlining. Printed plans have no server to ask and follow the named backend instead.
+export async function installConfig<T extends { inlineTableIndexes?: boolean }> (db: types.IDatabase, config: T): Promise<T> {
+  if (!config.inlineTableIndexes) return config
+
+  const { rows } = await db.executeSql(plans.SERVER_VERSION)
+  const cockroach = /cockroachdb/i.test(String(rows[0]?.version ?? ''))
+
+  return cockroach ? config : { ...config, inlineTableIndexes: false }
+}
+
 class Contractor {
   static constructionPlans (schema = plans.DEFAULT_SCHEMA, options: types.ConstructionPlanOptions = {}) {
     const { createSchema = true, backend } = options
@@ -32,7 +45,8 @@ class Contractor {
       noTablePartitioning: config.noTablePartitioning,
       noDeferrableConstraints: config.noDeferrableConstraints,
       noAdvisoryLocks: config.noAdvisoryLocks,
-      noCoveringIndexes: config.noCoveringIndexes
+      noCoveringIndexes: config.noCoveringIndexes,
+      inlineTableIndexes: config.inlineTableIndexes
     })
   }
 
@@ -284,7 +298,7 @@ class Contractor {
 
   async create () {
     try {
-      const commands = plans.create(this.config.schema, schemaVersion, this.config)
+      const commands = plans.create(this.config.schema, schemaVersion, await installConfig(this.db, this.config))
       await this.db.executeSql(commands)
     } catch (err: any) {
       assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)

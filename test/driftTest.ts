@@ -3,7 +3,7 @@ import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
 import * as drifter from '../src/drifter.ts'
-import Contractor from '../src/contractor.ts'
+import Contractor, { installConfig } from '../src/contractor.ts'
 import * as Attorney from '../src/attorney.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
@@ -98,6 +98,54 @@ describe('drift', function () {
         const names = plans.expectedManagedIndexes('pgboss', true, [{ table: 'jx', policy }]).map(i => i.name)
         expect(names).toContain(idx)
       }
+    })
+  })
+
+  // inlineTableIndexes (CockroachDB) installs the same objects with every index and constraint
+  // folded into its CREATE TABLE. If the two installs ever disagree about what exists, the drift
+  // check fails on every CockroachDB install, so pin that they name the same objects.
+  describe('inline install (pure)', function () {
+    const base = { noTablePartitioning: true, noDeferrableConstraints: true, noAdvisoryLocks: true, noCoveringIndexes: true }
+    const names = (sql: string) => ({
+      tables: [...sql.matchAll(/CREATE TABLE \S+?\.(\w+)/g)].map(m => m[1]).sort(),
+      indexes: [...sql.matchAll(/(?:CREATE )?(?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+) (?:ON \S+ )?\(/g)].map(m => m[1]).sort(),
+      constraints: [...sql.matchAll(/CONSTRAINT (\w+)/g)].map(m => m[1]).sort(),
+      primaryKeys: (sql.match(/PRIMARY KEY/g) ?? []).length
+    })
+
+    it('creates exactly the objects the standalone install creates', function () {
+      const standalone = plans.create('pgboss', schemaVersion, base)
+      const inline = plans.create('pgboss', schemaVersion, { ...base, inlineTableIndexes: true })
+
+      expect(inline).not.toContain('CREATE INDEX')
+      expect(inline).not.toContain('ADD PRIMARY KEY')
+      expect(names(inline)).toEqual(names(standalone))
+    })
+
+    it('is ignored for a partitioned install', function () {
+      expect(plans.create('pgboss', schemaVersion, { inlineTableIndexes: true })).toBe(plans.create('pgboss', schemaVersion))
+    })
+
+    it('refuses what it cannot inline rather than dropping it', function () {
+      expect(() => plans.inlineIntoCreateTable('CREATE TABLE s.t (a int)', ['DROP INDEX s.x'])).toThrow('cannot inline')
+      expect(() => plans.inlineIntoCreateTable('CREATE TABLE s.t (a int)', ['CREATE INDEX x ON s.t (a) INCLUDE (b)'])).toThrow('covering index')
+    })
+
+    // The cockroachdb profile also runs on plain Postgres (see distributedDatabaseTest), which
+    // cannot parse inline INDEX, so a live install asks the server before inlining.
+    it('inlines on a live install only when the server is CockroachDB', async function () {
+      const server = (version: string) => ({ executeSql: async () => ({ rows: [{ version }] }) }) as any
+      const config = { inlineTableIndexes: true }
+
+      expect((await installConfig(server('CockroachDB CCL v26.2.2 (x86_64-pc-linux-gnu)'), config)).inlineTableIndexes).toBe(true)
+      expect((await installConfig(server('PostgreSQL 18.0 on x86_64-pc-linux-gnu'), config)).inlineTableIndexes).toBe(false)
+      expect((await installConfig(server('unused'), { inlineTableIndexes: false })).inlineTableIndexes).toBe(false)
+    })
+
+    it('is the CockroachDB profile only', function () {
+      expect(Attorney.getConfig({ backend: 'cockroachdb' }).inlineTableIndexes).toBe(true)
+      expect(Attorney.getConfig({ backend: 'yugabytedb' }).inlineTableIndexes).toBe(false)
+      expect(Attorney.getConfig({}).inlineTableIndexes).toBe(false)
     })
   })
 

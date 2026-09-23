@@ -359,6 +359,14 @@ export interface CompatibilityFlags {
   /** Omit the `INCLUDE` clause on covering indexes. */
   noCoveringIndexes?: boolean;
   /**
+   * Declare each table's primary key, indexes and constraints inside its `CREATE TABLE` when
+   * installing a schema, instead of as statements after it. CockroachDB runs every standalone
+   * index or primary key as a separate schema-change job after commit, which made a fresh install
+   * take ~15 seconds; inline they are part of the table. Uses CockroachDB's inline `INDEX` syntax,
+   * so no other backend sets it. Installs only: migrations are unaffected.
+   */
+  inlineTableIndexes?: boolean;
+  /**
    * The engine refuses to write a column inside the transaction that added it. CockroachDB runs
    * `ADD COLUMN` as a schema-change job and answers an `UPDATE` of that column in the same
    * transaction with "column is being backfilled", so a migration adding a column and seeding it
