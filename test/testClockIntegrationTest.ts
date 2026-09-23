@@ -114,20 +114,22 @@ describe('TestClock', function () {
     expect(await ctx.boss.fetch(ctx.schema)).toHaveLength(1)
   })
 
-  it('a worker runs a job a month out after setTime to its startAfter and one poll', async function () {
+  it('a forward setTime expires a hung handler on the next tick, as the database would', async function () {
     const clock = new TestClock(T0)
     ctx.boss = await helper.start({ ...ctx.bossConfig, clock, __test__enableSpies: true })
     const spy = ctx.boss.getSpy(ctx.schema)
 
-    const startAfter = new Date(T0 + 30 * 24 * 60 * MINUTE)
-    const id = await ctx.boss.send(ctx.schema, null, { startAfter })
+    const id = await ctx.boss.send(ctx.schema, null, { expireInSeconds: 5, retryLimit: 0 })
     assertTruthy(id)
-    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 1 }, async () => {})
 
-    await clock.setTime(startAfter)
+    await ctx.boss.work(ctx.schema, () => new Promise(() => {}))
+    await spy.waitForJobWithId(id, 'active')
+
+    await clock.setTime(T0 + 60 * MINUTE)
     await clock.tick(1000)
 
-    await spy.waitForJobWithId(id, 'completed')
+    const job = await spy.waitForJobWithId(id, 'failed')
+    expect((job.output as { message: string }).message).toBe('handler execution exceeded 5s')
   })
 
   it('a handler is failed with the expiration message once the clock passes expireInSeconds', async function () {

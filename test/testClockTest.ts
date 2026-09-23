@@ -108,7 +108,7 @@ describe('TestClock (pure)', function () {
     expect(fired).toBe(0)
   })
 
-  it('setTime leaves an interval its remaining delay instead of replaying the periods it skipped', async function () {
+  it('a forward setTime fires an overdue interval once, then keeps its period', async function () {
     const clock = new TestClock(T0)
     let fired = 0
     clock.setInterval(() => fired++, 2000)
@@ -116,23 +116,55 @@ describe('TestClock (pure)', function () {
     await clock.tick(500)
     await clock.setTime(T0 + DAY)
 
-    await clock.tick(1499)
-    expect(fired).toBe(0)
+    await clock.tick(0)
+    expect(fired).toBe(1)
+
+    await clock.tick(1999)
+    expect(fired).toBe(1)
 
     await clock.tick(1)
-    expect(fired).toBe(1)
-    expect(clock.now()).toBe(T0 + DAY + 1500)
+    expect(fired).toBe(2)
+    expect(clock.now()).toBe(T0 + DAY + 2000)
   })
 
-  it('setTime backwards leaves a timer its remaining delay', async function () {
+  it('a forward setTime fires overdue timers in their original order, ahead of timers set after it', async function () {
+    const clock = new TestClock(T0)
+    const fired: string[] = []
+
+    clock.setTimeout(() => fired.push('at jump'), DAY)
+    clock.setTimeout(() => fired.push('b@20'), 20)
+    clock.setTimeout(() => fired.push('a@10'), 10)
+
+    await clock.setTime(T0 + DAY)
+    clock.setTimeout(() => fired.push('after jump'), 0)
+    await clock.tick(0)
+
+    expect(fired).toEqual(['a@10', 'b@20', 'at jump', 'after jump'])
+  })
+
+  it('a backward setTime leaves timers at their due time', async function () {
     const clock = new TestClock(T0)
     let fired = 0
     clock.setTimeout(() => fired++, 10)
 
-    await clock.setTime(T0 - DAY)
-    await clock.tick(10)
+    await clock.setTime(T0 - 1000)
 
+    await clock.tick(1009)
+    expect(fired).toBe(0)
+
+    await clock.tick(1)
     expect(fired).toBe(1)
+  })
+
+  it('rejects a setTime while a tick is in progress', async function () {
+    const clock = new TestClock(T0)
+    let nested: Promise<unknown> | undefined
+
+    clock.setTimeout(() => { nested = clock.setTime(T0 + DAY).catch(err => err) }, 10)
+    await clock.tick(20)
+
+    expect(await nested).toMatchObject({ message: 'TestClock: setTime() called while a tick is in progress' })
+    expect(clock.now()).toBe(T0 + 20)
   })
 
   it('a synchronous throw propagates out of tick and leaves the clock usable', async function () {

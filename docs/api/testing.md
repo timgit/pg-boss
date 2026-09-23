@@ -138,7 +138,7 @@ Advances the clock by `ms`, firing every timer that falls due along the way in d
 
 ### `clock.setTime(t)`
 
-Jumps to `t`, forwards or backwards, without firing anything. Pending timers keep their remaining delay, as real timers do across a wall-clock change: after a jump a month ahead, a worker polling every second polls once on the next `tick(1000)`, not once for every second skipped. Postgres will happily evaluate `start_after <= now()` against an earlier time; a test that moves backwards owns the consequences.
+Jumps to `t`, forwards or backwards, without firing anything. A forward jump counts as elapsed time, as it does in Postgres: every timer the jump passed fires once on the next `tick`, and an interval then keeps its period from `t`. After a jump a month ahead, a worker polling every second polls once, not once for every second skipped, and a handler past its expiration is failed. A backward jump leaves timers where they are, so they fire when the clock gets back to their due time. `setTime` rejects while a `tick` is in progress. Postgres will happily evaluate `start_after <= now()` against an earlier time; a test that moves backwards owns the consequences.
 
 ### The Postgres side
 
