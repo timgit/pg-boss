@@ -4,8 +4,13 @@ import * as plans from '../src/plans.ts'
 import { normalizeSchemaName, resolveSchemaName } from '../src/tools.ts'
 import { PgBoss } from '../src/index.ts'
 import * as helper from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 const connectionString = 'postgres://localhost/db'
+
+// These tests need schema names of a particular spelling, so each keeps its spelling and appends
+// a piece of its own per-test schema hash (see hooks.ts), which no other test or run shares.
+const tag = () => ctx.schema.slice(-12)
 
 const getSchema = (schema: string) => Attorney.getConfig({ connectionString, schema }).schema
 
@@ -181,7 +186,7 @@ describe('quoted schema names', function () {
 
   describe('runtime behaviour', function () {
     it('runs a full job lifecycle in a quoted schema', async function () {
-      const schema = '"pg-boss Test-Schema"'
+      const schema = `"pg-boss Test-Schema ${tag()}"`
       const queue = 'quoted-schema-queue'
 
       await helper.dropSchema(schema)
@@ -209,8 +214,8 @@ describe('quoted schema names', function () {
     it('refuses to install beside an installation differing only in case', async function () {
       // The dangerous direction: the data lives in the quoted schema, and the bare config resolves
       // to a different, empty one. Without the guard this installs and every job appears to vanish.
-      const quoted = '"CaseGuardSchema"'
-      const bare = 'CaseGuardSchema'
+      const quoted = `"CaseGuardSchema_${tag()}"`
+      const bare = `CaseGuardSchema_${tag()}`
 
       await helper.dropSchema(quoted)
       await helper.dropSchema(bare)
@@ -227,7 +232,7 @@ describe('quoted schema names', function () {
           await expect(conflicting.start()).rejects.toThrow('differs only in case')
           // The message has to hand over the spelling that reaches the existing data.
           await expect(conflicting.start()).rejects.toThrow('To use the existing installation, set schema:')
-          await expect(conflicting.start()).rejects.toThrow('"CaseGuardSchema"')
+          await expect(conflicting.start()).rejects.toThrow(quoted)
         } finally {
           await conflicting.stop({ graceful: false })
         }
@@ -238,8 +243,8 @@ describe('quoted schema names', function () {
     })
 
     it('installs beside a case variant when explicitly allowed', async function () {
-      const quoted = '"CaseAllowSchema"'
-      const bare = 'CaseAllowSchema'
+      const quoted = `"CaseAllowSchema_${tag()}"`
+      const bare = `CaseAllowSchema_${tag()}`
 
       await helper.dropSchema(quoted)
       await helper.dropSchema(bare)
@@ -263,8 +268,8 @@ describe('quoted schema names', function () {
     it('recommends the bare spelling when the variant needs no quotes', async function () {
       // The mirror of the case above: here the existing schema is a legal lower-case identifier, so
       // the config that reaches it is bare. Quoting it would work too, but bare is what they wrote.
-      const bare = 'caseplainschema'
-      const quoted = '"CasePlainSchema"'
+      const bare = `caseplainschema_${tag()}`
+      const quoted = `"CasePlainSchema_${tag()}"`
 
       await helper.dropSchema(bare)
       await helper.dropSchema(quoted)
@@ -278,7 +283,7 @@ describe('quoted schema names', function () {
         const conflicting = new PgBoss(helper.getConfig({ schema: quoted }))
 
         try {
-          await expect(conflicting.start()).rejects.toThrow('To use the existing installation, set schema: \'caseplainschema\'')
+          await expect(conflicting.start()).rejects.toThrow(`To use the existing installation, set schema: '${bare}'`)
         } finally {
           await conflicting.stop({ graceful: false })
         }
@@ -292,8 +297,8 @@ describe('quoted schema names', function () {
       // Catalog access varies across backends and permission setups. A probe that throws is not
       // evidence of a conflict, so it must never block an install that would otherwise succeed -
       // even when a real variant exists and the probe would have found it.
-      const quoted = '"CaseProbeSchema"'
-      const bare = 'CaseProbeSchema'
+      const quoted = `"CaseProbeSchema_${tag()}"`
+      const bare = `CaseProbeSchema_${tag()}`
 
       await helper.dropSchema(quoted)
       await helper.dropSchema(bare)
@@ -334,8 +339,8 @@ describe('quoted schema names', function () {
     it('does not block an install when an unrelated schema shares the folded name', async function () {
       // Only a schema holding a pg-boss installation counts. A bare namespace that happens to
       // collide must never stop a legitimate install.
-      const quoted = '"CaseUnrelatedSchema"'
-      const bare = 'CaseUnrelatedSchema'
+      const quoted = `"CaseUnrelatedSchema_${tag()}"`
+      const bare = `CaseUnrelatedSchema_${tag()}`
 
       await helper.dropSchema(quoted)
       await helper.dropSchema(bare)
@@ -363,7 +368,7 @@ describe('quoted schema names', function () {
     it('maintains queue stats partitions for a mixed case bare schema', async function () {
       // Pre-existing: nspname compared the configured name against the resolved one, so this
       // threw on every run for a schema postgres had folded to lower case.
-      const schema = 'MixedCaseSchema'
+      const schema = `MixedCaseSchema_${tag()}`
 
       await helper.dropSchema(schema)
 

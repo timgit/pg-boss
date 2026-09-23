@@ -113,7 +113,7 @@ describe('migration', function () {
     // nonexistent schema. The v37 anchored regexp_replace version rewrites only the base table
     // reference and bare job_iN tokens.
     const db = await getDb()
-    const schema = 'job_intake'
+    const schema = `job_intake_${ctx.schema.slice(-12)}`
 
     await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
     await db.executeSql(`CREATE SCHEMA ${schema}`)
