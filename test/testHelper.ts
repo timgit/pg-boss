@@ -213,10 +213,22 @@ async function dropSchema (schema: string): Promise<void> {
   await db.close()
 }
 
+// Raw rows, so CockroachDB's INT8-as-string comes through unless it is undone here, the same way
+// the library undoes it for its own reads.
+const JOB_INTEGER_COLUMNS = ['priority', 'retry_limit', 'retry_count', 'retry_delay', 'retry_delay_max', 'expire_seconds',
+  'deletion_seconds', 'heartbeat_seconds', 'pending_dependencies', 'source_retry_count']
+
 async function findJobs (schema: string, where: string, values?: any[]): Promise<any> {
   const db = await getDb()
   const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
   await db.close()
+  if (isCockroachDb) {
+    for (const row of jobs.rows) {
+      for (const column of JOB_INTEGER_COLUMNS) {
+        if (row[column] != null) row[column] = Number(row[column])
+      }
+    }
+  }
   return jobs
 }
 

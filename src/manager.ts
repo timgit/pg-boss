@@ -90,7 +90,8 @@ const NUMERIC_METADATA_FIELDS = [
   'expireInSeconds',
   'heartbeatSeconds',
   'deleteAfterSeconds',
-  'pendingDependencies'
+  'pendingDependencies',
+  'sourceRetryCount'
 ] as const
 
 // Queue rows (plans.getQueues) return these integer columns as strings on CockroachDB too.
@@ -1831,18 +1832,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const rows = result?.rows || []
 
-    // CockroachDB returns integer columns as strings; normalize them. Even a minimal fetch
-    // (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds/heartbeatSeconds, so normalize
-    // regardless of includeMetadata. The columns are aliased to camelCase, so use those keys.
-    if (this.config.backend === 'cockroachdb') {
-      for (const row of rows) {
-        for (const field of NUMERIC_METADATA_FIELDS) {
-          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
-        }
-      }
-    }
-
-    return rows
+    // Even a minimal fetch (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds and
+    // heartbeatSeconds, so normalize regardless of includeMetadata.
+    return this.#numericJobFields(rows)
   }
 
   private mapCompletionIdArg (id: string | string[], funcName: string) {
@@ -2497,17 +2489,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const result1 = await db.executeSql(sql, [name, id])
 
     if (result1?.rows?.length === 1) {
-      const row = result1.rows[0]
-
-      // CockroachDB returns integer columns as strings; normalize the numeric
-      // metadata fields so callers get numbers regardless of the backend.
-      if (this.config.backend === 'cockroachdb') {
-        for (const field of NUMERIC_METADATA_FIELDS) {
-          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
-        }
-      }
-
-      return row
+      return this.#numericJobFields(result1.rows)[0]
     } else {
       return null
     }
@@ -2536,7 +2518,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const result = await db.executeSql(sql, values)
 
-    return result?.rows || []
+    return this.#numericJobFields(result?.rows || [])
+  }
+
+  // CockroachDB returns integer columns (INT8) as strings. Every read that hands job rows to a
+  // caller comes through here, so a caller gets numbers whatever the backend. The columns are
+  // aliased to camelCase, so these are the aliased keys.
+  #numericJobFields<R extends Record<string, any>> (rows: R[]): R[] {
+    if (this.config.backend !== 'cockroachdb') return rows
+
+    for (const row of rows) {
+      for (const field of NUMERIC_METADATA_FIELDS) {
+        if (row[field] !== undefined && row[field] !== null) (row as Record<string, unknown>)[field] = Number(row[field])
+      }
+    }
+
+    return rows
   }
 
   async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
