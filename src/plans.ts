@@ -126,6 +126,41 @@ interface CreateOptions {
   noDeferrableConstraints?: boolean
   noAdvisoryLocks?: boolean
   noCoveringIndexes?: boolean
+  inlineTableIndexes?: boolean
+}
+
+// Folds the statements that follow a CREATE TABLE (ADD PRIMARY KEY, ADD CONSTRAINT, CREATE
+// [UNIQUE] INDEX on that table) into the CREATE TABLE itself, in CockroachDB's inline syntax. See
+// inlineTableIndexes. It rewrites the same statements the standalone path runs rather than keeping
+// a second copy of every definition, so the two paths cannot drift apart. Anything it does not
+// recognise throws: silently dropping an index is the failure this must never have.
+export const SERVER_VERSION = 'SELECT version() AS version'
+
+export function inlineIntoCreateTable (createTable: string, statements: string[]): string {
+  const clauses = statements
+    .flatMap(statement => statement.split(';'))
+    .map(statement => statement.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .map(statement => {
+      let m = statement.match(/^ALTER TABLE \S+ ADD PRIMARY KEY (\(.+\))$/i)
+      if (m) return `PRIMARY KEY ${m[1]}`
+
+      m = statement.match(/^ALTER TABLE \S+ ADD CONSTRAINT (\S+) (.+)$/i)
+      if (m) return `CONSTRAINT ${m[1]} ${m[2]}`
+
+      m = statement.match(/^CREATE (UNIQUE )?INDEX (?:IF NOT EXISTS )?(\S+) ON \S+ (\(.+)$/i)
+      if (m) {
+        assert(!/\bINCLUDE\s*\(/i.test(m[3]), `inlineIntoCreateTable: covering index ${m[2]} has no inline form`)
+        return `${m[1] ?? ''}INDEX ${m[2]} ${m[3]}`
+      }
+
+      throw new Error(`inlineIntoCreateTable: cannot inline: ${statement}`)
+    })
+
+  const close = createTable.lastIndexOf(')')
+  assert(close > 0, 'inlineIntoCreateTable: no column list to extend')
+
+  return `${createTable.slice(0, close).trimEnd()},\n      ${clauses.join(',\n      ')}\n    ${createTable.slice(close)}`
 }
 
 export function create (schema: string, version: number, options?: CreateOptions) {
@@ -133,6 +168,12 @@ export function create (schema: string, version: number, options?: CreateOptions
   const noDeferrable = options?.noDeferrableConstraints ?? false
   const noLocks = options?.noAdvisoryLocks ?? false
   const noCovering = options?.noCoveringIndexes ?? false
+  // Only meaningful without partitioning: a partitioned job table's indexes live on the partitions.
+  const inline = (options?.inlineTableIndexes ?? false) && noPartitioning
+
+  if (inline) {
+    return locked(schema, createInline(schema, version, { createSchema: options?.createSchema, noDeferrable, noCovering }), undefined, noLocks)
+  }
 
   const commands = [
     options?.createSchema ? createSchema(schema) : '',
@@ -174,6 +215,35 @@ export function create (schema: string, version: number, options?: CreateOptions
   ]
 
   return locked(schema, commands, undefined, noLocks)
+}
+
+// The install for inlineTableIndexes (CockroachDB): the same objects as create(), non-partitioned,
+// with every table's indexes and constraints declared inside its CREATE TABLE.
+function createInline (schema: string, version: number, options: { createSchema?: boolean, noDeferrable: boolean, noCovering: boolean }) {
+  return [
+    options.createSchema ? createSchema(schema) : '',
+    createEnumJobState(schema),
+    createClockFunction(schema),
+
+    createTableVersion(schema),
+    createTableQueue(schema),
+    createTableSchedule(schema),
+    createTableSubscription(schema),
+    createTableBam(schema),
+
+    inlineIntoCreateTable(createTableJob(schema, true), [
+      createPrimaryKeyJob(schema),
+      createTableJobIndexes(schema, options.noDeferrable, options.noCovering)
+    ]),
+    inlineIntoCreateTable(createTableWarning(schema), [createIndexWarning(schema)]),
+    inlineIntoCreateTable(createTableQueueStats(schema, true), [createIndexQueueStats(schema, options.noCovering)]),
+    inlineIntoCreateTable(createTableJobDependency(schema), [createIndexJobDependencyParent(schema)]),
+
+    createQueueFunction(schema, true),
+    deleteQueueFunction(schema, true),
+
+    insertVersion(schema, version)
+  ]
 }
 
 function createSchema (schema: string) {
@@ -1189,18 +1259,18 @@ export function updateQueue (schema: string) {
       retry_limit = COALESCE((o.data->>'retryLimit')::int, retry_limit),
       retry_delay = COALESCE((o.data->>'retryDelay')::int, retry_delay),
       retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, retry_backoff),
-      retry_delay_max = CASE WHEN jsonb_exists(o.data, 'retryDelayMax')
+      retry_delay_max = CASE WHEN (o.data -> 'retryDelayMax') IS NOT NULL
         THEN (o.data->>'retryDelayMax')::int
         ELSE retry_delay_max END,
       expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, expire_seconds),
       retention_seconds = COALESCE((o.data->>'retentionSeconds')::int, retention_seconds),
       deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, deletion_seconds),
       warning_queued = COALESCE((o.data->>'warningQueueSize')::int, warning_queued),
-      heartbeat_seconds = CASE WHEN jsonb_exists(o.data, 'heartbeatSeconds')
+      heartbeat_seconds = CASE WHEN (o.data -> 'heartbeatSeconds') IS NOT NULL
         THEN (o.data->>'heartbeatSeconds')::int
         ELSE heartbeat_seconds END,
       notify = COALESCE((o.data->>'notify')::bool, notify),
-      dead_letter = CASE WHEN jsonb_exists(o.data, 'deadLetter')
+      dead_letter = CASE WHEN (o.data -> 'deadLetter') IS NOT NULL
         THEN o.data->>'deadLetter'
         ELSE dead_letter END,
       updated_on = ${schema}.job_now()
@@ -2232,8 +2302,8 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
   // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
   const returning = notify ? 'RETURNING id, start_after' : returnId ? 'RETURNING id' : ''
 
-  // A caller that knows the slot names it outright: the cron pass files a rule occurrence in the
-  // slot the occurrence falls in, and an offset off now() cannot pin that, since now() here is
+  // A caller that knows the slot names it outright: the cron pass files an occurrence in the slot
+  // the occurrence falls in, and an offset off now() cannot pin that, since now() here is
   // insert time. Only in the statement the pass asks for, because insert() stringifies caller
   // objects straight into the recordset below, so a column declared for everyone would be a live,
   // undeclared and unvalidated option on the public path, where a bad value surfaces as a raw
@@ -2437,6 +2507,10 @@ function settledCountAndIds () {
 // When `forceTerminal` is set, every re-inserted job goes straight to the terminal `failed` state
 // regardless of remaining retries, so the dlq_jobs CTE routes it to the dead letter queue (if any)
 // immediately. This backs the perJobResults `deadletter` disposition.
+//
+// Both re-inserts carry the source_* provenance columns. A job in a dead letter queue that its
+// own worker fails is deleted and re-inserted here like any other, and without them it would
+// forget which queue it came from and become unroutable for redrive.
 function failJobsBody (schema: string, table: string, where: string, output: string, forceTerminal = false) {
   const state = forceTerminal
     ? `'${JOB_STATES.failed}'::${schema}.job_state`
@@ -2483,7 +2557,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         heartbeat_seconds,
         blocked,
         blocking,
-        pending_dependencies
+        pending_dependencies,
+        source_name,
+        source_id,
+        source_created_on,
+        source_retry_count
       )
       SELECT
         id,
@@ -2523,7 +2601,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         heartbeat_seconds,
         blocked,
         blocking,
-        pending_dependencies
+        pending_dependencies,
+        source_name,
+        source_id,
+        source_created_on,
+        source_retry_count
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -2558,7 +2640,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         heartbeat_seconds,
         blocked,
         blocking,
-        pending_dependencies
+        pending_dependencies,
+        source_name,
+        source_id,
+        source_created_on,
+        source_retry_count
       )
       SELECT
         id,
@@ -2589,7 +2675,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         heartbeat_seconds,
         blocked,
         blocking,
-        pending_dependencies
+        pending_dependencies,
+        source_name,
+        source_id,
+        source_created_on,
+        source_retry_count
       FROM deleted_jobs
       WHERE id NOT IN (SELECT id from retried_jobs)
       RETURNING *
@@ -2672,7 +2762,8 @@ const REBOUND_TIMESTAMPS_AS_TEXT = `started_on::text as started_on_text,
       singleton_on::text as singleton_on_text,
       created_on::text as created_on_text,
       keep_until::text as keep_until_text,
-      start_after::text as start_after_text`
+      start_after::text as start_after_text,
+      source_created_on::text as source_created_on_text`
 
 export function selectJobsToFailById (schema: string, table: string): SqlQuery {
   return {
@@ -2838,10 +2929,11 @@ export function insertRetryJob (schema: string, table: string): string {
       retry_backoff, retry_delay_max, start_after, started_on, singleton_key, singleton_on,
       group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
       keep_until, policy, output, dead_letter,
-      heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies
+      heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies,
+      source_name, source_id, source_created_on, source_retry_count
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-      $25, $26, $27, $28, $29
+      $25, $26, $27, $28, $29, $30, $31, $32, $33
     ) ON CONFLICT DO NOTHING
     RETURNING id
   `
@@ -2858,10 +2950,25 @@ export function insertDeadLetterJob (schema: string): string {
   `
 }
 
+// The candidate predicate shared by redriveJobs and previewRedrive, so a preview can never count
+// a job the redrive would skip or skip one it would move. Parameters: $1 dead letter queue,
+// $2 destination override, $3 sourceName, $4 data (jsonb containment), $5 createdBefore,
+// $6 ids. Each filter is off when its parameter is null. Only jobs not yet active are
+// candidates: a job the dead letter queue's own workers failed stays where it is.
+function redriveWhere (): string {
+  return `j.name = $1
+        AND j.state < '${JOB_STATES.active}'
+        AND ($3::text IS NULL OR j.source_name = $3)
+        AND ($4::jsonb IS NULL OR j.data @> $4::jsonb)
+        AND ($5::timestamptz IS NULL OR j.created_on < $5)
+        AND ($6::uuid[] IS NULL OR j.id = ANY($6::uuid[]))`
+}
+
 // Dead-letter redrive. Moves un-started jobs out of a dead-letter queue and
 // re-creates them as fresh jobs on their original source queue (or $2 destination override),
-// oldest-first, capped at $4. The JOIN in `candidates` only matches jobs whose destination queue
-// exists, so legacy/orphaned jobs (NULL source_name, no override) are never deleted. They stay
+// oldest-first, capped at $7 and narrowed by the filters in redriveWhere. The JOIN in
+// `candidates` only matches jobs whose destination queue exists, so legacy/orphaned jobs
+// (NULL source_name, no override) are never deleted. They stay
 // in the DLQ rather than being lost. Re-created jobs get a new id, `created` state, retry_count 0,
 // cleared output, NULL source_*, and every queue-config column (retry/retention/policy/expiry/
 // heartbeat/dead_letter) from the destination queue as it is configured now, per-job overrides
@@ -2880,11 +2987,9 @@ export function redriveJobs (schema: string, table: string): string {
       SELECT j.id
       FROM ${schema}.${table} j
       JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
-      WHERE j.name = $1
-        AND j.state < '${JOB_STATES.active}'
-        AND ($3::text IS NULL OR j.source_name = $3)
+      WHERE ${redriveWhere()}
       ORDER BY j.created_on
-      LIMIT $4
+      LIMIT $7
       FOR UPDATE OF j SKIP LOCKED
     ),
     moved AS (
@@ -2902,10 +3007,66 @@ export function redriveJobs (schema: string, table: string): string {
         ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
         m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
       FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
+      ORDER BY m.created_on
       ON CONFLICT DO NOTHING
       RETURNING 1
     )
     SELECT count(*)::int AS moved FROM ins
+  `
+}
+
+// Distributed redrive (noMultiMutationCte). CockroachDB refuses redriveJobs' DELETE and INSERT on
+// one table in one statement, so the manager runs the three steps below in a transaction instead:
+// lock the candidates, re-create them, delete the originals. Same predicate, same order, same
+// limit, so the two paths move the same jobs. Insert-then-delete rather than the reverse keeps the
+// rows readable for the INSERT ... SELECT, and the new rows can never match the delete: they get
+// fresh ids. A job whose re-insert hits ON CONFLICT is still deleted, exactly as redriveJobs drops it.
+// Both inserts run oldest-first, so on Postgres the older of two colliding jobs is the one kept, on
+// either path. CockroachDB does not honor that ORDER BY when it resolves ON CONFLICT, so which one it
+// keeps is arbitrary; only the counts are the same there.
+export function selectRedriveCandidates (schema: string, table: string): string {
+  return `
+    SELECT j.id
+    FROM ${schema}.${table} j
+    WHERE ${redriveWhere()}
+      AND EXISTS (SELECT 1 FROM ${schema}.queue q WHERE q.name = COALESCE($2, j.source_name))
+    ORDER BY j.created_on
+    LIMIT $7
+    FOR UPDATE
+  `
+}
+
+// $1 candidate ids, $2 destination override.
+export function insertRedrivenJobs (schema: string, table: string): string {
+  return `
+    INSERT INTO ${schema}.job
+      (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
+       expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
+       heartbeat_seconds, dead_letter)
+    SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
+      q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
+      ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
+      m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
+    FROM ${schema}.${table} m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
+    WHERE m.id = ANY($1::uuid[])
+    ORDER BY m.created_on
+    ON CONFLICT DO NOTHING
+    RETURNING 1
+  `
+}
+
+// What a redrive with the same filter would do, without doing it: matching jobs grouped by the
+// queue each would land in. The LEFT JOIN keeps jobs the redrive would leave behind (no source
+// and no override, or a source queue since deleted) so they can be reported rather than vanish.
+export function previewRedrive (schema: string, table: string): string {
+  return `
+    SELECT COALESCE($2, j.source_name) AS destination,
+      (q.name IS NOT NULL) AS routable,
+      count(*)::int AS count
+    FROM ${schema}.${table} j
+    LEFT JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
+    WHERE ${redriveWhere()}
+    GROUP BY 1, 2
   `
 }
 
@@ -2942,7 +3103,9 @@ export function retryJobs (schema: string, table: string) {
 
 // Partial in-place edit of not-yet-active jobs, preserving id/state/singleton identity.
 // The payload ($1) is a jsonb object of ONLY the fields the caller supplied; each column is
-// left untouched unless its key is present (`jsonb_exists(o.data, 'key')`), so an update that carries just
+// left untouched unless its key is present (`(o.data -> 'key') IS NOT NULL`, which is true for a
+// key carrying JSON null and false only for an absent key, the same answer as jsonb_exists(); that
+// function does not exist on CockroachDB), so an update that carries just
 // `data` never clobbers an existing start_after/priority/etc. Targeting is by id or
 // singleton_key; when by key, `match` picks which of several pre-active matches to edit
 // (newest/oldest = one row via ORDER BY + LIMIT; all = every match). When `notify` is set the
@@ -2968,7 +3131,7 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
   // Resolve the incoming startAfter the same way insertJobs does (absolute date time vs.
   // relative interval), falling back to the row's current start_after when not supplied.
   const resolvedStartAfter = `
-        CASE WHEN jsonb_exists(o.data, 'startAfter')
+        CASE WHEN (o.data -> 'startAfter') IS NOT NULL
           THEN CASE WHEN ${isDateTimeString("o.data->>'startAfter'")}
                  THEN (o.data->>'startAfter')::timestamptz
                  ELSE ${schema}.job_now() + CAST(o.data->>'startAfter' AS interval) END
@@ -2995,13 +3158,13 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
     ),
     upd AS (
       UPDATE ${schema}.${table} job
-      SET data = CASE WHEN jsonb_exists(o.data, 'data') THEN o.data->'data' ELSE job.data END,
+      SET data = CASE WHEN (o.data -> 'data') IS NOT NULL THEN o.data->'data' ELSE job.data END,
           priority = COALESCE((o.data->>'priority')::int, job.priority),
           start_after = ${resolvedStartAfter},
           keep_until = CASE
-            WHEN jsonb_exists(o.data, 'retentionSeconds')
+            WHEN (o.data -> 'retentionSeconds') IS NOT NULL
               THEN (${resolvedStartAfter}) + ((o.data->>'retentionSeconds')::int * interval '1s')
-            WHEN jsonb_exists(o.data, 'startAfter')
+            WHEN (o.data -> 'startAfter') IS NOT NULL
               THEN (${resolvedStartAfter}) + (job.keep_until - job.start_after)
             ELSE job.keep_until END,
           expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, job.expire_seconds),
@@ -3009,11 +3172,11 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
           retry_limit = COALESCE((o.data->>'retryLimit')::int, job.retry_limit),
           retry_delay = COALESCE((o.data->>'retryDelay')::int, job.retry_delay),
           retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, job.retry_backoff),
-          retry_delay_max = CASE WHEN jsonb_exists(o.data, 'retryDelayMax') THEN (o.data->>'retryDelayMax')::int ELSE job.retry_delay_max END,
-          dead_letter = CASE WHEN jsonb_exists(o.data, 'deadLetter') THEN o.data->>'deadLetter' ELSE job.dead_letter END,
-          heartbeat_seconds = CASE WHEN jsonb_exists(o.data, 'heartbeatSeconds') THEN (o.data->>'heartbeatSeconds')::int ELSE job.heartbeat_seconds END,
-          group_id = CASE WHEN jsonb_exists(o.data, 'groupId') THEN o.data->>'groupId' ELSE job.group_id END,
-          group_tier = CASE WHEN jsonb_exists(o.data, 'groupTier') THEN o.data->>'groupTier' ELSE job.group_tier END
+          retry_delay_max = CASE WHEN (o.data -> 'retryDelayMax') IS NOT NULL THEN (o.data->>'retryDelayMax')::int ELSE job.retry_delay_max END,
+          dead_letter = CASE WHEN (o.data -> 'deadLetter') IS NOT NULL THEN o.data->>'deadLetter' ELSE job.dead_letter END,
+          heartbeat_seconds = CASE WHEN (o.data -> 'heartbeatSeconds') IS NOT NULL THEN (o.data->>'heartbeatSeconds')::int ELSE job.heartbeat_seconds END,
+          group_id = CASE WHEN (o.data -> 'groupId') IS NOT NULL THEN o.data->>'groupId' ELSE job.group_id END,
+          group_tier = CASE WHEN (o.data -> 'groupTier') IS NOT NULL THEN o.data->>'groupTier' ELSE job.group_tier END
       FROM o
       WHERE job.id IN (SELECT id FROM target)
         AND job.state < '${JOB_STATES.active}'

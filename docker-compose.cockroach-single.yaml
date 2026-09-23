@@ -1,0 +1,27 @@
+# Single-node, in-memory CockroachDB for running the suite locally. Roughly twice as fast per test as
+# the three-node cluster in docker-compose.cockroach.yaml, which stays the one CI uses: replication is
+# the point of the distributed invariants in test/distributedDatabaseTest.ts, and a single node
+# cannot exercise it. Same port and database, so the two are interchangeable for DB_TYPE=cockroachdb;
+# run one at a time. Nothing survives a restart (the store is in memory).
+# Usage: docker compose -f docker-compose.cockroach-single.yaml up -d --wait
+name: pgboss-cockroach-single
+
+services:
+  cockroachdb:
+    image: cockroachdb/cockroach:latest
+    command: start-single-node --insecure --store=type=mem,size=0.25 --advertise-addr=localhost
+    # The image creates this database itself on first start, so there is no one-shot setup
+    # container, which older Compose releases never report as done under `up --wait`.
+    environment:
+      COCKROACH_DATABASE: pgboss
+    ports:
+      - 26257:26257
+      - 8080:8080
+    healthcheck:
+      # Healthy only once the database exists, so `up --wait` cannot return before the image has
+      # created it.
+      test: ["CMD", "cockroach", "sql", "--insecure", "-d", "pgboss", "-e", "SELECT 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s

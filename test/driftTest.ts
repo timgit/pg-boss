@@ -3,7 +3,7 @@ import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
 import * as drifter from '../src/drifter.ts'
-import Contractor from '../src/contractor.ts'
+import Contractor, { installConfig } from '../src/contractor.ts'
 import * as Attorney from '../src/attorney.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
@@ -98,6 +98,54 @@ describe('drift', function () {
         const names = plans.expectedManagedIndexes('pgboss', true, [{ table: 'jx', policy }]).map(i => i.name)
         expect(names).toContain(idx)
       }
+    })
+  })
+
+  // inlineTableIndexes (CockroachDB) installs the same objects with every index and constraint
+  // folded into its CREATE TABLE. If the two installs ever disagree about what exists, the drift
+  // check fails on every CockroachDB install, so pin that they name the same objects.
+  describe('inline install (pure)', function () {
+    const base = { noTablePartitioning: true, noDeferrableConstraints: true, noAdvisoryLocks: true, noCoveringIndexes: true }
+    const names = (sql: string) => ({
+      tables: [...sql.matchAll(/CREATE TABLE \S+?\.(\w+)/g)].map(m => m[1]).sort(),
+      indexes: [...sql.matchAll(/(?:CREATE )?(?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+) (?:ON \S+ )?\(/g)].map(m => m[1]).sort(),
+      constraints: [...sql.matchAll(/CONSTRAINT (\w+)/g)].map(m => m[1]).sort(),
+      primaryKeys: (sql.match(/PRIMARY KEY/g) ?? []).length
+    })
+
+    it('creates exactly the objects the standalone install creates', function () {
+      const standalone = plans.create('pgboss', schemaVersion, base)
+      const inline = plans.create('pgboss', schemaVersion, { ...base, inlineTableIndexes: true })
+
+      expect(inline).not.toContain('CREATE INDEX')
+      expect(inline).not.toContain('ADD PRIMARY KEY')
+      expect(names(inline)).toEqual(names(standalone))
+    })
+
+    it('is ignored for a partitioned install', function () {
+      expect(plans.create('pgboss', schemaVersion, { inlineTableIndexes: true })).toBe(plans.create('pgboss', schemaVersion))
+    })
+
+    it('refuses what it cannot inline rather than dropping it', function () {
+      expect(() => plans.inlineIntoCreateTable('CREATE TABLE s.t (a int)', ['DROP INDEX s.x'])).toThrow('cannot inline')
+      expect(() => plans.inlineIntoCreateTable('CREATE TABLE s.t (a int)', ['CREATE INDEX x ON s.t (a) INCLUDE (b)'])).toThrow('covering index')
+    })
+
+    // The cockroachdb profile also runs on plain Postgres (see distributedDatabaseTest), which
+    // cannot parse inline INDEX, so a live install asks the server before inlining.
+    it('inlines on a live install only when the server is CockroachDB', async function () {
+      const server = (version: string) => ({ executeSql: async () => ({ rows: [{ version }] }) }) as any
+      const config = { inlineTableIndexes: true }
+
+      expect((await installConfig(server('CockroachDB CCL v26.2.2 (x86_64-pc-linux-gnu)'), config)).inlineTableIndexes).toBe(true)
+      expect((await installConfig(server('PostgreSQL 18.0 on x86_64-pc-linux-gnu'), config)).inlineTableIndexes).toBe(false)
+      expect((await installConfig(server('unused'), { inlineTableIndexes: false })).inlineTableIndexes).toBe(false)
+    })
+
+    it('is the CockroachDB profile only', function () {
+      expect(Attorney.getConfig({ backend: 'cockroachdb' }).inlineTableIndexes).toBe(true)
+      expect(Attorney.getConfig({ backend: 'yugabytedb' }).inlineTableIndexes).toBe(false)
+      expect(Attorney.getConfig({}).inlineTableIndexes).toBe(false)
     })
   })
 
@@ -278,6 +326,24 @@ describe('drift', function () {
         .toBe('(a) AND (b)')
       // an unbalanced leading paren is not treated as an outer wrap
       expect(drifter.indexPredicateRaw('CREATE INDEX x ON s.t (a) WHERE (a AND b')).toBe('(a AND b')
+    })
+  })
+
+  describe('computeSchemaDrift presenceOnly (pure)', function () {
+    const expected = [{ name: 'job_i7', table: 'job', keys: 'name, group_id', include: '', predicate: "state = 'active'" }] as any
+    const rewritten = [{ name: 'job_i7', table: 'job', valid: true, def: "CREATE INDEX job_i7 ON s.job (name ASC, group_id ASC) WHERE state = 'active'::STRING" }] as any
+
+    it('does not compare index definitions, but still reports a missing index', function () {
+      expect(drifter.computeSchemaDrift({ indexes: { expected, live: rewritten } }).mismatched).toHaveLength(1)
+      expect(drifter.computeSchemaDrift({ indexes: { expected, live: rewritten, presenceOnly: true } }).ok).toBe(true)
+      expect(drifter.computeSchemaDrift({ indexes: { expected, live: [], presenceOnly: true } }).missing).toHaveLength(1)
+    })
+
+    it('does not compare function bodies, but still reports a missing function', function () {
+      const fn = [{ name: 'job_now', expectedBody: 'SELECT pg_catalog.now();' }] as any
+      const live = [{ name: 'job_now', def: 'CREATE FUNCTION s.job_now() RETURNS TIMESTAMPTZ LANGUAGE sql AS $$SELECT now():::TIMESTAMPTZ;$$' }] as any
+      expect(drifter.computeSchemaDrift({ functions: { expected: fn, live, presenceOnly: true } }).ok).toBe(true)
+      expect(drifter.computeSchemaDrift({ functions: { expected: fn, live: [], presenceOnly: true } }).missingFunctions).toHaveLength(1)
     })
   })
 
@@ -813,7 +879,10 @@ describe('drift', function () {
       expect(report.ok).toBe(true) // extra indexes are informational, not drift
     })
 
-    it('detects an index whose key columns are reordered as mismatched', async function () {
+    // The definition checks below are Postgres-only by design: CockroachDB stores its own rewriting
+    // of every index, function, default, type and constraint, so on that backend drift detection
+    // checks presence and validity only (see Contractor.detectSchemaDrift).
+    helper.itPostgresOnly('detects an index whose key columns are reordered as mismatched', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
       const table = helper.isCockroachDb ? 'job' : 'job_common'
@@ -838,7 +907,7 @@ describe('drift', function () {
       expect(m.actualDefinition).not.toContain('USING btree')
     })
 
-    it('detects an index whose predicate differs as mismatched', async function () {
+    helper.itPostgresOnly('detects an index whose predicate differs as mismatched', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
       const table = helper.isCockroachDb ? 'job' : 'job_common'
@@ -918,7 +987,7 @@ describe('drift', function () {
       expect(report.missingTables).toHaveLength(0)
     })
 
-    it('handles a non-partitioned schema and a missing bam table', async function () {
+    helper.itPostgresOnly('handles a non-partitioned schema and a missing bam table', async function () {
       // noTablePartitioning is forced false by Attorney on non-distributed backends, so build the
       // schema directly and drive a Contractor to cover detectDrift's non-partitioned branch (job
       // indexes live on `job`, no job_common) and the bam-table-absent query fallback. The dropped
@@ -994,7 +1063,7 @@ describe('drift', function () {
       expect(c.missingColumns).toContain('data')
     })
 
-    it('detects an unexpected constraint as constraint drift', async function () {
+    helper.itPostgresOnly('detects an unexpected constraint as constraint drift', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
 
@@ -1010,7 +1079,7 @@ describe('drift', function () {
       expect(c.missingConstraints).toHaveLength(0)
     })
 
-    it('detects a changed column default as default drift', async function () {
+    helper.itPostgresOnly('detects a changed column default as default drift', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
 
@@ -1025,7 +1094,7 @@ describe('drift', function () {
       expect(c.defaultMismatches.map(d => d.column)).toContain('notify')
     })
 
-    it('detects a changed column type as type drift', async function () {
+    helper.itPostgresOnly('detects a changed column type as type drift', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
 
@@ -1042,7 +1111,7 @@ describe('drift', function () {
       expect(m.actual).toBe('bigint')
     })
 
-    it('detects a dropped NOT NULL as nullability drift', async function () {
+    helper.itPostgresOnly('detects a dropped NOT NULL as nullability drift', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
 

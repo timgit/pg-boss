@@ -3,8 +3,8 @@ import { execCommand } from 'cli-testlab'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
-import crypto from 'node:crypto'
-import { getConnectionString, dropSchema, getDb, itPostgresOnly, describePglite } from './testHelper.ts'
+import { getConnectionString, getDb, itPostgresOnly, describePglite } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
@@ -19,12 +19,7 @@ function runCli (args: string[]): { stdout: string, stderr: string, code: number
   const result = spawnSync('node', ['--import=tsx', cliFile, ...args], { encoding: 'utf-8' })
   return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status }
 }
-const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 const currentSchemaVersion = packageJson.pgboss.schema
-
-function getTestSchema (testName: string): string {
-  return `pgboss${sha1('cliTest' + testName)}`
-}
 
 // The CLI runs in a subprocess that connects by connection string; PGlite is in-process only.
 describePglite('cli', function () {
@@ -207,18 +202,16 @@ describePglite('cli', function () {
     })
   })
 
+  // Every test gets its own schema from hooks.ts, hashed from the test's own name, so no two tests
+  // (or a timed-out test still running) ever share one.
   describe('database operations', function () {
     const connectionString = getConnectionString()
 
     describe('version', function () {
-      const schema = getTestSchema('version')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       it('should report when pg-boss is not installed (version)', async function () {
@@ -244,14 +237,10 @@ describePglite('cli', function () {
     })
 
     describe('create', function () {
-      const schema = getTestSchema('create')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       it('should create pg-boss schema', async function () {
@@ -290,14 +279,10 @@ describePglite('cli', function () {
     })
 
     describe('migrate', function () {
-      const schema = getTestSchema('migrate')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       it('should create schema if not exists during migrate', async function () {
@@ -353,14 +338,10 @@ describePglite('cli', function () {
     })
 
     describe('inline async migration', function () {
-      const schema = getTestSchema('inline-async')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       it('should omit the missing-connection note in migrate plans when a connection is provided', async function () {
@@ -410,14 +391,10 @@ describePglite('cli', function () {
     })
 
     describe('rollback', function () {
-      const schema = getTestSchema('rollback')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       it('should report when pg-boss is not installed (rollback)', async function () {
@@ -469,14 +446,10 @@ describePglite('cli', function () {
     })
 
     describe('reindex', function () {
-      const schema = getTestSchema('reindex')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       const createSchema = () => execCommand(
@@ -589,14 +562,10 @@ describePglite('cli', function () {
     })
 
     describe('doctor', function () {
-      const schema = getTestSchema('doctor')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       const createSchema = () => execCommand(
@@ -704,14 +673,10 @@ describePglite('cli', function () {
     })
 
     describe('environment variables', function () {
-      const schema = getTestSchema('env')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       it('should read connection from PGBOSS_DATABASE_URL env var', async function () {
@@ -730,14 +695,10 @@ describePglite('cli', function () {
     })
 
     describe('connection options', function () {
-      const schema = getTestSchema('conn')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       it('should connect using individual connection parameters', async function () {
@@ -756,14 +717,10 @@ describePglite('cli', function () {
     })
 
     describe('schema structure validation', function () {
-      const schema = getTestSchema('structure')
+      let schema = ''
 
-      beforeEach(async function () {
-        await dropSchema(schema)
-      })
-
-      afterEach(async function () {
-        await dropSchema(schema)
+      beforeEach(function () {
+        schema = ctx.schema
       })
 
       it('should create all required tables and types', async function () {

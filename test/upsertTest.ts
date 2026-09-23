@@ -9,6 +9,8 @@ const SOME_UUID = '00000000-0000-0000-0000-000000000000'
 describe('upsert', function () {
   // The JSONB key-existence operator `?` collides with knex's positional-binding parser (issue #837:
   // "Expected 1 bindings, saw 10"). The update SQL must use the jsonb_exists() function form instead.
+  // Key presence is tested with `(o.data -> 'key') IS NOT NULL`: no `?` operator, which a knex
+  // adapter would read as a placeholder, and no jsonb_exists(), which CockroachDB does not have.
   it('generates update SQL free of the ? operator (knex adapter compatibility)', function () {
     const sqls = [
       plans.updateJob('pgboss', 'job', 'q', 'id', 'newest'),
@@ -17,7 +19,8 @@ describe('upsert', function () {
     ]
     for (const sql of sqls) {
       expect(sql).not.toMatch(/\?/)
-      expect(sql).toContain('jsonb_exists(o.data,')
+      expect(sql).not.toContain('jsonb_exists')
+      expect(sql).toMatch(/\(o\.data -> '\w+'\) IS NOT NULL/)
     }
   })
 

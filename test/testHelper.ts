@@ -155,8 +155,9 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
 // Postgres lives in docker-compose.yaml; each alternative backend has its own compose file/project
 // so it never starts alongside the default. CockroachDB is a three-node cluster (plus init/setup
 // jobs that create the database) (starting a single node leaves it uninitialized) so it uses `--wait`.
+// docker-compose.cockroach-single.yaml is the faster single-node alternative on the same port.
 function dockerStartHint (): string {
-  if (isCockroachDb) return 'docker compose -f docker-compose.cockroach.yaml up -d --wait'
+  if (isCockroachDb) return 'docker compose -f docker-compose.cockroach.yaml up -d --wait (or docker-compose.cockroach-single.yaml for a faster single node)'
   if (isYugabyteDb) return 'docker compose -f docker-compose.yugabyte.yaml up -d'
   if (isCitus) return 'docker compose -f docker-compose.citus.yaml up -d'
   return 'docker compose up -d db'
@@ -213,10 +214,22 @@ async function dropSchema (schema: string): Promise<void> {
   await db.close()
 }
 
+// Raw rows, so CockroachDB's INT8-as-string comes through unless it is undone here, the same way
+// the library undoes it for its own reads.
+const JOB_INTEGER_COLUMNS = ['priority', 'retry_limit', 'retry_count', 'retry_delay', 'retry_delay_max', 'expire_seconds',
+  'deletion_seconds', 'heartbeat_seconds', 'pending_dependencies', 'source_retry_count']
+
 async function findJobs (schema: string, where: string, values?: any[]): Promise<any> {
   const db = await getDb()
   const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
   await db.close()
+  if (isCockroachDb) {
+    for (const row of jobs.rows) {
+      for (const column of JOB_INTEGER_COLUMNS) {
+        if (row[column] != null) row[column] = Number(row[column])
+      }
+    }
+  }
   return jobs
 }
 

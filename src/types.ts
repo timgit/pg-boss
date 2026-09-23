@@ -394,6 +394,14 @@ export interface CompatibilityFlags {
   /** Omit the `INCLUDE` clause on covering indexes. */
   noCoveringIndexes?: boolean;
   /**
+   * Declare each table's primary key, indexes and constraints inside its `CREATE TABLE` when
+   * installing a schema, instead of as statements after it. CockroachDB runs every standalone
+   * index or primary key as a separate schema-change job after commit, which made a fresh install
+   * take ~15 seconds; inline they are part of the table. Uses CockroachDB's inline `INDEX` syntax,
+   * so no other backend sets it. Installs only: migrations are unaffected.
+   */
+  inlineTableIndexes?: boolean;
+  /**
    * The engine refuses to write a column inside the transaction that added it. CockroachDB runs
    * `ADD COLUMN` as a schema-change job and answers an `UPDATE` of that column in the same
    * transaction with "column is being backfilled", so a migration adding a column and seeding it
@@ -753,7 +761,12 @@ export interface FindJobsOptions extends ConnectionOptions {
   queued?: boolean;
 }
 
-export interface RedriveOptions extends ConnectionOptions {
+/**
+ * Which dead-lettered jobs a redrive is about, and where they go. Shared by
+ * `redrive()` and `previewRedrive()`, so a preview counts exactly what the
+ * redrive would move.
+ */
+export interface RedriveFilter extends ConnectionOptions {
   /**
    * Override queue to move jobs into. Defaults to each job's original source
    * queue (`sourceName`). Jobs with no recorded source queue are only
@@ -765,12 +778,36 @@ export interface RedriveOptions extends ConnectionOptions {
    * single dead letter queue collects from multiple sources.
    */
   sourceName?: string;
+  /** Only redrive jobs whose payload contains this object, matched the same way as `findJobs()`. */
+  data?: object;
+  /**
+   * Only redrive jobs that arrived in the dead letter queue before this time. Also the way to
+   * drain a fixed set in several calls: jobs dead-lettered after it are never swept in.
+   */
+  createdBefore?: Date;
+  /** Only redrive these jobs, by their id in the dead letter queue. */
+  ids?: string[];
+}
+
+export interface RedriveOptions extends RedriveFilter {
   /**
    * Maximum number of jobs to move in this call, oldest first. Loop or schedule
    * repeated calls to drain at a controlled rate.
    * @default 1000
    */
   limit?: number;
+}
+
+export interface RedrivePreview {
+  /** Every job the filter matches, routable or not. */
+  total: number;
+  /** Where the routable jobs would go, most first. */
+  destinations: { name: string; count: number }[];
+  /**
+   * Matching jobs a redrive would leave in place: no recorded source queue and no `destination`,
+   * or a source queue that no longer exists.
+   */
+  unroutable: number;
 }
 
 export type InsertOptions = ConnectionOptions & { returnId?: boolean }

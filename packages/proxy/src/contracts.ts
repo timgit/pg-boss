@@ -116,9 +116,20 @@ export const findJobsOptionsSchema = z.object({
   queued: z.boolean().optional(),
 }) satisfies z.ZodType<types.HttpFindJobsOptions>
 
-export const redriveOptionsSchema = z.object({
+// Shared by redrive and previewRedrive, which take the same filter. createdBefore travels as an
+// ISO string and becomes the Date the option type expects.
+const redriveFilterShape = {
   destination: queueNameSchema.optional(),
   sourceName: queueNameSchema.optional(),
+  data: jsonRecordSchema.optional(),
+  createdBefore: z.iso.datetime().transform((val) => new Date(val)).optional(),
+  ids: z.array(z.string()).optional(),
+}
+
+export const redriveFilterSchema = z.object(redriveFilterShape) satisfies z.ZodType<types.HttpRedriveFilter>
+
+export const redriveOptionsSchema = z.object({
+  ...redriveFilterShape,
   limit: z.number().optional(),
 }) satisfies z.ZodType<types.HttpRedriveOptions>
 
@@ -467,6 +478,20 @@ export const redriveRequestSchema: z.ZodType<types.HttpRedriveRequest> = z.objec
 export const redriveResponseSchema: z.ZodType<types.HttpRedriveResponse> = z.object({
   ok: z.literal(true),
   result: z.number()
+})
+
+export const previewRedriveRequestSchema: z.ZodType<types.HttpPreviewRedriveRequest> = z.object({
+  name: queueNameSchema,
+  options: redriveFilterSchema.optional()
+})
+
+export const previewRedriveResponseSchema: z.ZodType<types.HttpPreviewRedriveResponse> = z.object({
+  ok: z.literal(true),
+  result: z.object({
+    total: z.number(),
+    destinations: z.array(z.object({ name: z.string(), count: z.number() })),
+    unroutable: z.number()
+  })
 })
 
 export const deleteQueuedJobsRequestSchema: z.ZodType<types.HttpDeleteQueuedJobsRequest> = z.object({

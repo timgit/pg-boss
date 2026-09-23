@@ -39,7 +39,13 @@ export type HttpFindJobsOptions = Omit<types.FindJobsOptions, 'db' | 'data'> & {
   data?: HttpJsonRecord
 }
 
-export type HttpRedriveOptions = Omit<types.RedriveOptions, 'db'>
+export type HttpRedriveFilter = Omit<types.RedriveFilter, 'db' | 'data'> & {
+  data?: HttpJsonRecord
+}
+
+export type HttpRedriveOptions = Omit<types.RedriveOptions, 'db' | 'data'> & {
+  data?: HttpJsonRecord
+}
 
 export type HttpInsertOptions = Omit<types.InsertOptions, 'db'>
 
@@ -234,6 +240,16 @@ export type HttpRedriveRequest = {
 export type HttpRedriveResponse = {
   ok: true
   result: number
+}
+
+export type HttpPreviewRedriveRequest = {
+  name: HttpQueueName
+  options?: HttpRedriveFilter
+}
+
+export type HttpPreviewRedriveResponse = {
+  ok: true
+  result: types.RedrivePreview
 }
 
 export type HttpDeleteQueuedJobsRequest = {

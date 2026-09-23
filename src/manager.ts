@@ -90,7 +90,8 @@ const NUMERIC_METADATA_FIELDS = [
   'expireInSeconds',
   'heartbeatSeconds',
   'deleteAfterSeconds',
-  'pendingDependencies'
+  'pendingDependencies',
+  'sourceRetryCount'
 ] as const
 
 // Queue rows (plans.getQueues) return these integer columns as strings on CockroachDB too.
@@ -1837,18 +1838,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const rows = result?.rows || []
 
-    // CockroachDB returns integer columns as strings; normalize them. Even a minimal fetch
-    // (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds/heartbeatSeconds, so normalize
-    // regardless of includeMetadata. The columns are aliased to camelCase, so use those keys.
-    if (this.config.backend === 'cockroachdb') {
-      for (const row of rows) {
-        for (const field of NUMERIC_METADATA_FIELDS) {
-          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
-        }
-      }
-    }
-
-    return rows
+    // Even a minimal fetch (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds and
+    // heartbeatSeconds, so normalize regardless of includeMetadata.
+    return this.#numericJobFields(rows)
   }
 
   private mapCompletionIdArg (id: string | string[], funcName: string) {
@@ -2071,6 +2063,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const createdOn = job.created_on_text ?? job.created_on
       const keepUntil = job.keep_until_text ?? job.keep_until
       const startAfterColumn = job.start_after_text ?? job.start_after
+      // Dead-letter provenance, carried through so a job in a dead letter queue that fails here
+      // still knows where to be redriven. See failJobsBody for the single-statement path.
+      const sourceCreatedOn = job.source_created_on_text ?? job.source_created_on
 
       // forceTerminal (perJobResults `deadletter`) skips retries so the job fails terminally and
       // routes straight to the dead letter queue below.
@@ -2100,7 +2095,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
           jobOutput, job.dead_letter,
-          null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies
+          null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2116,7 +2112,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
           jobOutput, job.dead_letter,
-          null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies
+          null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
@@ -2146,10 +2143,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return response
   }
 
-  async redrive (name: string, options: types.RedriveOptions = {}): Promise<number> {
-    Attorney.assertQueueName(name)
-
-    const { destination, sourceName, limit = 1000 } = options
+  // The filter half of redrive and previewRedrive, validated once and in the parameter order
+  // plans.redriveWhere expects ($2 through $6).
+  #redriveFilterValues (options: types.RedriveFilter): unknown[] {
+    const { destination, sourceName, data, createdBefore, ids } = options
 
     if (destination !== undefined) {
       Attorney.assertQueueName(destination)
@@ -2159,13 +2156,86 @@ class Manager extends EventEmitter implements types.EventsMixin {
       Attorney.assertQueueName(sourceName)
     }
 
+    if (data !== undefined) {
+      assert(data !== null && typeof data === 'object' && !Array.isArray(data), 'data must be an object')
+    }
+
+    if (createdBefore !== undefined) {
+      assert(createdBefore instanceof Date && !Number.isNaN(createdBefore.getTime()), 'createdBefore must be a valid Date')
+    }
+
+    if (ids !== undefined) {
+      // An empty list would match nothing, which is never what a caller who passed one meant.
+      assert(Array.isArray(ids) && ids.length > 0 && ids.every(id => typeof id === 'string'), 'ids must be a non-empty array of strings')
+    }
+
+    return [
+      destination ?? null,
+      sourceName ?? null,
+      data !== undefined ? JSON.stringify(data) : null,
+      createdBefore ?? null,
+      ids ?? null
+    ]
+  }
+
+  async redrive (name: string, options: types.RedriveOptions = {}): Promise<number> {
+    Attorney.assertQueueName(name)
+
+    const { limit = 1000 } = options
+    const filter = this.#redriveFilterValues(options)
+
     assert(Number.isInteger(limit) && limit >= 1, 'limit must be an integer >= 1')
 
     const db = this.assertDb(options)
     const { table } = await this.getQueueCache(name)
+
+    // CockroachDB rejects the single-statement version (a DELETE and an INSERT on one table), so
+    // the same move runs as three statements in one transaction. See plans.selectRedriveCandidates.
+    if (this.config.noMultiMutationCte) {
+      return this.ensureTransaction(db, async (tx) => {
+        const { rows } = await tx.executeSql(plans.selectRedriveCandidates(this.config.schema, table), [name, ...filter, limit])
+
+        if (rows.length === 0) return 0
+
+        const ids = rows.map((row: { id: string }) => row.id)
+        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0]])
+        await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [ids])
+
+        return inserted.length
+      })
+    }
+
     const sql = plans.redriveJobs(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, destination ?? null, sourceName ?? null, limit])
-    return result.rows[0].moved as number
+    const result = await db.executeSql(sql, [name, ...filter, limit])
+    return Number(result.rows[0].moved)
+  }
+
+  async previewRedrive (name: string, options: types.RedriveFilter = {}): Promise<types.RedrivePreview> {
+    Attorney.assertQueueName(name)
+
+    const filter = this.#redriveFilterValues(options)
+    const db = this.assertDb(options)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.previewRedrive(this.config.schema, table)
+    const { rows } = await db.executeSql(sql, [name, ...filter])
+
+    const destinations: { name: string; count: number }[] = []
+    let unroutable = 0
+
+    for (const row of rows) {
+      // CockroachDB returns counts as strings.
+      const count = Number(row.count)
+      if (row.routable) destinations.push({ name: row.destination, count })
+      else unroutable += count
+    }
+
+    destinations.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+
+    return {
+      total: destinations.reduce((sum, d) => sum + d.count, unroutable),
+      destinations,
+      unroutable
+    }
   }
 
   async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
@@ -2513,17 +2583,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const result1 = await db.executeSql(sql, [name, id])
 
     if (result1?.rows?.length === 1) {
-      const row = result1.rows[0]
-
-      // CockroachDB returns integer columns as strings; normalize the numeric
-      // metadata fields so callers get numbers regardless of the backend.
-      if (this.config.backend === 'cockroachdb') {
-        for (const field of NUMERIC_METADATA_FIELDS) {
-          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
-        }
-      }
-
-      return row
+      return this.#numericJobFields(result1.rows)[0]
     } else {
       return null
     }
@@ -2552,7 +2612,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const result = await db.executeSql(sql, values)
 
-    return result?.rows || []
+    return this.#numericJobFields(result?.rows || [])
+  }
+
+  // CockroachDB returns integer columns (INT8) as strings. Every read that hands job rows to a
+  // caller comes through here, so a caller gets numbers whatever the backend. The columns are
+  // aliased to camelCase, so these are the aliased keys.
+  #numericJobFields<R extends Record<string, any>> (rows: R[]): R[] {
+    if (this.config.backend !== 'cockroachdb') return rows
+
+    for (const row of rows) {
+      for (const field of NUMERIC_METADATA_FIELDS) {
+        if (row[field] !== undefined && row[field] !== null) (row as Record<string, unknown>)[field] = Number(row[field])
+      }
+    }
+
+    return rows
   }
 
   async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {

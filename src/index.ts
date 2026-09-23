@@ -433,6 +433,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.redrive(name, options)
   }
 
+  previewRedrive (name: string, options?: types.RedriveFilter): Promise<types.RedrivePreview> {
+    return this.#manager.previewRedrive(name, options)
+  }
+
   deleteQueuedJobs (name: string): Promise<void> {
     return this.#manager.deleteQueuedJobs(name)
   }
@@ -676,7 +680,9 @@ export type {
   QueueResult,
   QueueStats,
   QueueStatsOptions,
+  RedriveFilter,
   RedriveOptions,
+  RedrivePreview,
   ReindexOptions,
   Request,
   Schedule,

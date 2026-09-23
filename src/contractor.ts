@@ -22,6 +22,19 @@ function planConfig (schema: string, backend?: types.BackendProfile): types.Reso
   return getConfig(backend ? { schema, backend } : { schema })
 }
 
+// Whether a live install may use inlineTableIndexes. The flag comes from the backend profile, but
+// the syntax it emits is CockroachDB's own, and the cockroachdb profile is otherwise safe to run on
+// plain Postgres (its other flags only remove features). So a live install asks the server what it
+// is before inlining. Printed plans have no server to ask and follow the named backend instead.
+export async function installConfig<T extends { inlineTableIndexes?: boolean }> (db: types.IDatabase, config: T): Promise<T> {
+  if (!config.inlineTableIndexes) return config
+
+  const { rows } = await db.executeSql(plans.SERVER_VERSION)
+  const cockroach = /cockroachdb/i.test(String(rows[0]?.version ?? ''))
+
+  return cockroach ? config : { ...config, inlineTableIndexes: false }
+}
+
 class Contractor {
   static constructionPlans (schema = plans.DEFAULT_SCHEMA, options: types.ConstructionPlanOptions = {}) {
     const { createSchema = true, backend } = options
@@ -32,7 +45,8 @@ class Contractor {
       noTablePartitioning: config.noTablePartitioning,
       noDeferrableConstraints: config.noDeferrableConstraints,
       noAdvisoryLocks: config.noAdvisoryLocks,
-      noCoveringIndexes: config.noCoveringIndexes
+      noCoveringIndexes: config.noCoveringIndexes,
+      inlineTableIndexes: config.inlineTableIndexes
     })
   }
 
@@ -220,10 +234,12 @@ class Contractor {
 
     const building = new Set(bamCommands.map(plans.bamCommandIndexName).filter((n): n is string => n !== null))
 
-    // CockroachDB renders column types (INT8 vs integer), default expressions, and constraint
-    // definitions differently from standard Postgres, so the canonical-form checks would false-positive
-    // there. Restrict type/default/constraint drift to Postgres-typed backends; the presence checks
-    // (tables, indexes, column names, functions, enum) still run everywhere.
+    // CockroachDB renders column types (INT8 vs integer), default expressions, constraint definitions,
+    // index definitions (`name ASC`, `''::STRING`, `!=`, `IN (...)`) and function bodies (database-
+    // qualified names, `::INT8`, `now():::TIMESTAMPTZ`) differently from standard Postgres, so the
+    // canonical-form checks would flag every one of them there. Restrict definition drift to
+    // Postgres-typed backends; the presence checks (tables, indexes and their validity, column
+    // names, functions, enum) still run everywhere.
     const canonicalPg = this.config.backend !== 'cockroachdb'
     const expectedColumns = plans.expectedManagedColumns(schema, partitioned, partitions)
       .map(c => canonicalPg ? c : { table: c.table, columns: c.columns })
@@ -236,9 +252,9 @@ class Contractor {
       .map(i => this.config.noCoveringIndexes ? { ...i, include: '' } : i)
 
     return drifter.computeSchemaDrift({
-      indexes: { expected: expectedIndexes, live, building },
+      indexes: { expected: expectedIndexes, live, building, presenceOnly: !canonicalPg },
       tables: { expected: plans.expectedManagedTables(schema, partitioned, partitions), live: liveTables ?? [...new Set(liveColumns.map(c => c.table))] },
-      functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned, options), live: liveFunctions } : undefined,
+      functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned, options), live: liveFunctions, presenceOnly: !canonicalPg } : undefined,
       columns: { expected: expectedColumns, live: liveColumns },
       constraints: canonicalPg ? { expected: plans.expectedManagedConstraints(schema, partitioned), live: liveConstraints } : undefined,
       enum: { name: 'job_state', expected: plans.EXPECTED_JOB_STATES, actual: enumLabels }
@@ -284,7 +300,7 @@ class Contractor {
 
   async create () {
     try {
-      const commands = plans.create(this.config.schema, schemaVersion, this.config)
+      const commands = plans.create(this.config.schema, schemaVersion, await installConfig(this.db, this.config))
       await this.db.executeSql(commands)
     } catch (err: any) {
       assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)

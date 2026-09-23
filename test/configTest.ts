@@ -122,7 +122,8 @@ describe('config', function () {
   it('should allow a 50 character custom schema name', async function () {
     const config = ctx.bossConfig
 
-    config.schema = 'thisisareallylongschemanamefortestingmaximumlength'
+    // 46 characters in ctx.schema
+    config.schema = `${ctx.schema}1234`
 
     await helper.dropSchema(config.schema)
 
@@ -140,7 +141,8 @@ describe('config', function () {
   it('should not allow more than 50 characters in schema name', async function () {
     const config = ctx.bossConfig
 
-    config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
+    // 46 characters in ctx.schema
+    config.schema = `${ctx.schema}12345`
 
     await helper.dropSchema(config.schema)
 

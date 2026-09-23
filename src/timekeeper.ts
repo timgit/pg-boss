@@ -53,8 +53,9 @@ const PREVIEW_TIME_BUDGET_MS = 1000
 // came from, so the handler can record the job it produced. `slot` is the throttle slot that
 // occurrence was filed in, which is how the handler tells a catch-up run from the due one it can
 // arrive beside and records the later of the two. Both are absent on rows written by an instance
-// older than 12.31.0, and `slot` is absent on a cron occurrence in the due window, which the insert
-// files from its own clock, so the handler treats them as optional rather than required.
+// older than 12.31.0, and `slot` is absent on a cron occurrence in the due window written by an
+// instance on a release that filed it from insert time, so the handler treats them as optional
+// rather than required.
 type ScheduledRequest = types.Request & { key?: string, slot?: string }
 
 // One schedule occurrence that produced a job, as handed to plans.setScheduleLastJobIds. camelCase
@@ -578,49 +579,43 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       // which row an occurrence came from and can record the job it produced.
       const forwarded = { data: { name, key, data, options }, singletonKey: occurrenceKey(name, key) }
 
-      // A recurrence rule can put an occurrence anywhere in the minute, and a slot measured from
-      // insert time would then straddle it: two passes on either side of a slot boundary both find
-      // the occurrence inside the window and file it in a slot of their own, sending it twice. So a
-      // rule occurrence names the slot it falls in outright. An offset from the insert's own now()
-      // would not pin it: everything between reading the clock here and the insert committing
-      // counts towards the shifted instant, which lands in the next slot whenever that adds up to a
-      // boundary crossing.
+      // An occurrence can fall anywhere in the minute, a rule wherever it says and a cron
+      // expression on the second its sixth placeholder names, and a slot measured from insert
+      // time would then straddle it: two passes on either side of a slot boundary both find the occurrence
+      // inside the window and file it in a slot of their own, sending it twice. So an occurrence
+      // names the slot it falls in outright. An offset from the insert's own now() would not pin
+      // it: everything between reading the clock here and the insert committing counts towards
+      // the shifted instant, which lands in the next slot whenever that adds up to a boundary
+      // crossing.
+      //
+      // An instance on a release that files a cron occurrence from insert time agrees with this
+      // slot wherever that insert lands in the occurrence's own minute, and disagrees only where
+      // it would already have sent the occurrence twice, so a rolling upgrade sends no more jobs
+      // than the older release does alone.
       //
       // A missed occurrence names its slot for that reason and one more: it is older than the
       // window, so a slot off insert time would file it in the slot the pass runs in, where it
-      // would collide with the cron job filed below and be dropped. The slot it names is older
-      // than the one insert time computes, so it cannot.
+      // would collide with the job of the occurrence due now and be dropped. The slot it names is
+      // older than the one insert time computes, so it cannot.
       //
       // One job per slot rather than one per occurrence, which is the resolution the docs promise:
-      // a rule finer than a slot sends a job a slot, and two occurrences inside one window that
-      // fall in slots of their own each send.
+      // an expression finer than a slot sends a job a slot, and two occurrences inside one window
+      // that fall in slots of their own each send.
       const slots = new Set<string>()
 
       if (missed !== null) {
         slots.add(throttleSlot(missed))
       }
 
-      if (due.kind === plans.SCHEDULE_KINDS.rrule) {
-        // Through the set the missed occurrences went through, since the window's lower bound falls
-        // inside a slot rather than on one: an occurrence on the bound is missed, one a millisecond
-        // later is due, and both belong to the same slot and so to the same job.
-        for (const occurrence of due.occurrences) {
-          slots.add(throttleSlot(occurrence))
-        }
+      // Through the set the missed occurrence went through, since the window's lower bound falls
+      // inside a slot rather than on one: an occurrence on the bound is missed, one a millisecond
+      // later is due, and both belong to the same slot and so to the same job.
+      for (const occurrence of due.occurrences) {
+        slots.add(throttleSlot(occurrence))
       }
 
       for (const slot of slots) {
         scheduled.push({ ...forwarded, data: { ...forwarded.data, slot }, __singletonSlot: slot })
-      }
-
-      // Anything not read as a rule is read as cron, which is what a row carrying no kind at all
-      // means: the column defaults to cron, and a reader that cannot see it reads the row the way
-      // every release before the column did.
-      if (due.kind !== plans.SCHEDULE_KINDS.rrule && due.occurrences.length > 0) {
-        // A cron occurrence keeps the slot every release has always filed it in, since an instance
-        // still running an older one during a rolling upgrade computes that slot and nothing else,
-        // and a slot the two disagree on collapses nothing.
-        scheduled.push({ ...forwarded, singletonSeconds: OCCURRENCE_WINDOW_SECONDS })
       }
     }
 
@@ -753,9 +748,13 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * job is what keeps the passes that follow from sending it a second time.
    *
    * The window rather than its most recent point, since a rule can put two occurrences inside it
-   * and a read that answers with one of them drops the other. A cron expression cannot: its finest
-   * resolution is a second, and consecutive occurrences a second apart share a throttle slot, so
-   * only the most recent one can produce a job.
+   * and a read that answers with one of them drops the other. A cron expression needs only the
+   * most recent one, although two of its occurrences either side of a minute fall in slots of
+   * their own: the minutes an expression matches are a minute apart at the closest, and passes run
+   * closer together than the window is wide, so one lands while a matching minute's first
+   * occurrence is still due and before any later minute has come round. It reads an occurrence of
+   * that minute and files the job under it. An occurrence this read passes over falls in a minute
+   * a pass before it answered for.
    */
   private readOccurrences (expression: string, kind: types.ScheduleKind, tz: string, databaseTime: number): Date[] {
     const window = new Date(databaseTime - OCCURRENCE_WINDOW_SECONDS * 1000)
@@ -824,9 +823,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
       const id = JSON.stringify([name, key])
 
-      // A cron occurrence in the due window names no slot, since the insert files it from its own
-      // clock. That slot is the one the pass is running in, which is later than every slot a
-      // catch-up occurrence can name, so the current one stands in for it.
+      // A cron occurrence in the due window written by an older instance names no slot, since that
+      // insert filed it from its own clock. That slot is the one the pass was running in, which is
+      // later than every slot a catch-up occurrence can name, so the current one stands in for it.
       const filed = slot ?? throttleSlot(new Date(this.databaseTime))
 
       const latest = fired.get(id)

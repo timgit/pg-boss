@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import Db from './db.ts'
 import * as plans from './plans.ts'
-import Contractor from './contractor.ts'
+import Contractor, { installConfig } from './contractor.ts'
 import * as migrationStore from './migrationStore.ts'
 import * as attorney from './attorney.ts'
 import packageJson from '../package.json' with { type: 'json' }
@@ -304,7 +304,7 @@ async function cmdCreate (args: ReturnType<typeof parseCliArgs>): Promise<void> 
     }
 
     console.log(`Creating pg-boss schema "${schema}"...`)
-    const sql = plans.create(schema, schemaVersion, { ...config, createSchema: true })
+    const sql = plans.create(schema, schemaVersion, { ...await installConfig(db, config), createSchema: true })
     await db.executeSql(sql)
     console.log(`Successfully created pg-boss schema "${schema}" at version ${schemaVersion}`)
   } finally {
@@ -356,7 +356,7 @@ async function cmdMigrate (args: ReturnType<typeof parseCliArgs>): Promise<void>
 
     if (version === null) {
       console.log(`pg-boss is not installed. Creating schema "${schema}"...`)
-      const sql = plans.create(schema, schemaVersion, { ...config, createSchema: true })
+      const sql = plans.create(schema, schemaVersion, { ...await installConfig(db, config), createSchema: true })
       await db.executeSql(sql)
       console.log(`Successfully created pg-boss schema "${schema}" at version ${schemaVersion}`)
       return
