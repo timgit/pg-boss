@@ -75,9 +75,27 @@ export class TestClock implements AttachableClock {
     this.clearTimeout(handle)
   }
 
-  /** Jumps to a time, forwards or backwards, firing nothing. */
+  /**
+   * Jumps to a time, forwards or backwards, firing nothing. Postgres sees a forward jump as elapsed
+   * time, so JS timers do too: each one the jump passed fires once on the next tick, as if the
+   * process had slept, and an interval then keeps its period from there instead of replaying every
+   * period it skipped. A backward jump leaves timers alone, so JS deadlines still agree with the
+   * database's.
+   */
   async setTime (t: Date | number | string): Promise<void> {
-    this.#now = toMillis(t)
+    if (this.#ticking) {
+      throw new Error('TestClock: setTime() called while a tick is in progress')
+    }
+
+    const next = toMillis(t)
+
+    // #timers is sorted by due time, so the overdue timers are a prefix and stay sorted once moved.
+    for (const timer of this.#timers) {
+      if (timer.due >= next) break
+      timer.due = next
+    }
+
+    this.#now = next
     await this.#push()
   }
 
