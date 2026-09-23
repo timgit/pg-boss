@@ -1877,7 +1877,7 @@ AS $function$
       ]
     },
     {
-      release: '12.34.0',
+      release: '12.35.0',
       version: 43,
       previous: 42,
       // Throughput: how many jobs finished between one monitor pass and the

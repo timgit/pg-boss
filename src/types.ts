@@ -289,7 +289,7 @@ export interface QueueStats {
    * bucketed history these are summed rather than averaged.
    *
    * Null when nothing counted it: `persistQueueStats` is off, or the snapshot was captured before
-   * pg-boss 12.34.
+   * pg-boss 12.35.
    */
   completedDelta: number | null;
   /** Jobs that failed terminally in the same window. Retries are not counted; they are not finished. */

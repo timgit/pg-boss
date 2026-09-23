@@ -2391,7 +2391,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         failedCount: 0,
         totalCount: 0,
         // Null, not zero, until something counted them: with persistQueueStats off
-        // nobody does, and a snapshot captured before 12.34 predates the columns.
+        // nobody does, and a snapshot captured before 12.35 predates the columns.
         // Zero would claim the queue was idle.
         completedDelta: null,
         failedDelta: null,
