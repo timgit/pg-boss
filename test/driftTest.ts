@@ -329,6 +329,24 @@ describe('drift', function () {
     })
   })
 
+  describe('computeSchemaDrift presenceOnly (pure)', function () {
+    const expected = [{ name: 'job_i7', table: 'job', keys: 'name, group_id', include: '', predicate: "state = 'active'" }] as any
+    const rewritten = [{ name: 'job_i7', table: 'job', valid: true, def: "CREATE INDEX job_i7 ON s.job (name ASC, group_id ASC) WHERE state = 'active'::STRING" }] as any
+
+    it('does not compare index definitions, but still reports a missing index', function () {
+      expect(drifter.computeSchemaDrift({ indexes: { expected, live: rewritten } }).mismatched).toHaveLength(1)
+      expect(drifter.computeSchemaDrift({ indexes: { expected, live: rewritten, presenceOnly: true } }).ok).toBe(true)
+      expect(drifter.computeSchemaDrift({ indexes: { expected, live: [], presenceOnly: true } }).missing).toHaveLength(1)
+    })
+
+    it('does not compare function bodies, but still reports a missing function', function () {
+      const fn = [{ name: 'job_now', expectedBody: 'SELECT pg_catalog.now();' }] as any
+      const live = [{ name: 'job_now', def: 'CREATE FUNCTION s.job_now() RETURNS TIMESTAMPTZ LANGUAGE sql AS $$SELECT now():::TIMESTAMPTZ;$$' }] as any
+      expect(drifter.computeSchemaDrift({ functions: { expected: fn, live, presenceOnly: true } }).ok).toBe(true)
+      expect(drifter.computeSchemaDrift({ functions: { expected: fn, live: [], presenceOnly: true } }).missingFunctions).toHaveLength(1)
+    })
+  })
+
   describe('computeSchemaDrift definition-diff (pure)', function () {
     // Canonical (per-conjunct parens), matching what expectedManagedIndexes derives from pg_get_indexdef.
     const expected = [{ name: 'job_common_i9', table: 'job_common', keys: 'name, id', predicate: "blocking AND (state = 'completed')" }]
@@ -861,7 +879,10 @@ describe('drift', function () {
       expect(report.ok).toBe(true) // extra indexes are informational, not drift
     })
 
-    it('detects an index whose key columns are reordered as mismatched', async function () {
+    // The definition checks below are Postgres-only by design: CockroachDB stores its own rewriting
+    // of every index, function, default, type and constraint, so on that backend drift detection
+    // checks presence and validity only (see Contractor.detectSchemaDrift).
+    helper.itPostgresOnly('detects an index whose key columns are reordered as mismatched', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
       const table = helper.isCockroachDb ? 'job' : 'job_common'
@@ -886,7 +907,7 @@ describe('drift', function () {
       expect(m.actualDefinition).not.toContain('USING btree')
     })
 
-    it('detects an index whose predicate differs as mismatched', async function () {
+    helper.itPostgresOnly('detects an index whose predicate differs as mismatched', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
       const table = helper.isCockroachDb ? 'job' : 'job_common'
@@ -966,7 +987,7 @@ describe('drift', function () {
       expect(report.missingTables).toHaveLength(0)
     })
 
-    it('handles a non-partitioned schema and a missing bam table', async function () {
+    helper.itPostgresOnly('handles a non-partitioned schema and a missing bam table', async function () {
       // noTablePartitioning is forced false by Attorney on non-distributed backends, so build the
       // schema directly and drive a Contractor to cover detectDrift's non-partitioned branch (job
       // indexes live on `job`, no job_common) and the bam-table-absent query fallback. The dropped
@@ -1042,7 +1063,7 @@ describe('drift', function () {
       expect(c.missingColumns).toContain('data')
     })
 
-    it('detects an unexpected constraint as constraint drift', async function () {
+    helper.itPostgresOnly('detects an unexpected constraint as constraint drift', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
 
@@ -1058,7 +1079,7 @@ describe('drift', function () {
       expect(c.missingConstraints).toHaveLength(0)
     })
 
-    it('detects a changed column default as default drift', async function () {
+    helper.itPostgresOnly('detects a changed column default as default drift', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
 
@@ -1073,7 +1094,7 @@ describe('drift', function () {
       expect(c.defaultMismatches.map(d => d.column)).toContain('notify')
     })
 
-    it('detects a changed column type as type drift', async function () {
+    helper.itPostgresOnly('detects a changed column type as type drift', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
 
@@ -1090,7 +1111,7 @@ describe('drift', function () {
       expect(m.actual).toBe('bigint')
     })
 
-    it('detects a dropped NOT NULL as nullability drift', async function () {
+    helper.itPostgresOnly('detects a dropped NOT NULL as nullability drift', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig })
       const schema = ctx.schema
 

@@ -336,7 +336,7 @@ export interface ExpectedConstraints {
 // Function-body diff: an expected function with no catalog entry is missing; a present one whose stored
 // body (from pg_get_functiondef) differs from the code's emitted body is mismatched. A function whose
 // body cannot be extracted (no dollar-quoted body found) is skipped, not flagged.
-function computeFunctionDrift (expected: ManagedFunction[], live: LiveFunction[]) {
+function computeFunctionDrift (expected: ManagedFunction[], live: LiveFunction[], presenceOnly = false) {
   const liveByName = new Map(live.map(f => [f.name, f]))
   const missingFunctions: ManagedFunction[] = []
   const mismatchedFunctions: MismatchedFunction[] = []
@@ -347,6 +347,7 @@ function computeFunctionDrift (expected: ManagedFunction[], live: LiveFunction[]
       missingFunctions.push(fn)
       continue
     }
+    if (presenceOnly) continue
     const actualBody = normalizeFunctionBody(extractFunctionBody(found.def))
     if (actualBody && actualBody !== fn.expectedBody) {
       mismatchedFunctions.push({ ...fn, actualBody, actualDefinition: found.def.replace(/\s+/g, ' ').trim() })
@@ -458,9 +459,12 @@ function computeEnumDrift (name: string, expected: readonly string[], actual: st
 // dimension is best-effort, callers omit the ones a backend can't support.
 export function computeSchemaDrift (
   opts: {
-    indexes?: { expected: ManagedIndex[], live: LiveIndex[], building?: ReadonlySet<string> }
+    // presenceOnly: report missing and invalid objects, but do not compare definitions. For backends
+    // that store their own rewriting of a definition (CockroachDB), where a comparison against the
+    // Postgres-rendered manifest would flag every object.
+    indexes?: { expected: ManagedIndex[], live: LiveIndex[], building?: ReadonlySet<string>, presenceOnly?: boolean }
     tables?: { expected: string[], live: string[] }
-    functions?: { expected: ManagedFunction[], live: LiveFunction[] }
+    functions?: { expected: ManagedFunction[], live: LiveFunction[], presenceOnly?: boolean }
     columns?: { expected: ExpectedColumns[], live: LiveColumn[] }
     enum?: { name: string, expected: readonly string[], actual: string[] }
     constraints?: { expected: ExpectedConstraints[], live: LiveConstraint[] }
@@ -484,7 +488,7 @@ export function computeSchemaDrift (
       (building.has(idx.name) ? stillBuilding : missing).push(idx)
     } else if (!found.valid) {
       invalid.push({ ...idx, building: building.has(idx.name) })
-    } else if (idx.keys && found.def) {
+    } else if (idx.keys && found.def && !opts.indexes?.presenceOnly) {
       // Definition-diff: a present, valid index whose key columns/order or predicate differ from the
       // expected shape. Comparison is on the normalised forms (order-significant, format-insensitive),
       // but the report carries the readable raw text. Only when the key list parses. An unparseable
@@ -521,7 +525,7 @@ export function computeSchemaDrift (
   const missingTables = (opts.tables?.expected ?? []).filter(t => !liveTables.has(t))
 
   const { missingFunctions, mismatchedFunctions } = computeFunctionDrift(
-    opts.functions?.expected ?? [], opts.functions?.live ?? []
+    opts.functions?.expected ?? [], opts.functions?.live ?? [], opts.functions?.presenceOnly
   )
   const columnDrift = opts.columns ? computeColumnDrift(opts.columns.expected, opts.columns.live) : []
   const constraintDrift = opts.constraints ? computeConstraintDrift(opts.constraints.expected, opts.constraints.live) : []

@@ -234,10 +234,12 @@ class Contractor {
 
     const building = new Set(bamCommands.map(plans.bamCommandIndexName).filter((n): n is string => n !== null))
 
-    // CockroachDB renders column types (INT8 vs integer), default expressions, and constraint
-    // definitions differently from standard Postgres, so the canonical-form checks would false-positive
-    // there. Restrict type/default/constraint drift to Postgres-typed backends; the presence checks
-    // (tables, indexes, column names, functions, enum) still run everywhere.
+    // CockroachDB renders column types (INT8 vs integer), default expressions, constraint definitions,
+    // index definitions (`name ASC`, `''::STRING`, `!=`, `IN (...)`) and function bodies (database-
+    // qualified names, `::INT8`, `now():::TIMESTAMPTZ`) differently from standard Postgres, so the
+    // canonical-form checks would flag every one of them there. Restrict definition drift to
+    // Postgres-typed backends; the presence checks (tables, indexes and their validity, column
+    // names, functions, enum) still run everywhere.
     const canonicalPg = this.config.backend !== 'cockroachdb'
     const expectedColumns = plans.expectedManagedColumns(schema, partitioned, partitions)
       .map(c => canonicalPg ? c : { table: c.table, columns: c.columns })
@@ -250,9 +252,9 @@ class Contractor {
       .map(i => this.config.noCoveringIndexes ? { ...i, include: '' } : i)
 
     return drifter.computeSchemaDrift({
-      indexes: { expected: expectedIndexes, live, building },
+      indexes: { expected: expectedIndexes, live, building, presenceOnly: !canonicalPg },
       tables: { expected: plans.expectedManagedTables(schema, partitioned, partitions), live: liveTables ?? [...new Set(liveColumns.map(c => c.table))] },
-      functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned, options), live: liveFunctions } : undefined,
+      functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned, options), live: liveFunctions, presenceOnly: !canonicalPg } : undefined,
       columns: { expected: expectedColumns, live: liveColumns },
       constraints: canonicalPg ? { expected: plans.expectedManagedConstraints(schema, partitioned), live: liveConstraints } : undefined,
       enum: { name: 'job_state', expected: plans.EXPECTED_JOB_STATES, actual: enumLabels }
