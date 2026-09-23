@@ -31,6 +31,15 @@ export function trackActivity<T extends IDatabase> (db: T): { db: T, idle: () =>
       if (Object.hasOwn(overrides, key)) return overrides[key]
       const value = Reflect.get(t, key)
       return typeof value === 'function' ? value.bind(t) : value
+    },
+    // A caller that patches a counted method has usually captured the tracked one to call through.
+    // Writing the patch onto the original instead would make the tracked one call the patch forever.
+    set (t, key, value) {
+      if (Object.hasOwn(overrides, key)) {
+        overrides[key] = value
+        return true
+      }
+      return Reflect.set(t, key, value)
     }
   })
 

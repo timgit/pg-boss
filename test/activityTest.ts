@@ -94,6 +94,22 @@ describe('trackActivity', function () {
     expect(typeof db.beginTransaction).toBe('undefined')
   })
 
+  it('a counted method replaced through the wrapper wraps the tracked one instead of recursing', async function () {
+    const calls: string[] = []
+    const inner: IDatabase = { executeSql: async (text: string) => { calls.push(`inner ${text}`); return rows } }
+    const { db, idle } = trackActivity(inner)
+
+    const original = db.executeSql.bind(db)
+    db.executeSql = async (text: string, values?: unknown[]) => {
+      calls.push(`patch ${text}`)
+      return original(text, values)
+    }
+
+    await db.executeSql('SELECT 1')
+    expect(calls).toEqual(['patch SELECT 1', 'inner SELECT 1'])
+    expect(await idle()).toBe(false)
+  })
+
   it('forwards other members, bound to the original so private fields keep working', async function () {
     class Adapter {
       readonly _pgbdb = true
