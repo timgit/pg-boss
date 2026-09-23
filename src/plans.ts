@@ -2195,8 +2195,8 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
   // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
   const returning = notify ? 'RETURNING id, start_after' : returnId ? 'RETURNING id' : ''
 
-  // A caller that knows the slot names it outright: the cron pass files a rule occurrence in the
-  // slot the occurrence falls in, and an offset off now() cannot pin that, since now() here is
+  // A caller that knows the slot names it outright: the cron pass files an occurrence in the slot
+  // the occurrence falls in, and an offset off now() cannot pin that, since now() here is
   // insert time. Only in the statement the pass asks for, because insert() stringifies caller
   // objects straight into the recordset below, so a column declared for everyone would be a live,
   // undeclared and unvalidated option on the public path, where a bad value surfaces as a raw

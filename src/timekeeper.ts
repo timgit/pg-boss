@@ -53,8 +53,9 @@ const PREVIEW_TIME_BUDGET_MS = 1000
 // came from, so the handler can record the job it produced. `slot` is the throttle slot that
 // occurrence was filed in, which is how the handler tells a catch-up run from the due one it can
 // arrive beside and records the later of the two. Both are absent on rows written by an instance
-// older than 12.31.0, and `slot` is absent on a cron occurrence in the due window written by one
-// that filed it from insert time, so the handler treats them as optional rather than required.
+// older than 12.31.0, and `slot` is absent on a cron occurrence in the due window written by an
+// instance on a release that filed it from insert time, so the handler treats them as optional
+// rather than required.
 type ScheduledRequest = types.Request & { key?: string, slot?: string }
 
 // One schedule occurrence that produced a job, as handed to plans.setScheduleLastJobIds. camelCase
@@ -579,21 +580,18 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       const forwarded = { data: { name, key, data, options }, singletonKey: occurrenceKey(name, key) }
 
       // An occurrence can fall anywhere in the minute, a rule wherever it says and a cron
-      // expression on the second its sixth placeholder names, and a slot measured from insert time would
-      // then straddle it: two passes on either side of a slot boundary both find the occurrence
+      // expression on the second its sixth placeholder names, and a slot measured from insert
+      // time would then straddle it: two passes on either side of a slot boundary both find the occurrence
       // inside the window and file it in a slot of their own, sending it twice. So an occurrence
       // names the slot it falls in outright. An offset from the insert's own now() would not pin
       // it: everything between reading the clock here and the insert committing counts towards
       // the shifted instant, which lands in the next slot whenever that adds up to a boundary
       // crossing.
       //
-      // A cron occurrence used to be filed from insert time, the slot an instance on an older
-      // release computes and nothing else, so that the two would agree during a rolling upgrade.
-      // They only disagree where the slot that insert lands in is not the one the occurrence falls
-      // in, which is the case that already sent it twice, so a mixed deployment sends no more than
-      // an old one did, and one that has finished upgrading sends it once. Where the insert lands
-      // in the occurrence's own minute, which is where it lands for a 5-placeholder expression
-      // unless the round trip carries it out of that minute, the two slots are the same one.
+      // An instance on a release that files a cron occurrence from insert time agrees with this
+      // slot wherever that insert lands in the occurrence's own minute, and disagrees only where
+      // it would already have sent the occurrence twice, so a rolling upgrade sends no more jobs
+      // than the older release does alone.
       //
       // A missed occurrence names its slot for that reason and one more: it is older than the
       // window, so a slot off insert time would file it in the slot the pass runs in, where it

@@ -1,6 +1,6 @@
 # Scheduling
 
-Jobs may be created automatically based on a cron expression or an [RRULE](#rrule-expressions). As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format.
+Jobs may be created automatically based on a cron expression or an [RRULE](#rrule-expressions). As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds and a job is filed under the minute its occurrence falls in. A schedule therefore sends at most one job a minute, and a job can be created up to one check interval after its occurrence. Neither the 6-placeholder cron format's seconds field nor an RRULE's `BYSECOND` or `FREQ=SECONDLY` adds precision below a minute, so prefer minute-level expressions such as the 5-placeholder cron format.
 
 For example, use this format, which implies "any second during 3:30 am every day"
 
