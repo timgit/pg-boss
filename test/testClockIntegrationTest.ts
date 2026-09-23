@@ -23,15 +23,6 @@ async function dbTime (boss: PgBoss): Promise<number> {
   return Number(rows[0].time)
 }
 
-// Real-time wait for I/O a tick started; tick itself never waits on I/O.
-async function until (predicate: () => Promise<boolean>, ms = 5000): Promise<void> {
-  const deadline = Date.now() + ms
-  while (!(await predicate())) {
-    if (Date.now() > deadline) throw new Error('until: condition not met')
-    await delay(10)
-  }
-}
-
 describe('TestClock', function () {
   it('the database clock follows setTime and tick', async function () {
     const clock = new TestClock(T0)
@@ -195,11 +186,9 @@ describe('TestClock', function () {
     expect(await countJobs(ctx.boss, ctx.schema)).toBe(0)
 
     await clock.tick(MINUTE)
-    await until(async () => (await countJobs(ctx.boss!, '__pgboss__send-it')) > 0)
+    expect(await countJobs(ctx.boss, '__pgboss__send-it')).toBeGreaterThan(0)
 
     await clock.tick(1000)
-    await until(async () => (await countJobs(ctx.boss!, ctx.schema)) > 0)
-
     expect(await countJobs(ctx.boss, ctx.schema)).toBeGreaterThanOrEqual(1)
   })
 
