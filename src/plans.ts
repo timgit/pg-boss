@@ -1448,9 +1448,11 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       active_count   int NOT NULL DEFAULT 0,
       failed_count   int NOT NULL DEFAULT 0,
       total_count    int NOT NULL DEFAULT 0,
-      completed_delta int NOT NULL DEFAULT 0,
-      failed_delta    int NOT NULL DEFAULT 0,
-      arrived_delta   int NOT NULL DEFAULT 0,
+      -- Nullable, unlike the gauges: a snapshot captured before these were
+      -- counted has no value, and zero would chart as an idle queue.
+      completed_delta int,
+      failed_delta    int,
+      arrived_delta   int,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
@@ -3040,11 +3042,11 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // it once and probes per row. The alternative, a second pass over the job table
 // filtered on completed_on, would be a whole extra scan of the largest table in
 // the schema, and there is no index on that column to make it cheaper.
-export function getQueueStats (schema: string, table: string, queues: string[], trackThroughput = false): SqlQuery {
-  // Off by default, and then this query is byte-for-byte what it was before
-  // throughput existed: no join, no extra counts, no cost. The measured price of
-  // turning it on is in the `trackThroughput` docs.
-  const throughput = trackThroughput
+export function getQueueStats (schema: string, table: string, queues: string[], throughput = false): SqlQuery {
+  // Counted only with persistQueueStats, and otherwise this query is
+  // byte-for-byte what it was before throughput existed: no join, no extra
+  // counts, no cost. The measured price is in the `persistQueueStats` docs.
+  const counters = throughput
     ? {
         select: `
         "completedDelta",
@@ -3067,7 +3069,7 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         GREATEST("queuedCount" - "deferredCount", 0) as "readyCount",
         "activeCount",
         "failedCount",
-        "totalCount",${throughput.select}
+        "totalCount",${counters.select}
         "singletonsActive"
       FROM (
         SELECT
@@ -3076,10 +3078,10 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
             (count(*) FILTER (WHERE j.state < '${JOB_STATES.active}'))::int as "queuedCount",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.active}'))::int as "activeCount",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}'))::int as "failedCount",
-            count(*)::int as "totalCount",${throughput.counts}
+            count(*)::int as "totalCount",${counters.counts}
             array_agg(j.singleton_key) FILTER (WHERE j.policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND j.state = '${JOB_STATES.active}') as "singletonsActive"
           FROM ${schema}.${table} j
-          ${throughput.join}
+          ${counters.join}
           WHERE j.name = ANY($1::text[])
           GROUP BY 1
       ) stats
@@ -3098,11 +3100,11 @@ export const READY_HISTORY_SIZE = 60
 const PIN_SECONDS_SQL = 'EXTRACT(EPOCH FROM (clock_timestamp() - transaction_timestamp()))::float8'
 /* eslint-enable no-restricted-syntax */
 
-export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, trackThroughput?: boolean): string {
-  const statsQuery = getQueueStats(schema, table, queues, trackThroughput)
-  // The aggregate only produces these when tracking is on, so the assignment
-  // has to disappear with them rather than reference a column that is not there.
-  const throughputSet = trackThroughput
+export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, throughput?: boolean): string {
+  const statsQuery = getQueueStats(schema, table, queues, throughput)
+  // The aggregate only produces these when counting, so the assignment has to
+  // disappear with them rather than reference a column that is not there.
+  const throughputSet = throughput
     ? `
       completed_delta = COALESCE(stats."completedDelta", 0),
       failed_delta = COALESCE(stats."failedDelta", 0),
@@ -3199,9 +3201,9 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
 // aggregate anywhere in the schema, which on exactly the slow-aggregate deployments this subsystem
 // targets is not a rare race. Skipping the lock is bounded: it can happen at most once per queue,
 // because the scan it runs is what populates the cache that gates every later read.
-export function refreshQueueStats (schema: string, table: string, name: string, options: { noAdvisoryLocks?: boolean, firstCapture?: boolean, trackThroughput?: boolean } = {}): string {
-  const statsQuery = getQueueStats(schema, table, [name], options.trackThroughput)
-  const throughputSet = options.trackThroughput
+export function refreshQueueStats (schema: string, table: string, name: string, options: { noAdvisoryLocks?: boolean, firstCapture?: boolean, throughput?: boolean } = {}): string {
+  const statsQuery = getQueueStats(schema, table, [name], options.throughput)
+  const throughputSet = options.throughput
     ? `
       completed_delta = COALESCE(stats."completedDelta", 0),
       failed_delta = COALESCE(stats."failedDelta", 0),

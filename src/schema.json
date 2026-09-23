@@ -594,8 +594,8 @@
         "table": "queue_stats",
         "column": "arrived_delta",
         "type": "integer",
-        "notNull": true,
-        "default": "0"
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",
@@ -608,8 +608,8 @@
         "table": "queue_stats",
         "column": "completed_delta",
         "type": "integer",
-        "notNull": true,
-        "default": "0"
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",
@@ -629,8 +629,8 @@
         "table": "queue_stats",
         "column": "failed_delta",
         "type": "integer",
-        "notNull": true,
-        "default": "0"
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",
@@ -1609,8 +1609,8 @@
         "table": "queue_stats",
         "column": "arrived_delta",
         "type": "integer",
-        "notNull": true,
-        "default": "0"
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",
@@ -1623,8 +1623,8 @@
         "table": "queue_stats",
         "column": "completed_delta",
         "type": "integer",
-        "notNull": true,
-        "default": "0"
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",
@@ -1644,8 +1644,8 @@
         "table": "queue_stats",
         "column": "failed_delta",
         "type": "integer",
-        "notNull": true,
-        "default": "0"
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",

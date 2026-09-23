@@ -2390,13 +2390,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
         activeCount: 0,
         failedCount: 0,
         totalCount: 0,
-        completedDelta: 0,
-        failedDelta: 0,
-        arrivedDelta: 0,
+        // Null, not zero, until something counted them: with persistQueueStats off
+        // nobody does, and a snapshot captured before 12.34 predates the columns.
+        // Zero would claim the queue was idle.
+        completedDelta: null,
+        failedDelta: null,
+        arrivedDelta: null,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
       for (const field of STATS_COUNT_FIELDS) {
+        // The queue table's delta columns sit at zero while nobody counts them.
+        if (!this.config.persistQueueStats && field.endsWith('Delta')) continue
+
         const value = row?.[field]
         // CockroachDB returns integer columns as strings; normalize the counts.
         if (value !== undefined && value !== null) snapshot[field] = isCockroach ? Number(value) : value
@@ -2483,7 +2489,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // A queue with no capture yet has no cache to fall back on, so its first scan is exempt from the
     // try-lock. See refreshQueueStats. Every later read has real counts to serve and can lose.
     const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name, {
-      trackThroughput: this.config.trackThroughput,
+      throughput: this.config.persistQueueStats,
       noAdvisoryLocks: this.config.noAdvisoryLocks,
       firstCapture: cached.capturedOn == null
     })

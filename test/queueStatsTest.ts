@@ -185,7 +185,7 @@ describe('queueStats', function () {
      * watermark these counters are windowed on, so moving it is moving the
      * thing under test.
      */
-    async function monitorPass (queue: string, trackThroughput = true) {
+    async function monitorPass (queue: string, throughput = true) {
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
@@ -193,7 +193,7 @@ describe('queueStats', function () {
       )
 
       const { rows } = await db.executeSql(
-        plans.refreshQueueStats(schema, table, queue, { noAdvisoryLocks: true, trackThroughput }), []
+        plans.refreshQueueStats(schema, table, queue, { noAdvisoryLocks: true, throughput }), []
       )
 
       return rows[0]
@@ -201,8 +201,9 @@ describe('queueStats', function () {
 
     /**
      * The counters cost a join and three filters on the monitor's biggest
-     * query, so they are opt-in. With the option off the aggregate must be the
-     * one that shipped before throughput existed, and the columns stay at zero.
+     * query, so they are counted only with persistQueueStats. Without it the
+     * aggregate must be the one that shipped before throughput existed, and the
+     * columns stay at zero.
      */
     it('counts nothing when tracking is off', async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
@@ -327,6 +328,69 @@ describe('queueStats', function () {
       // A job that will be retried has not finished, whatever its timestamps say.
       expect((await monitorPass(retried)).failedDelta).toBe(0)
       expect((await monitorPass(terminal)).failedDelta).toBe(1)
+    })
+
+    /**
+     * The option is persistQueueStats, not a flag of its own: a per-pass count
+     * is only worth anything once it is kept. So the whole path — monitor,
+     * cache, snapshot, history read — has to carry them when it is on.
+     */
+    it('records throughput in the history when persistQueueStats is on', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true, monitorIntervalSeconds: 1 })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      // The first pass sets the watermark; the second counts what came after it.
+      await ctx.boss.supervise(queue)
+      await ctx.boss.send(queue)
+      await ctx.boss.send(queue)
+
+      await expect.poll(async () => {
+        await ctx.boss!.supervise(queue)
+        const series = await ctx.boss!.getQueueStats(queue)
+        return series.reduce((sum, row) => sum + (row.arrivedDelta ?? 0), 0)
+      }, { timeout: 10_000, interval: 500 }).toBe(2)
+    })
+
+    /** Nobody counted, so the answer is null — zero would say the queue was idle. */
+    it('reports null throughput when persistQueueStats is off', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: false })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.send(queue)
+      const [stats] = await ctx.boss.getQueueStats(queue, { force: true })
+
+      expect(stats.queuedCount).toBe(1)
+      expect(stats.completedDelta).toBe(null)
+      expect(stats.failedDelta).toBe(null)
+      expect(stats.arrivedDelta).toBe(null)
+    })
+
+    /**
+     * A snapshot recorded before the counting existed has no value. The
+     * migration leaves the columns null for exactly this row, and the history
+     * read has to hand that on rather than default it to zero.
+     */
+    it('reports null throughput on a snapshot captured before it was counted', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      await db.executeSql(
+        `INSERT INTO ${schema}.queue_stats (name, ready_count, captured_on) VALUES ($1, 3, now() - interval '1 hour')`,
+        [queue]
+      )
+
+      const [old] = await ctx.boss.getQueueStats(queue)
+      expect(old.readyCount).toBe(3)
+      expect(old.completedDelta).toBe(null)
+      expect(old.arrivedDelta).toBe(null)
+
+      const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600 })
+      expect(bucket.completedDelta).toBe(null)
     })
 
     it('counts every job in a batch', async function () {

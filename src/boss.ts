@@ -382,7 +382,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const refreshStats = rows[0].refreshStats !== false
 
       if (refreshStats) {
-        const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, this.#config.trackThroughput)
+        const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, this.#config.persistQueueStats)
         // The pin this pass cost, taken from the server's own clock (see the pinSeconds column in
         // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
         // network and event-loop lag, none of which hold the horizon. The client measurement stays as

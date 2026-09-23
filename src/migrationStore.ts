@@ -1885,18 +1885,22 @@ AS $function$
       // answer it — five hundred jobs arriving and five hundred leaving looks
       // exactly like a queue where nothing happened.
       //
-      // Two columns on `queue` for the latest interval and two on `queue_stats`
-      // for the history, matching how every other count here already travels.
-      // Both are NOT NULL DEFAULT 0, which Postgres adds without rewriting the
-      // table — on `queue_stats`, which is partitioned and large on a busy
-      // installation, a rewrite would be the whole cost of this migration.
+      // Three columns on `queue` for the latest interval and three on
+      // `queue_stats` for the history, matching how every other count here
+      // already travels. Neither form rewrites the table, which matters on
+      // `queue_stats`: it is partitioned and large on a busy installation.
+      //
+      // The history columns are nullable with no default, unlike the gauges.
+      // Every snapshot already recorded predates the counting, and a default of
+      // zero would chart up to a month of history as an idle queue. Null says
+      // nobody counted, which is true.
       install: [
         `ALTER TABLE ${schema}.queue ADD COLUMN completed_delta int NOT NULL DEFAULT 0`,
         `ALTER TABLE ${schema}.queue ADD COLUMN failed_delta int NOT NULL DEFAULT 0`,
         `ALTER TABLE ${schema}.queue ADD COLUMN arrived_delta int NOT NULL DEFAULT 0`,
-        `ALTER TABLE ${schema}.queue_stats ADD COLUMN completed_delta int NOT NULL DEFAULT 0`,
-        `ALTER TABLE ${schema}.queue_stats ADD COLUMN failed_delta int NOT NULL DEFAULT 0`,
-        `ALTER TABLE ${schema}.queue_stats ADD COLUMN arrived_delta int NOT NULL DEFAULT 0`
+        `ALTER TABLE ${schema}.queue_stats ADD COLUMN completed_delta int`,
+        `ALTER TABLE ${schema}.queue_stats ADD COLUMN failed_delta int`,
+        `ALTER TABLE ${schema}.queue_stats ADD COLUMN arrived_delta int`
       ],
       uninstall: [
         `ALTER TABLE ${schema}.queue DROP COLUMN completed_delta`,

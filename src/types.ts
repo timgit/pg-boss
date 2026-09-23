@@ -159,22 +159,21 @@ export interface MaintenanceOptions {
   monitorIntervalSeconds?: number;
   persistWarnings?: boolean;
   warningRetentionDays?: number;
+  /**
+   * Record a snapshot of every queue's counts on each monitor pass, and count throughput with it.
+   *
+   * Throughput is what each queue *finished* and *received* between passes (`completedDelta`,
+   * `failedDelta`, `arrivedDelta`), which no gauge can answer. It rides on this option rather than
+   * having its own because a per-pass counter only means something once it is kept: without the
+   * history, each pass would overwrite the last one's count.
+   *
+   * It is not free. The monitor's aggregate gains a join against `queue` (for each queue's own
+   * watermark) and three more filtered counts; measured on a 2-million-row queue that took it from
+   * ~227ms to ~344ms. On a small queue the difference is noise.
+   * @default false
+   */
   persistQueueStats?: boolean;
   queueStatRetentionDays?: number;
-  /**
-   * Count what each queue *finished* and *received* between monitor passes, not just what it holds.
-   *
-   * Off by default, because it is not free. The monitor's aggregate gains a join against `queue`
-   * (for each queue's own watermark) and three more filtered counts; measured on a 2-million-row
-   * queue that took it from ~227ms to ~344ms. On a small queue the difference is noise; on a large
-   * one it is the most expensive query pg-boss runs getting half again as expensive.
-   *
-   * Turn it on to answer questions no gauge can: how many jobs a queue got through, whether the
-   * backlog is growing because arrivals rose or because completions stopped, and how long the
-   * current backlog will take to drain. `completedDelta`, `failedDelta` and `arrivedDelta` are zero
-   * while this is off.
-   */
-  trackThroughput?: boolean;
   bamIntervalSeconds?: number;
   flowIntervalSeconds?: number;
   /**
@@ -286,12 +285,15 @@ export interface QueueStats {
    *
    * Every other count here says how many jobs are in a state right now, which cannot answer "how
    * many did this queue get through": five hundred arriving and five hundred leaving looks
-   * identical to a queue where nothing happened. Zero on a queue that has never been monitored,
-   * and over a bucketed history these are summed rather than averaged.
+   * identical to a queue where nothing happened. Zero on a queue's first monitor pass, and over a
+   * bucketed history these are summed rather than averaged.
+   *
+   * Null when nothing counted it: `persistQueueStats` is off, or the snapshot was captured before
+   * pg-boss 12.34.
    */
-  completedDelta: number;
+  completedDelta: number | null;
   /** Jobs that failed terminally in the same window. Retries are not counted; they are not finished. */
-  failedDelta: number;
+  failedDelta: number | null;
   /**
    * Jobs that arrived in the same window.
    *
@@ -299,7 +301,7 @@ export interface QueueStats {
    * is arriving or because less of it is leaving — two situations with the same rising queue depth
    * and completely different answers.
    */
-  arrivedDelta: number;
+  arrivedDelta: number | null;
   capturedOn: Date;
 }
 
@@ -901,7 +903,10 @@ export interface QueueResult extends Queue {
    */
   failedCount: number;
   totalCount: number
-  /** Jobs completed since the previous monitor pass. See `QueueStats.completedDelta`. */
+  /**
+   * Jobs completed since the previous monitor pass. See `QueueStats.completedDelta`. Always zero
+   * while `persistQueueStats` is off.
+   */
   completedDelta: number;
   /** Jobs failed terminally since the previous monitor pass. */
   failedDelta: number;

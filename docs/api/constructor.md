@@ -214,6 +214,8 @@ The following configuration options should not normally need to be changed, but 
 
   If set to true, the per-queue counts captured during monitoring (deferred, queued, ready, active, failed, and total) are written to the `queue_stats` table on every monitor cycle, in addition to updating the live counts on the `queue` table. This builds a time series of queue depth that you can query with [`getQueueStats()`](./queues.md#getqueuestatsname-options), which can downsample the series into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day, pruned automatically during maintenance.
 
+  It also turns on throughput counting: each snapshot records how many jobs arrived, completed and failed since the previous monitor pass (`arrivedDelta`, `completedDelta`, `failedDelta`), which no depth count can answer. This makes the monitor's aggregate more expensive, measured at ~227ms to ~344ms on a 2-million-row queue, and noise on a small one.
+
 * **queueStatRetentionDays**, int, default 7
 
   When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
