@@ -2182,6 +2182,23 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const db = this.assertDb(options)
     const { table } = await this.getQueueCache(name)
+
+    // CockroachDB rejects the single-statement version (a DELETE and an INSERT on one table), so
+    // the same move runs as three statements in one transaction. See plans.selectRedriveCandidates.
+    if (this.config.noMultiMutationCte) {
+      return this.ensureTransaction(db, async (tx) => {
+        const { rows } = await tx.executeSql(plans.selectRedriveCandidates(this.config.schema, table), [name, ...filter, limit])
+
+        if (rows.length === 0) return 0
+
+        const ids = rows.map((row: { id: string }) => row.id)
+        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0]])
+        await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [ids])
+
+        return inserted.length
+      })
+    }
+
     const sql = plans.redriveJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ...filter, limit])
     return Number(result.rows[0].moved)

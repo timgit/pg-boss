@@ -2977,6 +2977,42 @@ export function redriveJobs (schema: string, table: string): string {
   `
 }
 
+// Distributed redrive (noMultiMutationCte). CockroachDB refuses redriveJobs' DELETE and INSERT on
+// one table in one statement, so the manager runs the three steps below in a transaction instead:
+// lock the candidates, re-create them, delete the originals. Same predicate, same order, same
+// limit, so the two paths move the same jobs. Insert-then-delete rather than the reverse keeps the
+// rows readable for the INSERT ... SELECT, and the new rows can never match the delete: they get
+// fresh ids. A job whose re-insert hits ON CONFLICT is still deleted, exactly as redriveJobs drops it.
+export function selectRedriveCandidates (schema: string, table: string): string {
+  return `
+    SELECT j.id
+    FROM ${schema}.${table} j
+    WHERE ${redriveWhere()}
+      AND EXISTS (SELECT 1 FROM ${schema}.queue q WHERE q.name = COALESCE($2, j.source_name))
+    ORDER BY j.created_on
+    LIMIT $7
+    FOR UPDATE
+  `
+}
+
+// $1 candidate ids, $2 destination override.
+export function insertRedrivenJobs (schema: string, table: string): string {
+  return `
+    INSERT INTO ${schema}.job
+      (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
+       expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
+       heartbeat_seconds, dead_letter)
+    SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
+      q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
+      ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
+      m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
+    FROM ${schema}.${table} m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
+    WHERE m.id = ANY($1::uuid[])
+    ON CONFLICT DO NOTHING
+    RETURNING 1
+  `
+}
+
 // What a redrive with the same filter would do, without doing it: matching jobs grouped by the
 // queue each would land in. The LEFT JOIN keeps jobs the redrive would leave behind (no source
 // and no override, or a source queue since deleted) so they can be reported rather than vanish.
