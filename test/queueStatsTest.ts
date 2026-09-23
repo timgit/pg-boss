@@ -218,7 +218,7 @@ describe('queueStats', function () {
 
       const off = await monitorPass(queue, false)
       expect(off.completedDelta).toBe(0)
-      expect(off.arrivedDelta).toBe(0)
+      expect(off.createdDelta).toBe(0)
     })
 
     /**
@@ -264,7 +264,7 @@ describe('queueStats', function () {
       await ctx.boss.send(queue)
 
       const after = await monitorPass(queue)
-      expect(after.arrivedDelta).toBe(2)
+      expect(after.createdDelta).toBe(2)
       expect(after.completedDelta).toBe(0)
     })
 
@@ -348,7 +348,7 @@ describe('queueStats', function () {
       await expect.poll(async () => {
         await ctx.boss!.supervise(queue)
         const series = await ctx.boss!.getQueueStats(queue)
-        return series.reduce((sum, row) => sum + (row.arrivedDelta ?? 0), 0)
+        return series.reduce((sum, row) => sum + (row.createdDelta ?? 0), 0)
       }, { timeout: 10_000, interval: 500 }).toBe(2)
     })
 
@@ -364,7 +364,7 @@ describe('queueStats', function () {
       expect(stats.queuedCount).toBe(1)
       expect(stats.completedDelta).toBe(null)
       expect(stats.failedDelta).toBe(null)
-      expect(stats.arrivedDelta).toBe(null)
+      expect(stats.createdDelta).toBe(null)
     })
 
     /**
@@ -387,7 +387,7 @@ describe('queueStats', function () {
       const [old] = await ctx.boss.getQueueStats(queue)
       expect(old.readyCount).toBe(3)
       expect(old.completedDelta).toBe(null)
-      expect(old.arrivedDelta).toBe(null)
+      expect(old.createdDelta).toBe(null)
 
       const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600 })
       expect(bucket.completedDelta).toBe(null)

@@ -400,9 +400,9 @@ function createTableQueue (schema: string) {
       -- and this one, which is what a throughput chart is made of. Every other
       -- count here answers "how many are there"; these two answer "how many
       -- went through".
+      created_delta int NOT NULL default 0,
       completed_delta int NOT NULL default 0,
       failed_delta int NOT NULL default 0,
-      arrived_delta int NOT NULL default 0,
       ready_history int[] NOT NULL default '{}',
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
@@ -1520,9 +1520,9 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       total_count    int NOT NULL DEFAULT 0,
       -- Nullable, unlike the gauges: a snapshot captured before these were
       -- counted has no value, and zero would chart as an idle queue.
+      created_delta   int,
       completed_delta int,
       failed_delta    int,
-      arrived_delta   int,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
@@ -1531,12 +1531,12 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
 /* eslint-enable no-restricted-syntax */
 
 export function createIndexQueueStats (schema: string, noCoveringIndex = false): string {
-  // The two delta columns are deliberately *not* included. Adding them would
+  // The three delta columns are deliberately *not* included. Adding them would
   // make a fresh install's index differ from a migrated one unless the migration
   // rebuilt it, and rebuilding the covering index on a partitioned table that is
   // large on exactly the installations that care about throughput is a heavy
-  // price for making two int columns index-only. The lookup still uses this
-  // index; it just visits the heap for those two values.
+  // price for making three int columns index-only. The lookup still uses this
+  // index; it just visits the heap for those three values.
   const include = noCoveringIndex
     ? ''
     : 'INCLUDE (deferred_count, queued_count, ready_count, active_count, failed_count, total_count)'
@@ -1621,9 +1621,9 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
   const sql = `
     INSERT INTO ${schema}.queue_stats
       (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-       completed_delta, failed_delta, arrived_delta, captured_on)
+       created_delta, completed_delta, failed_delta, captured_on)
     SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-           completed_delta, failed_delta, arrived_delta, ${schema}.job_now()
+           created_delta, completed_delta, failed_delta, ${schema}.job_now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -1652,9 +1652,9 @@ export function getQueueStatsCache (schema: string): string {
       active_count   as "activeCount",
       failed_count   as "failedCount",
       total_count    as "totalCount",
+      created_delta   as "createdDelta",
       completed_delta as "completedDelta",
       failed_delta    as "failedDelta",
-      arrived_delta   as "arrivedDelta",
       table_name     as "table",
       monitor_on     as "capturedOn",
       (extract(epoch from (${schema}.job_now() - monitor_on)) * 1000)::float8 as "cacheAgeMs",
@@ -1674,9 +1674,9 @@ export function getQueueStatsHistory (schema: string): string {
       active_count   as "activeCount",
       failed_count   as "failedCount",
       total_count    as "totalCount",
+      created_delta   as "createdDelta",
       completed_delta as "completedDelta",
       failed_delta    as "failedDelta",
-      arrived_delta   as "arrivedDelta",
       captured_on    as "capturedOn"
     FROM ${schema}.queue_stats
     WHERE name = $1
@@ -1705,10 +1705,10 @@ const STATS_AGG = {
 //   mode 'auto', $5 is maxDataPoints; the width is derived so the series fits in $5 points.
 //                   from/to sets the range, but they cannot exceed the data's own min/max values.
 //
-// The two delta columns are summed rather than passed through `aggregate`, and
+// The three delta columns are summed rather than passed through `aggregate`, and
 // that is not an oversight. Every other column here is a gauge, where the
 // question a wider bucket asks is "how high did it get" or "what was it
-// typically"; these two are counters, where the only meaningful answer is "how
+// typically"; these three are counters, where the only meaningful answer is "how
 // many in total". Averaging them would report a rate per capture interval
 // labelled as a count, which reads plausible and is wrong by whatever the
 // bucket width happens to be.
@@ -1754,9 +1754,9 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
       ${agg('active_count')}   as "activeCount",
       ${agg('failed_count')}   as "failedCount",
       ${agg('total_count')}    as "totalCount",
+      sum(created_delta)::int   as "createdDelta",
       sum(completed_delta)::int as "completedDelta",
-      sum(failed_delta)::int    as "failedDelta",
-      sum(arrived_delta)::int   as "arrivedDelta"
+      sum(failed_delta)::int    as "failedDelta"
     FROM ${schema}.queue_stats, w
     WHERE name = $1
       AND ($2::timestamptz IS NULL OR captured_on >= $2)
@@ -3187,14 +3187,15 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 
 // Every count the monitor keeps, from one pass over the queue's table.
 //
-// Six of them are gauges — what the queue looks like right now. Two are not:
-// completedDelta and failedDelta count the jobs that *finished* since the last
-// pass, which is the only way to answer "how many jobs did this queue get
-// through" from a table of current state. Five hundred arriving and five
-// hundred leaving looks identical to a still queue in every gauge here.
+// Six of them are gauges — what the queue looks like right now. Three are not:
+// createdDelta counts the jobs created since the last pass, and completedDelta
+// and failedDelta the jobs that *finished*, which is the only way to answer
+// "how many jobs did this queue get through" from a table of current state.
+// Five hundred arriving and five hundred leaving looks identical to a still
+// queue in every gauge here.
 //
 // The window is the queue's own `monitor_on`, joined in rather than passed as a
-// fixed interval. That watermark is what makes the two counters exact across a
+// fixed interval. That watermark is what makes the three counters exact across a
 // skipped or backed-off pass: nothing is counted twice, because the window
 // starts where the last one ended, and nothing is missed, because a late pass
 // simply covers a longer window. A queue that has never been monitored has a
@@ -3212,13 +3213,13 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
   const counters = throughput
     ? {
         select: `
+        "createdDelta",
         "completedDelta",
-        "failedDelta",
-        "arrivedDelta",`,
+        "failedDelta",`,
         counts: `
+            (count(*) FILTER (WHERE q.monitor_on IS NOT NULL AND j.created_on >= q.monitor_on))::int as "createdDelta",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}' AND q.monitor_on IS NOT NULL AND j.completed_on >= q.monitor_on))::int as "completedDelta",
-            (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND q.monitor_on IS NOT NULL AND j.completed_on >= q.monitor_on))::int as "failedDelta",
-            (count(*) FILTER (WHERE q.monitor_on IS NOT NULL AND j.created_on >= q.monitor_on))::int as "arrivedDelta",`,
+            (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND q.monitor_on IS NOT NULL AND j.completed_on >= q.monitor_on))::int as "failedDelta",`,
         join: `JOIN ${schema}.queue q ON q.name = j.name`
       }
     : { select: '', counts: '', join: '' }
@@ -3269,9 +3270,9 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
   // disappear with them rather than reference a column that is not there.
   const throughputSet = throughput
     ? `
+      created_delta = COALESCE(stats."createdDelta", 0),
       completed_delta = COALESCE(stats."completedDelta", 0),
-      failed_delta = COALESCE(stats."failedDelta", 0),
-      arrived_delta = COALESCE(stats."arrivedDelta", 0),`
+      failed_delta = COALESCE(stats."failedDelta", 0),`
     : ''
   // Serialize the $1 parameter for use in the multi-statement transaction below
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
@@ -3368,9 +3369,9 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
   const statsQuery = getQueueStats(schema, table, [name], options.throughput)
   const throughputSet = options.throughput
     ? `
+      created_delta = COALESCE(stats."createdDelta", 0),
       completed_delta = COALESCE(stats."completedDelta", 0),
-      failed_delta = COALESCE(stats."failedDelta", 0),
-      arrived_delta = COALESCE(stats."arrivedDelta", 0),`
+      failed_delta = COALESCE(stats."failedDelta", 0),`
     : ''
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam([name]))
   const lock = tryAdvisoryLock(schema, 'queue-stats', options.noAdvisoryLocks || options.firstCapture)
@@ -3400,9 +3401,9 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
       queue.active_count as "activeCount",
       queue.failed_count as "failedCount",
       queue.total_count as "totalCount",
+      queue.created_delta as "createdDelta",
       queue.completed_delta as "completedDelta",
       queue.failed_delta as "failedDelta",
-      queue.arrived_delta as "arrivedDelta",
       queue.monitor_on as "capturedOn"
   `
 }

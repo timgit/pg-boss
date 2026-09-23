@@ -118,12 +118,12 @@ const STATS_COUNT_FIELDS = [
   'activeCount',
   'failedCount',
   'totalCount',
-  // Counters rather than gauges — jobs finished since the previous pass. They
+  // Counters rather than gauges — jobs finished or created since the previous pass. They
   // travel with the gauges because they come from the same aggregate and need
   // the same CockroachDB string-to-number normalisation below.
   'completedDelta',
   'failedDelta',
-  'arrivedDelta'
+  'createdDelta'
 ] as const
 
 // Stale-cache budget for getQueueStats when persistQueueStats is off. A queue-table cache older than
@@ -2465,7 +2465,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // Zero would claim the queue was idle.
         completedDelta: null,
         failedDelta: null,
-        arrivedDelta: null,
+        createdDelta: null,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 

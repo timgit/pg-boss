@@ -163,7 +163,7 @@ export interface MaintenanceOptions {
    * Record a snapshot of every queue's counts on each monitor pass, and count throughput with it.
    *
    * Throughput is what each queue *finished* and *received* between passes (`completedDelta`,
-   * `failedDelta`, `arrivedDelta`), which no gauge can answer. It rides on this option rather than
+   * `failedDelta`, `createdDelta`), which no gauge can answer. It rides on this option rather than
    * having its own because a per-pass counter only means something once it is kept: without the
    * history, each pass would overwrite the last one's count.
    *
@@ -301,7 +301,7 @@ export interface QueueStats {
    * is arriving or because less of it is leaving — two situations with the same rising queue depth
    * and completely different answers.
    */
-  arrivedDelta: number | null;
+  createdDelta: number | null;
   capturedOn: Date;
 }
 
@@ -948,7 +948,7 @@ export interface QueueResult extends Queue {
   /** Jobs failed terminally since the previous monitor pass. */
   failedDelta: number;
   /** Jobs that arrived since the previous monitor pass. */
-  arrivedDelta: number;
+  createdDelta: number;
   table: string;
   createdOn: Date;
   updatedOn: Date;

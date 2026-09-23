@@ -1895,20 +1895,20 @@ AS $function$
       // zero would chart up to a month of history as an idle queue. Null says
       // nobody counted, which is true.
       install: [
+        `ALTER TABLE ${schema}.queue ADD COLUMN created_delta int NOT NULL DEFAULT 0`,
         `ALTER TABLE ${schema}.queue ADD COLUMN completed_delta int NOT NULL DEFAULT 0`,
         `ALTER TABLE ${schema}.queue ADD COLUMN failed_delta int NOT NULL DEFAULT 0`,
-        `ALTER TABLE ${schema}.queue ADD COLUMN arrived_delta int NOT NULL DEFAULT 0`,
+        `ALTER TABLE ${schema}.queue_stats ADD COLUMN created_delta int`,
         `ALTER TABLE ${schema}.queue_stats ADD COLUMN completed_delta int`,
-        `ALTER TABLE ${schema}.queue_stats ADD COLUMN failed_delta int`,
-        `ALTER TABLE ${schema}.queue_stats ADD COLUMN arrived_delta int`
+        `ALTER TABLE ${schema}.queue_stats ADD COLUMN failed_delta int`
       ],
       uninstall: [
+        `ALTER TABLE ${schema}.queue DROP COLUMN created_delta`,
         `ALTER TABLE ${schema}.queue DROP COLUMN completed_delta`,
         `ALTER TABLE ${schema}.queue DROP COLUMN failed_delta`,
-        `ALTER TABLE ${schema}.queue DROP COLUMN arrived_delta`,
+        `ALTER TABLE ${schema}.queue_stats DROP COLUMN created_delta`,
         `ALTER TABLE ${schema}.queue_stats DROP COLUMN completed_delta`,
-        `ALTER TABLE ${schema}.queue_stats DROP COLUMN failed_delta`,
-        `ALTER TABLE ${schema}.queue_stats DROP COLUMN arrived_delta`
+        `ALTER TABLE ${schema}.queue_stats DROP COLUMN failed_delta`
       ]
     }
   ]

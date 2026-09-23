@@ -207,9 +207,9 @@ Returns an array of queue-depth snapshots, most recent first. Each snapshot has 
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
 * `totalCount`: all jobs currently stored for the queue
 
-and three throughput counts, which are counters rather than gauges: how many jobs moved in the window since the previous monitor pass. They are only counted when [`persistQueueStats`](./constructor.md) is enabled, and are `null` otherwise, or on snapshots captured before pg-boss 12.35. In a bucketed series they are summed, not aggregated.
+and three throughput counts, which are counters rather than gauges: how many jobs moved in the window since the previous monitor pass. They are not the difference between two snapshots' gauges: `failedDelta` is not the change in `failedCount`, which also falls as retention deletes failed jobs. They are only counted when [`persistQueueStats`](./constructor.md) is enabled, and are `null` otherwise, or on snapshots captured before pg-boss 12.35. In a bucketed series they are summed, not aggregated.
 
-* `arrivedDelta`: jobs created
+* `createdDelta`: jobs created
 * `completedDelta`: jobs completed
 * `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not counted)
 

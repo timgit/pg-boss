@@ -592,13 +592,6 @@
       },
       {
         "table": "queue_stats",
-        "column": "arrived_delta",
-        "type": "integer",
-        "notNull": false,
-        "default": null
-      },
-      {
-        "table": "queue_stats",
         "column": "captured_on",
         "type": "timestamp with time zone",
         "notNull": true,
@@ -607,6 +600,13 @@
       {
         "table": "queue_stats",
         "column": "completed_delta",
+        "type": "integer",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
+        "column": "created_delta",
         "type": "integer",
         "notNull": false,
         "default": null
@@ -676,14 +676,14 @@
       },
       {
         "table": "queue",
-        "column": "arrived_delta",
+        "column": "completed_delta",
         "type": "integer",
         "notNull": true,
         "default": "0"
       },
       {
         "table": "queue",
-        "column": "completed_delta",
+        "column": "created_delta",
         "type": "integer",
         "notNull": true,
         "default": "0"
@@ -1607,13 +1607,6 @@
       },
       {
         "table": "queue_stats",
-        "column": "arrived_delta",
-        "type": "integer",
-        "notNull": false,
-        "default": null
-      },
-      {
-        "table": "queue_stats",
         "column": "captured_on",
         "type": "timestamp with time zone",
         "notNull": true,
@@ -1622,6 +1615,13 @@
       {
         "table": "queue_stats",
         "column": "completed_delta",
+        "type": "integer",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
+        "column": "created_delta",
         "type": "integer",
         "notNull": false,
         "default": null
@@ -1691,14 +1691,14 @@
       },
       {
         "table": "queue",
-        "column": "arrived_delta",
+        "column": "completed_delta",
         "type": "integer",
         "notNull": true,
         "default": "0"
       },
       {
         "table": "queue",
-        "column": "completed_delta",
+        "column": "created_delta",
         "type": "integer",
         "notNull": true,
         "default": "0"
