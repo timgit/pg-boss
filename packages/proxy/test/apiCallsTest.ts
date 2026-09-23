@@ -452,8 +452,13 @@ describe('proxy api routes', () => {
       },
       {
         method: 'redrive',
-        body: { name: 'dlq', options: { destination: 'dest', sourceName: 'src', limit: 50 } },
-        expected: ['dlq', { destination: 'dest', sourceName: 'src', limit: 50 }]
+        body: { name: 'dlq', options: { destination: 'dest', sourceName: 'src', data: { tenant: 'acme' }, createdBefore: '2026-09-01T00:00:00.000Z', ids: ['a', 'b'], limit: 50 } },
+        expected: ['dlq', { destination: 'dest', sourceName: 'src', data: { tenant: 'acme' }, createdBefore: new Date('2026-09-01T00:00:00.000Z'), ids: ['a', 'b'], limit: 50 }]
+      },
+      {
+        method: 'previewRedrive',
+        body: { name: 'dlq', options: { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: '2026-09-01T00:00:00.000Z' } },
+        expected: ['dlq', { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: new Date('2026-09-01T00:00:00.000Z') }]
       },
       {
         method: 'deleteQueuedJobs',
