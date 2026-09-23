@@ -10,6 +10,7 @@ import Navigator from './navigator.ts'
 import Notifier from './notifier.ts'
 import { delay } from './tools.ts'
 import { isAttachable } from './clock.ts'
+import { trackActivity } from './activity.ts'
 import type * as types from './types.ts'
 import * as plans from './plans.ts'
 import DbDefault from './db.ts'
@@ -57,6 +58,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #startingPromise: Promise<this> | null = null
   #stoppingPromise: Promise<void> | null = null
   #attachedClock: AsyncDisposable | null = null
+  #idle: (() => Promise<boolean>) | undefined
   #config: types.ResolvedConstructorOptions
   #db: (types.IDatabase & { _pgbdb?: false }) | DbDefault
   #boss: Boss
@@ -76,7 +78,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const config = Attorney.getConfig(value)
     this.#config = config
 
-    const db: (types.IDatabase & { _pgbdb?: false }) | DbDefault = this.getDb()
+    let db: (types.IDatabase & { _pgbdb?: false }) | DbDefault = this.getDb()
+
+    // Before any component takes the db, so every statement they run is counted.
+    if (isAttachable(config.clock)) {
+      const tracked = trackActivity(db)
+      db = tracked.db
+      this.#idle = tracked.idle
+    }
+
     this.#db = db
 
     if ('_pgbdb' in this.#db && this.#db._pgbdb) {
@@ -178,7 +188,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     }
 
     if (isAttachable(this.#config.clock)) {
-      this.#attachedClock = await this.#config.clock.attach({ db: this.#db, schema: this.#config.schema })
+      this.#attachedClock = await this.#config.clock.attach({ db: this.#db, schema: this.#config.schema, idle: this.#idle })
     }
 
     await this.#manager.start()
