@@ -562,12 +562,14 @@ describe('failure', function () {
       return jobs.sort((a, b) => a.createdOn.getTime() - b.createdOn.getTime()).map(job => job.id)
     }
 
-    async function setup () {
+    // `deadLetterRetryLimit` is set at creation rather than through updateQueue, which does not
+    // run on CockroachDB.
+    async function setup (deadLetterRetryLimit?: number) {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
       const deadLetter = `${ctx.schema}_dlq`
       const queueA = `${ctx.schema}_a`
       const queueB = `${ctx.schema}_b`
-      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.createQueue(deadLetter, deadLetterRetryLimit === undefined ? {} : { retryLimit: deadLetterRetryLimit })
       await ctx.boss.createQueue(queueA, { deadLetter })
       await ctx.boss.createQueue(queueB, { deadLetter })
       return { deadLetter, queueA, queueB }
@@ -610,8 +612,7 @@ describe('failure', function () {
     })
 
     it('does not redrive a job the dead letter queue already failed', async function () {
-      const { deadLetter, queueA } = await setup()
-      await ctx.boss!.updateQueue(deadLetter, { retryLimit: 0 })
+      const { deadLetter, queueA } = await setup(0)
       const [id] = await deadLetterAll(queueA, deadLetter, [{ n: 1 }])
       await ctx.boss!.fetch(deadLetter)
       await ctx.boss!.fail(deadLetter, id)
@@ -627,7 +628,7 @@ describe('failure', function () {
      * be redriven.
      */
     it('keeps provenance when the dead letter queue retries a job, so it can still be redriven', async function () {
-      const { deadLetter, queueA } = await setup()
+      const { deadLetter, queueA } = await setup(2)
       const [id] = await deadLetterAll(queueA, deadLetter, [{ n: 1 }])
       const before = await ctx.boss!.getJobById(deadLetter, id)
       assertTruthy(before)
@@ -648,8 +649,7 @@ describe('failure', function () {
     })
 
     it('keeps provenance on a job the dead letter queue fails terminally', async function () {
-      const { deadLetter, queueA } = await setup()
-      await ctx.boss!.updateQueue(deadLetter, { retryLimit: 0 })
+      const { deadLetter, queueA } = await setup(0)
       const [id] = await deadLetterAll(queueA, deadLetter, [{ n: 1 }])
 
       await ctx.boss!.fetch(deadLetter)

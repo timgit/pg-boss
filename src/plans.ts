@@ -2725,7 +2725,8 @@ const REBOUND_TIMESTAMPS_AS_TEXT = `started_on::text as started_on_text,
       singleton_on::text as singleton_on_text,
       created_on::text as created_on_text,
       keep_until::text as keep_until_text,
-      start_after::text as start_after_text`
+      start_after::text as start_after_text,
+      source_created_on::text as source_created_on_text`
 
 export function selectJobsToFailById (schema: string, table: string): SqlQuery {
   return {
@@ -2891,10 +2892,11 @@ export function insertRetryJob (schema: string, table: string): string {
       retry_backoff, retry_delay_max, start_after, started_on, singleton_key, singleton_on,
       group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
       keep_until, policy, output, dead_letter,
-      heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies
+      heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies,
+      source_name, source_id, source_created_on, source_retry_count
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-      $25, $26, $27, $28, $29
+      $25, $26, $27, $28, $29, $30, $31, $32, $33
     ) ON CONFLICT DO NOTHING
     RETURNING id
   `

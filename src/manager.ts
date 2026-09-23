@@ -2057,6 +2057,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const createdOn = job.created_on_text ?? job.created_on
       const keepUntil = job.keep_until_text ?? job.keep_until
       const startAfterColumn = job.start_after_text ?? job.start_after
+      // Dead-letter provenance, carried through so a job in a dead letter queue that fails here
+      // still knows where to be redriven. See failJobsBody for the single-statement path.
+      const sourceCreatedOn = job.source_created_on_text ?? job.source_created_on
 
       // forceTerminal (perJobResults `deadletter`) skips retries so the job fails terminally and
       // routes straight to the dead letter queue below.
@@ -2086,7 +2089,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
           jobOutput, job.dead_letter,
-          null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies
+          null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2102,7 +2106,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
           jobOutput, job.dead_letter,
-          null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies
+          null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
