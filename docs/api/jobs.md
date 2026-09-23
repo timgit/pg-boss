@@ -574,9 +574,18 @@ such a job runs it again standalone; the original flow does not resume.
   source queue (e.g. jobs dead-lettered before this feature existed); such jobs are
   left in place otherwise.
 - `sourceName`: only redrive jobs that originated from this source queue.
+- `data`: only redrive jobs whose payload contains this object, matched the same
+  way as [`findJobs()`](#findjobsname-options).
+- `createdBefore`: only redrive jobs that arrived in the dead letter queue before
+  this `Date`. Pass the same value to every call of a loop to drain a fixed set:
+  jobs dead-lettered while it runs are never swept in.
+- `ids`: only redrive these jobs, by their id in the dead letter queue.
 - `limit`: maximum number of jobs to move in this call, oldest first (default
   `1000`). Loop or schedule repeated calls to drain large dead letter queues at a
   controlled rate.
+
+Jobs a dead letter queue's own workers have already failed are never redriven;
+only jobs still waiting there are candidates.
 
 ```js
 // drain a dead letter queue back to its source queues, 500 at a time
@@ -584,6 +593,31 @@ let moved
 do {
   moved = await boss.redrive('email-dlq', { limit: 500 })
 } while (moved > 0)
+```
+
+### `previewRedrive(name, options)`
+
+Reports what [`redrive()`](#redrivename-options) would do with the same options,
+without moving anything. Takes every `redrive()` option except `limit`, and uses the
+same matching, so the numbers agree with what a redrive would move at that moment.
+
+Returns `{ total, destinations, unroutable }`:
+
+- `total`: every job the filter matches.
+- `destinations`: `{ name, count }` for each queue the matching jobs would land in,
+  largest first. Without `destination` this is the fan-out back to each source queue.
+- `unroutable`: matching jobs a redrive would leave in place, because they have no
+  recorded source queue and no `destination` was given, or their source queue no
+  longer exists.
+
+A destination with a `singleton` or `short` policy can still drop jobs that collide
+at redrive time; the preview cannot see those collisions ahead of time.
+
+```js
+const { total, destinations, unroutable } = await boss.previewRedrive('email-dlq', {
+  data: { tenant: 'acme' },
+  createdBefore: new Date(Date.now() - 24 * 60 * 60 * 1000)
+})
 ```
 
 ### `deleteQueuedJobs(name)`

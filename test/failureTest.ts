@@ -548,6 +548,117 @@ describe('failure', function () {
     expect(movedRest).toBe(1)
   })
 
+  describe('redrive filters and previewRedrive', function () {
+    // Sends each payload to `source`, fails it with no retries, and returns the
+    // dead-lettered copies' ids in the order they arrived.
+    async function deadLetterAll (source: string, deadLetter: string, payloads: object[]) {
+      for (const data of payloads) {
+        const id = await ctx.boss!.send(source, data, { retryLimit: 0 })
+        assertTruthy(id)
+        await ctx.boss!.fetch(source)
+        await ctx.boss!.fail(source, id)
+      }
+      const jobs = await ctx.boss!.findJobs(deadLetter, { queued: true })
+      return jobs.sort((a, b) => a.createdOn.getTime() - b.createdOn.getTime()).map(job => job.id)
+    }
+
+    async function setup () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      const deadLetter = `${ctx.schema}_dlq`
+      const queueA = `${ctx.schema}_a`
+      const queueB = `${ctx.schema}_b`
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.createQueue(queueA, { deadLetter })
+      await ctx.boss.createQueue(queueB, { deadLetter })
+      return { deadLetter, queueA, queueB }
+    }
+
+    it('redrives only jobs whose payload contains data', async function () {
+      const { deadLetter, queueA } = await setup()
+      await deadLetterAll(queueA, deadLetter, [{ tenant: 'acme', n: 1 }, { tenant: 'globex', n: 2 }, { tenant: 'acme', n: 3 }])
+
+      expect(await ctx.boss!.redrive(deadLetter, { data: { tenant: 'acme' } })).toBe(2)
+
+      const [left] = await ctx.boss!.findJobs<{ tenant: string }>(deadLetter, { queued: true })
+      expect(left.data.tenant).toBe('globex')
+    })
+
+    it('never sweeps in jobs dead-lettered after createdBefore', async function () {
+      const { deadLetter, queueA } = await setup()
+      await deadLetterAll(queueA, deadLetter, [{ n: 1 }, { n: 2 }])
+      const cutoff = new Date((await ctx.boss!.findJobs(deadLetter, { queued: true }))
+        .reduce((max, job) => Math.max(max, job.createdOn.getTime()), 0) + 1)
+      await deadLetterAll(queueA, deadLetter, [{ n: 3 }])
+
+      // Drained in several calls with one cutoff, the way a chunked caller would.
+      expect(await ctx.boss!.redrive(deadLetter, { createdBefore: cutoff, limit: 1 })).toBe(1)
+      expect(await ctx.boss!.redrive(deadLetter, { createdBefore: cutoff, limit: 1 })).toBe(1)
+      expect(await ctx.boss!.redrive(deadLetter, { createdBefore: cutoff, limit: 1 })).toBe(0)
+
+      const [left] = await ctx.boss!.findJobs<{ n: number }>(deadLetter, { queued: true })
+      expect(left.data.n).toBe(3)
+    })
+
+    it('redrives only the listed ids', async function () {
+      const { deadLetter, queueA } = await setup()
+      const ids = await deadLetterAll(queueA, deadLetter, [{ n: 1 }, { n: 2 }, { n: 3 }])
+
+      expect(await ctx.boss!.redrive(deadLetter, { ids: [ids[0], ids[2]] })).toBe(2)
+
+      const left = await ctx.boss!.findJobs(deadLetter, { queued: true })
+      expect(left.map(job => job.id)).toEqual([ids[1]])
+    })
+
+    it('does not redrive a job the dead letter queue already failed', async function () {
+      const { deadLetter, queueA } = await setup()
+      await ctx.boss!.updateQueue(deadLetter, { retryLimit: 0 })
+      const [id] = await deadLetterAll(queueA, deadLetter, [{ n: 1 }])
+      await ctx.boss!.fetch(deadLetter)
+      await ctx.boss!.fail(deadLetter, id)
+
+      expect(await ctx.boss!.redrive(deadLetter)).toBe(0)
+      expect((await ctx.boss!.previewRedrive(deadLetter)).total).toBe(0)
+    })
+
+    it('previews the fan-out, and counts what the redrive then moves', async function () {
+      const { deadLetter, queueA, queueB } = await setup()
+      await deadLetterAll(queueA, deadLetter, [{ tenant: 'acme' }, { tenant: 'acme' }, { tenant: 'globex' }])
+      await deadLetterAll(queueB, deadLetter, [{ tenant: 'acme' }])
+      // Sent straight to the dead letter queue, so it has no recorded source.
+      await ctx.boss!.send(deadLetter, { tenant: 'acme' })
+
+      const preview = await ctx.boss!.previewRedrive(deadLetter, { data: { tenant: 'acme' } })
+      expect(preview).toEqual({
+        total: 4,
+        destinations: [{ name: queueA, count: 2 }, { name: queueB, count: 1 }],
+        unroutable: 1
+      })
+
+      // The unroutable job stays behind, exactly as the preview said.
+      expect(await ctx.boss!.redrive(deadLetter, { data: { tenant: 'acme' } })).toBe(3)
+      expect((await ctx.boss!.previewRedrive(deadLetter, { data: { tenant: 'acme' } })).unroutable).toBe(1)
+    })
+
+    it('previews a destination override as one destination with nothing unroutable', async function () {
+      const { deadLetter, queueA, queueB } = await setup()
+      await deadLetterAll(queueA, deadLetter, [{ n: 1 }])
+      await ctx.boss!.send(deadLetter, { n: 2 })
+
+      expect(await ctx.boss!.previewRedrive(deadLetter, { destination: queueB })).toEqual({
+        total: 2,
+        destinations: [{ name: queueB, count: 2 }],
+        unroutable: 0
+      })
+    })
+
+    it('rejects filters that would silently match nothing or everything', async function () {
+      const { deadLetter } = await setup()
+      await expect(ctx.boss!.redrive(deadLetter, { ids: [] })).rejects.toThrow('ids must be a non-empty array of strings')
+      await expect(ctx.boss!.previewRedrive(deadLetter, { data: [1] as unknown as object })).rejects.toThrow('data must be an object')
+      await expect(ctx.boss!.redrive(deadLetter, { createdBefore: new Date('nope') })).rejects.toThrow('createdBefore must be a valid Date')
+    })
+  })
+
   it('should fail active jobs in a worker during shutdown', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

@@ -2891,10 +2891,25 @@ export function insertDeadLetterJob (schema: string): string {
   `
 }
 
+// The candidate predicate shared by redriveJobs and previewRedrive, so a preview can never count
+// a job the redrive would skip or skip one it would move. Parameters: $1 dead letter queue,
+// $2 destination override, $3 sourceName, $4 data (jsonb containment), $5 createdBefore,
+// $6 ids. Each filter is off when its parameter is null. Only jobs not yet active are
+// candidates: a job the dead letter queue's own workers failed stays where it is.
+function redriveWhere (): string {
+  return `j.name = $1
+        AND j.state < '${JOB_STATES.active}'
+        AND ($3::text IS NULL OR j.source_name = $3)
+        AND ($4::jsonb IS NULL OR j.data @> $4::jsonb)
+        AND ($5::timestamptz IS NULL OR j.created_on < $5)
+        AND ($6::uuid[] IS NULL OR j.id = ANY($6::uuid[]))`
+}
+
 // Dead-letter redrive. Moves un-started jobs out of a dead-letter queue and
 // re-creates them as fresh jobs on their original source queue (or $2 destination override),
-// oldest-first, capped at $4. The JOIN in `candidates` only matches jobs whose destination queue
-// exists, so legacy/orphaned jobs (NULL source_name, no override) are never deleted. They stay
+// oldest-first, capped at $7 and narrowed by the filters in redriveWhere. The JOIN in
+// `candidates` only matches jobs whose destination queue exists, so legacy/orphaned jobs
+// (NULL source_name, no override) are never deleted. They stay
 // in the DLQ rather than being lost. Re-created jobs get a new id, `created` state, retry_count 0,
 // cleared output, NULL source_*, and every queue-config column (retry/retention/policy/expiry/
 // heartbeat/dead_letter) from the destination queue as it is configured now, per-job overrides
@@ -2913,11 +2928,9 @@ export function redriveJobs (schema: string, table: string): string {
       SELECT j.id
       FROM ${schema}.${table} j
       JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
-      WHERE j.name = $1
-        AND j.state < '${JOB_STATES.active}'
-        AND ($3::text IS NULL OR j.source_name = $3)
+      WHERE ${redriveWhere()}
       ORDER BY j.created_on
-      LIMIT $4
+      LIMIT $7
       FOR UPDATE OF j SKIP LOCKED
     ),
     moved AS (
@@ -2939,6 +2952,21 @@ export function redriveJobs (schema: string, table: string): string {
       RETURNING 1
     )
     SELECT count(*)::int AS moved FROM ins
+  `
+}
+
+// What a redrive with the same filter would do, without doing it: matching jobs grouped by the
+// queue each would land in. The LEFT JOIN keeps jobs the redrive would leave behind (no source
+// and no override, or a source queue since deleted) so they can be reported rather than vanish.
+export function previewRedrive (schema: string, table: string): string {
+  return `
+    SELECT COALESCE($2, j.source_name) AS destination,
+      (q.name IS NOT NULL) AS routable,
+      count(*)::int AS count
+    FROM ${schema}.${table} j
+    LEFT JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
+    WHERE ${redriveWhere()}
+    GROUP BY 1, 2
   `
 }
 

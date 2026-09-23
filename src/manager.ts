@@ -2132,10 +2132,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return response
   }
 
-  async redrive (name: string, options: types.RedriveOptions = {}): Promise<number> {
-    Attorney.assertQueueName(name)
-
-    const { destination, sourceName, limit = 1000 } = options
+  // The filter half of redrive and previewRedrive, validated once and in the parameter order
+  // plans.redriveWhere expects ($2 through $6).
+  #redriveFilterValues (options: types.RedriveFilter): unknown[] {
+    const { destination, sourceName, data, createdBefore, ids } = options
 
     if (destination !== undefined) {
       Attorney.assertQueueName(destination)
@@ -2145,13 +2145,69 @@ class Manager extends EventEmitter implements types.EventsMixin {
       Attorney.assertQueueName(sourceName)
     }
 
+    if (data !== undefined) {
+      assert(data !== null && typeof data === 'object' && !Array.isArray(data), 'data must be an object')
+    }
+
+    if (createdBefore !== undefined) {
+      assert(createdBefore instanceof Date && !Number.isNaN(createdBefore.getTime()), 'createdBefore must be a valid Date')
+    }
+
+    if (ids !== undefined) {
+      // An empty list would match nothing, which is never what a caller who passed one meant.
+      assert(Array.isArray(ids) && ids.length > 0 && ids.every(id => typeof id === 'string'), 'ids must be a non-empty array of strings')
+    }
+
+    return [
+      destination ?? null,
+      sourceName ?? null,
+      data !== undefined ? JSON.stringify(data) : null,
+      createdBefore ?? null,
+      ids ?? null
+    ]
+  }
+
+  async redrive (name: string, options: types.RedriveOptions = {}): Promise<number> {
+    Attorney.assertQueueName(name)
+
+    const { limit = 1000 } = options
+    const filter = this.#redriveFilterValues(options)
+
     assert(Number.isInteger(limit) && limit >= 1, 'limit must be an integer >= 1')
 
     const db = this.assertDb(options)
     const { table } = await this.getQueueCache(name)
     const sql = plans.redriveJobs(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, destination ?? null, sourceName ?? null, limit])
-    return result.rows[0].moved as number
+    const result = await db.executeSql(sql, [name, ...filter, limit])
+    return Number(result.rows[0].moved)
+  }
+
+  async previewRedrive (name: string, options: types.RedriveFilter = {}): Promise<types.RedrivePreview> {
+    Attorney.assertQueueName(name)
+
+    const filter = this.#redriveFilterValues(options)
+    const db = this.assertDb(options)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.previewRedrive(this.config.schema, table)
+    const { rows } = await db.executeSql(sql, [name, ...filter])
+
+    const destinations: { name: string; count: number }[] = []
+    let unroutable = 0
+
+    for (const row of rows) {
+      // CockroachDB returns counts as strings.
+      const count = Number(row.count)
+      if (row.routable) destinations.push({ name: row.destination, count })
+      else unroutable += count
+    }
+
+    destinations.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+
+    return {
+      total: destinations.reduce((sum, d) => sum + d.count, unroutable),
+      destinations,
+      unroutable
+    }
   }
 
   async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
