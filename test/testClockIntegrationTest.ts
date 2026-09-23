@@ -624,4 +624,28 @@ describe('TestClock', function () {
       delay(3000).then(() => { throw new Error('job did not complete after one tick') })
     ])
   })
+
+  // Handlers are not waited for, and a statement a transactional handler runs through its tx is
+  // part of the handler, even though it shares the connection pg-boss completes the batch on.
+  helper.itPglite('statements a transactional handler runs do not hold up a tick', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, __test__enableSpies: true })
+    const boss = ctx.boss
+    const spy = boss.getSpy(ctx.schema)
+
+    const id = await boss.send(ctx.schema, null)
+    assertTruthy(id)
+    await boss.work(ctx.schema, { transactional: true, pollingIntervalSeconds: 0.5 }, async ([job], tx) => {
+      await tx.executeSql('SELECT pg_sleep(2)')
+      await boss.complete(ctx.schema, job.id, null, { db: tx })
+    })
+    await spy.waitForJobWithId(id, 'active')
+
+    const started = performance.now()
+    await clock.tick(500)
+    expect(performance.now() - started).toBeLessThan(1500)
+
+    // Settled by the handler through its tx, so pg-boss must still recognize that tx as the batch's.
+    await spy.waitForJobWithId(id, 'completed')
+  })
 })

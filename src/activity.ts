@@ -1,6 +1,16 @@
 import { setImmediate } from 'node:timers/promises'
 import type { IDatabase, TransactionHandle } from './types.ts'
 
+const originals = new WeakMap<object, IDatabase>()
+
+/**
+ * The db a tracked one wraps, or the db itself if it is not tracked. What a transactional handler
+ * is given, since a handler's statements are not pg-boss's to wait for.
+ */
+export function untracked<D extends IDatabase> (db: D): D {
+  return (originals.get(db) as D | undefined) ?? db
+}
+
 /**
  * Counts the statements pg-boss has in flight, so a TestClock can let them finish before it moves
  * time on. PgBoss wraps its db with this only when its clock is attachable.
@@ -51,7 +61,9 @@ export function trackActivity<T extends IDatabase> (db: T): { db: T, idle: () =>
     if (typeof inner.beginTransaction === 'function') {
       overrides.beginTransaction = track(async () => wrapTransaction(await inner.beginTransaction!()))
     }
-    return wrap(inner, overrides)
+    const tracked = wrap(inner, overrides)
+    originals.set(tracked, inner)
+    return tracked
   }
 
   // The open transaction is not counted, only each call on it, or a transactional handler's whole

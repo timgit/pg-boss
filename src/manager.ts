@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import EventEmitter from 'node:events'
 import { serializeError as stringify } from 'serialize-error'
 import * as Attorney from './attorney.ts'
+import { untracked } from './activity.ts'
 import type Db from './db.ts'
 import { TRANSACTION_ROLLBACK_TIMEOUT_MS } from './db.ts'
 import type Notifier from './notifier.ts'
@@ -655,8 +656,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const timeoutGuc = timeoutMs > 0 ? await this.#resolveTransactionTimeoutGuc() : null
 
         transaction = await this.db.beginTransaction!()
-        this.#handlerSettledJobs.set(transaction.db, new Set())
-        this.#handlerClaims.set(transaction.db, new Map(jobs.map(job => [job.id, job.retryCount])))
+        // The handler's view shares these, so a settle it runs on { db: tx } is still recognized and fenced.
+        const settled = new Set<string>()
+        const claims = new Map(jobs.map(job => [job.id, job.retryCount]))
+        for (const db of [transaction.db, untracked(transaction.db)]) {
+          this.#handlerSettledJobs.set(db, settled)
+          this.#handlerClaims.set(db, claims)
+        }
 
         if (timeoutGuc) {
           await this.#applyTransactionTimeout(transaction, timeoutGuc, timeoutMs)
@@ -664,7 +670,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       const handling = transaction
-        ? (callback as unknown as types.TransactionalWorkHandler<T>)(jobs, transaction.db)
+        ? (callback as unknown as types.TransactionalWorkHandler<T>)(jobs, untracked(transaction.db))
         : callback(jobs)
 
       const result = await resolveWithinSeconds(this.config.clock, handling, maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
@@ -860,6 +866,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #takeHandlerSettles (transaction: types.TransactionHandle): Set<string> {
     const settled = this.#handlerSettledJobs.get(transaction.db) ?? new Set<string>()
     this.#handlerSettledJobs.delete(transaction.db)
+    this.#handlerSettledJobs.delete(untracked(transaction.db))
     return settled
   }
 
