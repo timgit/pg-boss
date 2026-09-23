@@ -296,6 +296,19 @@ describe('TestClock (pure)', function () {
       expect(fired).toEqual(['armed before the jump'])
     })
 
+    it('rejects a tick while a setTime is still settling', async function () {
+      const clock = new TestClock(T0)
+      const target = busyTarget()
+      await clock.attach({ db: fakeDb, schema: 'pgboss', idle: target.idle })
+
+      target.state.pending = later(20)
+      const jumping = clock.setTime(T0 + 10_000)
+
+      await expect(clock.tick(100)).rejects.toThrow('tick() called while a setTime is in progress')
+      await jumping
+      expect(clock.now()).toBe(T0 + 10_000)
+    })
+
     it('a long tick across a short interval stays fast', async function () {
       const clock = new TestClock(T0)
       await clock.attach({ db: fakeDb, schema: 'pgboss', idle: async () => false })

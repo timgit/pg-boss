@@ -44,7 +44,9 @@ export class TestClock implements AttachableClock {
   #now: number
   #timers: Timer[] = []
   #seq = 0
-  #ticking = false
+  // tick() and setTime() both await I/O before they finish, so either one started meanwhile would
+  // interleave with the one running.
+  #busy: 'tick' | 'setTime' | null = null
   // Every (db, schema) this clock currently pushes time to. More than one because a multi-instance
   // test shares one clock across several PgBoss instances, each of which attaches on start(). The
   // schema is shared, so the last handle to be disposed is the one that restores job_now() and
@@ -84,22 +86,24 @@ export class TestClock implements AttachableClock {
    * skipped. A backward jump leaves timers alone, so JS deadlines still agree with the database's.
    */
   async setTime (t: Date | number | string): Promise<void> {
-    if (this.#ticking) {
-      throw new Error('TestClock: setTime() called while a tick is in progress')
+    this.#enter('setTime')
+
+    try {
+      const next = toMillis(t)
+
+      await this.#settle()
+
+      // #timers is sorted by due time, so the overdue timers are a prefix and stay sorted once moved.
+      for (const timer of this.#timers) {
+        if (timer.due >= next) break
+        timer.due = next
+      }
+
+      this.#now = next
+      await this.#push()
+    } finally {
+      this.#busy = null
     }
-
-    const next = toMillis(t)
-
-    await this.#settle()
-
-    // #timers is sorted by due time, so the overdue timers are a prefix and stay sorted once moved.
-    for (const timer of this.#timers) {
-      if (timer.due >= next) break
-      timer.due = next
-    }
-
-    this.#now = next
-    await this.#push()
   }
 
   /**
@@ -109,11 +113,7 @@ export class TestClock implements AttachableClock {
    * Does not wait for job handlers; observe their effects with spies or by querying.
    */
   async tick (ms: number): Promise<void> {
-    if (this.#ticking) {
-      throw new Error('TestClock: tick() called while a tick is in progress')
-    }
-
-    this.#ticking = true
+    this.#enter('tick')
 
     try {
       await this.#settle()
@@ -149,8 +149,16 @@ export class TestClock implements AttachableClock {
         await this.#settle()
       }
     } finally {
-      this.#ticking = false
+      this.#busy = null
     }
+  }
+
+  #enter (method: 'tick' | 'setTime'): void {
+    if (this.#busy) {
+      throw new Error(`TestClock: ${method}() called while a ${this.#busy} is in progress`)
+    }
+
+    this.#busy = method
   }
 
   async attach (target: Target): Promise<AsyncDisposable> {
