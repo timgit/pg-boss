@@ -458,17 +458,19 @@ RRULE:FREQ=SECONDLY;COUNT=500000`
     expect(tk.shouldSendIt('DTSTART:20991231T000000Z\nRRULE:FREQ=DAILY', 'UTC', 'rrule')).toBe(false)
   })
 
-  it('files a rule occurrence in the throttle slot the occurrence falls in, not the one insert time does', async function () {
+  it('files an occurrence in the throttle slot the occurrence falls in, not the one insert time does', async function () {
     const tk = makeTk()
     ;(tk as any).stopped = false
 
     const inserted: any[] = []
     ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
 
-    // Occurrences on the half minute, so two passes can find the same one inside the window from
-    // opposite sides of a slot boundary.
+    // Occurrences on the half minute, in both formats, so two passes can find the same one inside
+    // the window from opposite sides of a slot boundary. And one on the minute, which every pass
+    // finds in the slot it runs in.
     ;(tk as any).getSchedules = async () => ([
       { name: 'rule', key: '', data: null, options: {}, kind: 'rrule', cron: 'FREQ=MINUTELY;BYSECOND=30', timezone: 'UTC' },
+      { name: 'half', key: '', data: null, options: {}, kind: 'cron', cron: '30 * * * * *', timezone: 'UTC' },
       { name: 'cron', key: '', data: null, options: {}, kind: 'cron', cron: '* * * * *', timezone: 'UTC' }
     ])
 
@@ -485,21 +487,22 @@ RRULE:FREQ=SECONDLY;COUNT=500000`
     tk.clockSkew = occurrence + 45_000 - now
     await tk.cron()
 
-    const [first, second] = inserted.filter(job => job.singletonKey === 'rule__')
+    const filed = (name: string) => inserted.filter(job => job.singletonKey === `${name}__`)
 
     // Both passes name the slot the occurrence falls in, so the second job collapses into the first
     // instead of being sent as a job of its own. A slot rather than an offset from the insert's own
     // clock, so nothing the round trip costs can move it.
-    expect(first.__singletonSlot).toBe(slotOf(occurrence))
-    expect(second.__singletonSlot).toBe(slotOf(occurrence))
-    expect(first.singletonSeconds).toBeUndefined()
+    for (const name of ['rule', 'half']) {
+      const [first, second] = filed(name)
 
-    // A cron occurrence keeps the slot every release has always filed it in: during a rolling
-    // upgrade an instance on an older release computes that slot and no other.
-    for (const job of inserted.filter(job => job.singletonKey === 'cron__')) {
-      expect(job.singletonSeconds).toBe(60)
-      expect(job.__singletonSlot).toBeUndefined()
+      expect(first.__singletonSlot).toBe(slotOf(occurrence))
+      expect(second.__singletonSlot).toBe(slotOf(occurrence))
+      expect(first.singletonSeconds).toBeUndefined()
     }
+
+    // An occurrence on the minute falls in the slot the pass finding it runs in, so naming it
+    // changes nothing about where a 5-placeholder expression's jobs go: one a minute, in that minute.
+    expect(filed('cron').map(job => job.__singletonSlot)).toEqual([slotOf(occurrence - 30_000), slotOf(occurrence + 30_000)])
   })
 
   it('sends a job for each occurrence that falls inside one window', async function () {
