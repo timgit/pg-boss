@@ -2970,6 +2970,7 @@ export function redriveJobs (schema: string, table: string): string {
         ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
         m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
       FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
+      ORDER BY m.created_on
       ON CONFLICT DO NOTHING
       RETURNING 1
     )
@@ -2983,6 +2984,9 @@ export function redriveJobs (schema: string, table: string): string {
 // limit, so the two paths move the same jobs. Insert-then-delete rather than the reverse keeps the
 // rows readable for the INSERT ... SELECT, and the new rows can never match the delete: they get
 // fresh ids. A job whose re-insert hits ON CONFLICT is still deleted, exactly as redriveJobs drops it.
+// Both inserts run oldest-first, so on Postgres the older of two colliding jobs is the one kept, on
+// either path. CockroachDB does not honor that ORDER BY when it resolves ON CONFLICT, so which one it
+// keeps is arbitrary; only the counts are the same there.
 export function selectRedriveCandidates (schema: string, table: string): string {
   return `
     SELECT j.id
@@ -3008,6 +3012,7 @@ export function insertRedrivenJobs (schema: string, table: string): string {
       m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
     FROM ${schema}.${table} m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
     WHERE m.id = ANY($1::uuid[])
+    ORDER BY m.created_on
     ON CONFLICT DO NOTHING
     RETURNING 1
   `
