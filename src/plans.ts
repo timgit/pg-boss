@@ -2062,7 +2062,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     ? `j.id = ANY (ARRAY(SELECT id FROM ${finalCte}))`
     : `j.id = ${finalCte}.id`
 
-  // Without SKIP LOCKED, add a state check to prevent duplicate processing
+  // Without SKIP LOCKED, add a state check to prevent duplicate claims
   // when multiple workers try to claim the same jobs concurrently
   const distributedStateCheck = noSkipLocked ? `AND j.state < '${JOB_STATES.active}'` : ''
 

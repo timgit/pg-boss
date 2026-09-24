@@ -13,12 +13,12 @@ hero:
       link: /api/constructor
   
 features:
-  - title: Exactly-once delivery
-    details: Built on Postgres SKIP LOCKED for atomic, exactly-once job processing with no extra infrastructure.
-    link: /introduction
-    linkText: How it works
+  - title: Production-grade policies
+    details: Rate limiting, debouncing, concurrency, priorities, dead-letter queues and retries with exponential backoff.
+    link: /api/queues
+    linkText: Queue policies
   - title: Transactional & ORM-ready
-    details: Enqueue jobs inside your existing transaction, with adapters for Drizzle, Knex, Kysely and Prisma.
+    details: Send or complete jobs inside your existing transaction with adapters for Drizzle, Knex, Kysely and Prisma, or let transactional workers commit a handler's writes with its job.
     link: /api/adapters
     linkText: Adapters
   - title: Low-latency workers
@@ -29,10 +29,10 @@ features:
     details: Job dependency orchestration, cron scheduling and job deferral for multi-step pipelines.
     link: /api/jobs
     linkText: Jobs & flows
-  - title: Production-grade policies
-    details: Rate limiting, debouncing, concurrency, priorities, dead-letter queues and retries with exponential backoff.
-    link: /api/queues
-    linkText: Queue policies
+  - title: Web dashboard & HTTP proxy
+    details: A web dashboard to monitor and manage queues and jobs, and an HTTP proxy for calling pg-boss from any language or runtime.
+    link: /dashboard
+    linkText: Dashboard
   - title: Runs anywhere Postgres does
     details: Serverless and multi-master friendly, with CockroachDB, YugabyteDB, Citus and embedded PGlite support.
     link: /database-backends
@@ -73,13 +73,12 @@ readme()
 
 pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Node.js applications.
 
-pg-boss relies on Postgres's SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
+pg-boss relies on Postgres's SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. Concurrent workers claim jobs without blocking each other, and job processing gets the safety of guaranteed atomic commits.
 
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 
 ## Summary
-* Exactly-once job delivery
 * Create jobs in an existing db transaction, including adapters for popular ORMs such as Drizzle, Knex, Kysely, Prisma
 * Backpressure-compatible polling workers, including support for LISTEN/NOTIFY low latency delivery
 * Job dependency workflow orchestration

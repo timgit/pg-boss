@@ -145,8 +145,8 @@ these as `int4` numbers, so no coercion is needed there.)
 
 ### Transaction isolation
 
-For optimal correctness with `noSkipLocked`, SERIALIZABLE isolation ensures exactly-once job
-processing, which is the recommended level for distributed work queues. With READ COMMITTED (PostgreSQL or
+For optimal correctness with `noSkipLocked`, SERIALIZABLE isolation ensures no two workers claim
+the same job, which is the recommended level for distributed work queues. With READ COMMITTED (PostgreSQL or
 YugabyteDB defaults), the `state < 'active'` recheck in the `UPDATE` still prevents duplicate claims.
 
 ## Per-database notes
