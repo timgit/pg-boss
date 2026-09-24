@@ -241,6 +241,17 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
 
+          {/* Source Output: a dead-lettered job's own output starts empty, and the reason it was
+              dead-lettered is the original job's output, kept on the copy as sourceOutput. */}
+          {job.sourceOutput !== undefined && job.sourceOutput !== null && (
+            <div>
+              <div className="pgb-eyebrow mb-1.5">Source Output</div>
+              <pre className="text-xs px-3.5 py-3 rounded-lg border border-[var(--error-100)] bg-[var(--error-50)] font-mono leading-relaxed text-[var(--text-primary)] overflow-auto max-h-40">
+                {JSON.stringify(job.sourceOutput, null, 2)}
+              </pre>
+            </div>
+          )}
+
           {/* Configuration */}
           <div>
             <div className="space-y-6">

@@ -574,6 +574,94 @@ describe('queueStats', function () {
     })
 
     /**
+     * Only transactions that had written were held for, and a transaction that
+     * had only read when the pass ran could still complete a job before it
+     * committed, stamped with its start, which the pass had already stepped past.
+     */
+    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('counts a completion from a transaction that had only read when the pass ran', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue, true, true)
+      await ctx.boss.send(queue)
+      const [job] = await ctx.boss.fetch(queue)
+
+      const tx = new pg.Client({ connectionString: helper.getConnectionString() })
+      await tx.connect()
+
+      try {
+        await tx.query('BEGIN')
+        await tx.query('SELECT 1')
+
+        // Nothing written yet, and the pass must still not step past this transaction's start.
+        await new Promise(resolve => setTimeout(resolve, 50))
+        let counted = (await monitorPass(queue, true, true)).completedDelta
+
+        await ctx.boss.complete(queue, job.id, null, {
+          db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) }
+        })
+        await tx.query('COMMIT')
+
+        await expect.poll(async () => {
+          counted += (await monitorPass(queue, true, true)).completedDelta
+          return counted
+        }, { timeout: 5_000, interval: 200 }).toBe(1)
+      } finally {
+        await tx.end()
+      }
+    })
+
+    /**
+     * An open transaction holds the window's end back, but never further than
+     * the window's own maximum. Past that the end used to jump to now, which put
+     * the window's start out of range and reset it: one transaction left open
+     * for an hour dropped that hour's counts for every queue. Now the end sits
+     * at the cap and walks forward with the clock until the transaction ends.
+     *
+     * Tested at the statement, with the cap shortened: a test cannot hold a
+     * transaction open for an hour.
+     */
+    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('caps how far an open transaction holds the window end back', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const schema = ctx.bossConfig.schema
+
+      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
+      const reader = new pg.Client({ connectionString: helper.getConnectionString() })
+      await holder.connect()
+      await reader.connect()
+
+      const windowEnd = async (holdBackMax?: string) => {
+        await reader.query('BEGIN')
+        await reader.query(plans.setDeltaWindowEnd(schema, holdBackMax))
+        const { rows: [row] } = await reader.query(
+          `SELECT current_setting('${plans.DELTA_WINDOW_END_SETTING}')::timestamptz AS "end", now() AS at`
+        )
+        await reader.query('COMMIT')
+        return row as { end: Date, at: Date }
+      }
+
+      try {
+        await holder.query('BEGIN')
+        // Read-only, and still counted as open.
+        const { rows: [{ started }] } = await holder.query('SELECT now() AS started')
+        await new Promise(resolve => setTimeout(resolve, 1_500))
+
+        // Within the cap, the end is the transaction's start (or an older one another test holds).
+        const held = await windowEnd()
+        expect(held.end.getTime()).toBeLessThanOrEqual(started.getTime())
+
+        // Past the cap, the end is the cap behind now: not the transaction's start, and not now.
+        const capped = await windowEnd("interval '1 second'")
+        expect(capped.end.getTime()).toBeGreaterThan(started.getTime())
+        expect(capped.at.getTime() - capped.end.getTime()).toBe(1_000)
+      } finally {
+        await holder.end()
+        await reader.end()
+      }
+    })
+
+    /**
      * Another instance holding the stats lock means this pass wrote nothing,
      * and the snapshot it inserted anyway was a copy of the previous pass's
      * counters, which the history then counted twice.

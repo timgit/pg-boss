@@ -3335,15 +3335,17 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // completed by a transactional worker, or sent inside an application's transaction, carries a
 // stamp from before a pass it commits after. A window ending at now() moved past that stamp while
 // the row was still invisible, and no later pass counted it. The end is instead the start of the
-// oldest transaction still open that has written something (see setDeltaWindowEnd): anything
-// stamped before it is from a transaction that has finished, and anything stamped after waits for
-// the next pass. A long write transaction delays the count rather than losing it.
+// oldest transaction still open (see setDeltaWindowEnd): anything stamped before it is from a
+// transaction that has finished, and anything stamped after waits for the next pass. A long
+// transaction delays the count rather than losing it.
 //
 // A window older than DELTA_WINDOW_MAX starts afresh instead: counting was off for a while, and
 // landing hours of work on one snapshot would chart as a spike at the moment it was switched back
 // on. Null in, null out, so those comparisons count nothing, the same as a queue never counted.
+// The end is never held back further than that either (see setDeltaWindowEnd), so an open
+// transaction can only delay counting, never push a window's start out of range and reset it.
 const DELTA_WINDOW_MAX = "interval '1 hour'"
-const DELTA_WINDOW_END_SETTING = 'pgboss.delta_window_end'
+export const DELTA_WINDOW_END_SETTING = 'pgboss.delta_window_end'
 
 // Where this pass's window ends: the value setDeltaWindowEnd stored, or job_now() on a backend whose
 // pg_stat_activity doesn't show its transactions (CockroachDB, YugabyteDB), which keeps the
@@ -3364,26 +3366,40 @@ function deltaWindowStart (alias: string, end: string): string {
 // and its rows are visible to it. Read within one statement, a transaction could commit between the
 // snapshot and the read, be stepped over, and not be seen.
 //
-// Only transactions with an xid count: a read-only query never writes a job, and an hour-long
-// report shouldn't hold the window back. One older than DELTA_WINDOW_MAX is ignored rather than
-// allowed to stall counting for every queue, and so is one whose xact_start this role can't read
-// (another role's backend reads NULL there); jobs those commit late are not counted. xact_start is
-// real time and the stamps are job_now(), so the offset between the two carries it onto the stamps'
-// clock, which only differs under a test clock. A DO block, because a SELECT would add its row to
-// the ones the monitor reads back from this transaction.
-function setDeltaWindowEnd (schema: string): string {
+// Every open transaction holds the end back, not only those that have written. One that has only
+// read so far can still send or complete a job before it commits, and that row carries the
+// transaction's start as its stamp; a filter on backend_xid stepped past exactly those. The price is
+// that a long read-only report delays counting too, which loses nothing.
+//
+// The hold-back is capped at DELTA_WINDOW_MAX rather than the transaction ignored past it. Ignored,
+// the end jumped from the transaction's start to now, which left the window's start more than
+// DELTA_WINDOW_MAX behind and reset it: one transaction left open for an hour (a forgotten BEGIN in
+// a psql session) wiped that hour's counts for every queue. Capped, the end walks forward
+// DELTA_WINDOW_MAX behind now for as long as the transaction stays open, every pass still counts
+// its own window, and only what that transaction commits later than the cap is missed. The cap and
+// the reset threshold are the same interval on purpose: a window starts where the last one ended,
+// which is at most the cap behind that pass, so the start stays in range whenever counted passes
+// are less than DELTA_WINDOW_MAX apart, which is the same condition as before.
+//
+// A transaction whose xact_start this role can't read (another role's backend reads NULL there) is
+// not seen, and jobs it commits late are not counted. xact_start is real time and the stamps are
+// job_now(), so the offset between the two carries it onto the stamps' clock, which only differs
+// under a test clock. A DO block, because a SELECT would add its row to the ones the monitor reads
+// back from this transaction.
+//
+// holdBackMax is a test seam: the cap is an hour, and a test cannot hold a transaction open that long.
+export function setDeltaWindowEnd (schema: string, holdBackMax = DELTA_WINDOW_MAX): string {
   return `
     DO $$
     BEGIN
       PERFORM pg_catalog.set_config('${DELTA_WINDOW_END_SETTING}', LEAST(
         ${schema}.job_now(),
         (
-          SELECT min(a.xact_start)
+          SELECT min(GREATEST(a.xact_start, pg_catalog.now() - ${holdBackMax}))
           FROM pg_catalog.pg_stat_activity a
           WHERE a.datname = pg_catalog.current_database()
-            AND a.backend_xid IS NOT NULL
             AND a.pid <> pg_catalog.pg_backend_pid()
-            AND a.xact_start > pg_catalog.now() - ${DELTA_WINDOW_MAX}
+            AND a.xact_start IS NOT NULL
         ) + (${schema}.job_now() - pg_catalog.now())
       )::text, true);
     END
@@ -3488,7 +3504,7 @@ export const READY_HISTORY_SIZE = 60
 const PIN_SECONDS_SQL = 'EXTRACT(EPOCH FROM (clock_timestamp() - transaction_timestamp()))::float8'
 /* eslint-enable no-restricted-syntax */
 
-// fromOpenTransactions ends the throughput window at the oldest open write transaction rather than
+// fromOpenTransactions ends the throughput window at the oldest open transaction rather than
 // job_now() (see setDeltaWindowEnd). Only meaningful with throughput, and only on a backend whose
 // pg_stat_activity shows its transactions.
 export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, throughput?: boolean, fromOpenTransactions?: boolean): string {
