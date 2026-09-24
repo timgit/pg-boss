@@ -666,13 +666,13 @@ function createTableJob (schema: string, noPartitioning = false) {
   `
 }
 
-const JOB_COLUMNS_MIN = 'id, name, data, expire_seconds as "expireInSeconds", heartbeat_seconds as "heartbeatSeconds", group_id as "groupId", group_tier as "groupTier"'
+// retry_count is in the minimal set because a worker settles against it (see attemptFence).
+const JOB_COLUMNS_MIN = 'id, name, data, retry_count as "retryCount", expire_seconds as "expireInSeconds", heartbeat_seconds as "heartbeatSeconds", group_id as "groupId", group_tier as "groupTier"'
 const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   policy,
   state,
   priority,
   retry_limit as "retryLimit",
-  retry_count as "retryCount",
   retry_delay as "retryDelay",
   retry_backoff as "retryBackoff",
   retry_delay_max as "retryDelayMax",
@@ -1319,12 +1319,13 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
   }
 }
 
-export function deleteJobsById (schema: string, table: string) {
+export function deleteJobsById (schema: string, table: string, fenced?: boolean) {
   return `
     WITH results as (
       DELETE FROM ${schema}.${table}
       WHERE name = $1
         AND id = ANY($2::uuid[])
+        ${fenced ? attemptFence(3) : ''}
       RETURNING id
     )
     ${settledCountAndIds()}
@@ -2103,7 +2104,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     ? `j.id = ANY (ARRAY(SELECT id FROM ${finalCte}))`
     : `j.id = ${finalCte}.id`
 
-  // Without SKIP LOCKED, add a state check to prevent duplicate processing
+  // Without SKIP LOCKED, add a state check to prevent duplicate claims
   // when multiple workers try to claim the same jobs concurrently
   const distributedStateCheck = noSkipLocked ? `AND j.state < '${JOB_STATES.active}'` : ''
 
@@ -2130,9 +2131,62 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   }
 }
 
+// The attempt fence (#925). A worker whose claim lapsed (a heartbeat the database stopped seeing, an
+// expiry) keeps running its handler, and by the time it settles, the job can be `active` again under
+// another worker's claim. Matching on id and state alone lets the stale settle land on that newer
+// attempt: its complete() overwrites the newer attempt's outcome, and its fail() deletes the live
+// attempt and re-queues it. Every claim increments retry_count (fetchNextJob), so the value a worker
+// fetched names its attempt. `param` is a text[] of 'id:retry_count' pairs (attemptPairs), and a
+// job whose retry_count has moved on is left alone. Always paired with state = 'active': a job failed
+// back to `retry` still carries the stale attempt's retry_count until it is claimed again.
+//
+// The pair is matched with = ANY because Postgres hashes that lookup against a parameter array, so a
+// settle costs the same fenced as unfenced. Measured at 5000 jobs: 58ms against 54ms unfenced. Looking
+// each id's position up with array_position scans the array once per row (149ms), and joining an
+// unnest() of the two arrays is planned as a nested loop over every pair (1063ms).
+//
+// restore() clears started_on, so the claim after it does not increment. The fence cannot tell a
+// restored job's next claim from the one before it. pg-boss itself never restores a job whose handler
+// is still running (the localGroupConcurrency excess is restored before its handler starts), but a
+// caller of the public restore() can.
+function attemptFence (param: number): string {
+  return `AND state = '${JOB_STATES.active}'
+        AND (id::text || ':' || retry_count::text) = ANY($${param}::text[])`
+}
+
+// The attemptFence parameter for jobs `ids` fetched at `attempts` (parallel arrays).
+export function attemptPairs (ids: string[], attempts: number[]): string[] {
+  return ids.map((id, i) => `${canonicalUuid(id)}:${attempts[i]}`)
+}
+
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+// The fence compares id::text, which Postgres and CockroachDB always render lower case and hyphenated,
+// while the id lookup beside it takes a uuid parameter and so accepts any spelling the uuid type does
+// (upper case, braces, missing hyphens). A caller building { id, retryCount } from an id stored in
+// another spelling would pass the lookup and silently miss the fence, so the pair is built from the
+// canonical form. Done here rather than in SQL, so the fence stays a hashed = ANY over a parameter.
+// Ids from fetch() and work() are already canonical and take the regex test alone. Anything that is
+// not 32 hex digits is left as it is: it is not a uuid, and the lookup rejects it.
+function canonicalUuid (id: string): string {
+  if (CANONICAL_UUID.test(id)) return id
+
+  const hex = id.replace(/[{}-]/g, '').toLowerCase()
+
+  if (!/^[0-9a-f]{32}$/.test(hex)) return id
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+// The fence for the per-job-output statements, which carry each job's retry_count in the recordset.
+function recordsetAttemptFence (alias: string, input: string): string {
+  return `AND ${alias}state = '${JOB_STATES.active}'
+        AND ${alias}retry_count = ${input}.retry_count`
+}
+
 // Shared SET/WHERE body for marking jobs completed (no RETURNING). Used by the
 // single-statement completeJobs() and the distributed completeJobsDistributed().
-function completeJobsUpdate (schema: string, table: string, includeQueued?: boolean): string {
+function completeJobsUpdate (schema: string, table: string, includeQueued?: boolean, fenced?: boolean): string {
   return `UPDATE ${schema}.${table}
       SET completed_on = ${schema}.job_now(),
         state = '${JOB_STATES.completed}',
@@ -2144,7 +2198,8 @@ function completeJobsUpdate (schema: string, table: string, includeQueued?: bool
         AND ${includeQueued
           ? `state < '${JOB_STATES.completed}'`
           : `state = '${JOB_STATES.active}'`
-        }`
+        }
+        ${fenced ? attemptFence(4) : ''}`
 }
 
 // Shared dependency-unblocking fragments. Both consume a `decremented` CTE
@@ -2175,10 +2230,10 @@ function unblockChildrenUpdate (schema: string): string {
 // dependents inline (joining job_dependency and the partitioned job table) made completion
 // scale with partition count (see issue #824). The background resolver (Navigator) handles
 // unblocking out of band, driven by the job_i9 partial index.
-export function completeJobs (schema: string, table: string, includeQueued?: boolean) {
+export function completeJobs (schema: string, table: string, includeQueued?: boolean, fenced?: boolean) {
   return `
     WITH results AS (
-      ${completeJobsUpdate(schema, table, includeQueued)}
+      ${completeJobsUpdate(schema, table, includeQueued, fenced)}
       RETURNING id
     )
     ${settledCountAndIds()}
@@ -2191,7 +2246,7 @@ export function completeJobs (schema: string, table: string, includeQueued?: boo
 export function completeJobsWithOutputs (schema: string, table: string) {
   return `
     WITH input AS (
-      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
+      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     ),
     results AS (
       UPDATE ${schema}.${table} j
@@ -2201,10 +2256,10 @@ export function completeJobsWithOutputs (schema: string, table: string) {
       FROM input i
       WHERE j.name = $1
         AND j.id = i.id
-        AND j.state = '${JOB_STATES.active}'
-      RETURNING 1
+        ${recordsetAttemptFence('j.', 'i')}
+      RETURNING j.id
     )
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2214,7 +2269,7 @@ export function completeJobsWithOutputs (schema: string, table: string) {
 export function completeJobsWithOutputsDistributed (schema: string, table: string) {
   return `
     WITH input AS (
-      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
+      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     )
     UPDATE ${schema}.${table} j
     SET completed_on = ${schema}.job_now(),
@@ -2223,12 +2278,12 @@ export function completeJobsWithOutputsDistributed (schema: string, table: strin
     FROM input i
     WHERE j.name = $1
       AND j.id = i.id
-      AND j.state = '${JOB_STATES.active}'
+      ${recordsetAttemptFence('j.', 'i')}
     RETURNING j.id
   `
 }
 
-export function cancelJobs (schema: string, table: string) {
+export function cancelJobs (schema: string, table: string, fenced?: boolean) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
@@ -2237,6 +2292,7 @@ export function cancelJobs (schema: string, table: string) {
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state < '${JOB_STATES.completed}'
+        ${fenced ? attemptFence(3) : ''}
       RETURNING id
     )
     ${settledCountAndIds()}
@@ -2445,8 +2501,8 @@ export function insertFlowJobs (schema: string, { table, name }: { table: string
   `
 }
 
-export function failJobsById (schema: string, table: string) {
-  const where = `name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`
+export function failJobsById (schema: string, table: string, fenced?: boolean) {
+  const where = `name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}' ${fenced ? attemptFence(4) : ''}`
   const output = '$3::jsonb'
 
   return failJobs(schema, table, where, output, true)
@@ -2473,7 +2529,7 @@ export function failJobsByHeartbeat (schema: string, table: string, queues: stri
   return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByHeartbeat', noAdvisoryLocks)
 }
 
-export function touchJobs (schema: string, table: string) {
+export function touchJobs (schema: string, table: string, fenced?: boolean) {
   return `
     WITH results AS (
       UPDATE ${schema}.${table}
@@ -2481,9 +2537,10 @@ export function touchJobs (schema: string, table: string) {
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.active}'
-      RETURNING 1
+        ${fenced ? attemptFence(3) : ''}
+      RETURNING id
     )
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2734,30 +2791,30 @@ export function failJobsByIdWithOutputs (schema: string, table: string) {
   // Output is supplied per job via a JSON recordset ($2). `where` and the output expression both
   // reference the output_map CTE so each re-inserted job keeps its own output. Constant number of
   // statements regardless of batch size.
-  const where = `name = $1 AND id IN (SELECT id FROM output_map) AND state < '${JOB_STATES.completed}'`
+  const where = `name = $1 AND (id, retry_count) IN (SELECT id, retry_count FROM output_map) AND state = '${JOB_STATES.active}'`
   const output = '(SELECT om.output FROM output_map om WHERE om.id = deleted_jobs.id)'
 
   return `
     WITH output_map AS (
-      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
+      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     ),
     ${failJobsBody(schema, table, where, output)}
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
 // Like failJobsByIdWithOutputs, but fails every job terminally (forceTerminal) so it routes straight
 // to the dead letter queue, bypassing remaining retries. Backs the perJobResults `deadletter` status.
 export function deadLetterJobsByIdWithOutputs (schema: string, table: string) {
-  const where = `name = $1 AND id IN (SELECT id FROM output_map) AND state < '${JOB_STATES.completed}'`
+  const where = `name = $1 AND (id, retry_count) IN (SELECT id, retry_count FROM output_map) AND state = '${JOB_STATES.active}'`
   const output = '(SELECT om.output FROM output_map om WHERE om.id = deleted_jobs.id)'
 
   return `
     WITH output_map AS (
-      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
+      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     ),
     ${failJobsBody(schema, table, where, output, true)}
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2776,10 +2833,10 @@ const REBOUND_TIMESTAMPS_AS_TEXT = `started_on::text as started_on_text,
       start_after::text as start_after_text,
       source_created_on::text as source_created_on_text`
 
-export function selectJobsToFailById (schema: string, table: string): SqlQuery {
+export function selectJobsToFailById (schema: string, table: string, fenced?: boolean): SqlQuery {
   return {
     text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
-      FROM ${schema}.${table} WHERE name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`,
+      FROM ${schema}.${table} WHERE name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}' ${fenced ? attemptFence(3) : ''}`,
     values: []
   }
 }
@@ -2827,9 +2884,9 @@ export function deleteJobsByIds (schema: string, table: string): SqlQuery {
 
 // Distributed mode: complete jobs as a single-table mutation. Dependency unblocking is handled
 // out of band by the background resolver (Navigator), so completion does no dependency work.
-export function completeJobsDistributed (schema: string, table: string, includeQueued?: boolean): string {
+export function completeJobsDistributed (schema: string, table: string, includeQueued?: boolean, fenced?: boolean): string {
   return `
-    ${completeJobsUpdate(schema, table, includeQueued)}
+    ${completeJobsUpdate(schema, table, includeQueued, fenced)}
     RETURNING id
   `
 }

@@ -530,7 +530,7 @@ await Promise.allSettled(jobs.map(async job => {
 
 ### `deleteJob(name, id, options)`
 
-Deletes a job by id.
+Deletes a job by id. Accepts a fetched job in place of its id, which only deletes the attempt that was fetched (see [passing jobs instead of ids](#passing-jobs-instead-of-ids)).
 
 > [!NOTE]
 > Job deletion is offered if desired for a "fetch then delete" workflow similar to SQS. This is not the default behavior for workers so "everything just works" by default, including job throttling and debouncing, which requires jobs to exist to enforce a unique constraint. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting jobs after processing would re-open that time slot, breaking your throttling policy.
@@ -538,7 +538,7 @@ Deletes a job by id.
 ```js
 const [job] = await boss.fetch('email-send')
 await emailer.send(job.data)
-await boss.deleteJob('email-send', job.id)
+await boss.deleteJob('email-send', job)
 ```
 
 ### `deleteJob(name, [ids], options)`
@@ -671,7 +671,7 @@ await boss.deleteAllJobs()
 
 ### `cancel(name, id, options)`
 
-Cancels a pending or active job.
+Cancels a pending or active job. Accepts a fetched job in place of its id, which only cancels the attempt that was fetched (see [passing jobs instead of ids](#passing-jobs-instead-of-ids)).
 
 ```js
 await boss.cancel('email-send', jobId)
@@ -725,6 +725,21 @@ await boss.retry('email-send', ids)
 
 ## Completing and failing jobs
 
+### Passing jobs instead of ids
+
+`complete()`, `fail()`, `touch()`, `cancel()` and `deleteJob()` accept the jobs `fetch()` returned in place of their ids, or any object with the job's `id` and `retryCount`. The call then only applies to the attempt that was fetched. If the claim lapsed in the meantime (the job expired, or missed its heartbeat, and has been retried by another worker), the job is left alone and reported as not affected, rather than settling the newer attempt with this one's outcome.
+
+```js
+const [job] = await boss.fetch('report-generation')
+
+const report = await generateReport(job.data)
+
+// { affected: 0 } if the job was retried elsewhere while this report was generated
+const { affected } = await boss.complete('report-generation', job, { reportUrl: report.url })
+```
+
+A plain id applies to whatever attempt currently holds the job, which is what an operator acting on a job wants. `work()` always settles and refreshes by attempt.
+
 ### `complete(name, id, data, options)`
 
 Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument for job output and an optional `options` object.
@@ -734,7 +749,7 @@ const [job] = await boss.fetch('report-generation')
 
 const report = await generateReport(job.data)
 
-await boss.complete('report-generation', job.id, { reportUrl: report.url })
+await boss.complete('report-generation', job, { reportUrl: report.url })
 ```
 
 **options**
@@ -772,10 +787,10 @@ const [job] = await boss.fetch('email-send')
 
 try {
   await emailer.send(job.data)
-  await boss.complete('email-send', job.id)
+  await boss.complete('email-send', job)
 } catch (err) {
   // stored in the job's output and eligible for retry per the queue config
-  await boss.fail('email-send', job.id, err)
+  await boss.fail('email-send', job, err)
 }
 ```
 
@@ -786,7 +801,7 @@ Fails a set of active jobs.
 ```js
 const jobs = await boss.fetch('email-send', { batchSize: 10 })
 
-await boss.fail('email-send', jobs.map(job => job.id), { message: 'smtp outage' })
+await boss.fail('email-send', jobs, { message: 'smtp outage' })
 ```
 
 The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.
@@ -805,12 +820,12 @@ This is useful when using `fetch()` for manual job processing. Workers using `wo
 const [job] = await boss.fetch('long-running-queue')
 
 const interval = setInterval(async () => {
-  await boss.touch('long-running-queue', job.id)
+  await boss.touch('long-running-queue', job)
 }, 5000)
 
 try {
   await processJob(job)
-  await boss.complete('long-running-queue', job.id)
+  await boss.complete('long-running-queue', job)
 } finally {
   clearInterval(interval)
 }
@@ -822,9 +837,8 @@ Updates the heartbeat timestamp for a set of active jobs.
 
 ```js
 const jobs = await boss.fetch('long-running-queue', { batchSize: 10 })
-const ids = jobs.map(j => j.id)
 
-const result = await boss.touch('long-running-queue', ids)
+const result = await boss.touch('long-running-queue', jobs)
 ```
 
 ## Finding jobs

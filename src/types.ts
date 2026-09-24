@@ -751,6 +751,16 @@ export interface ConnectionOptions {
   db?: IDatabase;
 }
 
+/**
+ * A job to settle, as `fetch()` or `work()` returned it, or just its `id` and `retryCount`. Passed in
+ * place of an id, it limits the call to the attempt that was fetched: once the job has been retried,
+ * or the claim has otherwise lapsed, the call leaves the job alone and reports it as not affected.
+ */
+export interface JobAttempt {
+  id: string;
+  retryCount: number;
+}
+
 export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
@@ -1291,6 +1301,11 @@ export interface Job<T = object> {
   data: T;
   expireInSeconds: number;
   heartbeatSeconds: number | null;
+  /**
+   * How many times this job has been retried. It goes up by one each time the job is claimed again
+   * after a previous attempt started, so it also identifies the attempt a worker is holding.
+   */
+  retryCount: number;
   signal: AbortSignal;
   groupId?: string | null;
   groupTier?: string | null;
@@ -1300,7 +1315,6 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   priority: number;
   state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
   retryLimit: number;
-  retryCount: number;
   retryDelay: number;
   retryBackoff: boolean;
   retryDelayMax?: number;

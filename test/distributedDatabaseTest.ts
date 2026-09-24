@@ -112,7 +112,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
       remainingJobs = await ctx.boss.fetch(ctx.schema, { batchSize: jobCount })
     }
 
-    // Verify all jobs were claimed exactly once
+    // Verify every job was claimed, and none of them twice
     expect(claimedIndices.size).toBe(jobCount)
   }, concurrencyTimeout)
 
