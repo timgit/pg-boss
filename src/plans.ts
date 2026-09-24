@@ -403,6 +403,10 @@ function createTableQueue (schema: string) {
       created_delta int NOT NULL default 0,
       completed_delta int NOT NULL default 0,
       failed_delta int NOT NULL default 0,
+      -- The window those three cover: when this queue was last counted, and
+      -- how many seconds the latest counts span. Null until a pass counts.
+      delta_on timestamp with time zone,
+      delta_seconds int,
       ready_history int[] NOT NULL default '{}',
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
@@ -1308,6 +1312,10 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
       q.active_count as "activeCount",
       q.failed_count as "failedCount",
       q.total_count as "totalCount",
+      q.created_delta as "createdDelta",
+      q.completed_delta as "completedDelta",
+      q.failed_delta as "failedDelta",
+      q.delta_seconds as "deltaSeconds",
       q.singletons_active as "singletonsActive",
       q.table_name as "table",
       q.created_on as "createdOn",
@@ -1528,6 +1536,10 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       created_delta   int,
       completed_delta int,
       failed_delta    int,
+      -- How many seconds the three deltas cover. Passes are not evenly spaced
+      -- (a backed-off or missed pass covers several intervals), so a rate is
+      -- sum(delta) / sum(delta_seconds), never delta / bucket width.
+      delta_seconds   int,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
@@ -1626,9 +1638,9 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
   const sql = `
     INSERT INTO ${schema}.queue_stats
       (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-       created_delta, completed_delta, failed_delta, captured_on)
+       created_delta, completed_delta, failed_delta, delta_seconds, captured_on)
     SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-           created_delta, completed_delta, failed_delta, ${schema}.job_now()
+           created_delta, completed_delta, failed_delta, delta_seconds, ${schema}.job_now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -1660,6 +1672,7 @@ export function getQueueStatsCache (schema: string): string {
       created_delta   as "createdDelta",
       completed_delta as "completedDelta",
       failed_delta    as "failedDelta",
+      delta_seconds   as "deltaSeconds",
       table_name     as "table",
       monitor_on     as "capturedOn",
       (extract(epoch from (${schema}.job_now() - monitor_on)) * 1000)::float8 as "cacheAgeMs",
@@ -1682,6 +1695,7 @@ export function getQueueStatsHistory (schema: string): string {
       created_delta   as "createdDelta",
       completed_delta as "completedDelta",
       failed_delta    as "failedDelta",
+      delta_seconds   as "deltaSeconds",
       captured_on    as "capturedOn"
     FROM ${schema}.queue_stats
     WHERE name = $1
@@ -1761,7 +1775,8 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
       ${agg('total_count')}    as "totalCount",
       sum(created_delta)::int   as "createdDelta",
       sum(completed_delta)::int as "completedDelta",
-      sum(failed_delta)::int    as "failedDelta"
+      sum(failed_delta)::int    as "failedDelta",
+      sum(delta_seconds)::int   as "deltaSeconds"
     FROM ${schema}.queue_stats, w
     WHERE name = $1
       AND ($2::timestamptz IS NULL OR captured_on >= $2)
@@ -3309,6 +3324,33 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
   `
 }
 
+// The throughput window. It starts when this queue was last *counted*, which is not monitor_on:
+// a pass that doesn't count (persistQueueStats off on that instance, or a forced getQueueStats
+// refresh) stamps monitor_on too, and windowing on it made every such pass swallow the jobs that
+// finished before it. Only a statement that counts moves delta_on, so an uncounted pass in between
+// leaves the window open and the next counted pass picks its jobs up.
+//
+// A window older than DELTA_WINDOW_MAX starts afresh instead: counting was off for a while, and
+// landing hours of work on one snapshot would chart as a spike at the moment it was switched back
+// on. Null in, null out, so those comparisons count nothing, the same as a queue never counted.
+const DELTA_WINDOW_MAX = "interval '1 hour'"
+
+function deltaWindowStart (schema: string, alias: string): string {
+  return `(CASE WHEN ${alias}.delta_on > ${schema}.job_now() - ${DELTA_WINDOW_MAX} THEN ${alias}.delta_on END)`
+}
+
+// The SET clause for a statement that counts. The right-hand side reads the row as it was before
+// the update, so delta_seconds is measured from the same window start the counts used, and an
+// idle queue (no job rows, so no stats row) still records zero over a real number of seconds.
+function throughputAssignments (schema: string): string {
+  return `
+      created_delta = COALESCE(stats."createdDelta", 0),
+      completed_delta = COALESCE(stats."completedDelta", 0),
+      failed_delta = COALESCE(stats."failedDelta", 0),
+      delta_seconds = round(extract(epoch from (${schema}.job_now() - ${deltaWindowStart(schema, 'queue')})))::int,
+      delta_on = ${schema}.job_now(),`
+}
+
 // Every count the monitor keeps, from one pass over the queue's table.
 //
 // Six of them are gauges — what the queue looks like right now. Three are not:
@@ -3318,13 +3360,14 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // Five hundred arriving and five hundred leaving looks identical to a still
 // queue in every gauge here.
 //
-// The window is the queue's own `monitor_on`, joined in rather than passed as a
-// fixed interval. That watermark is what makes the three counters exact across a
-// skipped or backed-off pass: nothing is counted twice, because the window
-// starts where the last one ended, and nothing is missed, because a late pass
-// simply covers a longer window. A queue that has never been monitored has a
-// null watermark and counts zero, which is the honest answer for a first pass
-// that has nothing to compare against.
+// The window is the queue's own `delta_on` (see deltaWindowStart), joined in
+// rather than passed as a fixed interval. That watermark is what makes the three
+// counters exact across a skipped or backed-off pass: nothing is counted twice,
+// because the window starts where the last one ended, and nothing is missed,
+// because a late pass simply covers a longer window, and says so in
+// delta_seconds. A queue that has never been counted has a null watermark and
+// counts zero, which is the honest answer for a first pass that has nothing to
+// compare against.
 //
 // The join is against `queue`, which holds one row per queue — Postgres hashes
 // it once and probes per row. The alternative, a second pass over the job table
@@ -3341,9 +3384,9 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         "completedDelta",
         "failedDelta",`,
         counts: `
-            (count(*) FILTER (WHERE q.monitor_on IS NOT NULL AND j.created_on >= q.monitor_on))::int as "createdDelta",
-            (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}' AND q.monitor_on IS NOT NULL AND j.completed_on >= q.monitor_on))::int as "completedDelta",
-            (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND q.monitor_on IS NOT NULL AND j.completed_on >= q.monitor_on))::int as "failedDelta",`,
+            (count(*) FILTER (WHERE j.created_on >= ${deltaWindowStart(schema, 'q')}))::int as "createdDelta",
+            (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}' AND j.completed_on >= ${deltaWindowStart(schema, 'q')}))::int as "completedDelta",
+            (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND j.completed_on >= ${deltaWindowStart(schema, 'q')}))::int as "failedDelta",`,
         join: `JOIN ${schema}.queue q ON q.name = j.name`
       }
     : { select: '', counts: '', join: '' }
@@ -3392,12 +3435,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
   const statsQuery = getQueueStats(schema, table, queues, throughput)
   // The aggregate only produces these when counting, so the assignment has to
   // disappear with them rather than reference a column that is not there.
-  const throughputSet = throughput
-    ? `
-      created_delta = COALESCE(stats."createdDelta", 0),
-      completed_delta = COALESCE(stats."completedDelta", 0),
-      failed_delta = COALESCE(stats."failedDelta", 0),`
-    : ''
+  const throughputSet = throughput ? throughputAssignments(schema) : ''
   // Serialize the $1 parameter for use in the multi-statement transaction below
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
   const lock = tryAdvisoryLock(schema, 'queue-stats', noAdvisoryLocks)
@@ -3491,12 +3529,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
 // because the scan it runs is what populates the cache that gates every later read.
 export function refreshQueueStats (schema: string, table: string, name: string, options: { noAdvisoryLocks?: boolean, firstCapture?: boolean, throughput?: boolean } = {}): string {
   const statsQuery = getQueueStats(schema, table, [name], options.throughput)
-  const throughputSet = options.throughput
-    ? `
-      created_delta = COALESCE(stats."createdDelta", 0),
-      completed_delta = COALESCE(stats."completedDelta", 0),
-      failed_delta = COALESCE(stats."failedDelta", 0),`
-    : ''
+  const throughputSet = options.throughput ? throughputAssignments(schema) : ''
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam([name]))
   const lock = tryAdvisoryLock(schema, 'queue-stats', options.noAdvisoryLocks || options.firstCapture)
 
@@ -3528,6 +3561,7 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
       queue.created_delta as "createdDelta",
       queue.completed_delta as "completedDelta",
       queue.failed_delta as "failedDelta",
+      queue.delta_seconds as "deltaSeconds",
       queue.monitor_on as "capturedOn"
   `
 }

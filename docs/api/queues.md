@@ -214,6 +214,7 @@ and three throughput counts, which are counters rather than gauges: how many job
 * `createdDelta`: jobs created
 * `completedDelta`: jobs completed
 * `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not counted)
+* `deltaSeconds`: how many seconds the three counts cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on a queue's first counted pass, and wherever the counts are `null`. A queue that went more than an hour without being counted starts a fresh window rather than reporting the whole gap on one snapshot.
 
 Behavior depends on whether stats are being persisted:
 

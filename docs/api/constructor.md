@@ -214,7 +214,7 @@ The following configuration options should not normally need to be changed, but 
 
   If set to true, the per-queue counts captured during monitoring (deferred, queued, ready, active, failed, and total) are written to the `queue_stats` table on every monitor cycle, in addition to updating the live counts on the `queue` table. This builds a time series of queue depth that you can query with [`getQueueStats()`](./queues.md#getqueuestatsname-options), which can downsample the series into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day, pruned automatically during maintenance.
 
-  It also turns on throughput counting: each snapshot records how many jobs arrived, completed and failed since the previous monitor pass (`createdDelta`, `completedDelta`, `failedDelta`), which no depth count can answer. This makes the monitor's aggregate more expensive: on Postgres 18 it added 3-13% on a 2-million-row queue (~755ms to ~780-855ms) and ~16% across 1,000 small queues (~208ms to ~241ms per pass).
+  It also turns on throughput counting: each snapshot records how many jobs arrived, completed and failed since the previous monitor pass (`createdDelta`, `completedDelta`, `failedDelta`), and how many seconds that covers (`deltaSeconds`), which no depth count can answer. This makes the monitor's aggregate more expensive: on Postgres 18 it added 3-13% on a 2-million-row queue (~755ms to ~780-855ms) and ~16% across 1,000 small queues (~208ms to ~241ms per pass).
 
 * **queueStatRetentionDays**, int, default 7
 

@@ -107,7 +107,11 @@ const NUMERIC_QUEUE_FIELDS = [
   'warningQueueSize',
   'queuedCount',
   'activeCount',
-  'totalCount'
+  'totalCount',
+  'createdDelta',
+  'completedDelta',
+  'failedDelta',
+  'deltaSeconds'
 ] as const
 
 // The count columns shared by live stats and recorded snapshots (the QueueStats shape).
@@ -123,7 +127,9 @@ const STATS_COUNT_FIELDS = [
   // the same CockroachDB string-to-number normalisation below.
   'completedDelta',
   'failedDelta',
-  'createdDelta'
+  'createdDelta',
+  // How long the three counters above cover, so a rate is exact across uneven passes.
+  'deltaSeconds'
 ] as const
 
 // Stale-cache budget for getQueueStats when persistQueueStats is off. A queue-table cache older than
@@ -2569,12 +2575,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         completedDelta: null,
         failedDelta: null,
         createdDelta: null,
+        deltaSeconds: null,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
       for (const field of STATS_COUNT_FIELDS) {
         // The queue table's delta columns sit at zero while nobody counts them.
-        if (!this.config.persistQueueStats && field.endsWith('Delta')) continue
+        if (!this.config.persistQueueStats && (field.endsWith('Delta') || field === 'deltaSeconds')) continue
 
         const value = row?.[field]
         // CockroachDB returns integer columns as strings; normalize the counts.

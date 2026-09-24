@@ -224,10 +224,10 @@ describe('queueStats', function () {
     /**
      * Turning it on starts the series; it does not recover the past.
      *
-     * The window is the watermark, and passes made while tracking was off moved
-     * the watermark like any other pass. So work done before the switch is
-     * behind it and stays uncounted — which is worth knowing, because a chart
-     * that began yesterday should say so rather than imply the queue was idle.
+     * A queue that has never been counted has no window, so the first counted
+     * pass opens one and counts nothing. Work done before the switch stays
+     * uncounted, which is worth knowing, because a chart that began yesterday
+     * should say so rather than imply the queue was idle.
      */
     it('starts counting when it is turned on, and does not backfill', async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
@@ -239,12 +239,14 @@ describe('queueStats', function () {
       const [before] = await ctx.boss.fetch(queue)
       await ctx.boss.complete(queue, before.id)
 
-      // An untracked pass still advances the watermark, so this completion ends
-      // up behind it — counted by nobody, which is the cost of having had the
-      // option off when it happened.
+      // An untracked pass opens no window, so the first tracked pass has nothing
+      // to count from and this completion is counted by nobody, which is the
+      // cost of having had the option off when it happened.
       await monitorPass(queue, false)
 
-      expect((await monitorPass(queue, true)).completedDelta).toBe(0)
+      const first = await monitorPass(queue, true)
+      expect(first.completedDelta).toBe(0)
+      expect(first.deltaSeconds).toBe(null)
 
       await ctx.boss.send(queue)
       const [after] = await ctx.boss.fetch(queue)
@@ -391,6 +393,136 @@ describe('queueStats', function () {
 
       const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600 })
       expect(bucket.completedDelta).toBe(null)
+    })
+
+    /** Moves this queue's counting window back, which is the only way to give a fast test real seconds. */
+    async function windBack (queue: string, interval: string) {
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      await db.executeSql(
+        `UPDATE ${schema}.queue SET delta_on = ${schema}.job_now() - interval '${interval}' WHERE name = $1`, [queue]
+      )
+    }
+
+    /**
+     * Passes are not evenly spaced. One the vacuum backoff deferred covers
+     * several intervals, and dividing its counts by the bucket width would chart
+     * a spike. deltaSeconds is the real span, so a rate is exact either way.
+     */
+    it('records how many seconds the counts cover', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue)
+      await ctx.boss.send(queue)
+      await windBack(queue, '90 seconds')
+
+      const pass = await monitorPass(queue)
+      expect(pass.createdDelta).toBe(1)
+      expect(pass.deltaSeconds).toBeGreaterThanOrEqual(90)
+      expect(pass.deltaSeconds).toBeLessThan(95)
+    })
+
+    /** Zero arrivals over a minute is a rate of zero, not a missing reading. */
+    it('records the span for an idle queue, which has no job rows to aggregate', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue)
+      await windBack(queue, '60 seconds')
+
+      const pass = await monitorPass(queue)
+      expect(pass.createdDelta).toBe(0)
+      expect(pass.deltaSeconds).toBeGreaterThanOrEqual(60)
+    })
+
+    /**
+     * A pass that doesn't count still writes the queue row: an instance with
+     * persistQueueStats off, or a forced getQueueStats refresh. Windowing on the
+     * monitor timestamp let each of those swallow the jobs before it. The window
+     * is only moved by a pass that counts, so the next one picks them up.
+     */
+    it('keeps counting across a pass that does not count', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue)
+      await ctx.boss.send(queue)
+      const [job] = await ctx.boss.fetch(queue)
+      await ctx.boss.complete(queue, job.id)
+
+      await monitorPass(queue, false)
+
+      const pass = await monitorPass(queue)
+      expect(pass.createdDelta).toBe(1)
+      expect(pass.completedDelta).toBe(1)
+    })
+
+    /**
+     * Counting switched off and back on hours later would otherwise report the
+     * whole gap on one snapshot, a spike at the moment it was turned back on.
+     */
+    it('starts a fresh window when the last count is over an hour old', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue)
+      await ctx.boss.send(queue)
+      await windBack(queue, '2 hours')
+
+      const stale = await monitorPass(queue)
+      expect(stale.createdDelta).toBe(0)
+      expect(stale.deltaSeconds).toBe(null)
+
+      await ctx.boss.send(queue)
+      expect((await monitorPass(queue)).createdDelta).toBe(1)
+    })
+
+    /** The rollup plan depends on this: seconds sum across a bucket like the counts do. */
+    it('carries deltaSeconds through the history, summed per bucket', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      // Two rows in the hour before this one, read with `to` bounding it, so a
+      // snapshot the running monitor writes meanwhile can't be the newest row.
+      const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+      const to = new Date(hour - 1)
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      await db.executeSql(
+        `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, captured_on)
+         VALUES ($1, 4, 60, $2), ($1, 6, 150, $3)`,
+        [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000)]
+      )
+
+      const [newest] = await ctx.boss.getQueueStats(queue, { to })
+      expect(newest.deltaSeconds).toBe(150)
+
+      const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
+      expect(bucket.completedDelta).toBe(10)
+      expect(bucket.deltaSeconds).toBe(210)
+    })
+
+    /** QueueResult has always declared the counters; getQueue has to return them. */
+    it('returns the counters from getQueue', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue)
+      await ctx.boss.send(queue)
+      await windBack(queue, '30 seconds')
+      await monitorPass(queue)
+
+      const result = await ctx.boss.getQueue(queue)
+      expect(result!.createdDelta).toBe(1)
+      expect(result!.completedDelta).toBe(0)
+      expect(result!.deltaSeconds).toBeGreaterThanOrEqual(30)
     })
 
     it('counts every job in a batch', async function () {

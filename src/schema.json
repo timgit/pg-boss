@@ -634,6 +634,13 @@
       },
       {
         "table": "queue_stats",
+        "column": "delta_seconds",
+        "type": "integer",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
         "column": "failed_count",
         "type": "integer",
         "notNull": true,
@@ -728,6 +735,20 @@
         "column": "deletion_seconds",
         "type": "integer",
         "notNull": true,
+        "default": null
+      },
+      {
+        "table": "queue",
+        "column": "delta_on",
+        "type": "timestamp with time zone",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue",
+        "column": "delta_seconds",
+        "type": "integer",
+        "notNull": false,
         "default": null
       },
       {
@@ -1656,6 +1677,13 @@
       },
       {
         "table": "queue_stats",
+        "column": "delta_seconds",
+        "type": "integer",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
         "column": "failed_count",
         "type": "integer",
         "notNull": true,
@@ -1750,6 +1778,20 @@
         "column": "deletion_seconds",
         "type": "integer",
         "notNull": true,
+        "default": null
+      },
+      {
+        "table": "queue",
+        "column": "delta_on",
+        "type": "timestamp with time zone",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue",
+        "column": "delta_seconds",
+        "type": "integer",
+        "notNull": false,
         "default": null
       },
       {

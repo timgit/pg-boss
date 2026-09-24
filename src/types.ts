@@ -303,6 +303,14 @@ export interface QueueStats {
    * and completely different answers.
    */
   createdDelta: number | null;
+  /**
+   * How many seconds the three deltas cover: from the previous counted pass to this one, summed
+   * across a bucket. Passes are not evenly spaced (a pass the vacuum backoff deferred, or one no
+   * instance ran, covers several intervals), so a per-minute rate is `delta / deltaSeconds * 60`,
+   * not `delta / bucketSeconds * 60`. Null when nothing counted, and on a queue's first counted
+   * pass, which has no window yet.
+   */
+  deltaSeconds: number | null;
   capturedOn: Date;
 }
 
@@ -960,6 +968,8 @@ export interface QueueResult extends Queue {
   failedDelta: number;
   /** Jobs that arrived since the previous monitor pass. */
   createdDelta: number;
+  /** Seconds the three deltas cover. See `QueueStats.deltaSeconds`. Null until a pass counts. */
+  deltaSeconds: number | null;
   table: string;
   createdOn: Date;
   updatedOn: Date;

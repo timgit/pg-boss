@@ -1910,22 +1910,28 @@ AS $function$
         `ALTER TABLE ${schema}.queue
           ADD COLUMN created_delta int NOT NULL DEFAULT 0,
           ADD COLUMN completed_delta int NOT NULL DEFAULT 0,
-          ADD COLUMN failed_delta int NOT NULL DEFAULT 0`,
+          ADD COLUMN failed_delta int NOT NULL DEFAULT 0,
+          ADD COLUMN delta_on timestamp with time zone,
+          ADD COLUMN delta_seconds int`,
         `ALTER TABLE ${schema}.queue_stats
           ADD COLUMN created_delta int,
           ADD COLUMN completed_delta int,
-          ADD COLUMN failed_delta int`,
+          ADD COLUMN failed_delta int,
+          ADD COLUMN delta_seconds int`,
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_output jsonb`
       ],
       uninstall: [
         `ALTER TABLE ${schema}.queue
           DROP COLUMN created_delta,
           DROP COLUMN completed_delta,
-          DROP COLUMN failed_delta`,
+          DROP COLUMN failed_delta,
+          DROP COLUMN delta_on,
+          DROP COLUMN delta_seconds`,
         `ALTER TABLE ${schema}.queue_stats
           DROP COLUMN created_delta,
           DROP COLUMN completed_delta,
-          DROP COLUMN failed_delta`,
+          DROP COLUMN failed_delta,
+          DROP COLUMN delta_seconds`,
         `ALTER TABLE ${schema}.job DROP COLUMN source_output`
       ]
     }
