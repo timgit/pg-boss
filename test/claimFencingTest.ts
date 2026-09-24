@@ -86,6 +86,27 @@ describe.each([false, true])('worker claim fencing (distributed=%s)', distribute
     expect(active.output).toEqual({ value: { message: 'job heartbeat timeout' } })
   })
 
+  it('still fails an owned attempt when its handler throws', async () => {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: distributed, noDefault: true })
+    await ctx.boss.createQueue(ctx.schema, { retryLimit: 0 })
+    const id = await ctx.boss.send(ctx.schema)
+    assertTruthy(id)
+
+    let entered!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    await ctx.boss.work(ctx.schema, async () => {
+      entered()
+      throw new Error('owned handler failure')
+    })
+    await started
+    await ctx.boss.offWork(ctx.schema, { wait: true })
+
+    const failed = await ctx.boss.getJobById(ctx.schema, id)
+    assertTruthy(failed)
+    expect(failed.state).toBe('failed')
+    expect(failed.output).toMatchObject({ name: 'Error', message: 'owned handler failure' })
+  })
+
   it('settles only still-owned claims in a regular batch', async () => {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: distributed, noDefault: true })
     await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10, retryLimit: 1, retryDelay: 0 })

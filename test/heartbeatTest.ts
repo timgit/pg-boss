@@ -3,7 +3,6 @@ import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
-import Db from '../src/db.ts'
 
 describe('heartbeat', function () {
   it('should auto-heartbeat during work and complete normally', async function () {
@@ -305,23 +304,28 @@ describe('heartbeat', function () {
     const errors: any[] = []
     ctx.boss.on('error', (err: any) => errors.push(err))
 
-    const executeSql = Db.prototype.executeSql
-    const spy = vi.spyOn(Db.prototype, 'executeSql').mockImplementation(function (this: Db, text, values) {
+    const boss = ctx.boss
+    const db = boss.getDb()
+    const executeSql = db.executeSql
+    const spy = vi.spyOn(db, 'executeSql').mockImplementation(function (text, values) {
       if (text.includes('SET heartbeat_on =')) throw new Error('touch test error')
-      return executeSql.call(this, text, values)
+      return executeSql.call(db, text, values)
     })
 
     await ctx.boss.work(ctx.schema, { heartbeatRefreshSeconds: 0.5 }, async ([job]) => {
-      await delay(1000)
+      await vi.waitFor(() => expect(errors.length).toBeGreaterThan(0), { timeout: 10000 })
       expect(job.signal.aborted).toBe(false)
     })
 
-    await delay(2000)
+    await vi.waitFor(async () => {
+      const job = await boss.getJobById(ctx.schema, jobId)
+      expect(job?.state).toBe('completed')
+    }, { timeout: 10000 })
 
     spy.mockRestore()
 
     expect(errors.length).toBeGreaterThan(0)
-  })
+  }, 20000)
 
   it('should reject invalid heartbeatSeconds on createQueue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
