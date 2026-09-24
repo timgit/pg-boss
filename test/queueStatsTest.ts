@@ -755,6 +755,47 @@ describe('queueStats', function () {
     })
 
     /**
+     * A counter's bucket can hold no capture: passes drift, so a pass time
+     * minus the lag lands a bucket away from the previous capture, and a
+     * held-back deltaOn lands wherever its transaction started. Returned on
+     * its own, that bucket's gauges would read as zero and chart the queue as
+     * empty. It is folded into the newest gauge bucket at or before it instead,
+     * or the first in range when none precedes it.
+     */
+    it('folds a counter whose bucket has no capture into the capture before it', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+      const minute = (n: number) => new Date(hour - n * 60_000)
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      // Captures at minutes 31 and 29; the second one's counters cover an
+      // interval ending in minute 30, where nothing was captured.
+      await db.executeSql(
+        `INSERT INTO ${schema}.queue_stats (name, ready_count, completed_delta, delta_seconds, delta_on, captured_on)
+         VALUES ($1, 5, NULL, NULL, NULL, $2), ($1, 7, 4, 60, $3, $4)`,
+        [queue, minute(31), minute(30), minute(29)]
+      )
+
+      const buckets = await ctx.boss.getQueueStats(queue, { bucketSeconds: 60, from: minute(32), to: minute(25) })
+      expect(buckets.map(b => b.capturedOn.getTime())).toEqual([minute(29).getTime(), minute(31).getTime()])
+      const [newest, folded] = buckets
+      expect(newest.readyCount).toBe(7)
+      expect(newest.completedDelta).toBe(null)
+      expect(folded.readyCount).toBe(5)
+      expect(folded.completedDelta).toBe(4)
+      expect(folded.deltaOn!.getTime()).toBe(minute(30).getTime())
+
+      // With no capture before it in range, it joins the first one after.
+      const [only] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 60, from: minute(30), to: minute(25) })
+      expect(only.capturedOn.getTime()).toBe(minute(29).getTime())
+      expect(only.readyCount).toBe(7)
+      expect(only.completedDelta).toBe(4)
+    })
+
+    /**
      * The window a transaction held back has to survive the transaction ending.
      * While it is open past the cap, each pass ends its window the cap behind
      * itself and starts the next one there. When it commits, the next pass's

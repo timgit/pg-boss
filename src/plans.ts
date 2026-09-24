@@ -1746,6 +1746,15 @@ const STATS_AGG = {
 // newest bucket carries null counters: the pass that counts its minute has not run yet, and a
 // later read fills it in.
 //
+// The join is not symmetric, though. A counter's bucket can hold no capture at all: passes drift,
+// so delta_on (a pass time minus the lag) lands a bucket away from the previous capture; a bucket
+// narrower than the monitor interval has more empty buckets than full ones; and a held-back
+// delta_on lands wherever the transaction that held it started. Emitting that bucket on its own
+// would chart the queue as empty, since a gauge with no capture reads as zero. So a counter bucket
+// with no gauges is folded into the newest gauge bucket at or before it (the capture at the end of
+// the counted interval reflects the state it left), or into the first gauge bucket in range when
+// none precedes it. Every bucket returned has a capture behind its gauges.
+//
 // The bucket key avoids date_bin() (PG14+): pg-boss supports PostgreSQL 13+ and CockroachDB/
 // YugabyteDB, none of which can rely on it. to_timestamp / extract(epoch) / floor exist on all of
 // them (extract returns double on PG13, numeric on PG14+; floor/division handle both identically),
@@ -1810,22 +1819,43 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         AND ($2::timestamptz IS NULL OR delta_on >= $2)
         AND ($3::timestamptz IS NULL OR delta_on <= $3)
       GROUP BY 1
+    ),
+    placed AS (
+      SELECT
+        COALESCE(
+          max(g.bucket) OVER (ORDER BY COALESCE(g.bucket, c.bucket) ROWS UNBOUNDED PRECEDING),
+          min(g.bucket) OVER ()
+        ) as bucket,
+        g."deferredCount",
+        g."queuedCount",
+        g."readyCount",
+        g."activeCount",
+        g."failedCount",
+        g."totalCount",
+        c."createdDelta",
+        c."completedDelta",
+        c."failedDelta",
+        c."deltaSeconds",
+        c."deltaOn"
+      FROM gauges g
+        FULL JOIN counters c ON c.bucket = g.bucket
     )
     SELECT
-      COALESCE(g.bucket, c.bucket) as "capturedOn",
-      g."deferredCount",
-      g."queuedCount",
-      g."readyCount",
-      g."activeCount",
-      g."failedCount",
-      g."totalCount",
-      c."createdDelta",
-      c."completedDelta",
-      c."failedDelta",
-      c."deltaSeconds",
-      c."deltaOn"
-    FROM gauges g
-      FULL JOIN counters c ON c.bucket = g.bucket
+      bucket as "capturedOn",
+      max("deferredCount")::int as "deferredCount",
+      max("queuedCount")::int   as "queuedCount",
+      max("readyCount")::int    as "readyCount",
+      max("activeCount")::int   as "activeCount",
+      max("failedCount")::int   as "failedCount",
+      max("totalCount")::int    as "totalCount",
+      sum("createdDelta")::int   as "createdDelta",
+      sum("completedDelta")::int as "completedDelta",
+      sum("failedDelta")::int    as "failedDelta",
+      sum("deltaSeconds")::int   as "deltaSeconds",
+      max("deltaOn")             as "deltaOn"
+    FROM placed
+    WHERE bucket IS NOT NULL
+    GROUP BY 1
     ORDER BY 1 DESC
     LIMIT ${limit}
   `
