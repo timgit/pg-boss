@@ -2669,7 +2669,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // A queue with no capture yet has no cache to fall back on, so its first scan is exempt from the
     // try-lock. See refreshQueueStats. Every later read has real counts to serve and can lose.
     const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name, {
-      throughput: this.config.persistQueueStats,
       noAdvisoryLocks: this.config.noAdvisoryLocks,
       firstCapture: cached.capturedOn == null
     })

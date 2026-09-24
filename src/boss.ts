@@ -382,7 +382,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const refreshStats = rows[0].refreshStats !== false
 
       if (refreshStats) {
-        const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, this.#config.persistQueueStats)
+        // noMonitorVacuum marks the backends whose pg_stat_activity doesn't show their transactions,
+        // which the throughput window's end is read from. See plans.setDeltaWindowEnd.
+        const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks,
+          this.#config.persistQueueStats, !this.#config.noMonitorVacuum)
         // The pin this pass cost, taken from the server's own clock (see the pinSeconds column in
         // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
         // network and event-loop lag, none of which hold the horizon. The client measurement stays as
@@ -399,8 +402,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
           this.#statsElapsedSeconds += pinned || (Date.now() - statsStarted) / 1000
         }
 
-        if (this.#config.persistQueueStats) {
-          const insertSql = plans.insertQueueStats(this.#config.schema, queues, this.#config.noAdvisoryLocks)
+        // Only the queues this pass wrote counts for. Another instance holding the stats lock means
+        // nothing was updated, and inserting anyway copied the previous pass's counters into a
+        // second snapshot, which the history then counted twice.
+        if (this.#config.persistQueueStats && rowsCacheStats.length) {
+          const written = rowsCacheStats.map(row => row.name)
+          const insertSql = plans.insertQueueStats(this.#config.schema, written, this.#config.noAdvisoryLocks)
           await this.#executeQuery(insertSql)
         }
 

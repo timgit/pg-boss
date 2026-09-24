@@ -177,24 +177,27 @@ describe('queueStats', function () {
    */
   describe('completedDelta and failedDelta', function () {
     /**
-     * One monitor pass, run the way the monitor runs it.
+     * One monitor pass, run the way the monitor runs it: the monitor's own
+     * statement, then the counts it left on the queue row.
      *
      * Not `getQueueStats({ force: true })`: that reuses anything computed in the
-     * last minute, so two passes in one test would read back the row the first
-     * one wrote. And not by winding `monitor_on` backwards either — that is the
-     * watermark these counters are windowed on, so moving it is moving the
-     * thing under test.
+     * last minute, and a forced refresh never counts throughput. And not by
+     * winding `delta_on` backwards either, except where a test is about the
+     * window itself — that is the watermark these counters are windowed on.
+     *
+     * The window ends at job_now() unless `fromOpenTransactions` is set. Test
+     * files run side by side on one database, and another file's open write
+     * transaction would hold that end back and push a count into the next pass.
      */
-    async function monitorPass (queue: string, throughput = true) {
+    async function monitorPass (queue: string, throughput = true, fromOpenTransactions = false) {
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
       )
 
-      const { rows } = await db.executeSql(
-        plans.refreshQueueStats(schema, table, queue, { noAdvisoryLocks: true, throughput }), []
-      )
+      await db.executeSql(plans.cacheQueueStats(schema, table, [queue], true, throughput, fromOpenTransactions))
+      const { rows } = await db.executeSql(plans.getQueueStatsCache(schema), [queue])
 
       return rows[0]
     }
@@ -523,6 +526,86 @@ describe('queueStats', function () {
       expect(result!.createdDelta).toBe(1)
       expect(result!.completedDelta).toBe(0)
       expect(result!.deltaSeconds).toBeGreaterThanOrEqual(30)
+    })
+
+    /**
+     * created_on and completed_on are the start of the transaction that wrote
+     * them. A transactional worker's completion commits after its handler, and a
+     * window ending at now() stepped past its stamp while the row was still
+     * invisible, so no pass ever counted it. The window now ends at the oldest
+     * open write transaction, which holds it back until this one commits.
+     */
+    // A second connection holds the transaction open, which pglite doesn't have. CockroachDB and
+    // YugabyteDB end the window at the pass instead, so a late commit there is still missed.
+    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('counts a completion committed after a pass, from a transaction that began before it', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue, true, true)
+      await ctx.boss.send(queue)
+      const [job] = await ctx.boss.fetch(queue)
+
+      const tx = new pg.Client({ connectionString: helper.getConnectionString() })
+      await tx.connect()
+
+      try {
+        await tx.query('BEGIN')
+        await ctx.boss.complete(queue, job.id, null, {
+          db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) }
+        })
+
+        // A pass while it is still open cannot see the completion, and must not
+        // step past its stamp.
+        await new Promise(resolve => setTimeout(resolve, 50))
+        let counted = (await monitorPass(queue, true, true)).completedDelta
+
+        await tx.query('COMMIT')
+
+        // Other test files' transactions can hold the window back a pass, so
+        // keep passing until it is counted. Lost, it never would be.
+        await expect.poll(async () => {
+          counted += (await monitorPass(queue, true, true)).completedDelta
+          return counted
+        }, { timeout: 5_000, interval: 200 }).toBe(1)
+      } finally {
+        await tx.end()
+      }
+    })
+
+    /**
+     * Another instance holding the stats lock means this pass wrote nothing,
+     * and the snapshot it inserted anyway was a copy of the previous pass's
+     * counters, which the history then counted twice.
+     */
+    // A second connection holds the lock; CockroachDB takes no advisory locks, so a pass can't lose one.
+    it.skipIf(helper.isPglite || helper.isCockroachDb)('records no snapshot for a pass that lost the stats lock', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true, supervise: false, monitorIntervalSeconds: 1 })
+      const schema = ctx.bossConfig.schema
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.supervise(queue)
+      await ctx.boss.send(queue)
+      await ctx.boss.send(queue)
+      await new Promise(resolve => setTimeout(resolve, 1100))
+      await ctx.boss.supervise(queue)
+
+      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
+      await holder.connect()
+
+      try {
+        await holder.query('BEGIN')
+        await holder.query(`SELECT pg_advisory_xact_lock(${plans.advisoryLockKey(schema, 'queue-stats')})`)
+        await new Promise(resolve => setTimeout(resolve, 1100))
+        await ctx.boss.supervise(queue)
+        await holder.query('COMMIT')
+      } finally {
+        await holder.end()
+      }
+
+      const series = await ctx.boss.getQueueStats(queue)
+      expect(series.reduce((sum, row) => sum + (row.createdDelta ?? 0), 0)).toBe(2)
     })
 
     it('counts every job in a batch', async function () {
