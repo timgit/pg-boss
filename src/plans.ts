@@ -656,7 +656,7 @@ function createTableJob (schema: string, noPartitioning = false) {
   `
 }
 
-const JOB_COLUMNS_MIN = 'id, name, data, expire_seconds as "expireInSeconds", heartbeat_seconds as "heartbeatSeconds", group_id as "groupId", group_tier as "groupTier"'
+const JOB_COLUMNS_MIN = 'id, name, data, retry_count as "retryCount", expire_seconds as "expireInSeconds", heartbeat_seconds as "heartbeatSeconds", group_id as "groupId", group_tier as "groupTier"'
 const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   policy,
   state,
@@ -2091,19 +2091,25 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
 // Shared SET/WHERE body for marking jobs completed (no RETURNING). Used by the
 // single-statement completeJobs() and the distributed completeJobsDistributed().
-function completeJobsUpdate (schema: string, table: string, includeQueued?: boolean): string {
-  return `UPDATE ${schema}.${table}
+function completeJobsUpdate (schema: string, table: string, includeQueued?: boolean, claimed = false): string {
+  let claimGuard = ''
+  if (claimed) {
+    claimGuard = `AND EXISTS (SELECT 1 FROM json_to_recordset($4::text::json) AS c (id uuid, retry_count int)
+                        WHERE c.id = j.id AND c.retry_count = j.retry_count)`
+  }
+  return `UPDATE ${schema}.${table} j
       SET completed_on = ${schema}.job_now(),
         state = '${JOB_STATES.completed}',
         output = $3::jsonb,
         blocked = ${includeQueued ? 'false' : 'blocked'},
         pending_dependencies = ${includeQueued ? '0' : 'pending_dependencies'}
-      WHERE name = $1
-        AND id = ANY($2::uuid[])
+      WHERE j.name = $1
+        AND j.id = ANY($2::uuid[])
         AND ${includeQueued
-          ? `state < '${JOB_STATES.completed}'`
-          : `state = '${JOB_STATES.active}'`
-        }`
+          ? `j.state < '${JOB_STATES.completed}'`
+          : `j.state = '${JOB_STATES.active}'`
+        }
+        ${claimGuard}`
 }
 
 // Shared dependency-unblocking fragments. Both consume a `decremented` CTE
@@ -2134,10 +2140,10 @@ function unblockChildrenUpdate (schema: string): string {
 // dependents inline (joining job_dependency and the partitioned job table) made completion
 // scale with partition count (see issue #824). The background resolver (Navigator) handles
 // unblocking out of band, driven by the job_i9 partial index.
-export function completeJobs (schema: string, table: string, includeQueued?: boolean) {
+export function completeJobs (schema: string, table: string, includeQueued?: boolean, claimed = false) {
   return `
     WITH results AS (
-      ${completeJobsUpdate(schema, table, includeQueued)}
+      ${completeJobsUpdate(schema, table, includeQueued, claimed)}
       RETURNING id
     )
     ${settledCountAndIds()}
@@ -2150,7 +2156,7 @@ export function completeJobs (schema: string, table: string, includeQueued?: boo
 export function completeJobsWithOutputs (schema: string, table: string) {
   return `
     WITH input AS (
-      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
+      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     ),
     results AS (
       UPDATE ${schema}.${table} j
@@ -2160,10 +2166,11 @@ export function completeJobsWithOutputs (schema: string, table: string) {
       FROM input i
       WHERE j.name = $1
         AND j.id = i.id
+        AND j.retry_count = i.retry_count
         AND j.state = '${JOB_STATES.active}'
-      RETURNING 1
+      RETURNING j.id
     )
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2173,7 +2180,7 @@ export function completeJobsWithOutputs (schema: string, table: string) {
 export function completeJobsWithOutputsDistributed (schema: string, table: string) {
   return `
     WITH input AS (
-      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
+      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     )
     UPDATE ${schema}.${table} j
     SET completed_on = ${schema}.job_now(),
@@ -2182,6 +2189,7 @@ export function completeJobsWithOutputsDistributed (schema: string, table: strin
     FROM input i
     WHERE j.name = $1
       AND j.id = i.id
+      AND j.retry_count = i.retry_count
       AND j.state = '${JOB_STATES.active}'
     RETURNING j.id
   `
@@ -2404,8 +2412,12 @@ export function insertFlowJobs (schema: string, { table, name }: { table: string
   `
 }
 
-export function failJobsById (schema: string, table: string) {
-  const where = `name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`
+export function failJobsById (schema: string, table: string, claimed = false) {
+  const where = claimed
+    ? `j.name = $1 AND j.id = ANY($2::uuid[]) AND j.state = '${JOB_STATES.active}'
+       AND EXISTS (SELECT 1 FROM json_to_recordset($4::text::json) AS c (id uuid, retry_count int)
+                   WHERE c.id = j.id AND c.retry_count = j.retry_count)`
+    : `name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`
   const output = '$3::jsonb'
 
   return failJobs(schema, table, where, output, true)
@@ -2432,17 +2444,23 @@ export function failJobsByHeartbeat (schema: string, table: string, queues: stri
   return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByHeartbeat', noAdvisoryLocks)
 }
 
-export function touchJobs (schema: string, table: string) {
+export function touchJobs (schema: string, table: string, claimed = false) {
+  let claimGuard = ''
+  if (claimed) {
+    claimGuard = `AND EXISTS (SELECT 1 FROM json_to_recordset($3::text::json) AS c (id uuid, retry_count int)
+                        WHERE c.id = j.id AND c.retry_count = j.retry_count)`
+  }
   return `
     WITH results AS (
-      UPDATE ${schema}.${table}
+      UPDATE ${schema}.${table} j
       SET heartbeat_on = ${schema}.job_now()
-      WHERE name = $1
-        AND id = ANY($2::uuid[])
-        AND state = '${JOB_STATES.active}'
-      RETURNING 1
+      WHERE j.name = $1
+        AND j.id = ANY($2::uuid[])
+        AND j.state = '${JOB_STATES.active}'
+        ${claimGuard}
+      RETURNING j.id
     )
-    SELECT COUNT(*) FROM results
+    ${claimed ? settledCountAndIds() : 'SELECT COUNT(*) FROM results'}
   `
 }
 
@@ -2486,7 +2504,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
     : `CASE WHEN retry_count < retry_limit THEN NULL ELSE ${schema}.job_now() END`
 
   return `deleted_jobs AS (
-      DELETE FROM ${schema}.${table}
+      DELETE FROM ${schema}.${table} j
       WHERE ${where}
       RETURNING *
     ),
@@ -2686,30 +2704,32 @@ export function failJobsByIdWithOutputs (schema: string, table: string) {
   // Output is supplied per job via a JSON recordset ($2). `where` and the output expression both
   // reference the output_map CTE so each re-inserted job keeps its own output. Constant number of
   // statements regardless of batch size.
-  const where = `name = $1 AND id IN (SELECT id FROM output_map) AND state < '${JOB_STATES.completed}'`
+  const where = `j.name = $1 AND j.state = '${JOB_STATES.active}'
+    AND EXISTS (SELECT 1 FROM output_map om WHERE om.id = j.id AND om.retry_count = j.retry_count)`
   const output = '(SELECT om.output FROM output_map om WHERE om.id = deleted_jobs.id)'
 
   return `
     WITH output_map AS (
-      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
+      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     ),
     ${failJobsBody(schema, table, where, output)}
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
 // Like failJobsByIdWithOutputs, but fails every job terminally (forceTerminal) so it routes straight
 // to the dead letter queue, bypassing remaining retries. Backs the perJobResults `deadletter` status.
 export function deadLetterJobsByIdWithOutputs (schema: string, table: string) {
-  const where = `name = $1 AND id IN (SELECT id FROM output_map) AND state < '${JOB_STATES.completed}'`
+  const where = `j.name = $1 AND j.state = '${JOB_STATES.active}'
+    AND EXISTS (SELECT 1 FROM output_map om WHERE om.id = j.id AND om.retry_count = j.retry_count)`
   const output = '(SELECT om.output FROM output_map om WHERE om.id = deleted_jobs.id)'
 
   return `
     WITH output_map AS (
-      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, output jsonb)
+      SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     ),
     ${failJobsBody(schema, table, where, output, true)}
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2728,17 +2748,31 @@ const REBOUND_TIMESTAMPS_AS_TEXT = `started_on::text as started_on_text,
       start_after::text as start_after_text,
       source_created_on::text as source_created_on_text`
 
-export function selectJobsToFailById (schema: string, table: string): SqlQuery {
+export function selectJobsToFailById (schema: string, table: string, claimed = false): SqlQuery {
+  let claimGuard = ''
+  if (claimed) {
+    claimGuard = `AND EXISTS (SELECT 1 FROM json_to_recordset($3::text::json) AS c (id uuid, retry_count int)
+                        WHERE c.id = j.id AND c.retry_count = j.retry_count) FOR UPDATE`
+  }
   return {
     text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
-      FROM ${schema}.${table} WHERE name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`,
+      FROM ${schema}.${table} j WHERE j.name = $1 AND j.id = ANY($2::uuid[])
+        AND j.state ${claimed ? `= '${JOB_STATES.active}'` : `< '${JOB_STATES.completed}'`}
+        ${claimGuard}`,
     values: []
   }
 }
 
-export function deleteJobsToFail (schema: string, table: string): SqlQuery {
+export function deleteJobsToFail (schema: string, table: string, claimed = false): SqlQuery {
+  let claimGuard = ''
+  if (claimed) {
+    claimGuard = `AND j.state = '${JOB_STATES.active}'
+        AND EXISTS (SELECT 1 FROM json_to_recordset($3::text::json) AS c (id uuid, retry_count int)
+                    WHERE c.id = j.id AND c.retry_count = j.retry_count)`
+  }
   return {
-    text: `DELETE FROM ${schema}.${table} WHERE name = $1 AND id = ANY($2::uuid[])`,
+    text: `DELETE FROM ${schema}.${table} j WHERE j.name = $1 AND j.id = ANY($2::uuid[])
+      ${claimGuard}`,
     values: []
   }
 }
@@ -2779,9 +2813,9 @@ export function deleteJobsByIds (schema: string, table: string): SqlQuery {
 
 // Distributed mode: complete jobs as a single-table mutation. Dependency unblocking is handled
 // out of band by the background resolver (Navigator), so completion does no dependency work.
-export function completeJobsDistributed (schema: string, table: string, includeQueued?: boolean): string {
+export function completeJobsDistributed (schema: string, table: string, includeQueued?: boolean, claimed = false): string {
   return `
-    ${completeJobsUpdate(schema, table, includeQueued)}
+    ${completeJobsUpdate(schema, table, includeQueued, claimed)}
     RETURNING id
   `
 }

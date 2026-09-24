@@ -374,7 +374,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // The handler opted into perJobResults but did not return an array: a contract violation.
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
-      await this.fail(name, jobs.map(job => job.id), err)
+      await this.#failClaimed(name, jobs, err)
       await this.#trackJobsFailed(name, jobs, err)
       return
     }
@@ -407,26 +407,27 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
-    if (completed.length > 0) {
-      await this.#completeWithOutputs(name, completed.map(c => ({ id: c.job.id, output: c.output })))
-    }
-    if (failed.length > 0) {
-      await this.#failWithOutputs(name, failed.map(f => ({ id: f.job.id, output: f.output })))
-    }
-    if (deadLettered.length > 0) {
-      await this.#failWithOutputs(name, deadLettered.map(d => ({ id: d.job.id, output: d.output })), true)
-    }
+    const inputs = (entries: { job: types.Job<T>, output: unknown }[]) => entries.map(({ job, output }) => ({ id: job.id, retryCount: job.retryCount, output }))
+    const completedResult = completed.length > 0 ? await this.#completeWithOutputs(name, inputs(completed)) : null
+    const failedResult = failed.length > 0 ? await this.#failWithOutputs(name, inputs(failed)) : null
+    const deadLetteredResult = deadLettered.length > 0 ? await this.#failWithOutputs(name, inputs(deadLettered), true) : null
 
     // Dead lettered jobs end in the same terminal `failed` state as failed jobs on the source queue.
-    this.#trackJobsSettled(name, completed, [...failed, ...deadLettered])
+    const settled = (result: types.CommandResponse | null) => new Set(result?.settled || [])
+    const completedIds = settled(completedResult)
+    const failedIds = settled(failedResult)
+    const deadLetteredIds = settled(deadLetteredResult)
+    this.#trackJobsSettled(name,
+      completed.filter(c => completedIds.has(c.job.id)),
+      [...failed.filter(f => failedIds.has(f.job.id)), ...deadLettered.filter(d => deadLetteredIds.has(d.job.id))])
   }
 
   // Complete a set of active jobs, each with its own output, in a constant number of statements
   // (one on Postgres, two on a distributed backend). Outputs are serialized like complete()/fail()
   // and passed as a JSON recordset so the batch size doesn't drive the statement count.
-  async #completeWithOutputs (name: string, items: { id: string, output: unknown }[]): Promise<types.CommandResponse> {
+  async #completeWithOutputs (name: string, items: { id: string, retryCount: number, output: unknown }[]): Promise<types.CommandResponse> {
     const { table } = await this.getQueueCache(name)
-    const payload = items.map(item => ({ id: item.id, output: this.mapCompletionDataArg(item.output) }))
+    const payload = items.map(item => ({ id: item.id, retry_count: item.retryCount, output: this.mapCompletionDataArg(item.output) }))
     const ids = items.map(item => item.id)
 
     if (this.config.noMultiMutationCte) {
@@ -434,7 +435,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // completion is a single statement here too.
       const sql = plans.completeJobsWithOutputsDistributed(this.config.schema, table)
       const { rows } = await this.db.executeSql(sql, [name, JSON.stringify(payload)])
-      return { jobs: ids, requested: ids.length, affected: rows.length }
+      return { jobs: ids, requested: ids.length, affected: rows.length, settled: rows.map(row => row.id) }
     }
 
     const sql = plans.completeJobsWithOutputs(this.config.schema, table)
@@ -446,29 +447,30 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // distributed backend this reuses the select -> delete -> reinsert split, passing per-id outputs
   // to reinsertFailedJobs so each job keeps its own failure detail. When `forceTerminal` is set the
   // jobs fail terminally and route straight to the dead letter queue, bypassing remaining retries.
-  async #failWithOutputs (name: string, items: { id: string, output: unknown }[], forceTerminal = false): Promise<types.CommandResponse> {
+  async #failWithOutputs (name: string, items: { id: string, retryCount: number, output: unknown }[], forceTerminal = false): Promise<types.CommandResponse> {
     const { table } = await this.getQueueCache(name)
     const ids = items.map(item => item.id)
 
     if (this.config.noMultiMutationCte) {
       const outputById = new Map(items.map(item => [item.id, this.mapCompletionDataArg(item.output)]))
       return this.ensureTransaction(this.db, async (tx) => {
-        const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
-        const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
+        const claims = this.#claimPayload(items)
+        const selectQuery = plans.selectJobsToFailById(this.config.schema, table, true)
+        const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids, claims])
 
         if (jobs.length === 0) {
-          return { jobs: ids, requested: ids.length, affected: 0 }
+          return { jobs: ids, requested: ids.length, affected: 0, settled: [] }
         }
 
-        const deleteQuery = plans.deleteJobsToFail(this.config.schema, table)
-        await tx.executeSql(deleteQuery.text, [name, ids])
+        const deleteQuery = plans.deleteJobsToFail(this.config.schema, table, true)
+        await tx.executeSql(deleteQuery.text, [name, ids, claims])
 
         const count = await this.reinsertFailedJobs(tx, table, jobs, null, outputById, forceTerminal)
-        return { jobs: ids, requested: ids.length, affected: count }
+        return { jobs: ids, requested: ids.length, affected: count, settled: jobs.map(job => job.id) }
       })
     }
 
-    const payload = items.map(item => ({ id: item.id, output: this.mapCompletionDataArg(item.output) }))
+    const payload = items.map(item => ({ id: item.id, retry_count: item.retryCount, output: this.mapCompletionDataArg(item.output) }))
     const sql = forceTerminal
       ? plans.deadLetterJobsByIdWithOutputs(this.config.schema, table)
       : plans.failJobsByIdWithOutputs(this.config.schema, table)
@@ -573,13 +575,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     let heartbeatTimer: types.ClockTimer | null = null
+    let claimLost = false
 
     if (heartbeatSeconds > 0) {
       const refreshSeconds = heartbeatRefreshSeconds ?? (heartbeatSeconds / 2)
       const intervalMs = refreshSeconds * 1000
       heartbeatTimer = this.config.clock.setInterval(async () => {
         try {
-          await this.touch(name, jobIds)
+          const touched = await this.#touchClaimed(name, jobs)
+          if (touched.affected !== jobs.length) {
+            claimLost = true
+            ac.abort()
+          }
         } catch (err) {
           this.emit(events.error, err)
         }
@@ -627,6 +634,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       const result = await resolveWithinSeconds(this.config.clock, handling, maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
 
+      if (claimLost) {
+        throw new Error('job claim lost while the handler was running')
+      }
+
       // An abort resolves the race rather than rejecting it, so on this line an abandoned handler
       // looks exactly like one that returned. failWip() aborts after failing the batch, so
       // committing here would leave whatever the handler had written by then in the database
@@ -649,7 +660,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // otherwise record pg-boss's own settle as one the handler made.
         const settledByHandler = transaction ? this.#takeHandlerSettles(transaction) : null
 
-        const completion = await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined, transaction ? { db: transaction.db } : undefined)
+        const completion = await this.#completeClaimed(name, jobs, jobIds.length === 1 ? result : undefined, transaction?.db)
         completedResult = result
         completedAffected = completion.affected
 
@@ -676,7 +687,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       }
 
-      await this.fail(name, jobIds, err)
+      await this.#failClaimed(name, jobs, err)
       failedError = err
       didFail = true
     } finally {
@@ -1893,6 +1904,61 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#trackHandlerSettle(options, response)
 
     return response
+  }
+
+  #claimPayload (jobs: Array<Pick<types.Job, 'id' | 'retryCount'>>): string {
+    return JSON.stringify(jobs.map(job => ({ id: job.id, retry_count: job.retryCount })))
+  }
+
+  // Automatic workers may only settle the exact attempts they fetched. Manual complete()/fail()
+  // remain id-based so existing fetch() callers keep their current contract.
+  async #completeClaimed<T> (name: string, jobs: types.Job<T>[], data?: object | null, db: types.IDatabase = this.db): Promise<types.CommandResponse> {
+    const ids = jobs.map(job => job.id)
+    const { table } = await this.getQueueCache(name)
+    const output = this.mapCompletionDataArg(data)
+    const claims = this.#claimPayload(jobs)
+
+    if (this.config.noMultiMutationCte) {
+      const sql = plans.completeJobsDistributed(this.config.schema, table, false, true)
+      const { rows } = await db.executeSql(sql, [name, ids, output, claims])
+      return { jobs: ids, requested: ids.length, affected: rows.length, settled: rows.map(row => row.id) }
+    }
+
+    const sql = plans.completeJobs(this.config.schema, table, false, true)
+    const result = await db.executeSql(sql, [name, ids, output, claims])
+    return this.mapCommandResponse(ids, result)
+  }
+
+  async #failClaimed<T> (name: string, jobs: types.Job<T>[], data?: any): Promise<types.CommandResponse> {
+    const ids = jobs.map(job => job.id)
+    const { table } = await this.getQueueCache(name)
+    const output = this.mapCompletionDataArg(data)
+    const claims = this.#claimPayload(jobs)
+
+    if (this.config.noMultiMutationCte) {
+      return this.ensureTransaction(this.db, async tx => {
+        const select = plans.selectJobsToFailById(this.config.schema, table, true)
+        const { rows: matched } = await tx.executeSql(select.text, [name, ids, claims])
+        if (matched.length === 0) return { jobs: ids, requested: ids.length, affected: 0, settled: [] }
+
+        const deletion = plans.deleteJobsToFail(this.config.schema, table, true)
+        await tx.executeSql(deletion.text, [name, ids, claims])
+        const affected = await this.reinsertFailedJobs(tx, table, matched, output)
+        return { jobs: ids, requested: ids.length, affected, settled: matched.map(job => job.id) }
+      })
+    }
+
+    const sql = plans.failJobsById(this.config.schema, table, true)
+    const result = await this.db.executeSql(sql, [name, ids, output, claims])
+    return this.mapCommandResponse(ids, result)
+  }
+
+  async #touchClaimed<T> (name: string, jobs: types.Job<T>[]): Promise<types.CommandResponse> {
+    const ids = jobs.map(job => job.id)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.touchJobs(this.config.schema, table, true)
+    const result = await this.db.executeSql(sql, [name, ids, this.#claimPayload(jobs)])
+    return this.mapCommandResponse(ids, result)
   }
 
   // Distributed complete/fail need several statements run atomically. When we own the pooled

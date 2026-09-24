@@ -424,7 +424,6 @@ describe('perJobResults', function () {
 
     it('no-ops the per-job fail when the job already left the active state', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, __test__enableSpies: true })
-      const spy = ctx.boss.getSpy(ctx.schema)
 
       const jobId = await ctx.boss.send(ctx.schema, { key: 'payload' }, { retryLimit: 0 })
       assertTruthy(jobId)
@@ -433,14 +432,16 @@ describe('perJobResults', function () {
       // distributed per-job fail runs, selectJobsToFailById finds no active row, so it short-circuits
       // (jobs.length === 0) instead of re-inserting - modelling a job that vanished mid-batch.
       const boss = ctx.boss
+      let handled!: () => void
+      const started = new Promise<void>(resolve => { handled = resolve })
       await boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs => {
         await boss.complete(ctx.schema, jobs[0]!.id)
+        handled()
         return jobs.map(job => ({ id: job.id, status: 'failed' as const, output: new Error('too late') }))
       })
 
-      // The settle records the (attempted) failure on the spy after the no-op fail runs, so this
-      // resolving guarantees the guard executed.
-      await spy.waitForJobWithId(jobId, 'failed')
+      await started
+      await boss.offWork(ctx.schema, { wait: true })
 
       // The out-of-band completion stands; the per-job fail did nothing.
       const job = await ctx.boss.getJobById(ctx.schema, jobId)

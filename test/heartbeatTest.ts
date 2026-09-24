@@ -3,7 +3,7 @@ import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
-import Manager from '../src/manager.ts'
+import Db from '../src/db.ts'
 
 describe('heartbeat', function () {
   it('should auto-heartbeat during work and complete normally', async function () {
@@ -305,10 +305,15 @@ describe('heartbeat', function () {
     const errors: any[] = []
     ctx.boss.on('error', (err: any) => errors.push(err))
 
-    const spy = vi.spyOn(Manager.prototype, 'touch').mockRejectedValue(new Error('touch test error'))
+    const executeSql = Db.prototype.executeSql
+    const spy = vi.spyOn(Db.prototype, 'executeSql').mockImplementation(function (this: Db, text, values) {
+      if (text.includes('SET heartbeat_on =')) throw new Error('touch test error')
+      return executeSql.call(this, text, values)
+    })
 
     await ctx.boss.work(ctx.schema, { heartbeatRefreshSeconds: 0.5 }, async ([job]) => {
       await delay(1000)
+      expect(job.signal.aborted).toBe(false)
     })
 
     await delay(2000)

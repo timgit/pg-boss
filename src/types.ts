@@ -1244,6 +1244,8 @@ export interface Job<T = object> {
   id: string;
   name: string;
   data: T;
+  /** The claim attempt. A retry increments this value when the job is fetched again. */
+  retryCount: number;
   expireInSeconds: number;
   heartbeatSeconds: number | null;
   signal: AbortSignal;
@@ -1255,7 +1257,6 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   priority: number;
   state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
   retryLimit: number;
-  retryCount: number;
   retryDelay: number;
   retryBackoff: boolean;
   retryDelayMax?: number;
