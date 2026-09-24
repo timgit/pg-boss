@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import { delay } from '../src/tools.ts'
 import type { JobWithMetadata } from '../src/index.ts'
 
 describe('perJobResults', function () {
@@ -433,19 +434,25 @@ describe('perJobResults', function () {
       // distributed per-job fail runs, selectJobsToFailById finds no active row, so it short-circuits
       // (jobs.length === 0) instead of re-inserting - modelling a job that vanished mid-batch.
       const boss = ctx.boss
+      let handled!: () => void
+      const started = new Promise<void>(resolve => { handled = resolve })
       await boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs => {
         await boss.complete(ctx.schema, jobs[0]!.id)
+        handled()
         return jobs.map(job => ({ id: job.id, status: 'failed' as const, output: new Error('too late') }))
       })
 
-      // The settle records the (attempted) failure on the spy after the no-op fail runs, so this
-      // resolving guarantees the guard executed.
-      await spy.waitForJobWithId(jobId, 'failed')
+      // offWork waits for the batch in flight, so the per-job fail has run once it resolves.
+      await started
+      await boss.offWork(ctx.schema, { wait: true })
 
-      // The out-of-band completion stands; the per-job fail did nothing.
+      // The out-of-band completion stands; the per-job fail did nothing, and the spy says so too.
       const job = await ctx.boss.getJobById(ctx.schema, jobId)
       assertTruthy(job)
       expect(job.state).toBe('completed')
+
+      const recordedFailure = await Promise.race([spy.waitForJobWithId(jobId, 'failed').then(() => true), delay(500).then(() => false)])
+      expect(recordedFailure).toBe(false)
     })
   })
 

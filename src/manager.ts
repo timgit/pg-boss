@@ -411,18 +411,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
-    if (completed.length > 0) {
-      await this.#completeWithOutputs(name, completed.map(c => ({ id: c.job.id, retryCount: c.job.retryCount, output: c.output })))
-    }
-    if (failed.length > 0) {
-      await this.#failWithOutputs(name, failed.map(f => ({ id: f.job.id, retryCount: f.job.retryCount, output: f.output })))
-    }
-    if (deadLettered.length > 0) {
-      await this.#failWithOutputs(name, deadLettered.map(d => ({ id: d.job.id, retryCount: d.job.retryCount, output: d.output })), true)
+    const items = (entries: { job: types.Job<T>, output: unknown }[]) =>
+      entries.map(({ job, output }) => ({ id: job.id, retryCount: job.retryCount, output }))
+
+    const completedIds = completed.length > 0 ? await this.#completeWithOutputs(name, items(completed)) : null
+    const failedIds = failed.length > 0 ? await this.#failWithOutputs(name, items(failed)) : null
+    const deadLetteredIds = deadLettered.length > 0 ? await this.#failWithOutputs(name, items(deadLettered), true) : null
+
+    // Only the jobs each statement actually settled: the attempt fence leaves a job whose claim
+    // lapsed alone, and recording it would tell a spy it settled when another attempt holds it.
+    const landed = <E extends { job: types.Job<T> }>(entries: E[], result: types.CommandResponse | null) => {
+      const settled = new Set(result?.settled ?? [])
+      return entries.filter(entry => settled.has(entry.job.id))
     }
 
     // Dead lettered jobs end in the same terminal `failed` state as failed jobs on the source queue.
-    this.#trackJobsSettled(name, completed, [...failed, ...deadLettered])
+    this.#trackJobsSettled(name, landed(completed, completedIds), [...landed(failed, failedIds), ...landed(deadLettered, deadLetteredIds)])
   }
 
   // Complete a set of active jobs, each with its own output, in a constant number of statements
@@ -439,7 +443,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // completion is a single statement here too.
       const sql = plans.completeJobsWithOutputsDistributed(this.config.schema, table)
       const { rows } = await this.db.executeSql(sql, [name, JSON.stringify(payload)])
-      return { jobs: ids, requested: ids.length, affected: rows.length }
+      return { jobs: ids, requested: ids.length, affected: rows.length, settled: rows.map(row => row.id) }
     }
 
     const sql = plans.completeJobsWithOutputs(this.config.schema, table)
@@ -462,7 +466,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids, plans.attemptPairs(ids, items.map(item => item.retryCount))])
 
         if (jobs.length === 0) {
-          return { jobs: ids, requested: ids.length, affected: 0 }
+          return { jobs: ids, requested: ids.length, affected: 0, settled: [] }
         }
 
         // Only the rows the select matched: see failDistributed.
@@ -470,7 +474,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         await tx.executeSql(deleteQuery.text, [name, jobs.map(job => job.id)])
 
         const count = await this.reinsertFailedJobs(tx, table, jobs, null, outputById, forceTerminal)
-        return { jobs: ids, requested: ids.length, affected: count }
+        return { jobs: ids, requested: ids.length, affected: count, settled: jobs.map(job => job.id) }
       })
     }
 
@@ -570,7 +574,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const heartbeatCandidates = jobs.map(j => j.heartbeatSeconds || 0).filter(s => s > 0)
     const heartbeatSeconds = heartbeatCandidates.length ? Math.min(...heartbeatCandidates) : 0
     const ac = new AbortController()
-    jobs.forEach(job => { job.signal = ac.signal })
+
+    // Each job also gets a signal of its own, aborted when the heartbeat finds that job's claim gone
+    // (see the timer below), so a handler can stop work whose result can no longer land. Per job
+    // rather than per batch: a short heartbeat does not say why a job went missing, and the handler
+    // settling one of its own jobs early looks the same as another worker taking it. Aborting only
+    // the missing job makes that harmless, since a handler that settled a job no longer holds its
+    // claim either, and the rest of the batch runs on untouched.
+    const claims = new Map(jobs.map(job => [job.id, new AbortController()]))
+    jobs.forEach(job => { job.signal = AbortSignal.any([ac.signal, claims.get(job.id)!.signal]) })
 
     // Store AbortController on worker so it can be aborted after graceful shutdown
     if (worker) {
@@ -584,10 +596,33 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const refreshSeconds = heartbeatRefreshSeconds ?? (heartbeatSeconds / 2)
       const intervalMs = refreshSeconds * 1000
       heartbeatTimer = this.config.clock.setInterval(async () => {
+        const held = jobs.filter(job => !claims.get(job.id)!.signal.aborted)
+
+        if (held.length === 0) return
+
+        let touched: types.CommandResponse
+
         try {
-          await this.touch(name, jobs)
+          touched = await this.touch(name, held)
         } catch (err) {
+          // A heartbeat that could not run says nothing about the claim, so nothing is aborted.
           this.emit(events.error, err)
+          return
+        }
+
+        // Without the ids it refreshed, a heartbeat cannot tell which job went missing, so it aborts
+        // nothing rather than everything.
+        if (!touched.settled) return
+
+        // touch() is fenced to the attempts this worker fetched, so a job it did not refresh is no
+        // longer active under this worker's claim: retried or settled elsewhere, or settled by the
+        // handler itself.
+        const refreshed = new Set(touched.settled)
+
+        for (const job of held) {
+          if (!refreshed.has(job.id)) {
+            claims.get(job.id)!.abort(new Error(`job ${job.id} is no longer active under this worker's claim`))
+          }
         }
       }, intervalMs)
     }
@@ -1912,9 +1947,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
       jobs: ids,
       requested: ids.length,
       affected: result && result.rows ? parseInt(result.rows[0].count) : 0,
-      // The settle statements aggregate the ids they touched beside the count; the read-only
-      // mutators that share this mapper (resume, restore, retry, touch) do not, so it stays
-      // optional and #trackHandlerSettle falls back to the count when it is absent.
+      // The settle statements and touch() aggregate the ids they touched beside the count; the
+      // mutators that share this mapper without doing so (resume, restore, retry) leave it unset, so
+      // it stays optional and #trackHandlerSettle falls back to the count when it is absent.
       settled: result?.rows?.[0]?.ids
     }
   }

@@ -2216,9 +2216,9 @@ export function completeJobsWithOutputs (schema: string, table: string) {
       WHERE j.name = $1
         AND j.id = i.id
         ${recordsetAttemptFence('j.', 'i')}
-      RETURNING 1
+      RETURNING j.id
     )
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2497,9 +2497,9 @@ export function touchJobs (schema: string, table: string, fenced?: boolean) {
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.active}'
         ${fenced ? attemptFence(3) : ''}
-      RETURNING 1
+      RETURNING id
     )
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2751,7 +2751,7 @@ export function failJobsByIdWithOutputs (schema: string, table: string) {
       SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     ),
     ${failJobsBody(schema, table, where, output)}
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2766,7 +2766,7 @@ export function deadLetterJobsByIdWithOutputs (schema: string, table: string) {
       SELECT * FROM json_to_recordset($2::text::json) AS x (id uuid, retry_count int, output jsonb)
     ),
     ${failJobsBody(schema, table, where, output, true)}
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
