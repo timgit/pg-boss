@@ -267,7 +267,7 @@ The jobs argument is an array of jobs with the following properties.
 |`data`| object |
 |`retryCount`| number | How many times this job has been retried, which also identifies the attempt this worker holds |
 |`heartbeatSeconds`| number \| null | Heartbeat interval configured for this job, or null if not configured |
-|`signal`| AbortSignal |
+|`signal`| AbortSignal | Aborted when the handler runs past `expireInSeconds`, when pg-boss shuts down while it runs, or when a heartbeat finds this job no longer active under this worker's claim |
 
 
 An example of a worker that checks for a job every 10 seconds.
@@ -342,6 +342,8 @@ await boss.work('process-video', async ([ job ]) => {
   const result = await fetch('https://api.example.com/process', { signal: job.signal })
 })
 ```
+
+Each job has its own signal. On a queue with `heartbeatSeconds`, a heartbeat that finds a job no longer active under this worker's claim aborts that job's signal. Either the job was failed after its heartbeat went stale or it expired (and may already be running elsewhere), or it was completed, failed, cancelled or deleted, including by the handler itself. The rest of the batch keeps running. Whatever the handler returns for a job it no longer holds is discarded, so stopping early only saves the work. A heartbeat that fails to reach the database does not abort anything.
 
 ### `getWipData(options)`
 
