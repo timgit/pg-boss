@@ -81,6 +81,12 @@ const TRANSACTION_TIMEOUT_PROBE_COOLDOWN_MS = 60_000
 
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
 // fields must be coerced back to numbers when backend === 'cockroachdb'.
+// The retryCount each job was fetched with, parallel to its id: the token a worker's own settles
+// fence on (plans.attemptFence), so a worker whose claim lapsed cannot settle a newer attempt.
+function attemptsOf (jobs: { retryCount: number }[]): number[] {
+  return jobs.map(job => job.retryCount)
+}
+
 const NUMERIC_METADATA_FIELDS = [
   'priority',
   'retryLimit',
@@ -374,7 +380,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // The handler opted into perJobResults but did not return an array: a contract violation.
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
-      await this.fail(name, jobs.map(job => job.id), err)
+      await this.fail(name, jobs.map(job => job.id), err, {}, attemptsOf(jobs))
       await this.#trackJobsFailed(name, jobs, err)
       return
     }
@@ -408,13 +414,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     if (completed.length > 0) {
-      await this.#completeWithOutputs(name, completed.map(c => ({ id: c.job.id, output: c.output })))
+      await this.#completeWithOutputs(name, completed.map(c => ({ id: c.job.id, retryCount: c.job.retryCount, output: c.output })))
     }
     if (failed.length > 0) {
-      await this.#failWithOutputs(name, failed.map(f => ({ id: f.job.id, output: f.output })))
+      await this.#failWithOutputs(name, failed.map(f => ({ id: f.job.id, retryCount: f.job.retryCount, output: f.output })))
     }
     if (deadLettered.length > 0) {
-      await this.#failWithOutputs(name, deadLettered.map(d => ({ id: d.job.id, output: d.output })), true)
+      await this.#failWithOutputs(name, deadLettered.map(d => ({ id: d.job.id, retryCount: d.job.retryCount, output: d.output })), true)
     }
 
     // Dead lettered jobs end in the same terminal `failed` state as failed jobs on the source queue.
@@ -424,9 +430,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // Complete a set of active jobs, each with its own output, in a constant number of statements
   // (one on Postgres, two on a distributed backend). Outputs are serialized like complete()/fail()
   // and passed as a JSON recordset so the batch size doesn't drive the statement count.
-  async #completeWithOutputs (name: string, items: { id: string, output: unknown }[]): Promise<types.CommandResponse> {
+  // Each item carries the retryCount its job was fetched with, which the statement fences on.
+  async #completeWithOutputs (name: string, items: { id: string, retryCount: number, output: unknown }[]): Promise<types.CommandResponse> {
     const { table } = await this.getQueueCache(name)
-    const payload = items.map(item => ({ id: item.id, output: this.mapCompletionDataArg(item.output) }))
+    const payload = items.map(item => ({ id: item.id, retry_count: item.retryCount, output: this.mapCompletionDataArg(item.output) }))
     const ids = items.map(item => item.id)
 
     if (this.config.noMultiMutationCte) {
@@ -446,15 +453,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // distributed backend this reuses the select -> delete -> reinsert split, passing per-id outputs
   // to reinsertFailedJobs so each job keeps its own failure detail. When `forceTerminal` is set the
   // jobs fail terminally and route straight to the dead letter queue, bypassing remaining retries.
-  async #failWithOutputs (name: string, items: { id: string, output: unknown }[], forceTerminal = false): Promise<types.CommandResponse> {
+  async #failWithOutputs (name: string, items: { id: string, retryCount: number, output: unknown }[], forceTerminal = false): Promise<types.CommandResponse> {
     const { table } = await this.getQueueCache(name)
     const ids = items.map(item => item.id)
 
     if (this.config.noMultiMutationCte) {
       const outputById = new Map(items.map(item => [item.id, this.mapCompletionDataArg(item.output)]))
       return this.ensureTransaction(this.db, async (tx) => {
-        const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
-        const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
+        const selectQuery = plans.selectJobsToFailById(this.config.schema, table, true)
+        const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids, items.map(item => item.retryCount)])
 
         if (jobs.length === 0) {
           return { jobs: ids, requested: ids.length, affected: 0 }
@@ -469,7 +476,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       })
     }
 
-    const payload = items.map(item => ({ id: item.id, output: this.mapCompletionDataArg(item.output) }))
+    const payload = items.map(item => ({ id: item.id, retry_count: item.retryCount, output: this.mapCompletionDataArg(item.output) }))
     const sql = forceTerminal
       ? plans.deadLetterJobsByIdWithOutputs(this.config.schema, table)
       : plans.failJobsByIdWithOutputs(this.config.schema, table)
@@ -557,6 +564,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     transactionTimeoutSeconds?: number
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
+    const attempts = attemptsOf(jobs)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
     // Minimum, not maximum: heartbeatSeconds is per-job, and failJobsByHeartbeat fails a job once
     // its OWN heartbeat_on is stale by ITS OWN heartbeat_seconds. A refresh cadence derived from
@@ -580,7 +588,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const intervalMs = refreshSeconds * 1000
       heartbeatTimer = this.config.clock.setInterval(async () => {
         try {
-          await this.touch(name, jobIds)
+          await this.touch(name, jobIds, {}, attempts)
         } catch (err) {
           this.emit(events.error, err)
         }
@@ -650,7 +658,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // otherwise record pg-boss's own settle as one the handler made.
         const settledByHandler = transaction ? this.#takeHandlerSettles(transaction) : null
 
-        const completion = await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined, transaction ? { db: transaction.db } : undefined)
+        const completion = await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined, transaction ? { db: transaction.db } : {}, attempts)
         completedResult = result
         completedAffected = completion.affected
 
@@ -677,7 +685,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       }
 
-      await this.fail(name, jobIds, err)
+      await this.fail(name, jobIds, err, {}, attempts)
       failedError = err
       didFail = true
     } finally {
@@ -932,7 +940,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // jobs active and its completion finds nothing to settle. Its own failure is reported
         // rather than thrown: the remaining workers still have to be aborted.
         try {
-          await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
+          await this.fail(worker.name, jobIds, 'pg-boss shut down while active', {}, attemptsOf(worker.jobs))
         } catch (err: any) {
           try {
             this.emit(events.error, { ...err, message: err.message, stack: err.stack, queue: worker.name, worker: worker.id })
@@ -1052,6 +1060,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
             if (excess.length > 0) {
               const excessIds = excess.map(job => job.id)
               await this.restore(name, excessIds)
+
+              // A restored job is claimable again at the same retryCount (restore clears started_on,
+              // so the next claim does not increment it), and failWip() fails whatever is left in
+              // worker.jobs: left there, a shutdown would fail another worker's claim on it.
+              if (worker) worker.jobs = allowed
             }
 
             if (allowed.length > 0) {
@@ -1872,7 +1885,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async complete (name: string, id: string | string[], data?: object | null, options: types.CompleteOptions = {}) {
+  // `attempts` is the attempt fence (plans.attemptFence): the retryCount each job was fetched with,
+  // parallel to `id`. Only this worker's own settles pass it; PgBoss.complete() does not forward it.
+  async complete (name: string, id: string | string[], data?: object | null, options: types.CompleteOptions = {}, attempts?: number[]) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
@@ -1884,10 +1899,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // noMultiMutationCte: split the dependency-unblocking into a separate statement to
     // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
     if (this.config.noMultiMutationCte) {
-      response = await this.completeDistributed(name, ids, outputData, table, db, options.includeQueued)
+      response = await this.completeDistributed(name, ids, outputData, table, db, options.includeQueued, attempts)
     } else {
-      const sql = plans.completeJobs(this.config.schema, table, options.includeQueued)
-      const result = await db.executeSql(sql, [name, ids, outputData])
+      const sql = plans.completeJobs(this.config.schema, table, options.includeQueued, !!attempts)
+      const result = await db.executeSql(sql, attempts ? [name, ids, outputData, attempts] : [name, ids, outputData])
       response = this.mapCommandResponse(ids, result)
     }
 
@@ -1908,15 +1923,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return fn(db)
   }
 
-  private async completeDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, includeQueued?: boolean): Promise<types.CommandResponse> {
+  private async completeDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, includeQueued?: boolean, attempts?: number[]): Promise<types.CommandResponse> {
     // Dependency unblocking is handled out of band by the background resolver (Navigator), so
     // completion is a single statement on every backend.
-    const sql = plans.completeJobsDistributed(this.config.schema, table, includeQueued)
-    const { rows } = await db.executeSql(sql, [name, ids, outputData])
+    const sql = plans.completeJobsDistributed(this.config.schema, table, includeQueued, !!attempts)
+    const { rows } = await db.executeSql(sql, attempts ? [name, ids, outputData, attempts] : [name, ids, outputData])
     return { jobs: ids, requested: ids.length, affected: rows.length, settled: rows.map(row => row.id) }
   }
 
-  async fail (name: string, id: string | string[], data?: any, options: types.ConnectionOptions = {}) {
+  // `attempts` fences the fail to the attempts this worker claimed, as in complete().
+  async fail (name: string, id: string | string[], data?: any, options: types.ConnectionOptions = {}, attempts?: number[]) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'fail')
@@ -1929,10 +1945,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // The delete and re-insert run in a single transaction (see ensureTransaction) so the
     // job cannot be lost between the two statements.
     if (this.config.noMultiMutationCte) {
-      response = await this.failDistributed(name, ids, outputData, table, db)
+      response = await this.failDistributed(name, ids, outputData, table, db, attempts)
     } else {
-      const sql = plans.failJobsById(this.config.schema, table)
-      const result = await db.executeSql(sql, [name, ids, outputData])
+      const sql = plans.failJobsById(this.config.schema, table, !!attempts)
+      const result = await db.executeSql(sql, attempts ? [name, ids, outputData, attempts] : [name, ids, outputData])
       response = this.mapCommandResponse(ids, result)
     }
 
@@ -1941,13 +1957,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return response
   }
 
-  private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase): Promise<types.CommandResponse> {
+  private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, attempts?: number[]): Promise<types.CommandResponse> {
     // CockroachDB doesn't support multi-mutation CTEs, but does support transactions, so the
     // delete + re-insert is split into separate statements run atomically.
     return this.ensureTransaction(db, async (tx) => {
       // Step 1: Select jobs to fail
-      const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
-      const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
+      const selectQuery = plans.selectJobsToFailById(this.config.schema, table, !!attempts)
+      const { rows: jobs } = await tx.executeSql(selectQuery.text, attempts ? [name, ids, attempts] : [name, ids])
 
       if (jobs.length === 0) {
         return { jobs: ids, requested: ids.length, affected: 0, settled: [] }
@@ -2279,13 +2295,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async touch (name: string, id: string | string[], options: types.ConnectionOptions = {}): Promise<types.CommandResponse> {
+  // `attempts` fences the refresh to the attempts this worker claimed, as in complete(), so a worker
+  // that lost its claim cannot keep a newer attempt's heartbeat fresh.
+  async touch (name: string, id: string | string[], options: types.ConnectionOptions = {}, attempts?: number[]): Promise<types.CommandResponse> {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'touch')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.touchJobs(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, ids])
+    const sql = plans.touchJobs(this.config.schema, table, !!attempts)
+    const result = await db.executeSql(sql, attempts ? [name, ids, attempts] : [name, ids])
     return this.mapCommandResponse(ids, result)
   }
 
