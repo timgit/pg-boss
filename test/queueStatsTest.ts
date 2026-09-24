@@ -188,15 +188,20 @@ describe('queueStats', function () {
      * The window ends at job_now() unless `fromOpenTransactions` is set. Test
      * files run side by side on one database, and another file's open write
      * transaction would hold that end back and push a count into the next pass.
+     *
+     * The window's lag is zero here unless a test passes the real one: the
+     * production lag is a minute, and these tests are about what a window
+     * counts, not about waiting for it. The tests on the lag itself age the
+     * stamps instead.
      */
-    async function monitorPass (queue: string, throughput = true, fromOpenTransactions = false) {
+    async function monitorPass (queue: string, throughput = true, fromOpenTransactions = false, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
       )
 
-      await db.executeSql(plans.cacheQueueStats(schema, table, [queue], true, throughput, fromOpenTransactions))
+      await db.executeSql(plans.cacheQueueStats(schema, table, [queue], true, throughput, fromOpenTransactions, window))
       const { rows } = await db.executeSql(plans.getQueueStatsCache(schema), [queue])
 
       return rows[0]
@@ -349,12 +354,22 @@ describe('queueStats', function () {
       await ctx.boss.supervise(queue)
       await ctx.boss.send(queue)
       await ctx.boss.send(queue)
+      // The real monitor runs here, with the real lag: the sends are a minute
+      // too young to count until they are aged past it.
+      await age(queue, '2 minutes')
+      await windBack(queue, '3 minutes')
 
       await expect.poll(async () => {
         await ctx.boss!.supervise(queue)
         const series = await ctx.boss!.getQueueStats(queue)
         return series.reduce((sum, row) => sum + (row.createdDelta ?? 0), 0)
       }, { timeout: 10_000, interval: 500 }).toBe(2)
+
+      // Each snapshot says when the interval its counters cover ended, which
+      // trails the pass by the lag.
+      const [newest] = await ctx.boss.getQueueStats(queue)
+      expect(newest.deltaOn).toBeInstanceOf(Date)
+      expect(newest.capturedOn.getTime() - newest.deltaOn!.getTime()).toBeGreaterThanOrEqual(60_000)
     })
 
     /** Nobody counted, so the answer is null — zero would say the queue was idle. */
@@ -406,6 +421,84 @@ describe('queueStats', function () {
         `UPDATE ${schema}.queue SET delta_on = ${schema}.job_now() - interval '${interval}' WHERE name = $1`, [queue]
       )
     }
+
+    /** Ages this queue's jobs, so a stamp lands before a window end that trails the pass. */
+    async function age (queue: string, interval: string) {
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      await db.executeSql(
+        `UPDATE ${schema}.job
+         SET created_on = created_on - interval '${interval}', completed_on = completed_on - interval '${interval}'
+         WHERE name = $1`, [queue]
+      )
+    }
+
+    /**
+     * The window ends a minute behind the pass, not at it. A job's stamp is the
+     * start of the transaction that wrote it, and the row is only visible once
+     * that transaction commits, so a window ending at the pass stepped past any
+     * stamp still in flight. Trailing by a minute, a transaction that commits
+     * within a minute of starting is counted whatever role it runs as, and on
+     * every backend. The cost is that a job just finished waits a pass or two
+     * to be counted.
+     */
+    it('ends the window a minute behind the pass', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await monitorPass(queue, true, false, {})
+      await ctx.boss.send(queue)
+
+      // Just sent, so still inside the lag: not counted, and the window's end
+      // says so.
+      const young = await monitorPass(queue, true, false, {})
+      expect(young.createdDelta).toBe(0)
+      expect(young.capturedOn.getTime() - young.deltaOn.getTime()).toBeGreaterThanOrEqual(60_000)
+      expect(young.capturedOn.getTime() - young.deltaOn.getTime()).toBeLessThan(65_000)
+
+      // Once the stamp is older than the lag, the next window covers it.
+      await age(queue, '90 seconds')
+      await windBack(queue, '3 minutes')
+      expect((await monitorPass(queue, true, false, {})).createdDelta).toBe(1)
+    })
+
+    /**
+     * Counters describe the minute before the gauges next to them, so bucketing
+     * both by capture time would set every counter a bucket late. Gauges are
+     * bucketed by capturedOn and counters by deltaOn, joined per bucket, and the
+     * newest bucket has no counters until the pass that counts its minute runs.
+     */
+    it('buckets the counters by the interval they cover, beside the gauges of that minute', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      // Far enough back that nothing the running monitor writes can land in the range.
+      const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+      const minute = (n: number) => new Date(hour - n * 60_000)
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      await db.executeSql(
+        `INSERT INTO ${schema}.queue_stats (name, ready_count, completed_delta, delta_seconds, delta_on, captured_on)
+         VALUES ($1, 5, 0, 60, $2, $3), ($1, 7, 4, 60, $4, $5)`,
+        [queue, minute(31), minute(30), minute(30), minute(29)]
+      )
+
+      const buckets = await ctx.boss.getQueueStats(queue, { bucketSeconds: 60, from: minute(30), to: minute(25) })
+      expect(buckets.map(b => b.capturedOn.getTime())).toEqual([minute(29).getTime(), minute(30).getTime()])
+
+      // The row captured at minute 29 carries the gauges of that minute and the
+      // counters of the minute before it, which sit beside that minute's gauges.
+      const [newest, aligned] = buckets
+      expect(newest.readyCount).toBe(7)
+      expect(newest.completedDelta).toBe(null)
+      expect(newest.deltaOn).toBe(null)
+      expect(aligned.readyCount).toBe(5)
+      expect(aligned.completedDelta).toBe(4)
+      expect(aligned.deltaSeconds).toBe(60)
+      expect(aligned.deltaOn!.getTime()).toBe(minute(30).getTime())
+    })
 
     /**
      * Passes are not evenly spaced. One the vacuum backoff deferred covers
@@ -498,8 +591,8 @@ describe('queueStats', function () {
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
       await db.executeSql(
-        `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, captured_on)
-         VALUES ($1, 4, 60, $2), ($1, 6, 150, $3)`,
+        `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on)
+         VALUES ($1, 4, 60, $2::timestamptz - interval '60 seconds', $2), ($1, 6, 150, $3::timestamptz - interval '60 seconds', $3)`,
         [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000)]
       )
 
@@ -633,7 +726,7 @@ describe('queueStats', function () {
 
       const windowEnd = async (holdBackMax?: string) => {
         await reader.query('BEGIN')
-        await reader.query(plans.setDeltaWindowEnd(schema, holdBackMax))
+        await reader.query(plans.setDeltaWindowEnd(schema, { lag: "interval '0'", holdBackMax }))
         const { rows: [row] } = await reader.query(
           `SELECT current_setting('${plans.DELTA_WINDOW_END_SETTING}')::timestamptz AS "end", now() AS at`
         )
@@ -676,6 +769,9 @@ describe('queueStats', function () {
       await ctx.boss.supervise(queue)
       await ctx.boss.send(queue)
       await ctx.boss.send(queue)
+      // Aged past the lag so the next pass counts them; see the history test above.
+      await age(queue, '2 minutes')
+      await windBack(queue, '3 minutes')
       await new Promise(resolve => setTimeout(resolve, 1100))
       await ctx.boss.supervise(queue)
 

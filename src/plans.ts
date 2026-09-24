@@ -1316,6 +1316,7 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
       q.completed_delta as "completedDelta",
       q.failed_delta as "failedDelta",
       q.delta_seconds as "deltaSeconds",
+      q.delta_on as "deltaOn",
       q.singletons_active as "singletonsActive",
       q.table_name as "table",
       q.created_on as "createdOn",
@@ -1540,6 +1541,10 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       -- (a backed-off or missed pass covers several intervals), so a rate is
       -- sum(delta) / sum(delta_seconds), never delta / bucket width.
       delta_seconds   int,
+      -- Where that interval ends. Not captured_on: the window trails the pass
+      -- by DELTA_LAG (see plans.ts), so the counters describe an earlier minute
+      -- than the gauges in the same row, and this is the time to plot them at.
+      delta_on        timestamptz,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
@@ -1638,9 +1643,9 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
   const sql = `
     INSERT INTO ${schema}.queue_stats
       (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-       created_delta, completed_delta, failed_delta, delta_seconds, captured_on)
+       created_delta, completed_delta, failed_delta, delta_seconds, delta_on, captured_on)
     SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-           created_delta, completed_delta, failed_delta, delta_seconds, ${schema}.job_now()
+           created_delta, completed_delta, failed_delta, delta_seconds, delta_on, ${schema}.job_now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -1673,6 +1678,7 @@ export function getQueueStatsCache (schema: string): string {
       completed_delta as "completedDelta",
       failed_delta    as "failedDelta",
       delta_seconds   as "deltaSeconds",
+      delta_on        as "deltaOn",
       table_name     as "table",
       monitor_on     as "capturedOn",
       (extract(epoch from (${schema}.job_now() - monitor_on)) * 1000)::float8 as "cacheAgeMs",
@@ -1696,6 +1702,7 @@ export function getQueueStatsHistory (schema: string): string {
       completed_delta as "completedDelta",
       failed_delta    as "failedDelta",
       delta_seconds   as "deltaSeconds",
+      delta_on        as "deltaOn",
       captured_on    as "capturedOn"
     FROM ${schema}.queue_stats
     WHERE name = $1
@@ -1732,6 +1739,13 @@ const STATS_AGG = {
 // labelled as a count, which reads plausible and is wrong by whatever the
 // bucket width happens to be.
 //
+// They are also bucketed by a different time. A gauge belongs to the moment it was read,
+// captured_on. The counters in that same row describe an interval that ended DELTA_LAG earlier,
+// delta_on, so keyed on captured_on they would land a bucket or two late and sit beside the wrong
+// gauges. Each side is bucketed by its own time and the two are joined per bucket, which is why the
+// newest bucket carries null counters: the pass that counts its minute has not run yet, and a
+// later read fills it in.
+//
 // The bucket key avoids date_bin() (PG14+): pg-boss supports PostgreSQL 13+ and CockroachDB/
 // YugabyteDB, none of which can rely on it. to_timestamp / extract(epoch) / floor exist on all of
 // them (extract returns double on PG13, numeric on PG14+; floor/division handle both identically),
@@ -1763,25 +1777,55 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
   // newest N. Explicit bucketSeconds has no target to overshoot, so it keeps the raw limit.
   const limit = mode === 'auto' ? 'least($4, $5)' : '$4'
 
+  const bucket = (column: string) => `to_timestamp(floor(extract(epoch from ${column}) / w.secs) * w.secs)`
+
   return `
-    ${widthCte}
+    ${widthCte},
+    gauges AS (
+      SELECT
+        ${bucket('captured_on')} as bucket,
+        ${agg('deferred_count')} as "deferredCount",
+        ${agg('queued_count')}   as "queuedCount",
+        ${agg('ready_count')}    as "readyCount",
+        ${agg('active_count')}   as "activeCount",
+        ${agg('failed_count')}   as "failedCount",
+        ${agg('total_count')}    as "totalCount"
+      FROM ${schema}.queue_stats, w
+      WHERE name = $1
+        AND ($2::timestamptz IS NULL OR captured_on >= $2)
+        AND ($3::timestamptz IS NULL OR captured_on <= $3)
+      GROUP BY 1
+    ),
+    counters AS (
+      SELECT
+        ${bucket('delta_on')} as bucket,
+        sum(created_delta)::int   as "createdDelta",
+        sum(completed_delta)::int as "completedDelta",
+        sum(failed_delta)::int    as "failedDelta",
+        sum(delta_seconds)::int   as "deltaSeconds",
+        max(delta_on)             as "deltaOn"
+      FROM ${schema}.queue_stats, w
+      WHERE name = $1
+        AND delta_on IS NOT NULL
+        AND ($2::timestamptz IS NULL OR delta_on >= $2)
+        AND ($3::timestamptz IS NULL OR delta_on <= $3)
+      GROUP BY 1
+    )
     SELECT
-      to_timestamp(floor(extract(epoch from captured_on) / w.secs) * w.secs) as "capturedOn",
-      ${agg('deferred_count')} as "deferredCount",
-      ${agg('queued_count')}   as "queuedCount",
-      ${agg('ready_count')}    as "readyCount",
-      ${agg('active_count')}   as "activeCount",
-      ${agg('failed_count')}   as "failedCount",
-      ${agg('total_count')}    as "totalCount",
-      sum(created_delta)::int   as "createdDelta",
-      sum(completed_delta)::int as "completedDelta",
-      sum(failed_delta)::int    as "failedDelta",
-      sum(delta_seconds)::int   as "deltaSeconds"
-    FROM ${schema}.queue_stats, w
-    WHERE name = $1
-      AND ($2::timestamptz IS NULL OR captured_on >= $2)
-      AND ($3::timestamptz IS NULL OR captured_on <= $3)
-    GROUP BY 1
+      COALESCE(g.bucket, c.bucket) as "capturedOn",
+      g."deferredCount",
+      g."queuedCount",
+      g."readyCount",
+      g."activeCount",
+      g."failedCount",
+      g."totalCount",
+      c."createdDelta",
+      c."completedDelta",
+      c."failedDelta",
+      c."deltaSeconds",
+      c."deltaOn"
+    FROM gauges g
+      FULL JOIN counters c ON c.bucket = g.bucket
     ORDER BY 1 DESC
     LIMIT ${limit}
   `
@@ -3330,30 +3374,44 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // finished before it. Only a statement that counts moves delta_on, so an uncounted pass in between
 // leaves the window open and the next counted pass picks its jobs up.
 //
-// It ends where every job stamped before it is known to be committed, not at now(). created_on and
-// completed_on come from job_now(), the start of the transaction that wrote them, so a job
+// It ends where every job stamped before it is known to be committed, which is not now(). created_on
+// and completed_on come from job_now(), the start of the transaction that wrote them, so a job
 // completed by a transactional worker, or sent inside an application's transaction, carries a
 // stamp from before a pass it commits after. A window ending at now() moved past that stamp while
-// the row was still invisible, and no later pass counted it. The end is instead the start of the
-// oldest transaction still open (see setDeltaWindowEnd): anything stamped before it is from a
-// transaction that has finished, and anything stamped after waits for the next pass. A long
-// transaction delays the count rather than losing it.
+// the row was still invisible, and no later pass counted it.
+//
+// So the end trails the pass by DELTA_LAG. A transaction that commits within the lag of starting is
+// counted whatever role it runs as and whatever the backend, because its stamp is still ahead of
+// the end when it lands. The counters are a minute behind the gauges in the same row, which is what
+// delta_on on the snapshot is for. On PostgreSQL the end is held back further, to the start of the
+// oldest transaction the monitoring role can see still open (see setDeltaWindowEnd), which covers a
+// transactional worker whose handler runs longer than the lag. A long transaction delays the count
+// rather than losing it.
 //
 // A window older than DELTA_WINDOW_MAX starts afresh instead: counting was off for a while, and
 // landing hours of work on one snapshot would chart as a spike at the moment it was switched back
 // on. Null in, null out, so those comparisons count nothing, the same as a queue never counted.
 // The end is never held back further than that either (see setDeltaWindowEnd), so an open
 // transaction can only delay counting, never push a window's start out of range and reset it.
+//
+// Both intervals are fixed rather than configured. delta_on is shared by every instance, and a
+// window that one instance measured with a different lag than the last would count a minute twice
+// or skip it. Sixty seconds covers any transaction an OLTP application should be holding open, and
+// is the default monitor interval, so each snapshot's counters cover the interval before the last.
+const DELTA_LAG = "interval '60 seconds'"
 const DELTA_WINDOW_MAX = "interval '1 hour'"
 export const DELTA_WINDOW_END_SETTING = 'pgboss.delta_window_end'
 
-// Where this pass's window ends: the value setDeltaWindowEnd stored, or job_now() on a backend whose
-// pg_stat_activity doesn't show its transactions (CockroachDB, YugabyteDB), which keeps the
-// late-commit gap there.
-function deltaWindowEnd (schema: string, fromOpenTransactions: boolean): string {
+// Test seams for the two intervals above. Nothing in production passes them: a test cannot wait a
+// minute for the lag or hold a transaction open for an hour.
+export interface DeltaWindowOptions { lag?: string, holdBackMax?: string }
+
+// Where this pass's window ends: the value setDeltaWindowEnd stored, or the lag alone on a backend
+// whose pg_stat_activity doesn't show its transactions (CockroachDB, YugabyteDB).
+function deltaWindowEnd (schema: string, fromOpenTransactions: boolean, lag = DELTA_LAG): string {
   return fromOpenTransactions
     ? `current_setting('${DELTA_WINDOW_END_SETTING}')::timestamptz`
-    : `${schema}.job_now()`
+    : `(${schema}.job_now() - ${lag})`
 }
 
 function deltaWindowStart (alias: string, end: string): string {
@@ -3387,13 +3445,12 @@ function deltaWindowStart (alias: string, end: string): string {
 // under a test clock. A DO block, because a SELECT would add its row to the ones the monitor reads
 // back from this transaction.
 //
-// holdBackMax is a test seam: the cap is an hour, and a test cannot hold a transaction open that long.
-export function setDeltaWindowEnd (schema: string, holdBackMax = DELTA_WINDOW_MAX): string {
+export function setDeltaWindowEnd (schema: string, { lag = DELTA_LAG, holdBackMax = DELTA_WINDOW_MAX }: DeltaWindowOptions = {}): string {
   return `
     DO $$
     BEGIN
       PERFORM pg_catalog.set_config('${DELTA_WINDOW_END_SETTING}', LEAST(
-        ${schema}.job_now(),
+        ${schema}.job_now() - ${lag},
         (
           SELECT min(GREATEST(a.xact_start, pg_catalog.now() - ${holdBackMax}))
           FROM pg_catalog.pg_stat_activity a
@@ -3445,10 +3502,10 @@ function throughputAssignments (end: string): string {
 // it once and probes per row. The alternative, a second pass over the job table
 // filtered on completed_on, would be a whole extra scan of the largest table in
 // the schema, and there is no index on that column to make it cheaper.
-export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, fromOpenTransactions = false): SqlQuery {
+export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, fromOpenTransactions = false, lag?: string): SqlQuery {
   // Counted only with persistQueueStats. Otherwise the aggregate does what it did before throughput
   // existed: no join, no extra counts, no cost. The measured price is in the `persistQueueStats` docs.
-  const end = deltaWindowEnd(schema, fromOpenTransactions)
+  const end = deltaWindowEnd(schema, fromOpenTransactions, lag)
   const inWindow = (column: string) => `j.${column} >= ${deltaWindowStart('q', end)} AND j.${column} < ${end}`
   const counters = throughput
     ? {
@@ -3504,15 +3561,15 @@ export const READY_HISTORY_SIZE = 60
 const PIN_SECONDS_SQL = 'EXTRACT(EPOCH FROM (clock_timestamp() - transaction_timestamp()))::float8'
 /* eslint-enable no-restricted-syntax */
 
-// fromOpenTransactions ends the throughput window at the oldest open transaction rather than
-// job_now() (see setDeltaWindowEnd). Only meaningful with throughput, and only on a backend whose
+// fromOpenTransactions ends the throughput window at the oldest open transaction rather than the lag
+// alone (see setDeltaWindowEnd). Only meaningful with throughput, and only on a backend whose
 // pg_stat_activity shows its transactions.
-export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, throughput?: boolean, fromOpenTransactions?: boolean): string {
+export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, throughput?: boolean, fromOpenTransactions?: boolean, window: DeltaWindowOptions = {}): string {
   const fromOpen = Boolean(throughput && fromOpenTransactions)
-  const statsQuery = getQueueStats(schema, table, queues, throughput, fromOpen)
+  const statsQuery = getQueueStats(schema, table, queues, throughput, fromOpen, window.lag)
   // The aggregate only produces these when counting, so the assignment has to
   // disappear with them rather than reference a column that is not there.
-  const throughputSet = throughput ? throughputAssignments(deltaWindowEnd(schema, fromOpen)) : ''
+  const throughputSet = throughput ? throughputAssignments(deltaWindowEnd(schema, fromOpen, window.lag)) : ''
   // Serialize the $1 parameter for use in the multi-statement transaction below
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
   const lock = tryAdvisoryLock(schema, 'queue-stats', noAdvisoryLocks)
@@ -3578,7 +3635,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
 
   // transaction(), not locked(): the lock is taken inside the statement with try rather than by a
   // preceding blocking one. The wrapper is still wanted for its SET LOCAL timeouts.
-  return transaction(fromOpen ? [setDeltaWindowEnd(schema), sql] : sql)
+  return transaction(fromOpen ? [setDeltaWindowEnd(schema, window), sql] : sql)
 }
 
 // Recompute one queue's counts from the job table and write them back to the queue-table cache
@@ -3641,6 +3698,7 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
       queue.completed_delta as "completedDelta",
       queue.failed_delta as "failedDelta",
       queue.delta_seconds as "deltaSeconds",
+      queue.delta_on as "deltaOn",
       queue.monitor_on as "capturedOn"
   `
 }

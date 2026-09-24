@@ -634,6 +634,13 @@
       },
       {
         "table": "queue_stats",
+        "column": "delta_on",
+        "type": "timestamp with time zone",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
         "column": "delta_seconds",
         "type": "integer",
         "notNull": false,
@@ -1674,6 +1681,13 @@
         "type": "integer",
         "notNull": true,
         "default": "0"
+      },
+      {
+        "table": "queue_stats",
+        "column": "delta_on",
+        "type": "timestamp with time zone",
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",

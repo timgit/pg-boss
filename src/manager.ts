@@ -2576,6 +2576,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         failedDelta: null,
         createdDelta: null,
         deltaSeconds: null,
+        deltaOn: null,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
@@ -2587,6 +2588,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // CockroachDB returns integer columns as strings; normalize the counts.
         if (value !== undefined && value !== null) snapshot[field] = isCockroach ? Number(value) : value
       }
+
+      // The end of the interval the counters cover. Handed on as the row holds it, like capturedOn,
+      // and left null with the counters while nobody counts.
+      if (this.config.persistQueueStats && row?.deltaOn != null) snapshot.deltaOn = row.deltaOn
 
       return snapshot
     }

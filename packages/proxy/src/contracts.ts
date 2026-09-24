@@ -257,6 +257,7 @@ export const queueResultSchema = z.object({
   failedDelta: z.number(),
   createdDelta: z.number(),
   deltaSeconds: z.number().nullable(),
+  deltaOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
   table: z.string(),
   createdOn: z.iso.datetime().transform((val) => new Date(val)),
   updatedOn: z.iso.datetime().transform((val) => new Date(val)),
@@ -633,6 +634,7 @@ export const queueStatsSchema = z.object({
   failedDelta: z.number().nullable(),
   createdDelta: z.number().nullable(),
   deltaSeconds: z.number().nullable(),
+  deltaOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
   capturedOn: z.iso.datetime().transform((val) => new Date(val)),
 }) satisfies z.ZodType<types.HttpQueueStats>
 

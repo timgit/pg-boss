@@ -311,6 +311,18 @@ export interface QueueStats {
    * pass, which has no window yet.
    */
   deltaSeconds: number | null;
+  /**
+   * When the interval the three deltas cover ends; it starts `deltaSeconds` earlier.
+   *
+   * This is not `capturedOn`. The window trails each pass by a minute, so that a job stamped
+   * inside a transaction that commits within a minute of starting is counted whatever role it
+   * ran as, and the counters in a snapshot describe the minute before the gauges next to them.
+   * Plot them at `deltaOn`. In a bucketed series the counters are already placed by it, and the
+   * newest bucket's counters are null until the pass that counts its minute has run.
+   *
+   * Null when nothing counted.
+   */
+  deltaOn: Date | null;
   capturedOn: Date;
 }
 
@@ -970,6 +982,8 @@ export interface QueueResult extends Queue {
   createdDelta: number;
   /** Seconds the three deltas cover. See `QueueStats.deltaSeconds`. Null until a pass counts. */
   deltaSeconds: number | null;
+  /** When that interval ends, a minute behind the pass. See `QueueStats.deltaOn`. Null until a pass counts. */
+  deltaOn: Date | null;
   table: string;
   createdOn: Date;
   updatedOn: Date;

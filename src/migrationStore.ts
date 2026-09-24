@@ -1885,10 +1885,11 @@ AS $function$
       // answer it — five hundred jobs arriving and five hundred leaving looks
       // exactly like a queue where nothing happened.
       //
-      // Three columns on `queue` for the latest interval and three on
-      // `queue_stats` for the history, matching how every other count here
-      // already travels. Neither form rewrites the table, which matters on
-      // `queue_stats`: it is partitioned and large on a busy installation.
+      // Three counters and the window they cover on `queue` for the latest
+      // interval, and the same on `queue_stats` for the history, matching how
+      // every other count here already travels. Neither form rewrites the
+      // table, which matters on `queue_stats`: it is partitioned and large on a
+      // busy installation.
       //
       // The history columns are nullable with no default, unlike the gauges.
       // Every snapshot already recorded predates the counting, and a default of
@@ -1917,7 +1918,8 @@ AS $function$
           ADD COLUMN created_delta int,
           ADD COLUMN completed_delta int,
           ADD COLUMN failed_delta int,
-          ADD COLUMN delta_seconds int`,
+          ADD COLUMN delta_seconds int,
+          ADD COLUMN delta_on timestamp with time zone`,
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_output jsonb`
       ],
       uninstall: [
@@ -1931,7 +1933,8 @@ AS $function$
           DROP COLUMN created_delta,
           DROP COLUMN completed_delta,
           DROP COLUMN failed_delta,
-          DROP COLUMN delta_seconds`,
+          DROP COLUMN delta_seconds,
+          DROP COLUMN delta_on`,
         `ALTER TABLE ${schema}.job DROP COLUMN source_output`
       ]
     }
