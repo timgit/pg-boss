@@ -755,6 +755,53 @@ describe('queueStats', function () {
     })
 
     /**
+     * The window a transaction held back has to survive the transaction ending.
+     * While it is open past the cap, each pass ends its window the cap behind
+     * itself and starts the next one there. When it commits, the next pass's
+     * end springs forward to its own time, so that window is the cap plus a
+     * pass interval long. A reset threshold equal to the cap called that stale
+     * and dropped it: the hour the transaction had only delayed was lost after
+     * all, at the moment it ended.
+     *
+     * Intervals shrunk through the seams: a two second cap, a four second
+     * threshold, no lag.
+     */
+    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('counts the window a transaction held back once it ends', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      const window: plans.DeltaWindowOptions = { lag: "interval '0'", holdBackMax: "interval '2 seconds'", resetMax: "interval '4 seconds'" }
+      await monitorPass(queue, true, true, window)
+
+      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
+      await holder.connect()
+
+      try {
+        await holder.query('BEGIN')
+        await holder.query('SELECT 1')
+        // Open past the cap, so the pass ends its window the cap behind itself.
+        await new Promise(resolve => setTimeout(resolve, 2_500))
+
+        // Sent inside the held-back stretch: after this pass's end, before the next one's.
+        await ctx.boss.send(queue)
+        const held = await monitorPass(queue, true, true, window)
+        expect(held.createdDelta).toBe(0)
+
+        await holder.query('COMMIT')
+      } finally {
+        await holder.end()
+      }
+
+      // The end springs forward, and the window it closes covers the send.
+      let counted = 0
+      await expect.poll(async () => {
+        counted += (await monitorPass(queue, true, true, window)).createdDelta
+        return counted
+      }, { timeout: 5_000, interval: 200 }).toBe(1)
+    })
+
+    /**
      * Another instance holding the stats lock means this pass wrote nothing,
      * and the snapshot it inserted anyway was a copy of the previous pass's
      * counters, which the history then counted twice.

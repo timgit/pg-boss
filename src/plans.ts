@@ -3388,23 +3388,33 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // transactional worker whose handler runs longer than the lag. A long transaction delays the count
 // rather than losing it.
 //
-// A window older than DELTA_WINDOW_MAX starts afresh instead: counting was off for a while, and
-// landing hours of work on one snapshot would chart as a spike at the moment it was switched back
-// on. Null in, null out, so those comparisons count nothing, the same as a queue never counted.
-// The end is never held back further than that either (see setDeltaWindowEnd), so an open
-// transaction can only delay counting, never push a window's start out of range and reset it.
+// The hold-back has a cap, DELTA_WINDOW_MAX: the end is never held further behind now than that (see
+// setDeltaWindowEnd), so an open transaction can only delay counting, and only what it commits
+// later than the cap is missed.
 //
-// Both intervals are fixed rather than configured. delta_on is shared by every instance, and a
+// A window whose start is more than DELTA_RESET_MAX behind its end starts afresh instead: counting
+// was off for a while, and landing hours of work on one snapshot would chart as a spike at the
+// moment it was switched back on. Null in, null out, so those comparisons count nothing, the same
+// as a queue never counted. The threshold is deliberately looser than the cap. A window starts
+// where the last one ended, and that end could have been held the full cap behind its pass; when
+// the transaction holding it commits, the next end springs forward to its own pass, so the window is
+// legitimately as long as the cap plus the gap between the two passes. A threshold equal to the cap
+// reset exactly there, and the hour the transaction had delayed was dropped after all, at the moment
+// it ended rather than the moment it began. Twice the cap tolerates a gap of up to an hour between
+// counted passes, which is where "counting was off" starts.
+//
+// All three intervals are fixed rather than configured. delta_on is shared by every instance, and a
 // window that one instance measured with a different lag than the last would count a minute twice
 // or skip it. Sixty seconds covers any transaction an OLTP application should be holding open, and
 // is the default monitor interval, so each snapshot's counters cover the interval before the last.
 const DELTA_LAG = "interval '60 seconds'"
 const DELTA_WINDOW_MAX = "interval '1 hour'"
+const DELTA_RESET_MAX = "interval '2 hours'"
 export const DELTA_WINDOW_END_SETTING = 'pgboss.delta_window_end'
 
-// Test seams for the two intervals above. Nothing in production passes them: a test cannot wait a
+// Test seams for the intervals above. Nothing in production passes them: a test cannot wait a
 // minute for the lag or hold a transaction open for an hour.
-export interface DeltaWindowOptions { lag?: string, holdBackMax?: string }
+export interface DeltaWindowOptions { lag?: string, holdBackMax?: string, resetMax?: string }
 
 // Where this pass's window ends: the value setDeltaWindowEnd stored, or the lag alone on a backend
 // whose pg_stat_activity doesn't show its transactions (CockroachDB, YugabyteDB).
@@ -3414,8 +3424,8 @@ function deltaWindowEnd (schema: string, fromOpenTransactions: boolean, lag = DE
     : `(${schema}.job_now() - ${lag})`
 }
 
-function deltaWindowStart (alias: string, end: string): string {
-  return `(CASE WHEN ${alias}.delta_on > ${end} - ${DELTA_WINDOW_MAX} THEN ${alias}.delta_on END)`
+function deltaWindowStart (alias: string, end: string, resetMax = DELTA_RESET_MAX): string {
+  return `(CASE WHEN ${alias}.delta_on > ${end} - ${resetMax} THEN ${alias}.delta_on END)`
 }
 
 // Runs as its own statement, ahead of the aggregate in the same transaction. The order is what makes
@@ -3434,10 +3444,9 @@ function deltaWindowStart (alias: string, end: string): string {
 // DELTA_WINDOW_MAX behind and reset it: one transaction left open for an hour (a forgotten BEGIN in
 // a psql session) wiped that hour's counts for every queue. Capped, the end walks forward
 // DELTA_WINDOW_MAX behind now for as long as the transaction stays open, every pass still counts
-// its own window, and only what that transaction commits later than the cap is missed. The cap and
-// the reset threshold are the same interval on purpose: a window starts where the last one ended,
-// which is at most the cap behind that pass, so the start stays in range whenever counted passes
-// are less than DELTA_WINDOW_MAX apart, which is the same condition as before.
+// its own window, and only what that transaction commits later than the cap is missed. The reset
+// threshold has to be looser than the cap for that to hold when the transaction ends; see
+// DELTA_RESET_MAX.
 //
 // A transaction whose xact_start this role can't read (another role's backend reads NULL there) is
 // not seen, and jobs it commits late are not counted. xact_start is real time and the stamps are
@@ -3467,8 +3476,8 @@ export function setDeltaWindowEnd (schema: string, { lag = DELTA_LAG, holdBackMa
 // the update, so delta_seconds is measured from the same window the counts used, and an idle queue
 // (no job rows, so no stats row) still records zero over a real number of seconds. The window never
 // moves backwards, even if the end lands before the last one.
-function throughputAssignments (end: string): string {
-  const start = deltaWindowStart('queue', end)
+function throughputAssignments (end: string, resetMax?: string): string {
+  const start = deltaWindowStart('queue', end, resetMax)
   // CASE rather than GREATEST(0, ...): GREATEST skips NULLs, and a pass with no window has to
   // record null seconds, not zero.
   const seconds = `round(extract(epoch from (${end} - ${start})))::int`
@@ -3502,11 +3511,11 @@ function throughputAssignments (end: string): string {
 // it once and probes per row. The alternative, a second pass over the job table
 // filtered on completed_on, would be a whole extra scan of the largest table in
 // the schema, and there is no index on that column to make it cheaper.
-export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, fromOpenTransactions = false, lag?: string): SqlQuery {
+export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, fromOpenTransactions = false, window: DeltaWindowOptions = {}): SqlQuery {
   // Counted only with persistQueueStats. Otherwise the aggregate does what it did before throughput
   // existed: no join, no extra counts, no cost. The measured price is in the `persistQueueStats` docs.
-  const end = deltaWindowEnd(schema, fromOpenTransactions, lag)
-  const inWindow = (column: string) => `j.${column} >= ${deltaWindowStart('q', end)} AND j.${column} < ${end}`
+  const end = deltaWindowEnd(schema, fromOpenTransactions, window.lag)
+  const inWindow = (column: string) => `j.${column} >= ${deltaWindowStart('q', end, window.resetMax)} AND j.${column} < ${end}`
   const counters = throughput
     ? {
         select: `
@@ -3566,10 +3575,10 @@ const PIN_SECONDS_SQL = 'EXTRACT(EPOCH FROM (clock_timestamp() - transaction_tim
 // pg_stat_activity shows its transactions.
 export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, throughput?: boolean, fromOpenTransactions?: boolean, window: DeltaWindowOptions = {}): string {
   const fromOpen = Boolean(throughput && fromOpenTransactions)
-  const statsQuery = getQueueStats(schema, table, queues, throughput, fromOpen, window.lag)
+  const statsQuery = getQueueStats(schema, table, queues, throughput, fromOpen, window)
   // The aggregate only produces these when counting, so the assignment has to
   // disappear with them rather than reference a column that is not there.
-  const throughputSet = throughput ? throughputAssignments(deltaWindowEnd(schema, fromOpen, window.lag)) : ''
+  const throughputSet = throughput ? throughputAssignments(deltaWindowEnd(schema, fromOpen, window.lag), window.resetMax) : ''
   // Serialize the $1 parameter for use in the multi-statement transaction below
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
   const lock = tryAdvisoryLock(schema, 'queue-stats', noAdvisoryLocks)
