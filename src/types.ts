@@ -715,6 +715,16 @@ export interface ConnectionOptions {
   db?: IDatabase;
 }
 
+/**
+ * A job to settle, as `fetch()` or `work()` returned it, or just its `id` and `retryCount`. Passed in
+ * place of an id, it limits the call to the attempt that was fetched: once the job has been retried,
+ * or the claim has otherwise lapsed, the call leaves the job alone and reports it as not affected.
+ */
+export interface JobAttempt {
+  id: string;
+  retryCount: number;
+}
+
 export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }

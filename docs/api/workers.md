@@ -265,6 +265,7 @@ The jobs argument is an array of jobs with the following properties.
 |`id`| string, uuid |
 |`name`| string |
 |`data`| object |
+|`retryCount`| number | How many times this job has been retried, which also identifies the attempt this worker holds |
 |`heartbeatSeconds`| number \| null | Heartbeat interval configured for this job, or null if not configured |
 |`signal`| AbortSignal |
 

@@ -413,7 +413,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.publish(event, data, options)
   }
 
-  cancel (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  cancel (name: string, id: string | string[] | types.JobAttempt | types.JobAttempt[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.cancel(name, id, options)
   }
 
@@ -425,7 +425,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.retry(name, id, options)
   }
 
-  deleteJob (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  deleteJob (name: string, id: string | string[] | types.JobAttempt | types.JobAttempt[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.deleteJob(name, id, options)
   }
 
@@ -449,15 +449,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.deleteAllJobs(name)
   }
 
-  complete (name: string, id: string | string[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
+  complete (name: string, id: string | string[] | types.JobAttempt | types.JobAttempt[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
     return this.#manager.complete(name, id, data, options)
   }
 
-  fail (name: string, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  fail (name: string, id: string | string[] | types.JobAttempt | types.JobAttempt[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.fail(name, id, data, options)
   }
 
-  touch (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  touch (name: string, id: string | string[] | types.JobAttempt | types.JobAttempt[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.touch(name, id, options)
   }
 

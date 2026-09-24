@@ -1308,12 +1308,13 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
   }
 }
 
-export function deleteJobsById (schema: string, table: string) {
+export function deleteJobsById (schema: string, table: string, fenced?: boolean) {
   return `
     WITH results as (
       DELETE FROM ${schema}.${table}
       WHERE name = $1
         AND id = ANY($2::uuid[])
+        ${fenced ? attemptFence(3) : ''}
       RETURNING id
     )
     ${settledCountAndIds()}
@@ -2094,17 +2095,46 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 // another worker's claim. Matching on id and state alone lets the stale settle land on that newer
 // attempt: its complete() overwrites the newer attempt's outcome, and its fail() deletes the live
 // attempt and re-queues it. Every claim increments retry_count (fetchNextJob), so the value a worker
-// fetched names its attempt. `param` is an int[] parallel to the id array, and a job whose
-// retry_count has moved on is left alone. Always paired with state = 'active': a job failed back to
-// `retry` still carries the stale attempt's retry_count until it is claimed again.
+// fetched names its attempt. `param` is a text[] of 'id:retry_count' pairs (attemptPairs), and a
+// job whose retry_count has moved on is left alone. Always paired with state = 'active': a job failed
+// back to `retry` still carries the stale attempt's retry_count until it is claimed again.
+//
+// The pair is matched with = ANY because Postgres hashes that lookup against a parameter array, so a
+// settle costs the same fenced as unfenced. Measured at 5000 jobs: 58ms against 54ms unfenced. Looking
+// each id's position up with array_position scans the array once per row (149ms), and joining an
+// unnest() of the two arrays is planned as a nested loop over every pair (1063ms).
 //
 // restore() clears started_on, so the claim after it does not increment. The fence cannot tell a
-// restored job's next claim from the one before it, which is only safe because nothing restores a
-// job whose handler is still running (the localGroupConcurrency excess is restored before its handler
-// starts).
-function attemptFence (param: number, alias = ''): string {
-  return `AND ${alias}state = '${JOB_STATES.active}'
-        AND ${alias}retry_count = ($${param}::int[])[array_position($2::uuid[], ${alias}id)]`
+// restored job's next claim from the one before it. pg-boss itself never restores a job whose handler
+// is still running (the localGroupConcurrency excess is restored before its handler starts), but a
+// caller of the public restore() can.
+function attemptFence (param: number): string {
+  return `AND state = '${JOB_STATES.active}'
+        AND (id::text || ':' || retry_count::text) = ANY($${param}::text[])`
+}
+
+// The attemptFence parameter for jobs `ids` fetched at `attempts` (parallel arrays).
+export function attemptPairs (ids: string[], attempts: number[]): string[] {
+  return ids.map((id, i) => `${canonicalUuid(id)}:${attempts[i]}`)
+}
+
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+// The fence compares id::text, which Postgres and CockroachDB always render lower case and hyphenated,
+// while the id lookup beside it takes a uuid parameter and so accepts any spelling the uuid type does
+// (upper case, braces, missing hyphens). A caller building { id, retryCount } from an id stored in
+// another spelling would pass the lookup and silently miss the fence, so the pair is built from the
+// canonical form. Done here rather than in SQL, so the fence stays a hashed = ANY over a parameter.
+// Ids from fetch() and work() are already canonical and take the regex test alone. Anything that is
+// not 32 hex digits is left as it is: it is not a uuid, and the lookup rejects it.
+function canonicalUuid (id: string): string {
+  if (CANONICAL_UUID.test(id)) return id
+
+  const hex = id.replace(/[{}-]/g, '').toLowerCase()
+
+  if (!/^[0-9a-f]{32}$/.test(hex)) return id
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 // The fence for the per-job-output statements, which carry each job's retry_count in the recordset.
@@ -2212,7 +2242,7 @@ export function completeJobsWithOutputsDistributed (schema: string, table: strin
   `
 }
 
-export function cancelJobs (schema: string, table: string) {
+export function cancelJobs (schema: string, table: string, fenced?: boolean) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
@@ -2221,6 +2251,7 @@ export function cancelJobs (schema: string, table: string) {
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state < '${JOB_STATES.completed}'
+        ${fenced ? attemptFence(3) : ''}
       RETURNING id
     )
     ${settledCountAndIds()}

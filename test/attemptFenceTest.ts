@@ -150,6 +150,108 @@ describe('attempt fence', function () {
     await expectNewerAttemptUntouched(jobId)
   })
 
+  describe('jobs passed in place of ids', function () {
+    // A manual fetch() consumer whose claim lapsed: the job is failed out from under it and fetched
+    // again, then the original consumer settles the job it was handed.
+    async function lapsedFetch () {
+      const boss = ctx.boss!
+      const jobId = await boss.send(ctx.schema, { n: 1 }, { retryLimit: 5, retryDelay: 0 })
+      assertTruthy(jobId)
+
+      const [stale] = await boss.fetch(ctx.schema)
+      await boss.fail(ctx.schema, jobId, new Error('claim taken away'))
+      const [newer] = await boss.fetch(ctx.schema)
+      expect(newer.retryCount).toBe(stale.retryCount + 1)
+
+      return { jobId, stale, newer }
+    }
+
+    const settles: Record<string, (job: types.JobAttempt | types.JobAttempt[]) => Promise<types.CommandResponse>> = {
+      complete: job => ctx.boss!.complete(ctx.schema, job, { by: 'stale' }),
+      fail: job => ctx.boss!.fail(ctx.schema, job, { by: 'stale' }),
+      cancel: job => ctx.boss!.cancel(ctx.schema, job),
+      deleteJob: job => ctx.boss!.deleteJob(ctx.schema, job),
+      touch: job => ctx.boss!.touch(ctx.schema, job)
+    }
+
+    for (const [method, settle] of Object.entries(settles)) {
+      it(`should leave a newer attempt alone when ${method}() is given the stale job`, async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+
+        const { jobId, stale } = await lapsedFetch()
+        const before = await ctx.boss.getJobById(ctx.schema, jobId)
+
+        const result = await settle(stale)
+
+        expect(result.affected).toBe(0)
+        expect(result.jobs).toEqual([jobId])
+        await expectNewerAttemptUntouched(jobId)
+
+        const after = await ctx.boss.getJobById(ctx.schema, jobId)
+        expect(after?.heartbeatOn).toEqual(before?.heartbeatOn)
+      })
+
+      it(`should settle the attempt that was fetched when ${method}() is given the current job`, async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+
+        const { newer } = await lapsedFetch()
+
+        const result = await settle([{ id: newer.id, retryCount: newer.retryCount }])
+
+        expect(result.affected).toBe(1)
+      })
+    }
+
+    it('should still settle whatever attempt holds the job when given a plain id', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const { jobId } = await lapsedFetch()
+
+      const result = await ctx.boss.complete(ctx.schema, jobId, { by: 'stale' })
+
+      expect(result.affected).toBe(1)
+    })
+
+    // The id lookup takes a uuid parameter, so it accepts every spelling the type does. The fence has
+    // to accept the same ones, or a job the lookup matched would silently miss it.
+    const spellings: Record<string, (id: string) => string> = {
+      'upper case': id => id.toUpperCase(),
+      braces: id => `{${id}}`,
+      'no hyphens': id => id.replace(/-/g, ''),
+      'upper case in braces without hyphens': id => `{${id.replace(/-/g, '').toUpperCase()}}`
+    }
+
+    for (const [spelling, spell] of Object.entries(spellings)) {
+      it(`should fence a job whose id is spelled with ${spelling}`, async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+
+        const { stale, newer } = await lapsedFetch()
+
+        const missed = await ctx.boss.complete(ctx.schema, { id: spell(stale.id), retryCount: stale.retryCount })
+        expect(missed.affected).toBe(0)
+
+        const landed = await ctx.boss.complete(ctx.schema, { id: spell(newer.id), retryCount: newer.retryCount })
+        expect(landed.affected).toBe(1)
+      })
+    }
+
+    it('should reject a mix of ids and jobs', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      await expect(ctx.boss.complete(ctx.schema, [crypto.randomUUID(), { id: crypto.randomUUID(), retryCount: 0 }] as any))
+        .rejects.toThrow('complete() requires either ids or jobs with an id and an integer retryCount, not a mix')
+    })
+
+    it('should reject a job without an integer retryCount', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      await expect(ctx.boss.fail(ctx.schema, { id: crypto.randomUUID() } as any))
+        .rejects.toThrow('fail() requires either ids or jobs with an id and an integer retryCount, not a mix')
+      await expect(ctx.boss.touch(ctx.schema, { id: crypto.randomUUID(), retryCount: 1.5 }))
+        .rejects.toThrow('touch() requires either ids or jobs with an id and an integer retryCount, not a mix')
+    })
+  })
+
   helper.describePglite('transactional', function () {
     it('should roll back a stale transactional handler instead of completing a newer attempt', async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
@@ -169,5 +271,37 @@ describe('attempt fence', function () {
       const { rows } = await db.executeSql(`SELECT id FROM ${ledger}`)
       expect(rows.length).toBe(0)
     })
+
+    // The handler's own settle goes through the public API with { db: tx }, which the worker cannot
+    // pass a fence to, and #assertClaimHeld counts whatever it touches as the handler's. Unfenced, it
+    // lands on the newer attempt, the counts agree, and the stale handler's writes commit.
+    const settles: Record<string, (id: string, tx: types.IDatabase) => Promise<unknown>> = {
+      complete: (id, tx) => ctx.boss!.complete(ctx.schema, id, { by: 'stale' }, { db: tx }),
+      fail: (id, tx) => ctx.boss!.fail(ctx.schema, id, { by: 'stale' }, { db: tx }),
+      cancel: (id, tx) => ctx.boss!.cancel(ctx.schema, id, { db: tx }),
+      deleteJob: (id, tx) => ctx.boss!.deleteJob(ctx.schema, id, { db: tx })
+    }
+
+    for (const [method, settle] of Object.entries(settles)) {
+      it(`should roll back a stale transactional handler that settles its own job with ${method}()`, async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+
+        const ledger = `${ctx.schema}.ledger`
+        const db = ctx.boss.getDb()
+        await db.executeSql(`CREATE TABLE ${ledger} (id serial primary key)`)
+
+        const { jobId, release } = await staleWorker({ transactional: true }, async (jobs, tx) => {
+          await tx!.executeSql(`INSERT INTO ${ledger} DEFAULT VALUES`)
+          await settle(jobs[0].id, tx!)
+        })
+
+        release()
+        await delay(1000)
+        await expectNewerAttemptUntouched(jobId)
+
+        const { rows } = await db.executeSql(`SELECT id FROM ${ledger}`)
+        expect(rows.length).toBe(0)
+      })
+    }
   })
 })
