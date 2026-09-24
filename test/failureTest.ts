@@ -39,6 +39,22 @@ describe('failure', function () {
     expect(result.jobs.length).toBe(3)
   })
 
+  it('should leave a completed job in a failed batch alone', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+
+    const [done, active] = await ctx.boss.fetch(ctx.schema, { batchSize: 2 })
+    await ctx.boss.complete(ctx.schema, done.id)
+
+    const result = await ctx.boss.fail(ctx.schema, [done.id, active.id])
+    expect(result.affected).toBe(1)
+
+    const job = await ctx.boss.getJobById(ctx.schema, done.id)
+    expect(job?.state).toBe('completed')
+  })
+
   it('should fail a batch of jobs with a data arg', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const message = 'some error'

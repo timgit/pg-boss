@@ -460,8 +460,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
           return { jobs: ids, requested: ids.length, affected: 0 }
         }
 
+        // Only the rows the select matched: see failDistributed.
         const deleteQuery = plans.deleteJobsToFail(this.config.schema, table)
-        await tx.executeSql(deleteQuery.text, [name, ids])
+        await tx.executeSql(deleteQuery.text, [name, jobs.map(job => job.id)])
 
         const count = await this.reinsertFailedJobs(tx, table, jobs, null, outputById, forceTerminal)
         return { jobs: ids, requested: ids.length, affected: count }
@@ -1952,9 +1953,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
         return { jobs: ids, requested: ids.length, affected: 0, settled: [] }
       }
 
-      // Step 2: Delete the jobs
+      // Step 2: Delete the jobs the select matched, not every id asked about. The re-insert below
+      // only restores the selected rows, so deleting by the requested ids would drop any of them
+      // the select skipped (an already completed or cancelled job) for good.
       const deleteQuery = plans.deleteJobsToFail(this.config.schema, table)
-      await tx.executeSql(deleteQuery.text, [name, ids])
+      await tx.executeSql(deleteQuery.text, [name, jobs.map(job => job.id)])
 
       // Step 3: Re-insert jobs with updated state
       const count = await this.reinsertFailedJobs(tx, table, jobs, outputData)
