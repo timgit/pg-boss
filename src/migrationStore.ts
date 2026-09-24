@@ -1894,21 +1894,39 @@ AS $function$
       // Every snapshot already recorded predates the counting, and a default of
       // zero would chart up to a month of history as an idle queue. Null says
       // nobody counted, which is true.
+      //
+      // source_output joins the dead-letter provenance columns from v34: the
+      // failed job's output, which the dead letter copy used to take as its own
+      // `output`. A plain column on the partitioned parent, so it cascades to
+      // every partition like the others did. Jobs already in a dead letter queue
+      // keep the output they were copied with.
+      //
+      // One ALTER per table, not one per column. On CockroachDB every ALTER is
+      // a schema change job inside the migration's transaction, and seven of
+      // them held it open long enough to lose RETRY_SERIALIZABLE against DDL
+      // on another schema in the same cluster (1 green of 5 paired with
+      // driftTest, against 5 of 5 for v42).
       install: [
-        `ALTER TABLE ${schema}.queue ADD COLUMN created_delta int NOT NULL DEFAULT 0`,
-        `ALTER TABLE ${schema}.queue ADD COLUMN completed_delta int NOT NULL DEFAULT 0`,
-        `ALTER TABLE ${schema}.queue ADD COLUMN failed_delta int NOT NULL DEFAULT 0`,
-        `ALTER TABLE ${schema}.queue_stats ADD COLUMN created_delta int`,
-        `ALTER TABLE ${schema}.queue_stats ADD COLUMN completed_delta int`,
-        `ALTER TABLE ${schema}.queue_stats ADD COLUMN failed_delta int`
+        `ALTER TABLE ${schema}.queue
+          ADD COLUMN created_delta int NOT NULL DEFAULT 0,
+          ADD COLUMN completed_delta int NOT NULL DEFAULT 0,
+          ADD COLUMN failed_delta int NOT NULL DEFAULT 0`,
+        `ALTER TABLE ${schema}.queue_stats
+          ADD COLUMN created_delta int,
+          ADD COLUMN completed_delta int,
+          ADD COLUMN failed_delta int`,
+        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_output jsonb`
       ],
       uninstall: [
-        `ALTER TABLE ${schema}.queue DROP COLUMN created_delta`,
-        `ALTER TABLE ${schema}.queue DROP COLUMN completed_delta`,
-        `ALTER TABLE ${schema}.queue DROP COLUMN failed_delta`,
-        `ALTER TABLE ${schema}.queue_stats DROP COLUMN created_delta`,
-        `ALTER TABLE ${schema}.queue_stats DROP COLUMN completed_delta`,
-        `ALTER TABLE ${schema}.queue_stats DROP COLUMN failed_delta`
+        `ALTER TABLE ${schema}.queue
+          DROP COLUMN created_delta,
+          DROP COLUMN completed_delta,
+          DROP COLUMN failed_delta`,
+        `ALTER TABLE ${schema}.queue_stats
+          DROP COLUMN created_delta,
+          DROP COLUMN completed_delta,
+          DROP COLUMN failed_delta`,
+        `ALTER TABLE ${schema}.job DROP COLUMN source_output`
       ]
     }
   ]

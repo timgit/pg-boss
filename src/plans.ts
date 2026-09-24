@@ -620,9 +620,11 @@ function jobTableRunAsyncFunction (schema: string) {
 
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableJob (schema: string, noPartitioning = false) {
-  // source_name / source_id / source_created_on / source_retry_count are dead-letter provenance:
-  // where a job in a dead-letter queue came from, stamped at the transfer so the original queue,
-  // id, enqueue time and retry count survive the move.
+  // source_name / source_id / source_created_on / source_retry_count / source_output are
+  // dead-letter provenance: where a job in a dead-letter queue came from, stamped at the transfer
+  // so the original queue, id, enqueue time, retry count and final output survive the move. The
+  // original's output is provenance rather than the copy's own `output`: the copy is a new job,
+  // and its `output` is whatever its own run produces.
   const partitionClause = noPartitioning ? '' : 'PARTITION BY LIST (name)'
   return `
     CREATE TABLE ${schema}.job (
@@ -658,7 +660,8 @@ function createTableJob (schema: string, noPartitioning = false) {
       source_name text,
       source_id uuid,
       source_created_on timestamp with time zone,
-      source_retry_count int
+      source_retry_count int,
+      source_output jsonb
     ) ${partitionClause}
   `
 }
@@ -690,7 +693,8 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   source_name as "sourceName",
   source_id as "sourceId",
   source_created_on as "sourceCreatedOn",
-  source_retry_count as "sourceRetryCount"
+  source_retry_count as "sourceRetryCount",
+  source_output as "sourceOutput"
 `
 
 /* eslint-enable no-restricted-syntax */
@@ -2511,6 +2515,9 @@ function settledCountAndIds () {
 // Both re-inserts carry the source_* provenance columns. A job in a dead letter queue that its
 // own worker fails is deleted and re-inserted here like any other, and without them it would
 // forget which queue it came from and become unroutable for redrive.
+//
+// The dead letter copy takes the failed job's output as source_output, not as its own output. The
+// copy is a new job that has not run yet, so its output starts empty like any other.
 function failJobsBody (schema: string, table: string, where: string, output: string, forceTerminal = false) {
   const state = forceTerminal
     ? `'${JOB_STATES.failed}'::${schema}.job_state`
@@ -2561,7 +2568,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_name,
         source_id,
         source_created_on,
-        source_retry_count
+        source_retry_count,
+        source_output
       )
       SELECT
         id,
@@ -2605,7 +2613,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_name,
         source_id,
         source_created_on,
-        source_retry_count
+        source_retry_count,
+        source_output
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -2644,7 +2653,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_name,
         source_id,
         source_created_on,
-        source_retry_count
+        source_retry_count,
+        source_output
       )
       SELECT
         id,
@@ -2679,7 +2689,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_name,
         source_id,
         source_created_on,
-        source_retry_count
+        source_retry_count,
+        source_output
       FROM deleted_jobs
       WHERE id NOT IN (SELECT id from retried_jobs)
       RETURNING *
@@ -2690,7 +2701,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
       SELECT * FROM failed_jobs
     ),
     dlq_jobs as (
-      INSERT INTO ${schema}.job (name, priority, data, output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
+      INSERT INTO ${schema}.job (name, priority, data, source_output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
         expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, group_id, group_tier, heartbeat_seconds)
       SELECT
         r.dead_letter,
@@ -2930,10 +2941,10 @@ export function insertRetryJob (schema: string, table: string): string {
       group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
       keep_until, policy, output, dead_letter,
       heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies,
-      source_name, source_id, source_created_on, source_retry_count
+      source_name, source_id, source_created_on, source_retry_count, source_output
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-      $25, $26, $27, $28, $29, $30, $31, $32, $33
+      $25, $26, $27, $28, $29, $30, $31, $32, $33, $34
     ) ON CONFLICT DO NOTHING
     RETURNING id
   `
@@ -2941,7 +2952,7 @@ export function insertRetryJob (schema: string, table: string): string {
 
 export function insertDeadLetterJob (schema: string): string {
   return `
-    INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
+    INSERT INTO ${schema}.job (name, data, source_output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
       expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds,
       priority, group_id, group_tier)
     SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
@@ -2964,27 +2975,71 @@ function redriveWhere (): string {
         AND ($6::uuid[] IS NULL OR j.id = ANY($6::uuid[]))`
 }
 
-// Dead-letter redrive. Moves un-started jobs out of a dead-letter queue and
-// re-creates them as fresh jobs on their original source queue (or $2 destination override),
-// oldest-first, capped at $7 and narrowed by the filters in redriveWhere. The JOIN in
-// `candidates` only matches jobs whose destination queue exists, so legacy/orphaned jobs
-// (NULL source_name, no override) are never deleted. They stay
-// in the DLQ rather than being lost. Re-created jobs get a new id, `created` state, retry_count 0,
+// The columns a redriven job is created with, shared by both redrive paths. `m` is the dead letter
+// row and `q` the destination queue. Re-created jobs get a new id, `created` state, retry_count 0,
 // cleared output, NULL source_*, and every queue-config column (retry/retention/policy/expiry/
 // heartbeat/dead_letter) from the destination queue as it is configured now, per-job overrides
 // from the original send() are not preserved, since the DLQ copy never stored them. `dead_letter`
 // is the same value send() falls back to, so a second terminal failure re-enters the DLQ.
 // Job-identity columns (priority, singleton_key, group_id, group_tier) are carried over instead.
+const REDRIVE_INSERT_COLUMNS = `(id, name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
+       expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
+       heartbeat_seconds, dead_letter)`
+
+function redriveInsertValues (schema: string, newId: string, destination: string): string {
+  return `${newId}, COALESCE(${destination}, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
+      q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
+      ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
+      m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter`
+}
+
+// What a job that could not be re-created becomes: failed, in place, in the dead letter queue, with
+// the reason as its output. Never deleted: before 12.35 it was, and the job was simply gone. As a
+// failed job it is removed by the dead letter queue's own deleteAfterSeconds like any other, so
+// nothing accumulates, and until then it can be seen and retried. Failed rather than left waiting because a
+// waiting job is a candidate again on the next call, and redrive takes candidates oldest first, so
+// a handful of them would fill every later batch and stall the drain. Failed is also the state
+// redrive already leaves alone, and retrying the job makes it a candidate again once whatever it
+// collided with has finished.
 //
-// The insert's ON CONFLICT DO NOTHING is load-bearing: a destination queue's short/stately policy
-// can still collide on (name, singleton_key) if two redriven jobs share a key (job_i1/job_i3), and
-// dropping just that row (matching retried_jobs' ON CONFLICT DO NOTHING elsewhere) is preferable
-// to aborting the whole batch. The dropped job has already been deleted from the DLQ by the moved
-// CTE and is not restored.
+// The output it had is kept as source_output when that is empty, which only happens on a job
+// dead-lettered before source_output existed: those copied the original's output into their own.
+// `j` is the dead letter row and `q` the destination queue.
+function redriveConflictSet (schema: string): string {
+  return `state = '${JOB_STATES.failed}',
+      completed_on = ${schema}.job_now(),
+      source_output = COALESCE(j.source_output, j.output),
+      output = jsonb_build_object(
+        'message', 'Not redriven: queue ' || q.name || CASE
+          WHEN j.singleton_key IS NULL THEN ' already has a job this one conflicts with'
+          ELSE ' already has a job with singletonKey ' || j.singleton_key
+        END || ' under its ' || COALESCE(q.policy, 'standard') || ' policy',
+        'reason', 'redrive_conflict',
+        'destination', q.name,
+        'policy', q.policy,
+        'singletonKey', j.singleton_key
+      )`
+}
+
+// Dead-letter redrive. Moves un-started jobs out of a dead-letter queue and
+// re-creates them as fresh jobs on their original source queue (or $2 destination override),
+// oldest-first, capped at $7 and narrowed by the filters in redriveWhere. The JOIN in
+// `candidates` only matches jobs whose destination queue exists, so legacy/orphaned jobs
+// (NULL source_name, no override) are never deleted. They stay in the DLQ rather than being lost.
+//
+// The insert's ON CONFLICT DO NOTHING is load-bearing: a destination queue's short/stately/exclusive
+// policy can collide on (name, singleton_key), with a job already there or with another job in the
+// same batch, and skipping just that row is preferable to aborting the whole batch. The dead letter
+// row of a job that was not re-created is failed in place with the reason (redriveConflictSet).
+//
+// Every candidate is given its new id up front, so `ins` RETURNING says exactly which ones were
+// re-created: a data-modifying CTE cannot see the others' writes, so there is no other way to tell
+// within one statement. `candidates` is referenced more than once and is FOR UPDATE, so it is
+// materialized, and each row keeps the one id it was given.
 export function redriveJobs (schema: string, table: string): string {
   return `
     WITH candidates AS (
-      SELECT j.id
+      SELECT j.id, gen_random_uuid() AS new_id
       FROM ${schema}.${table} j
       JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
       WHERE ${redriveWhere()}
@@ -2992,41 +3047,46 @@ export function redriveJobs (schema: string, table: string): string {
       LIMIT $7
       FOR UPDATE OF j SKIP LOCKED
     ),
-    moved AS (
-      DELETE FROM ${schema}.${table}
-      WHERE id IN (SELECT id FROM candidates)
-      RETURNING *
-    ),
     ins AS (
-      INSERT INTO ${schema}.job
-        (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
-         expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
-         heartbeat_seconds, dead_letter)
-      SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
-        q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
-        ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
-        m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
-      FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
+      INSERT INTO ${schema}.job ${REDRIVE_INSERT_COLUMNS}
+      SELECT ${redriveInsertValues(schema, 'c.new_id', '$2')}
+      FROM candidates c
+        JOIN ${schema}.${table} m ON m.id = c.id
+        JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
       ORDER BY m.created_on
       ON CONFLICT DO NOTHING
-      RETURNING 1
+      RETURNING id
+    ),
+    settled AS (
+      SELECT c.id, (i.id IS NOT NULL) AS inserted
+      FROM candidates c LEFT JOIN ins i ON i.id = c.new_id
+    ),
+    removed AS (
+      DELETE FROM ${schema}.${table}
+      WHERE id IN (SELECT id FROM settled WHERE inserted)
+    ),
+    conflicted AS (
+      UPDATE ${schema}.${table} j
+      SET ${redriveConflictSet(schema)}
+      FROM settled s, ${schema}.queue q
+      WHERE j.id = s.id
+        AND NOT s.inserted
+        AND q.name = COALESCE($2, j.source_name)
     )
     SELECT count(*)::int AS moved FROM ins
   `
 }
 
 // Distributed redrive (noMultiMutationCte). CockroachDB refuses redriveJobs' DELETE and INSERT on
-// one table in one statement, so the manager runs the three steps below in a transaction instead:
-// lock the candidates, re-create them, delete the originals. Same predicate, same order, same
-// limit, so the two paths move the same jobs. Insert-then-delete rather than the reverse keeps the
-// rows readable for the INSERT ... SELECT, and the new rows can never match the delete: they get
-// fresh ids. A job whose re-insert hits ON CONFLICT is still deleted, exactly as redriveJobs drops it.
-// Both inserts run oldest-first, so on Postgres the older of two colliding jobs is the one kept, on
-// either path. CockroachDB does not honor that ORDER BY when it resolves ON CONFLICT, so which one it
-// keeps is arbitrary; only the counts are the same there.
+// one table in one statement, so the manager runs the steps below in a transaction instead: lock
+// the candidates and give each its new id, re-create them, delete the ones that were re-created,
+// and fail the rest in place. Same predicate, same order, same limit, so the two
+// paths move the same jobs. Both inserts run oldest-first, so on Postgres the older of two
+// colliding jobs is the one kept, on either path. CockroachDB does not honor that ORDER BY when it
+// resolves ON CONFLICT, so which one it keeps is arbitrary; only the counts are the same there.
 export function selectRedriveCandidates (schema: string, table: string): string {
   return `
-    SELECT j.id
+    SELECT j.id, gen_random_uuid() AS new_id
     FROM ${schema}.${table} j
     WHERE ${redriveWhere()}
       AND EXISTS (SELECT 1 FROM ${schema}.queue q WHERE q.name = COALESCE($2, j.source_name))
@@ -3036,22 +3096,29 @@ export function selectRedriveCandidates (schema: string, table: string): string 
   `
 }
 
-// $1 candidate ids, $2 destination override.
+// $1 candidate ids, $2 destination override, $3 the new id for each candidate, in the same order.
+// Returns the new ids of the jobs that were re-created.
 export function insertRedrivenJobs (schema: string, table: string): string {
   return `
-    INSERT INTO ${schema}.job
-      (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
-       expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
-       heartbeat_seconds, dead_letter)
-    SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
-      q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
-      ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
-      m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
-    FROM ${schema}.${table} m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
-    WHERE m.id = ANY($1::uuid[])
+    INSERT INTO ${schema}.job ${REDRIVE_INSERT_COLUMNS}
+    SELECT ${redriveInsertValues(schema, 'p.new_id', '$2')}
+    FROM unnest($1::uuid[], $3::uuid[]) AS p (id, new_id)
+      JOIN ${schema}.${table} m ON m.id = p.id
+      JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
     ORDER BY m.created_on
     ON CONFLICT DO NOTHING
-    RETURNING 1
+    RETURNING id
+  `
+}
+
+// $1 the dead letter ids that were not re-created, $2 destination override.
+export function failRedriveConflicts (schema: string, table: string): string {
+  return `
+    UPDATE ${schema}.${table} j
+    SET ${redriveConflictSet(schema)}
+    FROM ${schema}.queue q
+    WHERE j.id = ANY($1::uuid[])
+      AND q.name = COALESCE($2, j.source_name)
   `
 }
 

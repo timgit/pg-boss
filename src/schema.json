@@ -298,6 +298,13 @@
       },
       {
         "table": "job_common",
+        "column": "source_output",
+        "type": "jsonb",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "job_common",
         "column": "source_retry_count",
         "type": "integer",
         "notNull": false,
@@ -552,6 +559,13 @@
         "table": "job",
         "column": "source_name",
         "type": "text",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "job",
+        "column": "source_output",
+        "type": "jsonb",
         "notNull": false,
         "default": null
       },
@@ -1567,6 +1581,13 @@
         "table": "job",
         "column": "source_name",
         "type": "text",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "job",
+        "column": "source_output",
+        "type": "jsonb",
         "notNull": false,
         "default": null
       },

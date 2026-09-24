@@ -491,15 +491,19 @@ Returns an array of jobs from a queue
       sourceName: string | null,
       sourceId: string | null,
       sourceCreatedOn: Date | null,
-      sourceRetryCount: number | null
+      sourceRetryCount: number | null,
+      sourceOutput: object | null
     }
     ```
 
 When a job is moved into a dead letter queue, the `source*` fields record where it
 came from: `sourceName` is the queue it originally failed on, `sourceId` is the id
 of the original job, `sourceCreatedOn` is the original job's creation time (so its
-true age survives the move), and `sourceRetryCount` is how many retries it consumed
-before being dead-lettered. These are `null` for jobs that were not dead-lettered.
+true age survives the move), `sourceRetryCount` is how many retries it consumed
+before being dead-lettered, and `sourceOutput` is the original job's `output` when it
+failed, usually its error. These are `null` for jobs that were not dead-lettered.
+
+The dead-lettered job's own `output` starts empty: it is a new job that has not run yet.
 
 
 **Notes**
@@ -584,15 +588,28 @@ such a job runs it again standalone; the original flow does not resume.
   `1000`). Loop or schedule repeated calls to drain large dead letter queues at a
   controlled rate.
 
+A job whose re-created copy the destination refuses, because its `short`, `stately` or
+`exclusive` policy already holds a job with the same `singletonKey` (or one earlier in the
+same batch), is not lost: it stays in the dead letter queue in the `failed` state, with an
+`output` saying why (`reason: 'redrive_conflict'`, plus the `destination`, `policy`,
+`singletonKey` and a `message`). Retry it once the job it collided with has finished and it
+becomes a redrive candidate again; otherwise the dead letter queue's `deleteAfterSeconds`
+removes it like any other failed job.
+
 Jobs a dead letter queue's own workers have already failed are never redriven;
-only jobs still waiting there are candidates.
+only jobs still waiting there are candidates. The return value counts only the jobs
+re-created, so a call can return `0` while waiting jobs
+remain, if every one of them collided; those are now failed and the next call moves on.
 
 ```js
-// drain a dead letter queue back to its source queues, 500 at a time
-let moved
+// drain a dead letter queue back to its source queues, 500 at a time, stopping at the
+// jobs that were already there when it started
+const createdBefore = new Date()
+let left
 do {
-  moved = await boss.redrive('email-dlq', { limit: 500 })
-} while (moved > 0)
+  await boss.redrive('email-dlq', { limit: 500, createdBefore })
+  left = await boss.previewRedrive('email-dlq', { createdBefore })
+} while (left.total > left.unroutable)
 ```
 
 ### `previewRedrive(name, options)`

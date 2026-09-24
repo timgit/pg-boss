@@ -168,8 +168,9 @@ export interface MaintenanceOptions {
    * history, each pass would overwrite the last one's count.
    *
    * It is not free. The monitor's aggregate gains a join against `queue` (for each queue's own
-   * watermark) and three more filtered counts; measured on a 2-million-row queue that took it from
-   * ~227ms to ~344ms. On a small queue the difference is noise.
+   * watermark) and three more filtered counts. Measured on Postgres 18, that added 3-13% to the
+   * aggregate on a 2-million-row queue (~755ms to ~780-855ms) and ~16% across 1,000 small queues
+   * (~208ms to ~241ms per pass).
    * @default false
    */
   persistQueueStats?: boolean;
@@ -1340,6 +1341,12 @@ export interface JobWithMetadata<T = object> extends Job<T> {
    * before it was dead-lettered. `null` otherwise.
    */
   sourceRetryCount: number | null;
+  /**
+   * For a dead-lettered job, the `output` of the original job when it failed,
+   * usually its error. The dead-lettered job's own `output` starts empty, since
+   * it is a new job that has not run. `null` otherwise.
+   */
+  sourceOutput: object | null;
 }
 
 export interface JobInsert<T = object> {

@@ -208,7 +208,7 @@ describe('failure', function () {
 
     await ctx.boss.fetch(ctx.schema)
     assertTruthy(jobId)
-    await ctx.boss.fail(ctx.schema, jobId)
+    await ctx.boss.fail(ctx.schema, jobId, { message: 'card declined' })
 
     const [job] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
 
@@ -220,6 +220,10 @@ describe('failure', function () {
     expect(dlqJob.sourceId).toBe(jobId)
     expect(dlqJob.sourceCreatedOn).toBeTruthy()
     expect(dlqJob.sourceRetryCount).toBe(0)
+    // The copy is a new job: the original's output is provenance, and its own output is empty
+    // until it runs.
+    expect(dlqJob.sourceOutput).toEqual({ message: 'card declined' })
+    expect(dlqJob.output).toBeNull()
   })
 
   it('dead letter preserves singleton_key but takes heartbeat_seconds from the DLQ queue', async function () {
@@ -293,9 +297,10 @@ describe('failure', function () {
     const moved = await ctx.boss.redrive(deadLetter)
     expect(moved).toBe(1)
 
-    // the DLQ is drained either way (the colliding row is dropped, not restored)
+    // the colliding job is failed in place, so it is not a candidate again
     const movedAgain = await ctx.boss.redrive(deadLetter)
     expect(movedAgain).toBe(0)
+    expect((await ctx.boss.previewRedrive(deadLetter)).total).toBe(0)
   })
 
   it('redrive moves a dead-lettered job back to its source queue', async function () {
@@ -764,19 +769,84 @@ describe('failure', function () {
         expect(await queued(boss, deadLetter)).toEqual([1])
       })
 
-      it(`drops a job whose re-insert collides and still drains it (${path})`, async function () {
-        // short: one created job per queue (job_i1), so the second redriven job collides.
+      it(`fails a job whose re-insert collides in the batch, in place, with the reason (${path})`, async function () {
         const { boss, deadLetter, queueA } = await setup({ policy: 'short' })
         await deadLetterOne(boss, queueA, { n: 1 })
         await deadLetterOne(boss, queueA, { n: 2 })
 
         expect(await boss.redrive(deadLetter)).toBe(1)
 
-        // Postgres keeps the older job; CockroachDB ignores the ORDER BY and keeps either one.
         const kept = await queued(boss, queueA)
         expect(kept).toHaveLength(1)
         if (!helper.isCockroachDb) expect(kept).toEqual([1])
-        expect(await queued(boss, deadLetter)).toEqual([])
+
+        const [left] = await boss.findJobs<{ n: number }>(deadLetter)
+        assertTruthy(left)
+        expect(left.data.n).toBe(helper.isCockroachDb ? 3 - kept[0] : 2)
+        expect(left.state).toBe('failed')
+        expect(left.sourceName).toBe(queueA)
+        expect(left.output).toMatchObject({ reason: 'redrive_conflict', destination: queueA, policy: 'short', singletonKey: null })
+        expect((left.output as { message: string }).message).toContain(`queue ${queueA} already has a job`)
+
+        // Not a candidate again, so a draining loop ends.
+        expect(await boss.redrive(deadLetter)).toBe(0)
+      })
+
+      it(`fails a job that collides with one already in the destination, and redrives it once retried (${path})`, async function () {
+        const { boss, deadLetter, queueA } = await setup({ policy: 'short' })
+        await deadLetterOne(boss, queueA, { n: 1 })
+        // Holds queueA's one created slot for the singletonKey-less short policy.
+        await boss.send(queueA, { n: 2 })
+
+        expect(await boss.redrive(deadLetter)).toBe(0)
+
+        const [left] = await boss.findJobs<{ n: number }>(deadLetter)
+        assertTruthy(left)
+        expect(left.state).toBe('failed')
+
+        // Once the job it collided with has moved on, retrying puts it back in line for redrive.
+        await boss.fetch(queueA)
+        await boss.retry(deadLetter, left.id)
+        expect((await boss.previewRedrive(deadLetter)).total).toBe(1)
+        expect(await boss.redrive(deadLetter)).toBe(1)
+        expect(await queued(boss, queueA)).toEqual([1])
+      })
+
+      it(`keeps the source output on the dead letter copy and not on the redriven job (${path})`, async function () {
+        const { boss, deadLetter, queueA } = await setup()
+        const id = await boss.send(queueA, { n: 1 }, { retryLimit: 0 })
+        assertTruthy(id)
+        await boss.fetch(queueA)
+        await boss.fail(queueA, id, { message: 'boom' })
+
+        const [copy] = await boss.findJobs(deadLetter)
+        assertTruthy(copy)
+        expect(copy.sourceOutput).toEqual({ message: 'boom' })
+        expect(copy.output).toBeNull()
+
+        expect(await boss.redrive(deadLetter)).toBe(1)
+        const redriven = (await boss.findJobs(queueA, { queued: true }))[0]
+        assertTruthy(redriven)
+        expect(redriven.output).toBeNull()
+        expect(redriven.sourceOutput).toBeNull()
+      })
+
+      it(`moves a legacy copy's output to sourceOutput when failing it on a collision (${path})`, async function () {
+        const { boss, deadLetter, queueA } = await setup({ policy: 'short' })
+        await deadLetterOne(boss, queueA, { n: 1 })
+        await boss.send(queueA, { n: 2 })
+
+        // A copy made before source_output existed carried the original's output as its own.
+        const db = await helper.getDb()
+        await db.executeSql(`UPDATE ${ctx.schema}.job SET output = '{"message":"old error"}', source_output = NULL WHERE name = $1`, [deadLetter])
+        await db.close()
+
+        expect(await boss.redrive(deadLetter)).toBe(0)
+
+        const [left] = await boss.findJobs(deadLetter)
+        assertTruthy(left)
+        expect(left.sourceOutput).toEqual({ message: 'old error' })
+        expect(left.output).toMatchObject({ reason: 'redrive_conflict' })
       })
     })
   }

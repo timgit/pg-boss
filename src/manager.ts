@@ -2096,7 +2096,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2113,7 +2113,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
@@ -2190,18 +2190,25 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
 
     // CockroachDB rejects the single-statement version (a DELETE and an INSERT on one table), so
-    // the same move runs as three statements in one transaction. See plans.selectRedriveCandidates.
+    // the same move runs as statements in one transaction. See plans.selectRedriveCandidates.
     if (this.config.noMultiMutationCte) {
       return this.ensureTransaction(db, async (tx) => {
         const { rows } = await tx.executeSql(plans.selectRedriveCandidates(this.config.schema, table), [name, ...filter, limit])
 
         if (rows.length === 0) return 0
 
-        const ids = rows.map((row: { id: string }) => row.id)
-        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0]])
-        await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [ids])
+        const ids: string[] = rows.map((row: { id: string }) => row.id)
+        const newIds: string[] = rows.map((row: { new_id: string }) => row.new_id)
+        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0], newIds])
 
-        return inserted.length
+        const created = new Set(inserted.map((row: { id: string }) => row.id))
+        const moved = ids.filter((_, i) => created.has(newIds[i]))
+        const conflicted = ids.filter((_, i) => !created.has(newIds[i]))
+
+        if (moved.length) await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [moved])
+        if (conflicted.length) await tx.executeSql(plans.failRedriveConflicts(this.config.schema, table), [conflicted, filter[0]])
+
+        return moved.length
       })
     }
 
