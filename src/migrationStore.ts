@@ -1972,47 +1972,18 @@ AS $function$
       release: '12.35.0',
       version: 43,
       previous: 42,
-      // Throughput: how many jobs finished between one monitor pass and the
-      // next. Every other count on these tables is a gauge, and a gauge cannot
-      // answer it — five hundred jobs arriving and five hundred leaving looks
-      // exactly like a queue where nothing happened.
+      // No statement rewrites a table: every added column is nullable or has a constant default,
+      // which matters on queue_stats, partitioned and large on a busy installation. Existing rows
+      // are not backfilled. Snapshots already in queue_stats keep null deltas, jobs already in a dead
+      // letter queue keep the output they were copied with, and a row dead-lettered before
+      // source_root_id existed has none, so its first redrive falls back to source_id.
       //
-      // Three counters and the window they cover on `queue` for the latest
-      // interval, and the same on `queue_stats` for the history, matching how
-      // every other count here already travels. Neither form rewrites the
-      // table, which matters on `queue_stats`: it is partitioned and large on a
-      // busy installation.
+      // job_i12 is built the way v40 built job_i11: inline without partitioning, otherwise through
+      // create_queue for new partitions and BAM, concurrently, for the tables that already exist.
       //
-      // The history columns are nullable with no default, unlike the gauges.
-      // Every snapshot already recorded predates the counting, and a default of
-      // zero would chart up to a month of history as an idle queue. Null says
-      // nobody counted, which is true.
-      //
-      // source_output joins the dead-letter provenance columns from v34: the
-      // failed job's output, which the dead letter copy used to take as its own
-      // `output`. A plain column on the partitioned parent, so it cascades to
-      // every partition like the others did. Jobs already in a dead letter queue
-      // keep the output they were copied with.
-      //
-      // source_root_id rides in the same ALTER: the first job in a dead letter
-      // chain, so every round trip through the dead letter queue can be found
-      // from the id send() returned. Rows dead-lettered before it existed have
-      // none, and their first redrive falls back to source_id, which is the
-      // root for a job that has only been through once.
-      //
-      // job_i12 indexes it, for a lineage lookup that finds a whole chain from
-      // its root. Built the way v40 built job_i11: inline without partitioning,
-      // and with it through create_queue for new partitions and BAM for the
-      // tables that already exist, concurrently, so a large job table is not
-      // locked against writes for the length of the build. The column is new
-      // and empty, so the partial index is too, but the build still scans the
-      // table to find that out.
-      //
-      // One ALTER per table, not one per column. On CockroachDB every ALTER is
-      // a schema change job inside the migration's transaction, and seven of
-      // them held it open long enough to lose RETRY_SERIALIZABLE against DDL
-      // on another schema in the same cluster (1 green of 5 paired with
-      // driftTest, against 5 of 5 for v42).
+      // One ALTER per table, not one per column. On CockroachDB every ALTER is a schema change job
+      // inside the migration's transaction, and seven of them held it open long enough to lose
+      // RETRY_SERIALIZABLE against DDL on another schema in the same cluster.
       install: [
         `ALTER TABLE ${schema}.queue
           ADD COLUMN created_delta int NOT NULL DEFAULT 0,
