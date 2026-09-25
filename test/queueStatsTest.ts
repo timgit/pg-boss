@@ -867,6 +867,56 @@ describe('queueStats', function () {
     })
 
     /**
+     * Retention deletes rows a window already counted, and a recount over them falls short of the
+     * snapshots. On a queue that deletes within the hour that shortfall hid every late commit, so the
+     * check only compares windows retention cannot have reached yet.
+     */
+    it.skipIf(helper.isPglite || helper.isCockroachDb)('trues up a late commit on a queue whose retention deleted counted jobs', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue, { deleteAfterSeconds: 4 })
+      const schema = ctx.bossConfig.schema
+      const db = await helper.getDb()
+      const { rows: [{ table_name: table }] } = await db.executeSql(
+        `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
+      )
+
+      await recordedPass(queue)
+      for (let i = 0; i < 3; i++) await ctx.boss.send(queue)
+      const jobs = await ctx.boss.fetch(queue, { batchSize: 3 })
+      await ctx.boss.complete(queue, jobs.map(job => job.id))
+      await recordedPass(queue)
+      // A window of its own before the late send, so the one the send lands in starts inside the
+      // retention when the late commit is checked.
+      await new Promise(resolve => setTimeout(resolve, 1_500))
+      await recordedPass(queue)
+
+      const tx = new pg.Client({ connectionString: helper.getConnectionString() })
+      await tx.connect()
+
+      try {
+        await tx.query('BEGIN')
+        await ctx.boss.send(queue, null, {
+          db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) }
+        })
+        await new Promise(resolve => setTimeout(resolve, 50))
+        expect(await recordedPass(queue)).toBe(false)
+
+        // Past the retention of the three completed jobs, not of the open send.
+        await new Promise(resolve => setTimeout(resolve, 2_900))
+        const deleted = await db.executeSql(plans.deletion(schema, table, [queue], true))
+        const affected = Array.isArray(deleted) ? deleted.reduce((n, r) => n + (r.rowCount ?? 0), 0) : deleted.rowCount
+        expect(affected).toBe(3)
+        await tx.query('COMMIT')
+      } finally {
+        await tx.end()
+      }
+
+      expect(await recordedPass(queue)).toBe(true)
+      expect(total(await history(queue), 'created')).toBe(4)
+    })
+
+    /**
      * A recount only raises a snapshot. Rows a window already counted can be deleted (retention,
      * deleteJob) before a later true-up, and a recount that went down would unwrite them.
      */

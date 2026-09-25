@@ -3529,6 +3529,14 @@ function throughputAssignments (end: string, resetMax?: string): string {
 // afresh (first counted pass, or a reset after a gap; both record null seconds) counted nothing
 // before its end on purpose, so it anchors too: truing up across it would land hours of work on it.
 //
+// The recount only sees rows that still exist, so the anchor also stays inside the queue's
+// retention. Retention deletes a finished job once completed_on + deletion_seconds has passed, and
+// a queued one once keep_until (start_after + retention_seconds) has. Rows it removed from a window
+// that was already counted make the recount fall short of the snapshots, and on a queue that
+// deletes within the hour that shortfall hides every late commit. The anchor is therefore never
+// earlier than the first window end past job_now() minus the shorter of the two, where nothing has
+// been deleted yet; a window straddling that point is not revised.
+//
 // When a pass counted but its snapshot was never written (the insert is a separate statement and
 // can fail), the next snapshot's rebuilt window covers both passes. Its stored counters then fall
 // short by that pass's jobs, and the true-up restores them there, which is the right place to the
@@ -3537,6 +3545,18 @@ function throughputAssignments (end: string, resetMax?: string): string {
 // check) always agree on which windows are revised. `s` is a queue_stats row.
 function trueUpAnchor (schema: string, trueUpMax: string): string {
   return `s.delta_on <= ${schema}.job_now() - ${trueUpMax} OR s.delta_seconds IS NULL`
+}
+
+// `q` is the queue row. Per-job overrides of either retention are not seen here.
+function trueUpRetentionFloor (schema: string, q: string): string {
+  return `s.delta_on >= ${schema}.job_now() - (CASE WHEN ${q}.deletion_seconds > 0 AND ${q}.deletion_seconds < ${q}.retention_seconds
+    THEN ${q}.deletion_seconds ELSE ${q}.retention_seconds END) * interval '1s'`
+}
+
+// The anchor from the horizon rule `b` and the retention floor `f`, whichever is later. A null floor
+// means no window ends inside the retention, so there is nothing to revise and the anchor is null.
+function trueUpAnchorAt (b: string, f: string): string {
+  return `CASE WHEN ${f} IS NULL OR ${f} > ${b} THEN ${f} ELSE ${b} END`
 }
 
 function trueUpReach (schema: string, trueUpMax: string): string {
@@ -3548,14 +3568,20 @@ function trueUpReach (schema: string, trueUpMax: string): string {
 // CASE rather than FILTER, which CockroachDB doesn't take on a window function.
 function trueUpWindows (schema: string, queues: string, trueUpMax = DELTA_TRUE_UP_MAX): string {
   return `
-      SELECT s.id, s.captured_on, s.name, s.delta_on, s.created_delta, s.completed_delta, s.failed_delta,
-        COALESCE(
-          max(CASE WHEN ${trueUpAnchor(schema, trueUpMax)} THEN s.delta_on END)
-            OVER (PARTITION BY s.name),
-          min(s.delta_on) OVER (PARTITION BY s.name)
-        ) AS h
-      FROM ${schema}.queue_stats s
-      WHERE s.name = ANY(${queues}) AND ${trueUpReach(schema, trueUpMax)}`
+      SELECT x.id, x.captured_on, x.name, x.delta_on, x.created_delta, x.completed_delta, x.failed_delta,
+        ${trueUpAnchorAt('x.b', 'x.f')} AS h
+      FROM (
+        SELECT s.id, s.captured_on, s.name, s.delta_on, s.created_delta, s.completed_delta, s.failed_delta,
+          COALESCE(
+            max(CASE WHEN ${trueUpAnchor(schema, trueUpMax)} THEN s.delta_on END)
+              OVER (PARTITION BY s.name),
+            min(s.delta_on) OVER (PARTITION BY s.name)
+          ) AS b,
+          min(CASE WHEN ${trueUpRetentionFloor(schema, 'q')} THEN s.delta_on END) OVER (PARTITION BY s.name) AS f
+        FROM ${schema}.queue_stats s
+        JOIN ${schema}.queue q ON q.name = s.name
+        WHERE s.name = ANY(${queues}) AND ${trueUpReach(schema, trueUpMax)}
+      ) x`
 }
 
 // The same anchor and windows, reduced to what the monitor's check needs: per queue, the anchor,
@@ -3565,12 +3591,16 @@ function trueUpWindows (schema: string, queues: string, trueUpMax = DELTA_TRUE_U
 function trueUpSettled (schema: string, alias: string, trueUpMax = DELTA_TRUE_UP_MAX): string {
   return `
             LEFT JOIN LATERAL (
-              SELECT COALESCE(
-                  max(s.delta_on) FILTER (WHERE ${trueUpAnchor(schema, trueUpMax)}),
-                  min(s.delta_on)
-                ) AS h
-              FROM ${schema}.queue_stats s
-              WHERE s.name = ${alias}.name AND ${trueUpReach(schema, trueUpMax)}
+              SELECT ${trueUpAnchorAt('x.b', 'x.f')} AS h
+              FROM (
+                SELECT COALESCE(
+                    max(s.delta_on) FILTER (WHERE ${trueUpAnchor(schema, trueUpMax)}),
+                    min(s.delta_on)
+                  ) AS b,
+                  min(s.delta_on) FILTER (WHERE ${trueUpRetentionFloor(schema, alias)}) AS f
+                FROM ${schema}.queue_stats s
+                WHERE s.name = ${alias}.name AND ${trueUpReach(schema, trueUpMax)}
+              ) x
             ) a ON true
             LEFT JOIN LATERAL (
               SELECT max(s.delta_on) AS top,
