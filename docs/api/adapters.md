@@ -3,7 +3,7 @@
 pg-boss operations such as `send()`, `insert()`, `fetch()`, and `complete()` accept a `db` option that lets you run them inside an existing database transaction. This is how you ensure that job creation (or completion) is atomic with your application's own writes. If the transaction rolls back, so does the job.
 
 > [!NOTE]
-> To go the other way, and commit a worker's writes with the job's completion, use a [transactional worker](./workers.md#workname-options-handler). pg-boss opens that transaction itself, so the ORM adapters below, which wrap a transaction you already have, do not apply to it.
+> To go the other way, and commit a worker's writes with the job's completion, use a [transactional worker](./workers.md#work-name-options-handler). pg-boss opens that transaction itself, so the ORM adapters below, which wrap a transaction you already have, do not apply to it.
 
 Each adapter wraps the ORM's transaction object as a pg-boss `Db` (the `executeSql` interface), so pg-boss can execute its own SQL within your transaction.
 
