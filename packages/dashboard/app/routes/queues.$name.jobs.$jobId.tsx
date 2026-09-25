@@ -293,7 +293,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
                 </div>
               )}
 
-              {(job.sourceName || job.sourceId) && (
+              {(job.sourceName || job.sourceId || job.sourceRootId) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
                   {job.sourceName && (
                     <div>
@@ -310,6 +310,10 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
                   )}
                   {job.sourceId && (
                     <ConfigItem label="Source Job ID" value={job.sourceId} mono />
+                  )}
+                  {/* Only when it adds something: on a first dead-lettering the root is the source. */}
+                  {job.sourceRootId && job.sourceRootId !== job.sourceId && (
+                    <ConfigItem label="Root Job ID" value={job.sourceRootId} mono />
                   )}
                   {job.sourceRetryCount !== null && job.sourceRetryCount !== undefined && (
                     <ConfigItem label="Source Retry Count" value={job.sourceRetryCount} mono />

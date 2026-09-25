@@ -629,6 +629,12 @@ function createTableJob (schema: string, noPartitioning = false) {
   // so the original queue, id, enqueue time, retry count and final output survive the move. The
   // original's output is provenance rather than the copy's own `output`: the copy is a new job,
   // and its `output` is whatever its own run produces.
+  //
+  // source_root_id is the one lineage column that is not about the last hop. source_id names the job
+  // that just failed, which after a redrive is the redriven copy, not the job send() returned; each
+  // round trip through a dead letter queue would add a hop, and retention deletes the failed rows the
+  // hops go through. The root is the id of the first job in the chain, copied onto every dead letter
+  // row and every redriven job after it, so one lookup finds them all however many trips it took.
   const partitionClause = noPartitioning ? '' : 'PARTITION BY LIST (name)'
   return `
     CREATE TABLE ${schema}.job (
@@ -665,7 +671,8 @@ function createTableJob (schema: string, noPartitioning = false) {
       source_id uuid,
       source_created_on timestamp with time zone,
       source_retry_count int,
-      source_output jsonb
+      source_output jsonb,
+      source_root_id uuid
     ) ${partitionClause}
   `
 }
@@ -698,7 +705,8 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   source_id as "sourceId",
   source_created_on as "sourceCreatedOn",
   source_retry_count as "sourceRetryCount",
-  source_output as "sourceOutput"
+  source_output as "sourceOutput",
+  source_root_id as "sourceRootId"
 `
 
 /* eslint-enable no-restricted-syntax */
@@ -721,6 +729,7 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobFetch(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobBlocking(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobSourceRoot(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -742,6 +751,7 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobFetch(schema, noCoveringIndex)};
     ${createIndexJobGroupConcurrency(schema)};
     ${createIndexJobBlocking(schema)};
+    ${createIndexJobSourceRoot(schema)};
   `
 }
 
@@ -866,6 +876,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobThrottle(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobBlocking(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobSourceRoot(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -1056,6 +1067,14 @@ function createIndexJobGroupConcurrency (schema: string) {
 // non-flow queues (and high-partition-count deployments) carry an empty index that costs nothing.
 function createIndexJobBlocking (schema: string) {
   return `CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = '${JOB_STATES.completed}'`
+}
+
+// Finds every job in a dead letter chain from its root (see source_root_id in createTableJob), for a
+// lineage lookup. Keyed on the root alone, with no name: a chain crosses queues, from the source
+// queue to its dead letter queue and back. Partial on the column being set, so only jobs that have
+// been through a dead letter queue are in it and a queue that never dead-letters carries it empty.
+function createIndexJobSourceRoot (schema: string) {
+  return `CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
 }
 
 // The interval claim for a monitor pass, and the vacuum-safety gate on the expensive half of it.
@@ -2716,7 +2735,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_id,
         source_created_on,
         source_retry_count,
-        source_output
+        source_output,
+        source_root_id
       )
       SELECT
         id,
@@ -2761,7 +2781,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_id,
         source_created_on,
         source_retry_count,
-        source_output
+        source_output,
+        source_root_id
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -2801,7 +2822,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_id,
         source_created_on,
         source_retry_count,
-        source_output
+        source_output,
+        source_root_id
       )
       SELECT
         id,
@@ -2837,7 +2859,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_id,
         source_created_on,
         source_retry_count,
-        source_output
+        source_output,
+        source_root_id
       FROM deleted_jobs
       WHERE id NOT IN (SELECT id from retried_jobs)
       RETURNING *
@@ -2848,13 +2871,13 @@ function failJobsBody (schema: string, table: string, where: string, output: str
       SELECT * FROM failed_jobs
     ),
     dlq_jobs as (
-      INSERT INTO ${schema}.job (name, priority, data, source_output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
-        expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, group_id, group_tier, heartbeat_seconds)
+      INSERT INTO ${schema}.job (name, priority, data, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
+        expire_seconds, singleton_key, group_id, group_tier, heartbeat_seconds,
+        source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id)
       SELECT
         r.dead_letter,
         r.priority,
         r.data,
-        r.output,
         q.retry_limit,
         q.retry_backoff,
         q.retry_delay,
@@ -2863,14 +2886,16 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         ${schema}.job_now() + q.retention_seconds * interval '1s',
         q.deletion_seconds,
         q.expire_seconds,
+        r.singleton_key,
+        r.group_id,
+        r.group_tier,
+        q.heartbeat_seconds,
         r.name,
         r.id,
         r.created_on,
         r.retry_count,
-        r.singleton_key,
-        r.group_id,
-        r.group_tier,
-        q.heartbeat_seconds
+        r.output,
+        COALESCE(r.source_root_id, r.id)
       FROM results r
         JOIN ${schema}.queue q ON q.name = r.dead_letter
       WHERE state = '${JOB_STATES.failed}'
@@ -3088,10 +3113,10 @@ export function insertRetryJob (schema: string, table: string): string {
       group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
       keep_until, policy, output, dead_letter,
       heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies,
-      source_name, source_id, source_created_on, source_retry_count, source_output
+      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-      $25, $26, $27, $28, $29, $30, $31, $32, $33, $34
+      $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35
     ) ON CONFLICT DO NOTHING
     RETURNING id
   `
@@ -3099,11 +3124,12 @@ export function insertRetryJob (schema: string, table: string): string {
 
 export function insertDeadLetterJob (schema: string): string {
   return `
-    INSERT INTO ${schema}.job (name, data, source_output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
-      expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds,
-      priority, group_id, group_tier)
-    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
-      q.expire_seconds, $4, $5, $6, $7, $8, q.heartbeat_seconds, $9, $10, $11
+    INSERT INTO ${schema}.job (name, data, priority, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
+      expire_seconds, singleton_key, group_id, group_tier, heartbeat_seconds,
+      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id)
+    SELECT $1, $2, $9, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
+      q.expire_seconds, $8, $10, $11, q.heartbeat_seconds,
+      $4, $5, $6, $7, $3, COALESCE($12::uuid, $5::uuid)
     FROM ${schema}.queue q WHERE q.name = $1
   `
 }
@@ -3124,20 +3150,22 @@ function redriveWhere (): string {
 
 // The columns a redriven job is created with, shared by both redrive paths. `m` is the dead letter
 // row and `q` the destination queue. Re-created jobs get a new id, `created` state, retry_count 0,
-// cleared output, NULL source_*, and every queue-config column (retry/retention/policy/expiry/
+// cleared output, NULL source_* except source_root_id, which carries the chain's first job on (see
+// createTableJob), and every queue-config column (retry/retention/policy/expiry/
 // heartbeat/dead_letter) from the destination queue as it is configured now, per-job overrides
 // from the original send() are not preserved, since the DLQ copy never stored them. `dead_letter`
 // is the same value send() falls back to, so a second terminal failure re-enters the DLQ.
 // Job-identity columns (priority, singleton_key, group_id, group_tier) are carried over instead.
 const REDRIVE_INSERT_COLUMNS = `(id, name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
        expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
-       heartbeat_seconds, dead_letter)`
+       heartbeat_seconds, dead_letter, source_root_id)`
 
 function redriveInsertValues (schema: string, newId: string, destination: string): string {
   return `${newId}, COALESCE(${destination}, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
       q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
       ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
-      m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter`
+      m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter,
+      COALESCE(m.source_root_id, m.source_id)`
 }
 
 // What a job that could not be re-created becomes: failed, in place, in the dead letter queue, with
@@ -4198,9 +4226,9 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
   10: QUEUE_POLICIES.key_strict_fifo
 }
 // job_iN indexes with no policy gate, created on every job table regardless of policy
-// (throttle i4, fetch i11, group-concurrency i7, blocking i9). 5 is absent, not missing: the fetch
-// index was replaced in v40 and the retired number is not reused.
-const BASE_JOB_INDEXES = [4, 7, 9, 11]
+// (throttle i4, fetch i11, group-concurrency i7, blocking i9, source root i12). 5 is absent, not
+// missing: the fetch index was replaced in v40 and the retired number is not reused.
+const BASE_JOB_INDEXES = [4, 7, 9, 11, 12]
 
 // The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
 const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency']

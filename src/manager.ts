@@ -2194,7 +2194,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2211,12 +2211,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier])
+          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier, job.source_root_id])
         }
       }
 

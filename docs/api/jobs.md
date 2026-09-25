@@ -492,7 +492,8 @@ Returns an array of jobs from a queue
       sourceId: string | null,
       sourceCreatedOn: Date | null,
       sourceRetryCount: number | null,
-      sourceOutput: object | null
+      sourceOutput: object | null,
+      sourceRootId: string | null
     }
     ```
 
@@ -502,6 +503,12 @@ of the original job, `sourceCreatedOn` is the original job's creation time (so i
 true age survives the move), `sourceRetryCount` is how many retries it consumed
 before being dead-lettered, and `sourceOutput` is the original job's `output` when it
 failed, usually its error. These are `null` for jobs that were not dead-lettered.
+
+`sourceId` only names the previous hop. After a redrive, the job that fails is the
+redriven copy, not the one `send()` returned. `sourceRootId` is the id of the first
+job in the chain, and it is carried onto every dead-lettered and redriven job after it,
+so the whole history of a job can be found from the id `send()` returned, however many
+round trips it took. It is `null` for a job that has never been through a dead letter queue.
 
 The dead-lettered job's own `output` starts empty: it is a new job that has not run yet.
 
@@ -557,7 +564,8 @@ dead letter queue to drain. Returns the number of jobs moved.
 
 Each job is routed back to the queue it originally failed on (its `sourceName`),
 so a single dead letter queue that collects from many source queues fans back out
-correctly. Re-created jobs get a new id, a reset retry count, cleared output, and
+correctly. Re-created jobs get a new id (with [`sourceRootId`](#fetchname-options) still
+pointing at the job `send()` returned), a reset retry count, cleared output, and
 the destination queue's current retry, retention, policy, expiration, heartbeat, and
 deadLetter configuration. Per-job overrides passed to the original `send()` (such as
 `expireInSeconds` or `retryLimit`) are not restored, since the queue's configuration wins.

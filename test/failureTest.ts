@@ -388,6 +388,47 @@ describe('failure', function () {
     expect(dlqMeta.sourceId).toBe(redriven.id)
   })
 
+  it('source root id survives repeated round trips through the dead letter queue', async function () {
+    const boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    ctx.boss = boss
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await boss.createQueue(deadLetter)
+    await boss.createQueue(ctx.schema, { deadLetter, retryLimit: 0 })
+
+    const rootId = await boss.send(ctx.schema, { key: ctx.schema })
+    assertTruthy(rootId)
+
+    expect((await boss.getJobById(ctx.schema, rootId))?.sourceRootId).toBeNull()
+
+    // One trip: fail the job, find its dead letter copy, redrive it, and return the redriven job's
+    // id. sourceId only ever names the previous hop, so by the second trip it no longer points at
+    // the job send() returned. The root has to.
+    const roundTrip = async (failingId: string): Promise<string> => {
+      await boss.fetch(ctx.schema)
+      await boss.fail(ctx.schema, failingId)
+
+      const [dlqMeta] = await boss.findJobs(deadLetter, { queued: true })
+      assertTruthy(dlqMeta)
+      expect(dlqMeta.sourceId).toBe(failingId)
+      expect(dlqMeta.sourceRootId).toBe(rootId)
+
+      expect(await boss.redrive(deadLetter)).toBe(1)
+
+      const [redriven] = await boss.findJobs(ctx.schema, { queued: true })
+      assertTruthy(redriven)
+      expect(redriven.id).not.toBe(failingId)
+      expect(redriven.sourceId).toBeNull()
+      expect(redriven.sourceRootId).toBe(rootId)
+
+      return redriven.id
+    }
+
+    const firstRedriven = await roundTrip(rootId)
+    await roundTrip(firstRedriven)
+  })
+
   it('dead letter copy and redrive preserve priority and group', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

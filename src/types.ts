@@ -1385,6 +1385,14 @@ export interface JobWithMetadata<T = object> extends Job<T> {
    * it is a new job that has not run. `null` otherwise.
    */
   sourceOutput: object | null;
+  /**
+   * The id of the first job in this job's dead letter chain: the id `send()`
+   * returned, however many times the job has been dead-lettered and redriven
+   * since. Set on dead-lettered jobs and on redriven jobs, where `sourceId` only
+   * names the previous hop. `null` for a job that has never been through a dead
+   * letter queue.
+   */
+  sourceRootId: string | null;
 }
 
 export interface JobInsert<T = object> {

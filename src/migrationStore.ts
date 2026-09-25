@@ -1067,6 +1067,98 @@ const createQueueFn: Record<number, (schema: string) => string> = {
     END;
     $$
     LANGUAGE plpgsql;
+  `,
+  43: (schema) => `
+    CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
+    RETURNS VOID AS
+    $$
+    DECLARE
+    tablename varchar := CASE WHEN options->>'partition' = 'true'
+    THEN 'j' || encode(sha224(queue_name::bytea), 'hex')
+    ELSE 'job_common'
+    END;
+    queue_created_on timestamptz;
+    BEGIN
+
+    WITH q as (
+    INSERT INTO ${schema}.queue (
+    name,
+    policy,
+    retry_limit,
+    retry_delay,
+    retry_backoff,
+    retry_delay_max,
+    expire_seconds,
+    retention_seconds,
+    deletion_seconds,
+    warning_queued,
+    dead_letter,
+    partition,
+    table_name,
+    heartbeat_seconds,
+    notify,
+    created_on,
+    updated_on
+    )
+    VALUES (
+    queue_name,
+    options->>'policy',
+    COALESCE((options->>'retryLimit')::int, 2),
+    COALESCE((options->>'retryDelay')::int, 0),
+    COALESCE((options->>'retryBackoff')::bool, false),
+    (options->>'retryDelayMax')::int,
+    COALESCE((options->>'expireInSeconds')::int, 900),
+    COALESCE((options->>'retentionSeconds')::int, 1209600),
+    COALESCE((options->>'deleteAfterSeconds')::int, 604800),
+    COALESCE((options->>'warningQueueSize')::int, 0),
+    options->>'deadLetter',
+    COALESCE((options->>'partition')::bool, false),
+    tablename,
+    (options->>'heartbeatSeconds')::int,
+    COALESCE((options->>'notify')::bool, false),
+    ${schema}.job_now(),
+    ${schema}.job_now()
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING created_on
+    )
+    SELECT created_on into queue_created_on from q;
+
+    IF queue_created_on IS NULL OR options->>'partition' IS DISTINCT FROM 'true' THEN
+    RETURN;
+    END IF;
+
+    EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
+
+    EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
+
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> 'cancelled' AND singleton_on IS NOT NULL$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = 'completed'$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL$cmd$, tablename);
+
+    IF options->>'policy' = 'short' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'created' AND policy = 'short'$cmd$, tablename);
+    ELSIF options->>'policy' = 'singleton' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i2 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'active' AND policy = 'singleton'$cmd$, tablename);
+    ELSIF options->>'policy' = 'stately' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i3 ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, tablename);
+    ELSIF options->>'policy' = 'exclusive' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
+    ELSIF options->>'policy' = 'key_strict_fifo' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) INCLUDE (start_after) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, tablename);
+    END IF;
+
+    EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
+    EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);
+    END;
+    $$
+    LANGUAGE plpgsql;
   `
 }
 
@@ -1902,6 +1994,20 @@ AS $function$
       // every partition like the others did. Jobs already in a dead letter queue
       // keep the output they were copied with.
       //
+      // source_root_id rides in the same ALTER: the first job in a dead letter
+      // chain, so every round trip through the dead letter queue can be found
+      // from the id send() returned. Rows dead-lettered before it existed have
+      // none, and their first redrive falls back to source_id, which is the
+      // root for a job that has only been through once.
+      //
+      // job_i12 indexes it, for a lineage lookup that finds a whole chain from
+      // its root. Built the way v40 built job_i11: inline without partitioning,
+      // and with it through create_queue for new partitions and BAM for the
+      // tables that already exist, concurrently, so a large job table is not
+      // locked against writes for the length of the build. The column is new
+      // and empty, so the partial index is too, but the build still scans the
+      // table to find that out.
+      //
       // One ALTER per table, not one per column. On CockroachDB every ALTER is
       // a schema change job inside the migration's transaction, and seven of
       // them held it open long enough to lose RETRY_SERIALIZABLE against DDL
@@ -1920,9 +2026,31 @@ AS $function$
           ADD COLUMN failed_delta int,
           ADD COLUMN delta_seconds int,
           ADD COLUMN delta_on timestamp with time zone`,
-        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_output jsonb`
+        `ALTER TABLE ${schema}.job
+          ADD COLUMN IF NOT EXISTS source_output jsonb,
+          ADD COLUMN IF NOT EXISTS source_root_id uuid`,
+        noPartitioning
+          ? `CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
+          : createQueueFn[43](schema)
       ],
+      async: noPartitioning
+        ? []
+        : [
+            {
+              name: 'source_root_index_build',
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
+            }
+          ],
+      // The index goes before its column. Dropping the column would take the index with it, but
+      // partitioned, create_queue has to be restored first, or a queue created mid-rollback would
+      // build an index on a column that is about to be gone.
       uninstall: [
+        ...(noPartitioning
+          ? [`DROP INDEX IF EXISTS ${schema}.job_i12`]
+          : [
+              createQueueFn[42](schema),
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i12$cmd$)`
+            ]),
         `ALTER TABLE ${schema}.queue
           DROP COLUMN created_delta,
           DROP COLUMN completed_delta,
@@ -1935,7 +2063,9 @@ AS $function$
           DROP COLUMN failed_delta,
           DROP COLUMN delta_seconds,
           DROP COLUMN delta_on`,
-        `ALTER TABLE ${schema}.job DROP COLUMN source_output`
+        `ALTER TABLE ${schema}.job
+          DROP COLUMN source_output,
+          DROP COLUMN source_root_id`
       ]
     }
   ]

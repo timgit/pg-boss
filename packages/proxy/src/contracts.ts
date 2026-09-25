@@ -207,6 +207,7 @@ export const jobWithMetadataSchema = jobSchemaBase.extend({
   sourceCreatedOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
   sourceRetryCount: z.number().nullable(),
   sourceOutput: jsonRecordSchema.nullable(),
+  sourceRootId: z.string().nullable(),
 }) satisfies z.ZodType<types.HttpJobWithMetadata>
 
 export const commandResponseSchema = z.object({
