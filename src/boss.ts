@@ -366,7 +366,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
     const command = plans.trySetQueueMonitorTime(
       this.#config.schema,
       names,
-      this.#config.monitorIntervalSeconds
+      this.#config.monitorIntervalSeconds,
+      this.#config.noSkipLocked
     )
     const { rows } = await this.#executeQuery(command)
 
@@ -451,7 +452,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
     const command = plans.trySetQueueDeletionTime(
       this.#config.schema,
       names,
-      this.#config.maintenanceIntervalSeconds
+      this.#config.maintenanceIntervalSeconds,
+      this.#config.noSkipLocked
     )
     const { rows } = await this.#executeQuery(command)
 
