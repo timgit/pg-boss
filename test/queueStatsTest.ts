@@ -185,23 +185,19 @@ describe('queueStats', function () {
      * winding `delta_on` backwards either, except where a test is about the
      * window itself — that is the watermark these counters are windowed on.
      *
-     * The window ends at job_now() unless `fromOpenTransactions` is set. Test
-     * files run side by side on one database, and another file's open write
-     * transaction would hold that end back and push a count into the next pass.
-     *
      * The window's lag is zero here unless a test passes the real one: the
-     * production lag is a minute, and these tests are about what a window
+     * production lag is 10 seconds, and these tests are about what a window
      * counts, not about waiting for it. The tests on the lag itself age the
      * stamps instead.
      */
-    async function monitorPass (queue: string, throughput = true, fromOpenTransactions = false, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
+    async function monitorPass (queue: string, throughput = true, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
       )
 
-      await db.executeSql(plans.cacheQueueStats(schema, table, [queue], true, throughput, fromOpenTransactions, window))
+      await db.executeSql(plans.cacheQueueStats(schema, table, [queue], true, throughput, window))
       const { rows } = await db.executeSql(plans.getQueueStatsCache(schema), [queue])
 
       // Raw rows, so CockroachDB's INT8 strings arrive unconverted; the API does this in the manager.
@@ -378,8 +374,8 @@ describe('queueStats', function () {
       await ctx.boss.supervise(queue)
       await ctx.boss.send(queue)
       await ctx.boss.send(queue)
-      // The real monitor runs here, with the real lag: the sends are a minute
-      // too young to count until they are aged past it.
+      // The real monitor runs here, with the real lag: the sends are too young
+      // to count until they are aged past it.
       await age(queue, '2 minutes')
       await windBack(queue, '3 minutes')
 
@@ -393,7 +389,7 @@ describe('queueStats', function () {
       // trails the pass by the lag.
       const [newest] = await ctx.boss.getQueueStats(queue)
       expect(newest.deltaOn).toBeInstanceOf(Date)
-      expect(newest.capturedOn.getTime() - newest.deltaOn!.getTime()).toBeGreaterThanOrEqual(60_000)
+      expect(newest.capturedOn.getTime() - newest.deltaOn!.getTime()).toBeGreaterThanOrEqual(10_000)
     })
 
     /** Nobody counted, so the answer is null — zero would say the queue was idle. */
@@ -459,37 +455,36 @@ describe('queueStats', function () {
     }
 
     /**
-     * The window ends a minute behind the pass, not at it. A job's stamp is the
-     * start of the transaction that wrote it, and the row is only visible once
-     * that transaction commits, so a window ending at the pass stepped past any
-     * stamp still in flight. Trailing by a minute, a transaction that commits
-     * within a minute of starting is counted whatever role it runs as, and on
-     * every backend. The cost is that a job just finished waits a pass or two
-     * to be counted.
+     * The window ends 10 seconds behind the pass, not at it. A job's stamp is
+     * the start of the transaction that wrote it, and the row is only visible
+     * once that transaction commits, so a window ending at the pass stepped
+     * past any stamp still in flight. Trailing by the lag, a transaction that
+     * commits within it is counted in its own window, and only longer ones are
+     * left to the true-up.
      */
-    it('ends the window a minute behind the pass', async function () {
+    it('ends the window 10 seconds behind the pass', async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
       const queue = randomUUID()
       await ctx.boss.createQueue(queue)
 
-      await monitorPass(queue, true, false, {})
+      await monitorPass(queue, true, {})
       await ctx.boss.send(queue)
 
       // Just sent, so still inside the lag: not counted, and the window's end
       // says so.
-      const young = await monitorPass(queue, true, false, {})
+      const young = await monitorPass(queue, true, {})
       expect(young.createdDelta).toBe(0)
-      expect(young.capturedOn.getTime() - young.deltaOn.getTime()).toBeGreaterThanOrEqual(60_000)
-      expect(young.capturedOn.getTime() - young.deltaOn.getTime()).toBeLessThan(65_000)
+      expect(young.capturedOn.getTime() - young.deltaOn.getTime()).toBeGreaterThanOrEqual(10_000)
+      expect(young.capturedOn.getTime() - young.deltaOn.getTime()).toBeLessThan(15_000)
 
       // Once the stamp is older than the lag, the next window covers it.
       await age(queue, '90 seconds')
       await windBack(queue, '3 minutes')
-      expect((await monitorPass(queue, true, false, {})).createdDelta).toBe(1)
+      expect((await monitorPass(queue, true, {})).createdDelta).toBe(1)
     })
 
     /**
-     * Counters describe the minute before the gauges next to them, so bucketing
+     * Counters describe the interval before the gauges next to them, so bucketing
      * both by capture time would set every counter a bucket late. Gauges are
      * bucketed by capturedOn and counters by deltaOn, joined per bucket, and the
      * newest bucket has no counters until the pass that counts its minute runs.
@@ -649,20 +644,55 @@ describe('queueStats', function () {
     })
 
     /**
-     * created_on and completed_on are the start of the transaction that wrote
-     * them. A transactional worker's completion commits after its handler, and a
-     * window ending at now() stepped past its stamp while the row was still
-     * invisible, so no pass ever counted it. The window now ends at the oldest
-     * open write transaction, which holds it back until this one commits.
+     * A monitor pass with persistQueueStats on, run the way the monitor runs it: the aggregate,
+     * the snapshot, and the true-up when the aggregate flagged one. Returns whether it did.
      */
-    // A second connection holds the transaction open, which pglite doesn't have. CockroachDB and
-    // YugabyteDB end the window at the pass instead, so a late commit there is still missed.
-    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('counts a completion committed after a pass, from a transaction that began before it', async function () {
-      ctx.boss = await helper.start(ctx.bossConfig)
+    async function recordedPass (queue: string, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      const { rows: [{ table_name: table }] } = await db.executeSql(
+        `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
+      )
+
+      const result = await db.executeSql(plans.cacheQueueStats(schema, table, [queue], true, true, window))
+      const rows = Array.isArray(result) ? result.flatMap(r => r.rows) : result.rows
+      await db.executeSql(plans.insertQueueStats(schema, [queue], true))
+
+      const flagged = rows.some((row: any) => row.name === queue && row.trueUp)
+      if (flagged) {
+        await db.executeSql(plans.trueUpQueueStats(schema, table, [queue], true, window))
+      }
+
+      return flagged
+    }
+
+    /** The recorded history's counters, oldest first. */
+    async function history (queue: string) {
+      const db = await helper.getDb()
+      const { rows } = await db.executeSql(
+        `SELECT created_delta::int AS created, completed_delta::int AS completed, failed_delta::int AS failed
+         FROM ${ctx.bossConfig.schema}.queue_stats WHERE name = $1 ORDER BY delta_on, captured_on`, [queue]
+      )
+      // CockroachDB returns ::int as INT8, which arrives as a string.
+      return rows.map((row: any) => ({ created: Number(row.created), completed: Number(row.completed), failed: Number(row.failed) }))
+    }
+
+    const total = (rows: { [k: string]: number }[], key: string) => rows.reduce((sum, row) => sum + row[key], 0)
+
+    /**
+     * created_on and completed_on are the start of the transaction that wrote them. A transactional
+     * worker's completion commits after its handler, so its row turns up behind a window that was
+     * already counted and recorded. The pass does not wait for it; the snapshot whose window its
+     * stamp belongs to is trued up once it lands.
+     */
+    // A second connection holds the transaction open, which pglite doesn't have. CockroachDB blocks
+    // the monitor's read on the open transaction's write intent until it commits.
+    it.skipIf(helper.isPglite || helper.isCockroachDb)('trues up a completion committed after the pass that counted its window', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
       const queue = randomUUID()
       await ctx.boss.createQueue(queue)
 
-      await monitorPass(queue, true, true)
+      await recordedPass(queue)
       await ctx.boss.send(queue)
       const [job] = await ctx.boss.fetch(queue)
 
@@ -675,35 +705,35 @@ describe('queueStats', function () {
           db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) }
         })
 
-        // A pass while it is still open cannot see the completion, and must not
-        // step past its stamp.
+        // Counted and recorded while the completion is still invisible.
         await new Promise(resolve => setTimeout(resolve, 50))
-        let counted = (await monitorPass(queue, true, true)).completedDelta
-
+        expect(await recordedPass(queue)).toBe(false)
         await tx.query('COMMIT')
-
-        // Other test files' transactions can hold the window back a pass, so
-        // keep passing until it is counted. Lost, it never would be.
-        await expect.poll(async () => {
-          counted += (await monitorPass(queue, true, true)).completedDelta
-          return counted
-        }, { timeout: 5_000, interval: 200 }).toBe(1)
       } finally {
         await tx.end()
       }
+
+      const before = await history(queue)
+      expect(total(before, 'completed')).toBe(0)
+
+      expect(await recordedPass(queue)).toBe(true)
+
+      // Into the window the stamp belongs to, the one recorded while the transaction was open, and
+      // not into the pass that saw it land.
+      const after = await history(queue)
+      expect(after.map(row => row.completed)).toEqual([0, 1, 0])
+
+      // Settled: the next pass finds nothing more to true up.
+      expect(await recordedPass(queue)).toBe(false)
     })
 
-    /**
-     * Only transactions that had written were held for, and a transaction that
-     * had only read when the pass ran could still complete a job before it
-     * committed, stamped with its start, which the pass had already stepped past.
-     */
-    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('counts a completion from a transaction that had only read when the pass ran', async function () {
-      ctx.boss = await helper.start(ctx.bossConfig)
+    /** A transaction that had only read when the pass ran is stamped with its start all the same. */
+    it.skipIf(helper.isPglite || helper.isCockroachDb)('trues up a completion from a transaction that had only read when the pass ran', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
       const queue = randomUUID()
       await ctx.boss.createQueue(queue)
 
-      await monitorPass(queue, true, true)
+      await recordedPass(queue)
       await ctx.boss.send(queue)
       const [job] = await ctx.boss.fetch(queue)
 
@@ -713,78 +743,195 @@ describe('queueStats', function () {
       try {
         await tx.query('BEGIN')
         await tx.query('SELECT 1')
-
-        // Nothing written yet, and the pass must still not step past this transaction's start.
         await new Promise(resolve => setTimeout(resolve, 50))
-        let counted = (await monitorPass(queue, true, true)).completedDelta
+        await recordedPass(queue)
 
         await ctx.boss.complete(queue, job.id, null, {
           db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) }
         })
         await tx.query('COMMIT')
-
-        await expect.poll(async () => {
-          counted += (await monitorPass(queue, true, true)).completedDelta
-          return counted
-        }, { timeout: 5_000, interval: 200 }).toBe(1)
       } finally {
         await tx.end()
+      }
+
+      await recordedPass(queue)
+      expect((await history(queue)).map(row => row.completed)).toEqual([0, 1, 0])
+    })
+
+    /**
+     * The window ends at the pass (less the lag) whatever else is open. It used to be held back to
+     * the oldest open transaction, so a read-only report or a backup froze every queue's counters
+     * at zero until it ended.
+     */
+    it.skipIf(helper.isPglite)('does not hold the window back for an open transaction', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await recordedPass(queue)
+
+      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
+      await holder.connect()
+
+      try {
+        await holder.query('BEGIN')
+        await holder.query('SELECT 1')
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        await ctx.boss.send(queue)
+        expect((await monitorPass(queue)).createdDelta).toBe(1)
+      } finally {
+        await holder.query('COMMIT')
+        await holder.end()
       }
     })
 
     /**
-     * An open transaction holds the window's end back, but never further than
-     * the window's own maximum. Past that the end used to jump to now, which put
-     * the window's start out of range and reset it: one transaction left open
-     * for an hour dropped that hour's counts for every queue. Now the end sits
-     * at the cap and walks forward with the clock until the transaction ends.
-     *
-     * Tested at the statement, with the cap shortened: a test cannot hold a
-     * transaction open for an hour.
+     * Jobs that commit more than the horizon after their window was recorded are not counted: the
+     * true-up only revises the last hour. Horizon shrunk to two seconds through the seam.
      */
-    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('caps how far an open transaction holds the window end back', async function () {
-      ctx.boss = await helper.start(ctx.bossConfig)
-      const schema = ctx.bossConfig.schema
+    it.skipIf(helper.isPglite || helper.isCockroachDb)('does not true up a window older than the horizon', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+      const window: plans.DeltaWindowOptions = { lag: "interval '0'", trueUpMax: "interval '2 seconds'" }
 
-      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
-      const reader = new pg.Client({ connectionString: helper.getConnectionString() })
-      await holder.connect()
-      await reader.connect()
+      await recordedPass(queue, window)
 
-      const windowEnd = async (holdBackMax?: string) => {
-        await reader.query('BEGIN')
-        await reader.query(plans.setDeltaWindowEnd(schema, { lag: "interval '0'", holdBackMax }))
-        const { rows: [row] } = await reader.query(
-          `SELECT current_setting('${plans.DELTA_WINDOW_END_SETTING}')::timestamptz AS "end", now() AS at`
-        )
-        await reader.query('COMMIT')
-        return row as { end: Date, at: Date }
-      }
+      const tx = new pg.Client({ connectionString: helper.getConnectionString() })
+      await tx.connect()
 
       try {
-        await holder.query('BEGIN')
-        // Read-only, and still counted as open.
-        const { rows: [{ started }] } = await holder.query('SELECT now() AS started')
-        await new Promise(resolve => setTimeout(resolve, 1_500))
-
-        // Within the cap, the end is the transaction's start (or an older one another test holds).
-        const held = await windowEnd()
-        expect(held.end.getTime()).toBeLessThanOrEqual(started.getTime())
-
-        // Past the cap, the end is the cap behind now: not the transaction's start, and not now.
-        const capped = await windowEnd("interval '1 second'")
-        expect(capped.end.getTime()).toBeGreaterThan(started.getTime())
-        expect(capped.at.getTime() - capped.end.getTime()).toBe(1_000)
+        await tx.query('BEGIN')
+        await ctx.boss.send(queue, null, {
+          db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) }
+        })
+        await new Promise(resolve => setTimeout(resolve, 50))
+        await recordedPass(queue, window)
+        await new Promise(resolve => setTimeout(resolve, 500))
+        // The anchor: a snapshot recorded after the send's window, which has to age past the horizon.
+        await recordedPass(queue, window)
+        await new Promise(resolve => setTimeout(resolve, 2_500))
+        await tx.query('COMMIT')
       } finally {
-        await holder.end()
-        await reader.end()
+        await tx.end()
       }
+
+      expect(await recordedPass(queue, window)).toBe(false)
+      expect(total(await history(queue), 'created')).toBe(0)
+    })
+
+    /**
+     * A recount only raises a snapshot. Rows a window already counted can be deleted (retention,
+     * deleteJob) before a later true-up, and a recount that went down would unwrite them.
+     */
+    it.skipIf(helper.isPglite || helper.isCockroachDb)('never lowers a snapshot when it trues up another', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await recordedPass(queue)
+
+      const tx = new pg.Client({ connectionString: helper.getConnectionString() })
+      await tx.connect()
+      const inTx = { db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) } }
+      let doomed: string | null = null
+
+      try {
+        await tx.query('BEGIN')
+        await ctx.boss.send(queue, null, inTx)
+        await ctx.boss.send(queue, null, inTx)
+        await new Promise(resolve => setTimeout(resolve, 50))
+        // This window's own send is counted now, and the two in the transaction are not.
+        await ctx.boss.send(queue)
+        await recordedPass(queue)
+        // And the next window counts one more, which is deleted before the true-up runs.
+        doomed = await ctx.boss.send(queue)
+        await recordedPass(queue)
+        await tx.query('COMMIT')
+      } finally {
+        await tx.end()
+      }
+
+      await ctx.boss.deleteJob(queue, doomed!)
+
+      expect(await recordedPass(queue)).toBe(true)
+      expect((await history(queue)).map(row => row.created)).toEqual([0, 3, 1, 0])
+    })
+
+    /**
+     * The snapshot insert is its own statement, and a pass whose insert never ran still moved the
+     * watermark. The next snapshot's rebuilt window covers both passes, so its counters fall short
+     * by the lost pass's jobs, and the true-up puts them back there.
+     */
+    it('restores the jobs of a pass whose snapshot was never written', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await recordedPass(queue)
+      await ctx.boss.send(queue)
+      // Counted, but no snapshot.
+      await monitorPass(queue)
+      await ctx.boss.send(queue)
+      await recordedPass(queue)
+      expect((await history(queue)).map(row => row.created)).toEqual([0, 1])
+
+      expect(await recordedPass(queue)).toBe(true)
+      expect((await history(queue)).map(row => row.created)).toEqual([0, 2, 0])
+    })
+
+    /**
+     * The monitor itself runs the true-up when its aggregate flags one, not only the statements
+     * above. A recorded window seeded short of the jobs stamped inside it stands in for a late
+     * commit, since the real lag is 10 seconds.
+     */
+    it('trues up the history from a monitor pass', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true, supervise: false, monitorIntervalSeconds: 1 })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.send(queue)
+      await ctx.boss.send(queue)
+      await age(queue, '10 minutes')
+
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      await ensurePreviousDayPartition(db, schema)
+      // An anchor twenty minutes back, then a window over the sends that recorded none of them.
+      await db.executeSql(
+        `INSERT INTO ${schema}.queue_stats (name, created_delta, completed_delta, failed_delta, delta_seconds, delta_on, captured_on)
+         VALUES ($1, 0, 0, 0, NULL, now() - interval '20 minutes', now() - interval '19 minutes'),
+                ($1, 0, 0, 0, 900, now() - interval '5 minutes', now() - interval '4 minutes')`, [queue]
+      )
+      await windBack(queue, '5 minutes')
+
+      await ctx.boss.supervise(queue)
+
+      expect((await history(queue)).map(row => row.created)).toEqual([0, 2, 0])
+    })
+
+    /**
+     * A snapshot that started a window afresh (the first counted pass, or one after a gap)
+     * deliberately counted nothing before it. The true-up must not reach across it and land that
+     * stretch on the history after all.
+     */
+    it('does not true up across a window that started afresh', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.send(queue)
+      await recordedPass(queue)
+      await recordedPass(queue)
+
+      expect(await recordedPass(queue)).toBe(false)
+      expect(total(await history(queue), 'created')).toBe(0)
     })
 
     /**
      * A counter's bucket can hold no capture: passes drift, so a pass time
-     * minus the lag lands a bucket away from the previous capture, and a
-     * held-back deltaOn lands wherever its transaction started. Returned on
+     * minus the lag lands a bucket away from the previous capture. Returned on
      * its own, that bucket's gauges would read as zero and chart the queue as
      * empty. It is folded into the newest gauge bucket at or before it instead,
      * or the first in range when none precedes it.
@@ -821,53 +968,6 @@ describe('queueStats', function () {
       expect(only.capturedOn.getTime()).toBe(minute(29).getTime())
       expect(only.readyCount).toBe(7)
       expect(only.completedDelta).toBe(4)
-    })
-
-    /**
-     * The window a transaction held back has to survive the transaction ending.
-     * While it is open past the cap, each pass ends its window the cap behind
-     * itself and starts the next one there. When it commits, the next pass's
-     * end springs forward to its own time, so that window is the cap plus a
-     * pass interval long. A reset threshold equal to the cap called that stale
-     * and dropped it: the hour the transaction had only delayed was lost after
-     * all, at the moment it ended.
-     *
-     * Intervals shrunk through the seams: a two second cap, a four second
-     * threshold, no lag.
-     */
-    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('counts the window a transaction held back once it ends', async function () {
-      ctx.boss = await helper.start(ctx.bossConfig)
-      const queue = randomUUID()
-      await ctx.boss.createQueue(queue)
-
-      const window: plans.DeltaWindowOptions = { lag: "interval '0'", holdBackMax: "interval '2 seconds'", resetMax: "interval '4 seconds'" }
-      await monitorPass(queue, true, true, window)
-
-      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
-      await holder.connect()
-
-      try {
-        await holder.query('BEGIN')
-        await holder.query('SELECT 1')
-        // Open past the cap, so the pass ends its window the cap behind itself.
-        await new Promise(resolve => setTimeout(resolve, 2_500))
-
-        // Sent inside the held-back stretch: after this pass's end, before the next one's.
-        await ctx.boss.send(queue)
-        const held = await monitorPass(queue, true, true, window)
-        expect(held.createdDelta).toBe(0)
-
-        await holder.query('COMMIT')
-      } finally {
-        await holder.end()
-      }
-
-      // The end springs forward, and the window it closes covers the send.
-      let counted = 0
-      await expect.poll(async () => {
-        counted += (await monitorPass(queue, true, true, window)).createdDelta
-        return counted
-      }, { timeout: 5_000, interval: 200 }).toBe(1)
     })
 
     /**

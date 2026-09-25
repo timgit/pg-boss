@@ -305,8 +305,7 @@ export function disableClockOverride () {
 // The stored source of the clock function, for spotting an override a killed test run left behind.
 // prosrc rather than pg_get_functiondef: the latter is unsupported on CockroachDB, and the caller
 // only needs to know whether the body reads CLOCK_OVERRIDE_SETTING, not to diff it. CockroachDB
-// rewrites what it stores, so this must never be compared against CLOCK_FUNCTION_BODY for equality -
-// see clockFunctionIsOverridden.
+// rewrites what it stores, so this must never be compared against CLOCK_FUNCTION_BODY for equality.
 export function getClockFunctionSource (schema: string) {
   return `
     SELECT p.prosrc AS source
@@ -354,7 +353,7 @@ export function createClockFunction (schema: string, options: { replace?: boolea
 //   monitor_backoff_on  the odd one out - a deadline rather than a last-run stamp. Before it, no
 //                       instance may start another queue-stats aggregate, so autovacuum gets a
 //                       horizon-free window it cannot miss. Null on a database that has never
-//                       needed one; see setMonitorBackoff for what writes it and how long it is.
+//                       needed one.
 function createTableVersion (schema: string) {
   return `
     CREATE TABLE ${schema}.version (
@@ -370,9 +369,9 @@ function createTableVersion (schema: string) {
 
 // Two stamps, not one. monitor_claim_on is the interval claim that decides which instance runs a
 // monitor pass; monitor_on is when this queue's counts were actually written, and is stamped only by
-// the aggregate that wrote them (see cacheQueueStats). Splitting them is what lets a pass be claimed
-// and then skip the aggregate - because the vacuum backoff is in force, or because another instance
-// holds the stats try-lock - without capturedOn claiming a freshness the counts do not have.
+// the aggregate that wrote them. Splitting them is what lets a pass be claimed and then skip the
+// aggregate - because the vacuum backoff is in force, or because another instance holds the stats
+// try-lock - without capturedOn claiming a freshness the counts do not have.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -677,7 +676,7 @@ function createTableJob (schema: string, noPartitioning = false) {
   `
 }
 
-// retry_count is in the minimal set because a worker settles against it (see attemptFence).
+// retry_count is in the minimal set because a worker settles against it.
 const JOB_COLUMNS_MIN = 'id, name, data, retry_count as "retryCount", expire_seconds as "expireInSeconds", heartbeat_seconds as "heartbeatSeconds", group_id as "groupId", group_tier as "groupTier"'
 const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   policy,
@@ -1069,9 +1068,9 @@ function createIndexJobBlocking (schema: string) {
   return `CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = '${JOB_STATES.completed}'`
 }
 
-// Finds every job in a dead letter chain from its root (see source_root_id in createTableJob), for a
-// lineage lookup. Keyed on the root alone, with no name: a chain crosses queues, from the source
-// queue to its dead letter queue and back. Partial on the column being set, so only jobs that have
+// Finds every job in a dead letter chain from its root, for a lineage lookup. Keyed on the root
+// alone, with no name: a chain crosses queues, from the source queue to its dead letter queue and
+// back. Partial on the column being set, so only jobs that have
 // been through a dead letter queue are in it and a queue that never dead-letters carries it empty.
 function createIndexJobSourceRoot (schema: string) {
   return `CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
@@ -1104,7 +1103,7 @@ function createIndexJobSourceRoot (schema: string) {
 // deferred.
 //
 // The claim stamps monitor_claim_on, never monitor_on. monitor_on belongs to the aggregate that
-// writes the counts (see cacheQueueStats), so a pass that claims and then skips the aggregate -
+// writes the counts, so a pass that claims and then skips the aggregate -
 // backed off, or beaten to the stats try-lock - leaves capturedOn correctly aging instead of
 // advertising a freshness the counts do not have.
 //
@@ -1560,9 +1559,8 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       -- (a backed-off or missed pass covers several intervals), so a rate is
       -- sum(delta) / sum(delta_seconds), never delta / bucket width.
       delta_seconds   int,
-      -- Where that interval ends. Not captured_on: the window trails the pass
-      -- by DELTA_LAG (see plans.ts), so the counters describe an earlier minute
-      -- than the gauges in the same row, and this is the time to plot them at.
+      -- the delta window trails the pass by DELTA_LAG
+      -- which is an earlier interval than captured_on
       delta_on        timestamptz,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
@@ -1682,7 +1680,7 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
 // monitorBackoff rides along because the caller must serve this cache even when it is stale while
 // the vacuum-safety backoff is in force: a forced refresh runs the same whole-table aggregate the
 // backoff exists to space out, and a dashboard polling { force: true } would otherwise walk
-// straight back into the pin the monitor just backed away from. See setMonitorBackoff.
+// straight back into the pin the monitor just backed away from.
 export function getQueueStatsCache (schema: string): string {
   return `
     SELECT
@@ -1762,13 +1760,12 @@ const STATS_AGG = {
 // captured_on. The counters in that same row describe an interval that ended DELTA_LAG earlier,
 // delta_on, so keyed on captured_on they would land a bucket or two late and sit beside the wrong
 // gauges. Each side is bucketed by its own time and the two are joined per bucket, which is why the
-// newest bucket carries null counters: the pass that counts its minute has not run yet, and a
+// newest bucket carries null counters: the pass that counts its interval has not run yet, and a
 // later read fills it in.
 //
 // The join is not symmetric, though. A counter's bucket can hold no capture at all: passes drift,
 // so delta_on (a pass time minus the lag) lands a bucket away from the previous capture; a bucket
-// narrower than the monitor interval has more empty buckets than full ones; and a held-back
-// delta_on lands wherever the transaction that held it started. Emitting that bucket on its own
+// narrower than the monitor interval has more empty buckets than full ones. Emitting that bucket on its own
 // would chart the queue as empty, since a gauge with no capture reads as zero. So a counter bucket
 // with no gauges is folded into the newest gauge bucket at or before it (the capture at the end of
 // the counted interval reflects the state it left), or into the first gauge bucket in range when
@@ -2462,7 +2459,7 @@ interface InsertJobsOptions {
   notify?: boolean
   // Whether a job may name the throttle slot it is filed in. Only the cron pass asks for it, so the
   // statement a public insert() builds does not declare the column and a caller naming it sets
-  // nothing. See the CASE below.
+  // nothing.
   slots?: boolean
 }
 
@@ -3433,102 +3430,45 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // finished before it. Only a statement that counts moves delta_on, so an uncounted pass in between
 // leaves the window open and the next counted pass picks its jobs up.
 //
-// It ends where every job stamped before it is known to be committed, which is not now(). created_on
-// and completed_on come from job_now(), the start of the transaction that wrote them, so a job
-// completed by a transactional worker, or sent inside an application's transaction, carries a
-// stamp from before a pass it commits after. A window ending at now() moved past that stamp while
-// the row was still invisible, and no later pass counted it.
+// It ends DELTA_LAG behind the pass, not at now(). created_on and completed_on come from job_now(),
+// the start of the transaction that wrote them, so a job sent inside an application's transaction,
+// or completed by a transactional worker, carries a stamp from before a pass it commits after. A
+// window ending at now() stepped past that stamp while the row was still invisible. With the lag,
+// a transaction that commits within the lag of starting lands ahead of the end, whatever the
+// backend and whatever role it runs as, and is counted in the window its stamp belongs to. The
+// counters are DELTA_LAG behind the gauges in the same row, which is what delta_on is for.
 //
-// So the end trails the pass by DELTA_LAG. A transaction that commits within the lag of starting is
-// counted whatever role it runs as and whatever the backend, because its stamp is still ahead of
-// the end when it lands. The counters are a minute behind the gauges in the same row, which is what
-// delta_on on the snapshot is for. On PostgreSQL the end is held back further, to the start of the
-// oldest transaction the monitoring role can see still open (see setDeltaWindowEnd), which covers a
-// transactional worker whose handler runs longer than the lag. A long transaction delays the count
-// rather than losing it.
-//
-// The hold-back has a cap, DELTA_WINDOW_MAX: the end is never held further behind now than that (see
-// setDeltaWindowEnd), so an open transaction can only delay counting, and only what it commits
-// later than the cap is missed.
+// A transaction that runs longer than the lag lands behind a window that has already been counted
+// and recorded. The pass never waits for it (an open report or backup holding every queue's
+// counters back is the thing this replaced); the snapshots are trued up after the fact instead.
+// So the latest hour of history is provisional: a snapshot's counters can rise after it is written,
+// never fall.
 //
 // A window whose start is more than DELTA_RESET_MAX behind its end starts afresh instead: counting
 // was off for a while, and landing hours of work on one snapshot would chart as a spike at the
 // moment it was switched back on. Null in, null out, so those comparisons count nothing, the same
-// as a queue never counted. The threshold is deliberately looser than the cap. A window starts
-// where the last one ended, and that end could have been held the full cap behind its pass; when
-// the transaction holding it commits, the next end springs forward to its own pass, so the window is
-// legitimately as long as the cap plus the gap between the two passes. A threshold equal to the cap
-// reset exactly there, and the hour the transaction had delayed was dropped after all, at the moment
-// it ended rather than the moment it began. Twice the cap tolerates a gap of up to an hour between
-// counted passes, which is where "counting was off" starts.
+// as a queue never counted.
 //
-// All three intervals are fixed rather than configured. delta_on is shared by every instance, and a
-// window that one instance measured with a different lag than the last would count a minute twice
-// or skip it. Sixty seconds covers any transaction an OLTP application should be holding open, and
-// is the default monitor interval, so each snapshot's counters cover the interval before the last.
-const DELTA_LAG = "interval '60 seconds'"
-const DELTA_WINDOW_MAX = "interval '1 hour'"
+// All of these are fixed rather than configured. delta_on is shared by every instance, and a
+// window that one instance measured with a different lag than the last would count an interval
+// twice or skip it. The lag only decides how often the true-up runs, not what is counted: measured
+// under a mixed load whose longest routine transactions held 5s, a lag of 0 or 1s set off a true-up
+// on 90-97% of passes, and 5s or more on none. Ten seconds leaves headroom over that and puts the
+// counters within a pass of the gauges. See research/delta-true-up.md on planning.
+const DELTA_LAG = "interval '10 seconds'"
 const DELTA_RESET_MAX = "interval '2 hours'"
-export const DELTA_WINDOW_END_SETTING = 'pgboss.delta_window_end'
+const DELTA_TRUE_UP_MAX = "interval '1 hour'"
 
 // Test seams for the intervals above. Nothing in production passes them: a test cannot wait a
-// minute for the lag or hold a transaction open for an hour.
-export interface DeltaWindowOptions { lag?: string, holdBackMax?: string, resetMax?: string }
+// minute for the lag or an hour for the true-up horizon.
+export interface DeltaWindowOptions { lag?: string, resetMax?: string, trueUpMax?: string }
 
-// Where this pass's window ends: the value setDeltaWindowEnd stored, or the lag alone on a backend
-// whose pg_stat_activity doesn't show its transactions (CockroachDB, YugabyteDB).
-function deltaWindowEnd (schema: string, fromOpenTransactions: boolean, lag = DELTA_LAG): string {
-  return fromOpenTransactions
-    ? `current_setting('${DELTA_WINDOW_END_SETTING}')::timestamptz`
-    : `(${schema}.job_now() - ${lag})`
+function deltaWindowEnd (schema: string, lag = DELTA_LAG): string {
+  return `(${schema}.job_now() - ${lag})`
 }
 
 function deltaWindowStart (alias: string, end: string, resetMax = DELTA_RESET_MAX): string {
   return `(CASE WHEN ${alias}.delta_on > ${end} - ${resetMax} THEN ${alias}.delta_on END)`
-}
-
-// Runs as its own statement, ahead of the aggregate in the same transaction. The order is what makes
-// it exact: under READ COMMITTED the aggregate's snapshot is taken after this has read
-// pg_stat_activity, so a transaction this no longer saw open has committed before that snapshot
-// and its rows are visible to it. Read within one statement, a transaction could commit between the
-// snapshot and the read, be stepped over, and not be seen.
-//
-// Every open transaction holds the end back, not only those that have written. One that has only
-// read so far can still send or complete a job before it commits, and that row carries the
-// transaction's start as its stamp; a filter on backend_xid stepped past exactly those. The price is
-// that a long read-only report delays counting too, which loses nothing.
-//
-// The hold-back is capped at DELTA_WINDOW_MAX rather than the transaction ignored past it. Ignored,
-// the end jumped from the transaction's start to now, which left the window's start more than
-// DELTA_WINDOW_MAX behind and reset it: one transaction left open for an hour (a forgotten BEGIN in
-// a psql session) wiped that hour's counts for every queue. Capped, the end walks forward
-// DELTA_WINDOW_MAX behind now for as long as the transaction stays open, every pass still counts
-// its own window, and only what that transaction commits later than the cap is missed. The reset
-// threshold has to be looser than the cap for that to hold when the transaction ends; see
-// DELTA_RESET_MAX.
-//
-// A transaction whose xact_start this role can't read (another role's backend reads NULL there) is
-// not seen, and jobs it commits late are not counted. xact_start is real time and the stamps are
-// job_now(), so the offset between the two carries it onto the stamps' clock, which only differs
-// under a test clock. A DO block, because a SELECT would add its row to the ones the monitor reads
-// back from this transaction.
-//
-export function setDeltaWindowEnd (schema: string, { lag = DELTA_LAG, holdBackMax = DELTA_WINDOW_MAX }: DeltaWindowOptions = {}): string {
-  return `
-    DO $$
-    BEGIN
-      PERFORM pg_catalog.set_config('${DELTA_WINDOW_END_SETTING}', LEAST(
-        ${schema}.job_now() - ${lag},
-        (
-          SELECT min(GREATEST(a.xact_start, pg_catalog.now() - ${holdBackMax}))
-          FROM pg_catalog.pg_stat_activity a
-          WHERE a.datname = pg_catalog.current_database()
-            AND a.pid <> pg_catalog.pg_backend_pid()
-            AND a.xact_start IS NOT NULL
-        ) + (${schema}.job_now() - pg_catalog.now())
-      )::text, true);
-    END
-    $$`
 }
 
 // The SET clause for a statement that counts. The right-hand side reads the row as it was before
@@ -3548,6 +3488,135 @@ function throughputAssignments (end: string, resetMax?: string): string {
       delta_on = GREATEST(queue.delta_on, ${end}),`
 }
 
+// The windows a true-up may still revise, per queue: every recorded snapshot whose window ends
+// after the anchor `h`, up to the newest one, `top`, with the counters they hold between them.
+//
+// A snapshot's window is not stored; it is rebuilt. Each counted pass starts where the last one
+// ended and records its end as delta_on, so a snapshot's window runs from the previous snapshot's
+// delta_on to its own, exactly, with no rounding (delta_seconds is rounded, so start = delta_on -
+// delta_seconds would not tile). The anchor is the newest snapshot at least DELTA_TRUE_UP_MAX
+// behind, so only windows younger than the horizon are revised. A snapshot that started a window
+// afresh (first counted pass, or a reset after a gap; both record null seconds) counted nothing
+// before its end on purpose, so it anchors too: truing up across it would land hours of work on it.
+//
+// When a pass counted but its snapshot was never written (the insert is a separate statement and
+// can fail), the next snapshot's rebuilt window covers both passes. Its stored counters then fall
+// short by that pass's jobs, and the true-up restores them there, which is the right place to the
+// resolution the history has.
+// Every recorded snapshot in reach, each carrying its queue's anchor `h`; the windows are the rows
+// with delta_on > h. One read of queue_stats: the anchor is a window aggregate over the same rows.
+// CASE rather than FILTER, which CockroachDB doesn't take on a window function.
+function trueUpWindows (schema: string, queues: string, trueUpMax = DELTA_TRUE_UP_MAX): string {
+  return `
+      SELECT s.id, s.captured_on, s.name, s.delta_on, s.created_delta, s.completed_delta, s.failed_delta,
+        COALESCE(
+          max(CASE WHEN s.delta_on <= ${schema}.job_now() - ${trueUpMax} OR s.delta_seconds IS NULL THEN s.delta_on END)
+            OVER (PARTITION BY s.name),
+          min(s.delta_on) OVER (PARTITION BY s.name)
+        ) AS h
+      FROM ${schema}.queue_stats s
+      WHERE s.name = ANY(${queues})
+        AND s.captured_on >= ${schema}.job_now() - 2 * ${trueUpMax}
+        AND s.delta_on IS NOT NULL`
+}
+
+// The same anchor and windows, reduced to what the monitor's check needs: per queue, the anchor,
+// the newest window end `top`, and what the windows between them hold. Two index lookups per queue
+// on queue_stats (name, captured_on), laterally, rather than trueUpWindows' window aggregate: that
+// sorts every snapshot in reach by queue name, which on a thousand queues cost more than the check.
+function trueUpSettled (schema: string, alias: string, trueUpMax = DELTA_TRUE_UP_MAX): string {
+  const since = `${schema}.job_now() - 2 * ${trueUpMax}`
+  return `
+            LEFT JOIN LATERAL (
+              SELECT COALESCE(
+                  max(s.delta_on) FILTER (WHERE s.delta_on <= ${schema}.job_now() - ${trueUpMax} OR s.delta_seconds IS NULL),
+                  min(s.delta_on)
+                ) AS h
+              FROM ${schema}.queue_stats s
+              WHERE s.name = ${alias}.name AND s.captured_on >= ${since} AND s.delta_on IS NOT NULL
+            ) a ON true
+            LEFT JOIN LATERAL (
+              SELECT max(s.delta_on) AS top,
+                sum(s.created_delta + s.completed_delta + s.failed_delta) AS settled
+              FROM ${schema}.queue_stats s
+              WHERE s.name = ${alias}.name AND s.captured_on >= ${since} AND s.delta_on > a.h
+            ) t ON true`
+}
+
+// Revise the recent snapshots' counters for jobs that committed after the pass that counted their
+// window. Run only for the queues the monitor's aggregate flagged:
+// that check is three filtered counts riding a scan the monitor makes anyway, and this is a second
+// scan of the queue's rows, paid once per late commit rather than on every pass.
+//
+// Each job row is placed in its window by width_bucket over the queue's window ends, a binary
+// search rather than a join against every window, then counted per window and compared with what
+// the snapshot holds. Counters only rise: retention and deleteJob() remove rows a window already
+// counted, and a recount that went down would unwrite them. Two instances truing up the same
+// snapshot write the same GREATEST, so nothing here needs to be serialized for correctness; the
+// stats try-lock is taken so they don't both scan.
+export function trueUpQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, window: DeltaWindowOptions = {}): string {
+  const names = serializeArrayParam(queues)
+  const trueUpMax = window.trueUpMax ?? DELTA_TRUE_UP_MAX
+  const lock = tryAdvisoryLock(schema, 'queue-stats', noAdvisoryLocks)
+
+  const sql = `
+    WITH ${lock.cte}win AS (
+      SELECT w.*, row_number() OVER (PARTITION BY w.name ORDER BY w.delta_on, w.captured_on) AS i
+      FROM (${trueUpWindows(schema, names, trueUpMax)}) w
+      WHERE w.delta_on > w.h${lock.guard}
+    ),
+    -- Thresholds [h, end1, end2, ...]: width_bucket returns i for h <= stamp < end_i when the
+    -- snapshot ordered i ends at end_i, and past the last end, a bucket no window claims.
+    th AS (
+      SELECT w.name, w.h, array_prepend(w.h, array_agg(w.delta_on ORDER BY w.i)) AS t
+      FROM win w
+      GROUP BY w.name, w.h
+    ),
+    binned AS (
+      SELECT j.name,
+        CASE WHEN j.created_on >= th.h THEN width_bucket(j.created_on, th.t) END AS cb,
+        CASE WHEN j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') AND j.completed_on >= th.h
+          THEN width_bucket(j.completed_on, th.t) END AS fb,
+        j.state
+      FROM ${schema}.${table} j
+      JOIN th ON th.name = j.name
+      WHERE j.name = ANY(${names})
+    ),
+    grouped AS (
+      SELECT name, cb, fb, state, count(*)::int AS n
+      FROM binned
+      WHERE cb IS NOT NULL OR fb IS NOT NULL
+      GROUP BY 1, 2, 3, 4
+    ),
+    counted AS (
+      SELECT name, cb AS i, sum(n)::int AS created, 0 AS completed, 0 AS failed
+      FROM grouped WHERE cb IS NOT NULL GROUP BY 1, 2
+      UNION ALL
+      SELECT name, fb AS i, 0,
+        COALESCE(sum(n) FILTER (WHERE state = '${JOB_STATES.completed}'), 0)::int,
+        COALESCE(sum(n) FILTER (WHERE state = '${JOB_STATES.failed}'), 0)::int
+      FROM grouped WHERE fb IS NOT NULL GROUP BY 1, 2
+    ),
+    recount AS (
+      SELECT w.id, w.captured_on,
+        sum(c.created)::int AS created, sum(c.completed)::int AS completed, sum(c.failed)::int AS failed
+      FROM win w
+      JOIN counted c ON c.name = w.name AND c.i = w.i
+      GROUP BY w.id, w.captured_on
+    )
+    UPDATE ${schema}.queue_stats s SET
+      created_delta = GREATEST(s.created_delta, r.created),
+      completed_delta = GREATEST(s.completed_delta, r.completed),
+      failed_delta = GREATEST(s.failed_delta, r.failed)
+    FROM recount r
+    WHERE s.id = r.id AND s.captured_on = r.captured_on${lock.guard}
+      AND (r.created > s.created_delta OR r.completed > s.completed_delta OR r.failed > s.failed_delta)
+    RETURNING s.name, ${PIN_SECONDS_SQL} as "pinSeconds"
+  `
+
+  return transaction(sql)
+}
+
 // Every count the monitor keeps, from one pass over the queue's table.
 //
 // Six of them are gauges — what the queue looks like right now. Three are not:
@@ -3557,7 +3626,7 @@ function throughputAssignments (end: string, resetMax?: string): string {
 // Five hundred arriving and five hundred leaving looks identical to a still
 // queue in every gauge here.
 //
-// The window is the queue's own `delta_on` (see deltaWindowStart), joined in
+// The window is the queue's own `delta_on`, joined in
 // rather than passed as a fixed interval. That watermark is what makes the three
 // counters exact across a skipped or backed-off pass: nothing is counted twice,
 // because the window starts where the last one ended, and nothing is missed,
@@ -3570,22 +3639,36 @@ function throughputAssignments (end: string, resetMax?: string): string {
 // it once and probes per row. The alternative, a second pass over the job table
 // filtered on completed_on, would be a whole extra scan of the largest table in
 // the schema, and there is no index on that column to make it cheaper.
-export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, fromOpenTransactions = false, window: DeltaWindowOptions = {}): SqlQuery {
+export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, window: DeltaWindowOptions = {}): SqlQuery {
   // Counted only with persistQueueStats. Otherwise the aggregate does what it did before throughput
   // existed: no join, no extra counts, no cost. The measured price is in the `persistQueueStats` docs.
-  const end = deltaWindowEnd(schema, fromOpenTransactions, window.lag)
+  const end = deltaWindowEnd(schema, window.lag)
   const inWindow = (column: string) => `j.${column} >= ${deltaWindowStart('q', end, window.resetMax)} AND j.${column} < ${end}`
+  // The true-up check: the same jobs recounted across the windows already recorded (see
+  // trueUpSettled). More than the snapshots hold means something committed after its window was
+  // counted, and the monitor follows up with trueUpQueueStats for this queue.
+  const settled = (column: string) => `j.${column} >= q.h AND j.${column} < q.top`
   const counters = throughput
     ? {
         select: `
         "createdDelta",
         "completedDelta",
-        "failedDelta",`,
+        "failedDelta",
+        COALESCE("recount" > "settled", false) as "trueUp",`,
         counts: `
             (count(*) FILTER (WHERE ${inWindow('created_on')}))::int as "createdDelta",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}' AND ${inWindow('completed_on')}))::int as "completedDelta",
-            (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND ${inWindow('completed_on')}))::int as "failedDelta",`,
-        join: `JOIN ${schema}.queue q ON q.name = j.name`
+            (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND ${inWindow('completed_on')}))::int as "failedDelta",
+            sum(
+              CASE WHEN ${settled('created_on')} THEN 1 ELSE 0 END +
+              CASE WHEN ${settled('completed_on')} AND j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') THEN 1 ELSE 0 END
+            )::int as "recount",
+            max(q.settled) as "settled",`,
+        join: `JOIN (
+            SELECT q.name, q.delta_on, a.h, t.top, t.settled
+            FROM ${schema}.queue q${trueUpSettled(schema, 'q', window.trueUpMax)}
+            WHERE q.name = ANY($1::text[])
+          ) q ON q.name = j.name`
       }
     : { select: '', counts: '', join: '' }
 
@@ -3629,17 +3712,13 @@ export const READY_HISTORY_SIZE = 60
 const PIN_SECONDS_SQL = 'EXTRACT(EPOCH FROM (clock_timestamp() - transaction_timestamp()))::float8'
 /* eslint-enable no-restricted-syntax */
 
-// fromOpenTransactions ends the throughput window at the oldest open transaction rather than the lag
-// alone (see setDeltaWindowEnd). Only meaningful with throughput, and only on a backend whose
-// pg_stat_activity shows its transactions.
-export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, throughput?: boolean, fromOpenTransactions?: boolean, window: DeltaWindowOptions = {}): string {
-  const fromOpen = Boolean(throughput && fromOpenTransactions)
-  const statsQuery = getQueueStats(schema, table, queues, throughput, fromOpen, window)
+export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, throughput?: boolean, window: DeltaWindowOptions = {}): string {
+  const statsQuery = getQueueStats(schema, table, queues, throughput, window)
   // The aggregate only produces these when counting, so the assignment has to
   // disappear with them rather than reference a column that is not there.
-  const throughputSet = throughput ? throughputAssignments(deltaWindowEnd(schema, fromOpen, window.lag), window.resetMax) : ''
+  const throughputSet = throughput ? throughputAssignments(deltaWindowEnd(schema, window.lag), window.resetMax) : ''
   // Serialize the $1 parameter for use in the multi-statement transaction below
-  const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
+  const statsText = statsQuery.text.replaceAll('$1::text[]', serializeArrayParam(queues))
   const lock = tryAdvisoryLock(schema, 'queue-stats', noAdvisoryLocks)
 
   // Two columns in here are not counts and are easy to mistake for incidental:
@@ -3697,13 +3776,13 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
     RETURNING
       queue.name,
       queue.queued_count as "queuedCount",
-      queue.warning_queued as "warningQueueSize",
+      queue.warning_queued as "warningQueueSize",${throughput ? '\n      COALESCE(stats."trueUp", false) as "trueUp",' : ''}
       ${PIN_SECONDS_SQL} as "pinSeconds"
   `
 
   // transaction(), not locked(): the lock is taken inside the statement with try rather than by a
   // preceding blocking one. The wrapper is still wanted for its SET LOCAL timeouts.
-  return transaction(fromOpen ? [setDeltaWindowEnd(schema, window), sql] : sql)
+  return transaction(sql)
 }
 
 // Recompute one queue's counts from the job table and write them back to the queue-table cache
@@ -4119,7 +4198,7 @@ export function releaseBamCommand (schema: string, id: string, priorStatus: stri
     : `'${priorStartedOn.replace(SINGLE_QUOTE_REGEX, "''")}'::timestamptz`
 
   // Compare-and-swap on the claim this runner actually took, not on the id alone. The timeout-only
-  // claim has no SKIP LOCKED (see getNextBamCommand), so two overlapping claims can both return the
+  // claim has no SKIP LOCKED, so two overlapping claims can both return the
   // same row - verified: both get rowCount 1 and the same prior_status. Releasing on the id alone
   // would then reset a row a peer is actively building back to 'pending', and the next poll would
   // start a second CREATE INDEX CONCURRENTLY on the same index. Matching started_on makes the release
@@ -4214,7 +4293,7 @@ interface QueuePartition {
 }
 
 // job_iN partial indexes that gate on a queue policy: a per-queue partition table (partition:true)
-// only receives the index for its own policy (see create_queue, createQueueFunction). The shared
+// only receives the index for its own policy. The shared
 // job_common table and a non-partitioned job table carry all of them at once. Keep in sync with the
 // createIndexJobPolicy* builders and the ELSIF ladder in createQueueFunction.
 const POLICY_JOB_INDEXES: Record<number, string> = {

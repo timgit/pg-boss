@@ -150,7 +150,7 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 
   Default: 7 days. How long a job should be retained in the database after it's completed. Set to 0 to never delete completed jobs.
 
-  Keep it above a few minutes if you rely on throughput counts. A completed job is counted by the monitor a minute or more after it finishes (see [`getQueueStats()`](#getqueuestatsname-options)), and one deleted before then is never counted.
+  Keep it above a few minutes if you rely on throughput counts. A completed job is counted by the monitor at the first pass at least 10 seconds after it finishes (see [`getQueueStats()`](#getqueuestatsname-options)), and one deleted before then is never counted.
 
 * All retry, expiration, and retention options set on the queue will be inheritied for each job, unless they are overridden.
 
@@ -217,9 +217,9 @@ and three deltas: how many jobs were created, completed, and failed in the windo
 * `completedDelta`: jobs completed
 * `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not included)
 * `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
-* `deltaOn`: when the interval the deltas cover ends, a minute behind `capturedOn`.
+* `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
 
-The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends a minute behind the pass, and a transaction that commits within a minute of starting is counted in the first pass after its stamp is a minute old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs for minutes, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, so a snapshot from the last hour can still rise after it has been returned. It never falls.
+The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, so a snapshot from the last hour can still rise after it has been returned. It never falls.
 
 Behavior depends on whether stats are being persisted:
 
@@ -231,7 +231,7 @@ Behavior depends on whether stats are being persisted:
   * `maxDataPoints` (int): auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
   * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
 
-  `aggregate` applies to the counts only. The deltas and `deltaSeconds` are summed within a bucket. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers its minute has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
+  `aggregate` applies to the counts only. The deltas and `deltaSeconds` are summed within a bucket. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
 
   `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
 * When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.

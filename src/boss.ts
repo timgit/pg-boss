@@ -382,10 +382,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const refreshStats = rows[0].refreshStats !== false
 
       if (refreshStats) {
-        // noMonitorVacuum marks the backends whose pg_stat_activity doesn't show their transactions,
-        // which the throughput window's end is read from. See plans.setDeltaWindowEnd.
         const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks,
-          this.#config.persistQueueStats, !this.#config.noMonitorVacuum)
+          this.#config.persistQueueStats)
         // The pin this pass cost, taken from the server's own clock (see the pinSeconds column in
         // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
         // network and event-loop lag, none of which hold the horizon. The client measurement stays as
@@ -409,6 +407,19 @@ class Boss extends EventEmitter implements types.EventsMixin {
           const written = rowsCacheStats.map(row => row.name)
           const insertSql = plans.insertQueueStats(this.#config.schema, written, this.#config.noAdvisoryLocks)
           await this.#executeQuery(insertSql)
+
+          // Jobs committed after the pass that counted their window: the aggregate saw more of them
+          // across the recorded windows than the snapshots hold. Recount those queues' recent windows
+          // and raise the snapshots that fell short. A second scan, so it is paid only when the
+          // check fires, and it counts toward the pin like the aggregate does.
+          const late = rowsCacheStats.filter(row => row.trueUp).map(row => row.name)
+          if (late.length && !this.#stopping) {
+            const trueUpStarted = Date.now()
+            const trueUpSql = plans.trueUpQueueStats(this.#config.schema, table, late, this.#config.noAdvisoryLocks)
+            const { rows: trued } = await this.#executeQuery(trueUpSql)
+            const trueUpPinned = trued.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
+            this.#statsElapsedSeconds += trueUpPinned || (Date.now() - trueUpStarted) / 1000
+          }
         }
 
         if (this.#stopping) return
