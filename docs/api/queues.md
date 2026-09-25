@@ -71,7 +71,7 @@ Allowed policy values:
 
 * **notify**, boolean, default false
 
-  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#newoptions) option, which runs the listener. Jobs scheduled for the future (for example via `sendAfter()` or throttling/debouncing) do **not** emit a notification. They are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
+  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#uselistennotify) option, which runs the listener. Jobs scheduled for the future (for example via `sendAfter()` or throttling/debouncing) do **not** emit a notification. They are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
 
 **Retry options**
 
@@ -211,7 +211,7 @@ Returns an array of queue-depth snapshots, most recent first. Each snapshot has 
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
 * `totalCount`: all jobs currently stored for the queue
 
-and three throughput counts, which are counters rather than gauges: how many jobs moved in the window since the previous monitor pass. They are not the difference between two snapshots' gauges: `failedDelta` is not the change in `failedCount`, which also falls as retention deletes failed jobs. They are only counted when [`persistQueueStats`](./constructor.md) is enabled, and are `null` otherwise, or on snapshots captured before pg-boss 12.35. In a bucketed series they are summed, not aggregated.
+and three throughput counts, which are counters rather than gauges: how many jobs moved in the window since the previous monitor pass. They are not the difference between two snapshots' gauges: `failedDelta` is not the change in `failedCount`, which also falls as retention deletes failed jobs. They are only counted when [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, and are `null` otherwise, or on snapshots captured before pg-boss 12.35. In a bucketed series they are summed, not aggregated.
 
 * `createdDelta`: jobs created
 * `completedDelta`: jobs completed
@@ -223,7 +223,7 @@ The counters are eventually consistent rather than up to the second. A job is co
 
 Behavior depends on whether stats are being persisted:
 
-* When [`persistQueueStats`](./constructor.md) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
+* When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
 
   Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets:
 

@@ -35,7 +35,7 @@ SELECT * FROM pgboss.warning WHERE created_on > now() - interval '1 hour';
 
 ## Cleanup
 
-To enable automatic cleanup, set the `warningRetentionDays` option:
+Warnings older than 365 days are deleted automatically. To keep them for less time, set the `warningRetentionDays` option:
 
 ```js
 const boss = new PgBoss({

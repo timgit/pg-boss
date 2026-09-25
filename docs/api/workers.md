@@ -290,7 +290,7 @@ This is an **opt-in optimization on top of polling, not a replacement for it.** 
 
 **Enabling it requires two opt-ins:**
 
-1. Start the instance with [`useListenNotify: true`](./constructor.md#newoptions). This runs a listener on one dedicated database connection.
+1. Start the instance with [`useListenNotify: true`](./constructor.md#uselistennotify). This runs a listener on one dedicated database connection.
 2. Mark each queue that should emit notifications with the [`notify: true`](./queues.md#createqueuename-queue) option on `createQueue()` (or `updateQueue()`).
 
 ```js

@@ -55,7 +55,7 @@ When enabled, warnings are stored in the `warning` table and can be queried dire
 
 The table records episodes: a condition the database entered and can leave again. Two types are left out of it and emitted as events and nothing else, because neither is an episode. `transactional_pool_headroom` reports a fixed relationship between `max` and the workers you registered, which no restart or later pass resolves. `transaction_timeout_probe` reports a backend or `db` adapter that does not understand the probe, and one that cannot answer it today will not answer it tomorrow either.
 
-To automatically prune old warnings, set the `warningRetentionDays` option:
+Warnings older than 365 days are pruned automatically. To keep them for less time, set the `warningRetentionDays` option:
 
 ```js
 const boss = new PgBoss({
@@ -135,7 +135,7 @@ This event is useful for monitoring migration progress in production environment
 
 ## `flow`
 
-Emitted by the background flow resolver each time it unblocks one or more dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. See `flowIntervalSeconds` in the [constructor options](./constructor.md) for how often the resolver runs.
+Emitted by the background flow resolver each time it unblocks one or more dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. See [`flowIntervalSeconds`](./constructor.md#flowintervalseconds) in the constructor options for how often the resolver runs.
 
 ```js
 boss.on('flow', event => {
