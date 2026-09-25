@@ -82,6 +82,23 @@ describe('trackActivity', function () {
     expect(await duringCommit).toBe(true)
   })
 
+  it('counts a rollback', async function () {
+    const rollbackGate = gate()
+    const tx: TransactionHandle = {
+      db: { executeSql: async () => rows },
+      commit: async () => {},
+      rollback: async () => { await rollbackGate.promise }
+    }
+    const { db, idle } = trackActivity({ executeSql: async () => rows, beginTransaction: async () => tx })
+
+    const handle = await db.beginTransaction!()
+    const rollback = handle.rollback()
+    const duringRollback = idle()
+    rollbackGate.open()
+    await rollback
+    expect(await duringRollback).toBe(true)
+  })
+
   it('leaves listen uncounted and missing capabilities missing', async function () {
     const inner: IDatabase = {
       executeSql: async () => rows,
@@ -110,7 +127,7 @@ describe('trackActivity', function () {
     expect(await idle()).toBe(false)
   })
 
-  it('forwards other members, bound to the original so private fields keep working', async function () {
+  it('forwards reads and writes of other members to the original, so private fields keep working', async function () {
     class Adapter {
       readonly _pgbdb = true
       opened = true
@@ -125,5 +142,8 @@ describe('trackActivity', function () {
     expect(db.calls()).toBe(1)
     expect(db.opened).toBe(true)
     expect('_pgbdb' in db).toBe(true)
+
+    db.opened = false
+    expect(inner.opened).toBe(false)
   })
 })
