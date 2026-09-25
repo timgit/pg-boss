@@ -76,9 +76,6 @@ export const SCHEDULE_KINDS = Object.freeze({
   rrule: 'rrule'
 } as const)
 
-/** The kind column's domain, for the CHECK on the table and the migration that adds it. */
-export const SCHEDULE_KIND_CHECK = `kind IN ('${SCHEDULE_KINDS.cron}', '${SCHEDULE_KINDS.rrule}')`
-
 /**
  * What a schedule does about occurrences that came due while no cron pass ran.
  *
@@ -432,7 +429,7 @@ function createTableSchedule (schema: string) {
     CREATE TABLE ${schema}.schedule (
       name text REFERENCES ${schema}.queue ON DELETE CASCADE,
       key text not null DEFAULT '',
-      kind text not null DEFAULT '${SCHEDULE_KINDS.cron}' CHECK (${SCHEDULE_KIND_CHECK}),
+      kind text not null DEFAULT '${SCHEDULE_KINDS.cron}' CHECK (kind IN ('${SCHEDULE_KINDS.cron}', '${SCHEDULE_KINDS.rrule}')),
       cron text not null,
       timezone text DEFAULT 'UTC',
       data jsonb,

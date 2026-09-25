@@ -1925,11 +1925,11 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
       // the pass. UTC is what their authors asked for. The default on the column keeps the next
       // hand-written insert from making another one, and matches what a fresh install now builds.
       install: [
-        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT '${plans.SCHEDULE_KINDS.cron}' CHECK (${plans.SCHEDULE_KIND_CHECK})`,
+        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'cron' CHECK (kind IN ('cron', 'rrule'))`,
         ...(noAddColumnBackfill
           ? []
-          : [`UPDATE ${schema}.schedule SET kind = '${plans.SCHEDULE_KINDS.rrule}'
-              WHERE kind = '${plans.SCHEDULE_KINDS.cron}'
+          : [`UPDATE ${schema}.schedule SET kind = 'rrule'
+              WHERE kind = 'cron'
                 AND (cron ~* '(^|[[:space:]]|;)FREQ=' OR cron ~* '(^|[[:space:]])(DTSTART|RRULE|RDATE|EXDATE)[;:]')`]),
         `UPDATE ${schema}.schedule SET timezone = 'UTC' WHERE timezone IS NULL`,
         `ALTER TABLE ${schema}.schedule ALTER COLUMN timezone SET DEFAULT 'UTC'`,
