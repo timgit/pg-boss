@@ -599,6 +599,22 @@ describe('queueStats', function () {
       expect((await monitorPass(queue)).createdDelta).toBe(1)
     })
 
+    /** With passes over an hour apart, every window would otherwise reset and nothing would count. */
+    it('keeps counting when passes are further apart than the reset threshold', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+      const window = { lag: "interval '0'", resetMax: plans.deltaResetMax(3 * 60 * 60) }
+
+      await monitorPass(queue, true, window)
+      await ctx.boss.send(queue)
+      await windBack(queue, '3 hours')
+
+      const pass = await monitorPass(queue, true, window)
+      expect(pass.createdDelta).toBe(1)
+      expect(pass.deltaSeconds).toBeGreaterThanOrEqual(3 * 60 * 60)
+    })
+
     /** The rollup plan depends on this: seconds sum across a bucket like the counts do. */
     it('carries deltaSeconds through the history, summed per bucket', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
@@ -665,6 +681,35 @@ describe('queueStats', function () {
 
       return flagged
     }
+
+    /** The monitor adds a true-up's pin to the backoff budget only when it scanned. */
+    it.skipIf(helper.isPglite || helper.isCockroachDb)('returns a true-up row only when it held the stats lock', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+      const db = await helper.getDb()
+      const schema = ctx.bossConfig.schema
+      const { rows: [{ table_name: table }] } = await db.executeSql(
+        `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
+      )
+      const trueUp = plans.trueUpQueueStats(schema, table, [queue], false)
+      const rowsOf = (result: any) => Array.isArray(result) ? result.flatMap((r: any) => r.rows) : result.rows
+
+      const [scanned] = rowsOf(await db.executeSql(trueUp))
+      expect(Number(scanned.raised)).toBe(0)
+      expect(Number(scanned.pinSeconds)).toBeGreaterThanOrEqual(0)
+
+      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
+      await holder.connect()
+      try {
+        await holder.query('BEGIN')
+        await holder.query(`SELECT pg_advisory_xact_lock(${plans.advisoryLockKey(schema, 'queue-stats')})`)
+        expect(rowsOf(await db.executeSql(trueUp))).toHaveLength(0)
+      } finally {
+        await holder.query('ROLLBACK')
+        await holder.end()
+      }
+    })
 
     /** The recorded history's counters, oldest first. */
     async function history (queue: string) {

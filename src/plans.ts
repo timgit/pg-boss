@@ -372,6 +372,9 @@ function createTableVersion (schema: string) {
 // the aggregate that wrote them. Splitting them is what lets a pass be claimed and then skip the
 // aggregate - because the vacuum backoff is in force, or because another instance holds the stats
 // try-lock - without capturedOn claiming a freshness the counts do not have.
+// created_delta / completed_delta / failed_delta are not gauges like the counts beside them: they
+// are how many jobs went through between the previous monitor pass and the latest one. delta_on and
+// delta_seconds are the window those three cover, null until a pass counts.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -395,15 +398,9 @@ function createTableQueue (schema: string) {
       active_count int NOT NULL default 0,
       failed_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
-      -- Not gauges. How many jobs finished between the previous monitor pass
-      -- and this one, which is what a throughput chart is made of. Every other
-      -- count here answers "how many are there"; these two answer "how many
-      -- went through".
       created_delta int NOT NULL default 0,
       completed_delta int NOT NULL default 0,
       failed_delta int NOT NULL default 0,
-      -- The window those three cover: when this queue was last counted, and
-      -- how many seconds the latest counts span. Null until a pass counts.
       delta_on timestamp with time zone,
       delta_seconds int,
       ready_history int[] NOT NULL default '{}',
@@ -1538,6 +1535,10 @@ export function deleteOldWarnings (schema: string, days: number): string {
   `
 }
 
+// The delta columns are nullable, unlike the gauges: a snapshot captured before they were counted
+// has no value, and zero would chart as an idle queue. Passes are not evenly spaced, so a rate is
+// sum(delta) / sum(delta_seconds), never delta / bucket width. delta_on trails captured_on by
+// DELTA_LAG, since the window a pass counts ends that far behind it.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 export function createTableQueueStats (schema: string, noPartitioning = false): string {
   return `
@@ -1550,17 +1551,10 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       active_count   int NOT NULL DEFAULT 0,
       failed_count   int NOT NULL DEFAULT 0,
       total_count    int NOT NULL DEFAULT 0,
-      -- Nullable, unlike the gauges: a snapshot captured before these were
-      -- counted has no value, and zero would chart as an idle queue.
       created_delta   int,
       completed_delta int,
       failed_delta    int,
-      -- How many seconds the three deltas cover. Passes are not evenly spaced
-      -- (a backed-off or missed pass covers several intervals), so a rate is
-      -- sum(delta) / sum(delta_seconds), never delta / bucket width.
       delta_seconds   int,
-      -- the delta window trails the pass by DELTA_LAG
-      -- which is an earlier interval than captured_on
       delta_on        timestamptz,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
@@ -3136,9 +3130,21 @@ export function insertDeadLetterJob (schema: string): string {
 // $2 destination override, $3 sourceName, $4 data (jsonb containment), $5 createdBefore,
 // $6 ids. Each filter is off when its parameter is null. Only jobs not yet active are
 // candidates: a job the dead letter queue's own workers failed stays where it is.
-function redriveWhere (): string {
+//
+// A key_strict_fifo job whose key is held by an active, retrying or failed job waits behind it, as
+// it would for fetch. job_i8 allows one holder per key, so a collision could not fail it in place,
+// and left queued it would be a candidate on every call and a draining loop would never end.
+function redriveWhere (schema: string, table: string): string {
   return `j.name = $1
         AND j.state < '${JOB_STATES.active}'
+        AND NOT EXISTS (
+          SELECT 1 FROM ${schema}.${table} k
+          WHERE j.policy = '${QUEUE_POLICIES.key_strict_fifo}'
+            AND k.name = j.name
+            AND k.singleton_key = j.singleton_key
+            AND k.policy = '${QUEUE_POLICIES.key_strict_fifo}'
+            AND k.state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}')
+        )
         AND ($3::text IS NULL OR j.source_name = $3)
         AND ($4::jsonb IS NULL OR j.data @> $4::jsonb)
         AND ($5::timestamptz IS NULL OR j.created_on < $5)
@@ -3177,6 +3183,19 @@ function redriveInsertValues (schema: string, newId: string, destination: string
 // The output it had is kept as source_output when that is empty, which only happens on a job
 // dead-lettered before source_output existed: those copied the original's output into their own.
 // `j` is the dead letter row and `q` the destination queue.
+//
+// Failing two key_strict_fifo jobs with the same key would violate job_i8, so of those only the
+// oldest is failed. The rest stay queued behind it, and redriveWhere skips them until it is resolved.
+// `conflicts` is a predicate on `m.id` selecting the dead letter rows that were not re-created.
+function redriveConflictFailable (schema: string, table: string, conflicts: string): string {
+  return `(j.policy IS DISTINCT FROM '${QUEUE_POLICIES.key_strict_fifo}' OR j.singleton_key IS NULL OR j.id IN (
+        SELECT DISTINCT ON (m.singleton_key) m.id
+        FROM ${schema}.${table} m
+        WHERE ${conflicts} AND m.policy = '${QUEUE_POLICIES.key_strict_fifo}'
+        ORDER BY m.singleton_key, m.created_on, m.id
+      ))`
+}
+
 function redriveConflictSet (schema: string): string {
   return `state = '${JOB_STATES.failed}',
       completed_on = ${schema}.job_now(),
@@ -3214,7 +3233,7 @@ export function redriveJobs (schema: string, table: string): string {
       SELECT j.id, gen_random_uuid() AS new_id
       FROM ${schema}.${table} j
       JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
-      WHERE ${redriveWhere()}
+      WHERE ${redriveWhere(schema, table)}
       ORDER BY j.created_on
       LIMIT $7
       FOR UPDATE OF j SKIP LOCKED
@@ -3244,6 +3263,7 @@ export function redriveJobs (schema: string, table: string): string {
       WHERE j.id = s.id
         AND NOT s.inserted
         AND q.name = COALESCE($2, j.source_name)
+        AND ${redriveConflictFailable(schema, table, 'm.id IN (SELECT id FROM settled WHERE NOT inserted)')}
     )
     SELECT count(*)::int AS moved FROM ins
   `
@@ -3260,7 +3280,7 @@ export function selectRedriveCandidates (schema: string, table: string): string 
   return `
     SELECT j.id, gen_random_uuid() AS new_id
     FROM ${schema}.${table} j
-    WHERE ${redriveWhere()}
+    WHERE ${redriveWhere(schema, table)}
       AND EXISTS (SELECT 1 FROM ${schema}.queue q WHERE q.name = COALESCE($2, j.source_name))
     ORDER BY j.created_on
     LIMIT $7
@@ -3291,6 +3311,7 @@ export function failRedriveConflicts (schema: string, table: string): string {
     FROM ${schema}.queue q
     WHERE j.id = ANY($1::uuid[])
       AND q.name = COALESCE($2, j.source_name)
+      AND ${redriveConflictFailable(schema, table, 'm.id = ANY($1::uuid[])')}
   `
 }
 
@@ -3304,7 +3325,7 @@ export function previewRedrive (schema: string, table: string): string {
       count(*)::int AS count
     FROM ${schema}.${table} j
     LEFT JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
-    WHERE ${redriveWhere()}
+    WHERE ${redriveWhere(schema, table)}
     GROUP BY 1, 2
   `
 }
@@ -3447,21 +3468,30 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // A window whose start is more than DELTA_RESET_MAX behind its end starts afresh instead: counting
 // was off for a while, and landing hours of work on one snapshot would chart as a spike at the
 // moment it was switched back on. Null in, null out, so those comparisons count nothing, the same
-// as a queue never counted.
+// as a queue never counted. An instance whose passes are further apart than half of that uses two
+// of its intervals instead (deltaResetMax), or every window would start afresh and nothing would
+// ever be counted. Instances that disagree on it can only disagree about whether a gap resets, so
+// it is safe to derive per instance.
 //
-// All of these are fixed rather than configured. delta_on is shared by every instance, and a
+// The lag and the true-up horizon are fixed rather than configured. delta_on is shared by every instance, and a
 // window that one instance measured with a different lag than the last would count an interval
 // twice or skip it. The lag only decides how often the true-up runs, not what is counted: measured
 // under a mixed load whose longest routine transactions held 5s, a lag of 0 or 1s set off a true-up
 // on 90-97% of passes, and 5s or more on none. Ten seconds leaves headroom over that and puts the
 // counters within a pass of the gauges. See research/delta-true-up.md on planning.
 const DELTA_LAG = "interval '10 seconds'"
-const DELTA_RESET_MAX = "interval '2 hours'"
+const DELTA_RESET_MAX_SECONDS = 2 * 60 * 60
+const DELTA_RESET_MAX = `interval '${DELTA_RESET_MAX_SECONDS} seconds'`
 const DELTA_TRUE_UP_MAX = "interval '1 hour'"
 
 // Test seams for the intervals above. Nothing in production passes them: a test cannot wait a
 // minute for the lag or an hour for the true-up horizon.
 export interface DeltaWindowOptions { lag?: string, resetMax?: string, trueUpMax?: string }
+
+// The reset threshold for an instance whose counting passes run every intervalSeconds.
+export function deltaResetMax (intervalSeconds: number): string {
+  return intervalSeconds * 2 > DELTA_RESET_MAX_SECONDS ? `interval '${intervalSeconds * 2} seconds'` : DELTA_RESET_MAX
+}
 
 function deltaWindowEnd (schema: string, lag = DELTA_LAG): string {
   return `(${schema}.job_now() - ${lag})`
@@ -3503,6 +3533,16 @@ function throughputAssignments (end: string, resetMax?: string): string {
 // can fail), the next snapshot's rebuilt window covers both passes. Its stored counters then fall
 // short by that pass's jobs, and the true-up restores them there, which is the right place to the
 // resolution the history has.
+// The anchor rule and the reach, shared so trueUpWindows (the fix) and trueUpSettled (the monitor's
+// check) always agree on which windows are revised. `s` is a queue_stats row.
+function trueUpAnchor (schema: string, trueUpMax: string): string {
+  return `s.delta_on <= ${schema}.job_now() - ${trueUpMax} OR s.delta_seconds IS NULL`
+}
+
+function trueUpReach (schema: string, trueUpMax: string): string {
+  return `s.captured_on >= ${schema}.job_now() - 2 * ${trueUpMax} AND s.delta_on IS NOT NULL`
+}
+
 // Every recorded snapshot in reach, each carrying its queue's anchor `h`; the windows are the rows
 // with delta_on > h. One read of queue_stats: the anchor is a window aggregate over the same rows.
 // CASE rather than FILTER, which CockroachDB doesn't take on a window function.
@@ -3510,14 +3550,12 @@ function trueUpWindows (schema: string, queues: string, trueUpMax = DELTA_TRUE_U
   return `
       SELECT s.id, s.captured_on, s.name, s.delta_on, s.created_delta, s.completed_delta, s.failed_delta,
         COALESCE(
-          max(CASE WHEN s.delta_on <= ${schema}.job_now() - ${trueUpMax} OR s.delta_seconds IS NULL THEN s.delta_on END)
+          max(CASE WHEN ${trueUpAnchor(schema, trueUpMax)} THEN s.delta_on END)
             OVER (PARTITION BY s.name),
           min(s.delta_on) OVER (PARTITION BY s.name)
         ) AS h
       FROM ${schema}.queue_stats s
-      WHERE s.name = ANY(${queues})
-        AND s.captured_on >= ${schema}.job_now() - 2 * ${trueUpMax}
-        AND s.delta_on IS NOT NULL`
+      WHERE s.name = ANY(${queues}) AND ${trueUpReach(schema, trueUpMax)}`
 }
 
 // The same anchor and windows, reduced to what the monitor's check needs: per queue, the anchor,
@@ -3525,21 +3563,20 @@ function trueUpWindows (schema: string, queues: string, trueUpMax = DELTA_TRUE_U
 // on queue_stats (name, captured_on), laterally, rather than trueUpWindows' window aggregate: that
 // sorts every snapshot in reach by queue name, which on a thousand queues cost more than the check.
 function trueUpSettled (schema: string, alias: string, trueUpMax = DELTA_TRUE_UP_MAX): string {
-  const since = `${schema}.job_now() - 2 * ${trueUpMax}`
   return `
             LEFT JOIN LATERAL (
               SELECT COALESCE(
-                  max(s.delta_on) FILTER (WHERE s.delta_on <= ${schema}.job_now() - ${trueUpMax} OR s.delta_seconds IS NULL),
+                  max(s.delta_on) FILTER (WHERE ${trueUpAnchor(schema, trueUpMax)}),
                   min(s.delta_on)
                 ) AS h
               FROM ${schema}.queue_stats s
-              WHERE s.name = ${alias}.name AND s.captured_on >= ${since} AND s.delta_on IS NOT NULL
+              WHERE s.name = ${alias}.name AND ${trueUpReach(schema, trueUpMax)}
             ) a ON true
             LEFT JOIN LATERAL (
               SELECT max(s.delta_on) AS top,
                 sum(s.created_delta + s.completed_delta + s.failed_delta) AS settled
               FROM ${schema}.queue_stats s
-              WHERE s.name = ${alias}.name AND s.captured_on >= ${since} AND s.delta_on > a.h
+              WHERE s.name = ${alias}.name AND ${trueUpReach(schema, trueUpMax)} AND s.delta_on > a.h
             ) t ON true`
 }
 
@@ -3550,10 +3587,13 @@ function trueUpSettled (schema: string, alias: string, trueUpMax = DELTA_TRUE_UP
 //
 // Each job row is placed in its window by width_bucket over the queue's window ends, a binary
 // search rather than a join against every window, then counted per window and compared with what
-// the snapshot holds. Counters only rise: retention and deleteJob() remove rows a window already
+// the snapshot holds. The thresholds are [h, end1, end2, ...], so width_bucket returns i for
+// h <= stamp < end_i, the window of the snapshot ordered i, and past the last end a bucket no
+// window claims. Counters only rise: retention and deleteJob() remove rows a window already
 // counted, and a recount that went down would unwrite them. Two instances truing up the same
 // snapshot write the same GREATEST, so nothing here needs to be serialized for correctness; the
-// stats try-lock is taken so they don't both scan.
+// stats try-lock is taken so they don't both scan. One row when it scanned, none when another
+// instance held the lock, the same contract as the aggregate's pinSeconds.
 export function trueUpQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, window: DeltaWindowOptions = {}): string {
   const names = serializeArrayParam(queues)
   const trueUpMax = window.trueUpMax ?? DELTA_TRUE_UP_MAX
@@ -3565,8 +3605,6 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
       FROM (${trueUpWindows(schema, names, trueUpMax)}) w
       WHERE w.delta_on > w.h${lock.guard}
     ),
-    -- Thresholds [h, end1, end2, ...]: width_bucket returns i for h <= stamp < end_i when the
-    -- snapshot ordered i ends at end_i, and past the last end, a bucket no window claims.
     th AS (
       SELECT w.name, w.h, array_prepend(w.h, array_agg(w.delta_on ORDER BY w.i)) AS t
       FROM win w
@@ -3603,15 +3641,19 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
       FROM win w
       JOIN counted c ON c.name = w.name AND c.i = w.i
       GROUP BY w.id, w.captured_on
+    ),
+    raised AS (
+      UPDATE ${schema}.queue_stats s SET
+        created_delta = GREATEST(s.created_delta, r.created),
+        completed_delta = GREATEST(s.completed_delta, r.completed),
+        failed_delta = GREATEST(s.failed_delta, r.failed)
+      FROM recount r
+      WHERE s.id = r.id AND s.captured_on = r.captured_on${lock.guard}
+        AND (r.created > s.created_delta OR r.completed > s.completed_delta OR r.failed > s.failed_delta)
+      RETURNING s.id
     )
-    UPDATE ${schema}.queue_stats s SET
-      created_delta = GREATEST(s.created_delta, r.created),
-      completed_delta = GREATEST(s.completed_delta, r.completed),
-      failed_delta = GREATEST(s.failed_delta, r.failed)
-    FROM recount r
-    WHERE s.id = r.id AND s.captured_on = r.captured_on${lock.guard}
-      AND (r.created > s.created_delta OR r.completed > s.completed_delta OR r.failed > s.failed_delta)
-    RETURNING s.name, ${PIN_SECONDS_SQL} as "pinSeconds"
+    SELECT (SELECT count(*) FROM raised)::int AS raised, ${PIN_SECONDS_SQL} as "pinSeconds"
+    WHERE true${lock.guard}
   `
 
   return transaction(sql)

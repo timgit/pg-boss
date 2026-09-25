@@ -869,6 +869,28 @@ describe('failure', function () {
         expect(await queued(boss, queueA)).toEqual([1])
       })
 
+      it(`fails only the oldest of a key_strict_fifo key's collisions, and holds the rest behind it (${path})`, async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__distributed: distributed })
+        const boss = ctx.boss
+        const deadLetter = `${ctx.schema}_dlq`
+        const destination = `${ctx.schema}_dest`
+        await boss.createQueue(deadLetter, { policy: 'key_strict_fifo' })
+        await boss.createQueue(destination, { policy: 'stately' })
+        await boss.send(destination, { n: 0 }, { singletonKey: 'k' })
+        await boss.send(deadLetter, { n: 1 }, { singletonKey: 'k' })
+        await boss.send(deadLetter, { n: 2 }, { singletonKey: 'k' })
+
+        expect(await boss.redrive(deadLetter, { destination })).toBe(0)
+
+        const jobs = await boss.findJobs<{ n: number }>(deadLetter)
+        const byN = Object.fromEntries(jobs.map(job => [job.data.n, job.state]))
+        expect(byN).toEqual({ 1: 'failed', 2: 'created' })
+
+        // The held job is not a candidate while the failed one holds its key, so a draining loop ends.
+        expect((await boss.previewRedrive(deadLetter, { destination })).total).toBe(0)
+        expect(await boss.redrive(deadLetter, { destination })).toBe(0)
+      })
+
       it(`keeps the source output on the dead letter copy and not on the redriven job (${path})`, async function () {
         const { boss, deadLetter, queueA } = await setup()
         const id = await boss.send(queueA, { n: 1 }, { retryLimit: 0 })

@@ -382,8 +382,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const refreshStats = rows[0].refreshStats !== false
 
       if (refreshStats) {
+        // A pass needs both timers, so passes are as far apart as the longer of the two.
+        const passSeconds = Math.max(this.#config.monitorIntervalSeconds!, this.#config.superviseIntervalSeconds!)
         const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks,
-          this.#config.persistQueueStats)
+          this.#config.persistQueueStats, { resetMax: plans.deltaResetMax(passSeconds) })
         // The pin this pass cost, taken from the server's own clock (see the pinSeconds column in
         // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
         // network and event-loop lag, none of which hold the horizon. The client measurement stays as
@@ -416,9 +418,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
           if (late.length && !this.#stopping) {
             const trueUpStarted = Date.now()
             const trueUpSql = plans.trueUpQueueStats(this.#config.schema, table, late, this.#config.noAdvisoryLocks)
-            const { rows: trued } = await this.#executeQuery(trueUpSql)
-            const trueUpPinned = trued.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
-            this.#statsElapsedSeconds += trueUpPinned || (Date.now() - trueUpStarted) / 1000
+            const { rows: [trued] } = await this.#executeQuery(trueUpSql)
+            if (trued) {
+              this.#statsElapsedSeconds += Number(trued.pinSeconds) || (Date.now() - trueUpStarted) / 1000
+            }
           }
         }
 

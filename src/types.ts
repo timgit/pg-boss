@@ -262,8 +262,8 @@ export interface QueueStats {
   /** Jobs created in the same window. */
   createdDelta: number | null;
   /**
-   * How many seconds the deltas cover. Compute a per-minute rate as `delta / deltaSeconds * 60`.
-   * Null wherever the deltas are, and on a queue's first counted pass.
+   * How many seconds the deltas cover, for a per-minute rate of `delta / deltaSeconds * 60`. Null
+   * wherever the deltas are, and on a queue's first counted pass.
    */
   deltaSeconds: number | null;
   /** When the interval the deltas cover ends, 10 seconds behind `capturedOn`. Plot the deltas at this time. */
@@ -917,8 +917,9 @@ export interface QueueResult extends Queue {
   failedCount: number;
   totalCount: number
   /**
-   * Jobs completed since the previous monitor pass. See `QueueStats.completedDelta`. Always zero
-   * while `persistQueueStats` is off.
+   * Jobs completed in the window the latest counted monitor pass covered. Zero until an instance
+   * with `persistQueueStats` on has counted this queue.
+   * @see https://pgboss.io/api/queues#getqueues-names
    */
   completedDelta: number;
   /** Jobs failed terminally since the previous monitor pass. */
@@ -1282,16 +1283,13 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   sourceRetryCount: number | null;
   /**
    * For a dead-lettered job, the `output` of the original job when it failed,
-   * usually its error. The dead-lettered job's own `output` starts empty, since
-   * it is a new job that has not run. `null` otherwise.
+   * usually its error. `null` otherwise.
    */
   sourceOutput: object | null;
   /**
-   * The id of the first job in this job's dead letter chain: the id `send()`
-   * returned, however many times the job has been dead-lettered and redriven
-   * since. Set on dead-lettered jobs and on redriven jobs, where `sourceId` only
-   * names the previous hop. `null` for a job that has never been through a dead
-   * letter queue.
+   * The id `send()` returned for the first job in this job's dead letter chain,
+   * kept through every dead letter and redrive. `null` if it has never been dead-lettered.
+   * @see https://pgboss.io/api/jobs#fetch-name-options
    */
   sourceRootId: string | null;
 }

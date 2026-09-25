@@ -116,21 +116,22 @@ const NUMERIC_QUEUE_FIELDS = [
   'deltaSeconds'
 ] as const
 
-// The count columns shared by live stats and recorded snapshots (the QueueStats shape).
+// The gauges shared by live stats and recorded snapshots (the QueueStats shape).
 const STATS_COUNT_FIELDS = [
   'deferredCount',
   'queuedCount',
   'readyCount',
   'activeCount',
   'failedCount',
-  'totalCount',
-  // Counters rather than gauges — jobs finished or created since the previous pass. They
-  // travel with the gauges because they come from the same aggregate and need
-  // the same CockroachDB string-to-number normalisation below.
+  'totalCount'
+] as const
+
+// The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
+// getQueueStats.
+const STATS_DELTA_FIELDS = [
   'completedDelta',
   'failedDelta',
   'createdDelta',
-  // How long the three counters above cover, so a rate is exact across uneven passes.
   'deltaSeconds'
 ] as const
 
@@ -2562,7 +2563,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const isCockroach = this.config.backend === 'cockroachdb'
 
-    const toSnapshot = (row: any): types.QueueStats => {
+    // `counted` is true for recorded snapshots. The cache path serves only gauges: the queue table's
+    // counters describe the last pass that counted, not this reading.
+    const toSnapshot = (row: any, counted = false): types.QueueStats => {
       const snapshot: types.QueueStats = {
         name,
         deferredCount: 0,
@@ -2582,18 +2585,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
-      for (const field of STATS_COUNT_FIELDS) {
-        // The queue table's delta columns sit at zero while nobody counts them.
-        if (!this.config.persistQueueStats && (field.endsWith('Delta') || field === 'deltaSeconds')) continue
-
+      for (const field of counted ? [...STATS_COUNT_FIELDS, ...STATS_DELTA_FIELDS] : STATS_COUNT_FIELDS) {
         const value = row?.[field]
         // CockroachDB returns integer columns as strings; normalize the counts.
         if (value !== undefined && value !== null) snapshot[field] = isCockroach ? Number(value) : value
       }
 
-      // The end of the interval the counters cover. Handed on as the row holds it, like capturedOn,
-      // and left null with the counters while nobody counts.
-      if (this.config.persistQueueStats && row?.deltaOn != null) snapshot.deltaOn = row.deltaOn
+      // The end of the interval the counters cover, handed on as the row holds it, like capturedOn.
+      if (counted && row?.deltaOn != null) snapshot.deltaOn = row.deltaOn
 
       return snapshot
     }
@@ -2623,13 +2622,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const sql = plans.getQueueStatsHistoryBucketed(this.config.schema, aggregate, mode)
         const { rows } = await this.db.executeSql(sql, [name, from, to, limit, width])
 
-        return rows.map(toSnapshot)
+        return rows.map(row => toSnapshot(row, true))
       }
 
       const sql = plans.getQueueStatsHistory(this.config.schema)
       const { rows } = await this.db.executeSql(sql, [name, from, to, limit])
 
-      return rows.map(toSnapshot)
+      return rows.map(row => toSnapshot(row, true))
     }
 
     // persistQueueStats disabled: serve the cached counts the monitor keeps on the queue table.
