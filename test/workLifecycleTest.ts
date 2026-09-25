@@ -392,7 +392,12 @@ describe('work lifecycle shutdown errors', function () {
       for (const queue of [first, second]) {
         await boss.work(queue, { pollingIntervalSeconds: 1 }, async ([job]) => {
           started.add(queue)
-          await delay(2000)
+          // Hold the job until the shutdown aborts it rather than for a fixed time: a loaded
+          // runner can take longer than any fixed hold to get from stop() to the abort. The
+          // fallback only bounds a run where the abort never comes, which the assertions catch.
+          const hold = delay(5000)
+          job.signal.addEventListener('abort', () => hold.abort(), { once: true })
+          await hold
           if (job.signal.aborted) aborted.push(queue)
           finished.push(queue)
         })
@@ -463,9 +468,13 @@ describe('work lifecycle shutdown errors', function () {
       const finished: string[] = []
 
       for (const queue of [first, second]) {
-        await boss.work(queue, { pollingIntervalSeconds: 1 }, async () => {
+        await boss.work(queue, { pollingIntervalSeconds: 1 }, async ([job]) => {
           started.add(queue)
-          await delay(2000)
+          // Held until the abort, as above: a handler that returned first would complete its job
+          // before the shutdown could fail it.
+          const hold = delay(5000)
+          job.signal.addEventListener('abort', () => hold.abort(), { once: true })
+          await hold
           finished.push(queue)
         })
       }
