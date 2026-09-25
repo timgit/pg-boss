@@ -1,7 +1,7 @@
 import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 import Manager from '../src/manager.ts'
 import Timekeeper from '../src/timekeeper.ts'
 import { delay } from '../src/tools.ts'
@@ -244,6 +244,64 @@ describe('ops', function () {
     await ctx.boss.stop()
 
     expect(ctx.boss.isCheckingSkew()).toBe(false)
+  })
+
+  it('should stop the cron pass before stop resolves', async function () {
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      schedule: true,
+      cronMonitorIntervalSeconds: 1,
+      __test__delay_cron_ms: 2000
+    })
+
+    // Wait for a cron pass to start
+    while (!ctx.boss.isTimekeeping()) {
+      await delay(100)
+    }
+
+    // Stop while the pass is in progress
+    await ctx.boss.stop()
+
+    expect(ctx.boss.isTimekeeping()).toBe(false)
+  })
+
+  it('should leave the maintenance flag set when a supervise pass is skipped', async function () {
+    // The same property as the cron pass one in scheduleTest, on the other flag stop() waits for.
+    // A supervise pass anchors its timer partway through, before a tail that ends in DDL, so the
+    // next attempt can fire while the tail is still running. That attempt must leave the flag
+    // alone: the pass holding it has not finished.
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    let held: () => void = () => {}
+    const reached = new Promise<void>((resolve) => { held = resolve })
+
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: true, superviseIntervalSeconds: 1 })
+
+    const db = ctx.boss.getDb()
+    const executeSql = db.executeSql.bind(db)
+
+    db.executeSql = async (sql: string, values?: unknown[]) => {
+      // The vacuum check is in the tail, which is the stretch after the pass anchors its timer
+      if (sql.includes('n_dead_tup')) {
+        held()
+        await gate
+      }
+
+      return await executeSql(sql, values)
+    }
+
+    await clock.tick(1000)
+    await reached
+
+    expect(ctx.boss.isMaintaining()).toBe(true)
+
+    // The next attempt fires while the tail above is still held, and finds the flag set
+    await clock.tick(1000)
+
+    expect(ctx.boss.isMaintaining()).toBe(true)
+
+    release()
   })
 
   it('should allow stop() to be retried after a shutdown failure', async function () {

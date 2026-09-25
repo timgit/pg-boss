@@ -553,6 +553,8 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__delay_flow_ms?: number;
   /** @internal */
   __test__delay_clock_skew_ms?: number;
+  /** @internal */
+  __test__delay_cron_ms?: number;
   /**
    * Report this many seconds as the queue-stats aggregate's duration to the vacuum-safety backoff,
    * instead of the real measurement. autovacuum_naptime is a SIGHUP-level GUC a test cannot move,

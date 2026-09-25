@@ -237,12 +237,14 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   async #onSupervise () {
-    try {
-      if (this.#stopped) return
-      if (this.#maintaining) return
-      if (this.#config.__test__throw_maint) { throw new Error(this.#config.__test__throw_maint) }
+    // Outside the try, so an attempt that skips does not clear the flag the running pass is
+    // holding and stop() waits on. See Timekeeper.onCron().
+    if (this.#stopped || this.#maintaining) return
 
-      this.#maintaining = true
+    this.#maintaining = true
+
+    try {
+      if (this.#config.__test__throw_maint) { throw new Error(this.#config.__test__throw_maint) }
 
       if (this.#config.__test__delay_maint_ms) {
         await delay(this.#config.__test__delay_maint_ms)
