@@ -502,6 +502,8 @@ came from: `sourceName` is the queue it originally failed on, `sourceId` is the 
 of the original job, `sourceCreatedOn` is the original job's creation time,
 `sourceRetryCount` is how many retries it consumed before being dead-lettered, and
 `sourceOutput` is the original job's `output` when it failed, usually its error.
+The dead-lettered job's own `output` starts empty, since it is a new job that has not run.
+`sourceId` only names the previous hop, which after a redrive is the redriven copy.
 On the first failure, `sourceRootId` will be the same as `sourceId`.
 These are `null` for jobs that were not dead-lettered.
 
@@ -559,7 +561,7 @@ dead letter queue to drain. Returns the number of jobs moved.
 
 Each job is routed back to the queue it originally failed on (its `sourceName`),
 so a single dead letter queue that collects from many source queues fans back out
-correctly. Re-created jobs get a new id (with [`sourceRootId`](#fetchname-options) still
+correctly. Re-created jobs get a new id (with [`sourceRootId`](#fetch-name-options) still
 pointing at the job `send()` returned), a reset retry count, cleared output, and
 the destination queue's current retry, retention, policy, expiration, heartbeat, and
 deadLetter configuration. Per-job overrides passed to the original `send()` (such as
@@ -582,7 +584,7 @@ such a job runs it again standalone; the original flow does not resume.
   left in place otherwise.
 - `sourceName`: only redrive jobs that originated from this source queue.
 - `data`: only redrive jobs whose payload contains this object, matched the same
-  way as [`findJobs()`](#findjobsname-options).
+  way as [`findJobs()`](#findjobs-name-options).
 - `createdBefore`: only redrive jobs that arrived in the dead letter queue before
   this `Date`. Pass the same value to every call of a loop to drain a fixed set:
   jobs dead-lettered while it runs are never swept in.
@@ -598,6 +600,10 @@ same batch), is not lost: it stays in the dead letter queue in the `failed` stat
 `singletonKey` and a `message`). Retry it once the job it collided with has finished and it
 becomes a redrive candidate again; otherwise the dead letter queue's `deleteAfterSeconds`
 removes it like any other failed job.
+
+In a dead letter queue with the `key_strict_fifo` policy, only the oldest collision per
+`singletonKey` is failed. Jobs with a key that an active, retrying or failed job holds are
+not redrive candidates until that job is resolved, the same rule fetch follows.
 
 Jobs a dead letter queue's own workers have already failed are never redriven;
 only jobs still waiting there are candidates. The return value counts only the jobs
@@ -617,7 +623,7 @@ do {
 
 ### `previewRedrive(name, options)`
 
-Reports what [`redrive()`](#redrivename-options) would do with the same options,
+Reports what [`redrive()`](#redrive-name-options) would do with the same options,
 without moving anything. Takes every `redrive()` option except `limit`, and uses the
 same matching, so the numbers agree with what a redrive would move at that moment.
 

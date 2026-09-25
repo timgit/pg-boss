@@ -135,7 +135,7 @@ This event is useful for monitoring migration progress in production environment
 
 ## `flow`
 
-Emitted by the background flow resolver each time it unblocks one or more dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. See [`flowIntervalSeconds`](./constructor.md#flowintervalseconds) in the constructor options for how often the resolver runs.
+Emitted by the background flow resolver each time it unblocks one or more dependent jobs (created via [`flow()`](./jobs.md#flow-jobs-options)) whose parents have completed. See [`flowIntervalSeconds`](./constructor.md#flowintervalseconds) in the constructor options for how often the resolver runs.
 
 ```js
 boss.on('flow', event => {

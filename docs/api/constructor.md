@@ -208,7 +208,7 @@ Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY` during maintenanc
 
 Autovacuum reclaims heap space but never shrinks a btree, so a job index stays at the size of the largest backlog its queue has ever held. Every later vacuum then walks all of those pages, which becomes the dominant cost on a queue that has drained. Rebuilds are gated on an index density check, so a healthy installation never runs one.
 
-Set to `false` to disable rebuilds. Detection is unaffected: bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) still returns the statements to run by hand. The same applies to indexes the connected role does not own, and to `db` adapters that wrap queries in a transaction, since `REINDEX CONCURRENTLY` cannot run inside one.
+Set to `false` to disable rebuilds. Detection is unaffected: bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommands-options) still returns the statements to run by hand. The same applies to indexes the connected role does not own, and to `db` adapters that wrap queries in a transaction, since `REINDEX CONCURRENTLY` cannot run inside one.
 
 CockroachDB and YugabyteDB skip this entirely, detection included. They store data outside PostgreSQL's heap, so there is no btree page bloat to reclaim, they reject `REINDEX`, and neither reports the page counts the check reads.
 
@@ -228,7 +228,7 @@ const boss = new PgBoss({
 })
 ```
 
-`force` is only accepted by [`supervise()`](./ops.md#supervisename-options), not here. A timer that rebuilt every job index on every interval is never what you want.
+`force` is only accepted by [`supervise()`](./ops.md#supervise-name-options), not here. A timer that rebuilt every job index on every interval is never what you want.
 
 ### `reindexIntervalSeconds`
 
@@ -265,7 +265,7 @@ Not available on CockroachDB or YugabyteDB, which reclaim on their own schedule 
 
 Int, default 5 seconds
 
-How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.
+How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flow-jobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.
 
 ### `warningSlowQuerySeconds`
 
@@ -295,7 +295,7 @@ When `persistWarnings` is enabled, this option controls automatic cleanup of old
 
 Bool, default false
 
-If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestatsname-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
+If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
 ### `queueStatRetentionDays`
 
@@ -317,7 +317,7 @@ Where this instance reads the time and schedules its timers: every poll, heartbe
 
 Bool, default false
 
-Enables [`getSpy()`](./testing.md#getspyname) for deterministic tests. Adds per-transition tracking overhead, so leave unset in production.
+Enables [`getSpy()`](./testing.md#getspy-name) for deterministic tests. Adds per-transition tracking overhead, so leave unset in production.
 
 ## Custom type parsers
 
@@ -325,5 +325,5 @@ pg-boss doesn't re-parse the values it reads back, so a global [`pg-types`](http
 
 A `timestamptz` parser returning something other than a `Date` is the common case, `Temporal.Instant` and Luxon's `DateTime` in particular. pg-boss does its own timestamp arithmetic in SQL rather than in JavaScript, so such a parser is supported, with two consequences worth knowing:
 
-* Types that document a `Date`, such as `capturedOn` on [`getQueueStats()`](./queues.md#getqueuestatsname-options) or `createdOn` on a job, will hold whatever your parser returned. The declared type is what the default parser produces, not a conversion pg-boss performs.
+* Types that document a `Date`, such as `capturedOn` on [`getQueueStats()`](./queues.md#getqueuestats-name-options) or `createdOn` on a job, will hold whatever your parser returned. The declared type is what the default parser produces, not a conversion pg-boss performs.
 * A value that throws on coercion, which every `Temporal` type does from `valueOf` by design, is safe to hand back. pg-boss never coerces one.
