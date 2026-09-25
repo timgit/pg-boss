@@ -1775,7 +1775,7 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
          FROM extent
        ),
        w AS (
-         SELECT greatest(1, ceil(extract(epoch from (hi - lo)) / greatest($5, 1))::bigint)::bigint AS secs
+         SELECT greatest(1, ceil(extract(epoch from (hi - lo))::float8 / greatest($5, 1)::float8)::bigint)::bigint AS secs
          FROM bounds
        )`
     : 'WITH w AS (SELECT greatest($5, 1)::bigint AS secs)'
@@ -1786,7 +1786,8 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
   // newest N. Explicit bucketSeconds has no target to overshoot, so it keeps the raw limit.
   const limit = mode === 'auto' ? 'least($4, $5)' : '$4'
 
-  const bucket = (column: string) => `to_timestamp(floor(extract(epoch from ${column}) / w.secs) * w.secs)`
+  // float8 on both sides: CockroachDB has no float / int operator, and extract() is a float there.
+  const bucket = (column: string) => `to_timestamp(floor(extract(epoch from ${column})::float8 / w.secs::float8) * w.secs::float8)`
 
   return `
     ${widthCte},

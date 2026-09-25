@@ -204,7 +204,31 @@ describe('queueStats', function () {
       await db.executeSql(plans.cacheQueueStats(schema, table, [queue], true, throughput, fromOpenTransactions, window))
       const { rows } = await db.executeSql(plans.getQueueStatsCache(schema), [queue])
 
-      return rows[0]
+      // Raw rows, so CockroachDB's INT8 strings arrive unconverted; the API does this in the manager.
+      const row = rows[0]
+      for (const [key, value] of Object.entries(row)) {
+        if (typeof value === 'string' && /^-?\d+$/.test(value)) row[key] = Number(value)
+      }
+
+      return row
+    }
+
+    /**
+     * Seeded history rows reach up to an hour back from the start of the current hour, which is the
+     * previous UTC day for the first hour after midnight, and only today's and tomorrow's partitions
+     * exist. Adds yesterday's, where queue_stats is partitioned at all.
+     */
+    async function ensurePreviousDayPartition (db: Awaited<ReturnType<typeof helper.getDb>>, schema: string) {
+      const { rows } = await db.executeSql(
+        `SELECT c.relkind FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = $1 AND c.relname = 'queue_stats'`, [schema])
+      if (rows[0]?.relkind !== 'p') return
+
+      const day = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+      const next = new Date(Date.parse(day) + 86_400_000).toISOString().slice(0, 10)
+      await db.executeSql(
+        `CREATE TABLE IF NOT EXISTS ${schema}.queue_stats_${day.replaceAll('-', '')} PARTITION OF ${schema}.queue_stats
+         FOR VALUES FROM ('${day} 00:00:00+00') TO ('${next} 00:00:00+00')`)
     }
 
     /**
@@ -399,6 +423,7 @@ describe('queueStats', function () {
 
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
+      await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
         `INSERT INTO ${schema}.queue_stats (name, ready_count, captured_on) VALUES ($1, 3, now() - interval '1 hour')`,
         [queue]
@@ -479,6 +504,7 @@ describe('queueStats', function () {
       const minute = (n: number) => new Date(hour - n * 60_000)
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
+      await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
         `INSERT INTO ${schema}.queue_stats (name, ready_count, completed_delta, delta_seconds, delta_on, captured_on)
          VALUES ($1, 5, 0, 60, $2, $3), ($1, 7, 4, 60, $4, $5)`,
@@ -590,6 +616,7 @@ describe('queueStats', function () {
       const to = new Date(hour - 1)
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
+      await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
         `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on)
          VALUES ($1, 4, 60, $2::timestamptz - interval '60 seconds', $2), ($1, 6, 150, $3::timestamptz - interval '60 seconds', $3)`,
@@ -771,6 +798,7 @@ describe('queueStats', function () {
       const minute = (n: number) => new Date(hour - n * 60_000)
       const db = await helper.getDb()
       const schema = ctx.bossConfig.schema
+      await ensurePreviousDayPartition(db, schema)
       // Captures at minutes 31 and 29; the second one's counters cover an
       // interval ending in minute 30, where nothing was captured.
       await db.executeSql(
