@@ -499,19 +499,14 @@ Returns an array of jobs from a queue
 
 When a job is moved into a dead letter queue, the `source*` fields record where it
 came from: `sourceName` is the queue it originally failed on, `sourceId` is the id
-of the original job, `sourceCreatedOn` is the original job's creation time (so its
-true age survives the move), `sourceRetryCount` is how many retries it consumed
-before being dead-lettered, and `sourceOutput` is the original job's `output` when it
-failed, usually its error. These are `null` for jobs that were not dead-lettered.
+of the original job, `sourceCreatedOn` is the original job's creation time,
+`sourceRetryCount` is how many retries it consumed before being dead-lettered, and
+`sourceOutput` is the original job's `output` when it failed, usually its error.
+On the first failure, `sourceRootId` will be the same as `sourceId`.
+These are `null` for jobs that were not dead-lettered.
 
-`sourceId` only names the previous hop. After a redrive, the job that fails is the
-redriven copy, not the one `send()` returned. `sourceRootId` is the id of the first
-job in the chain, and it is carried onto every dead-lettered and redriven job after it,
-so the whole history of a job can be found from the id `send()` returned, however many
-round trips it took. It is `null` for a job that has never been through a dead letter queue.
-
-The dead-lettered job's own `output` starts empty: it is a new job that has not run yet.
-
+After a redrive, `sourceRootId` will be carried onto every dead-lettered and redriven job 
+in the future, so the whole history of a job can be found from its original id.
 
 **Notes**
 
