@@ -21,9 +21,7 @@ export function StatsDisabledBanner ({ className }: { className?: string }) {
         <p className="font-medium text-[var(--text-primary)]">Queue stats history isn&rsquo;t being recorded</p>
         <p className="mt-0.5 text-[var(--text-secondary)]">
           The interactive metrics chart and longer-range trends draw from recorded history. Enable it by constructing pg-boss with{' '}
-          <code className="rounded bg-[var(--surface-card)] px-1 py-0.5 font-mono text-[0.85em] text-[var(--text-primary)]">persistQueueStats: true</code> (optionally set{' '}
-          <code className="rounded bg-[var(--surface-card)] px-1 py-0.5 font-mono text-[0.85em] text-[var(--text-primary)]">queueStatRetentionDays</code>). New history is recorded each{' '}
-          <code className="rounded bg-[var(--surface-card)] px-1 py-0.5 font-mono text-[0.85em] text-[var(--text-primary)]">supervise</code> interval.
+          <code className="rounded bg-[var(--surface-card)] px-1 py-0.5 font-mono text-[0.85em] text-[var(--text-primary)]">persistQueueStats: true</code>
         </p>
       </div>
     </div>
