@@ -61,6 +61,12 @@ export function trackActivity<T extends IDatabase> (db: T): { db: T, idle: () =>
     if (typeof inner.beginTransaction === 'function') {
       overrides.beginTransaction = track(async () => wrapTransaction(await inner.beginTransaction!()))
     }
+    // pg-boss's own pool runs multi-statement work through this, and it begins the transaction on
+    // the original, past the override above, so the whole call is counted as one.
+    const withTransaction = (inner as { withTransaction?: unknown }).withTransaction
+    if (typeof withTransaction === 'function') {
+      overrides.withTransaction = track((fn: (db: IDatabase) => Promise<unknown>) => withTransaction.call(inner, fn))
+    }
     const tracked = wrap(inner, overrides)
     originals.set(tracked, inner)
     return tracked

@@ -99,6 +99,42 @@ describe('trackActivity', function () {
     expect(await duringRollback).toBe(true)
   })
 
+  it('counts a withTransaction call for as long as its work runs', async function () {
+    const statementGate = gate()
+
+    // Shaped like Db: withTransaction begins the transaction on itself, not through the wrapper.
+    class Pool implements IDatabase {
+      #tx: TransactionHandle = {
+        db: { executeSql: async () => { await statementGate.promise; return rows } },
+        commit: async () => {},
+        rollback: async () => {}
+      }
+
+      async executeSql () { return rows }
+      async beginTransaction () { return this.#tx }
+
+      async withTransaction<T> (fn: (db: IDatabase) => Promise<T>): Promise<T> {
+        const tx = await this.beginTransaction()
+        const result = await fn(tx.db)
+        await tx.commit()
+        return result
+      }
+    }
+
+    const { db, idle } = trackActivity(new Pool())
+
+    const work = (db as Pool).withTransaction(tx => tx.executeSql('DELETE'))
+    let settled = false
+    const waiting = idle().then(waited => { settled = true; return waited })
+
+    await delay(20)
+    expect(settled).toBe(false)
+
+    statementGate.open()
+    await work
+    expect(await waiting).toBe(true)
+  })
+
   it('leaves listen uncounted and missing capabilities missing', async function () {
     const inner: IDatabase = {
       executeSql: async () => rows,
@@ -109,6 +145,7 @@ describe('trackActivity', function () {
     db.listen!('channel', () => {}, () => {})
     expect(await idle()).toBe(false)
     expect(typeof db.beginTransaction).toBe('undefined')
+    expect(typeof (db as { withTransaction?: unknown }).withTransaction).toBe('undefined')
   })
 
   it('a counted method replaced through the wrapper wraps the tracked one instead of recursing', async function () {
