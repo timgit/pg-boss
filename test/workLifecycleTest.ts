@@ -215,26 +215,30 @@ describe('work lifecycle', function () {
   it('should abort signal immediately when graceful is false', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    let signalAborted = false
-    let handlerStarted = false
+    let signal: AbortSignal | undefined
+    let handlerDone!: () => void
+    const handled = new Promise<void>(resolve => { handlerDone = resolve })
 
     const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
 
     await ctx.boss.work(ctx.schema, async ([job]) => {
-      handlerStarted = true
-      // Job takes 2 seconds to complete
-      await delay(2000)
-      signalAborted = job.signal.aborted
+      signal = job.signal
+      // Held until the shutdown aborts it. The cap only keeps a missed abort from hanging the test.
+      const wait = delay(10000)
+      job.signal.addEventListener('abort', () => wait.abort(), { once: true })
+      await wait
+      handlerDone()
     })
 
-    await delay(500)
-    expect(handlerStarted).toBe(true)
+    await helper.until(() => signal !== undefined)
 
     // Non-graceful shutdown - should fail job immediately, no grace period
     await ctx.boss.stop({ graceful: false, close: false })
 
-    // Give handler time to complete
-    await delay(2000)
+    // Aborted by the time stop() returns, read before the handler gets a turn
+    expect(signal!.aborted).toBe(true)
+
+    await handled
 
     await ctx.boss.start()
 
@@ -245,8 +249,6 @@ describe('work lifecycle', function () {
     expect(job.state).toBe('failed')
     // @ts-expect-error untyped object
     expect((job.output)?.value).toBe('pg-boss shut down while active')
-    // Signal should be aborted immediately in non-graceful shutdown
-    expect(signalAborted).toBe(true)
   })
 
   it('should fire abort signal with multiple workers (localConcurrency)', async function () {
