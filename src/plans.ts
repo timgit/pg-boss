@@ -1109,14 +1109,21 @@ function createIndexJobSourceRoot (schema: string) {
 // seeded answer without the seed, so the stampede is closed on every backend rather than only on the
 // ones whose migration could write the column. A genuinely new queue has neither stamp and stays
 // immediately eligible, which is what it should be.
-export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number): SqlQuery {
+export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number, noSkipLocked?: boolean): SqlQuery {
   return {
     text: `
+    WITH due AS (
+      SELECT name
+      FROM ${schema}.queue
+      WHERE name = ANY($1::text[])
+        AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
+      ${queueRowLock(noSkipLocked)}
+    )
     UPDATE ${schema}.queue
     SET monitor_claim_on = ${schema}.job_now()
-    WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
-    RETURNING name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats"
+    FROM due
+    WHERE queue.name = due.name
+    RETURNING queue.name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats"
   `,
     values: [queues]
   }
@@ -1194,8 +1201,8 @@ export function setMonitorBackoff (schema: string, elapsedSeconds: number): SqlQ
   }
 }
 
-export function trySetQueueDeletionTime (schema: string, queues: string[], seconds: number): SqlQuery {
-  return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds)
+export function trySetQueueDeletionTime (schema: string, queues: string[], seconds: number, noSkipLocked?: boolean): SqlQuery {
+  return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds, noSkipLocked)
 }
 
 // The cron claim, which also answers with the timestamp it replaced and how old that timestamp was.
@@ -1259,17 +1266,35 @@ function trySetTimestamp (schema: string, column: string, seconds: number) {
   `
 }
 
-function trySetQueueTimestamp (schema: string, queues: string[], column: string, seconds: number): SqlQuery {
+function trySetQueueTimestamp (schema: string, queues: string[], column: string, seconds: number, noSkipLocked?: boolean): SqlQuery {
   return {
     text: `
+    WITH due AS (
+      SELECT name
+      FROM ${schema}.queue
+      WHERE name = ANY($1::text[])
+        AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
+      ${queueRowLock(noSkipLocked)}
+    )
     UPDATE ${schema}.queue
     SET ${column} = ${schema}.job_now()
-    WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
-    RETURNING name
+    FROM due
+    WHERE queue.name = due.name
+    RETURNING queue.name
   `,
     values: [queues]
   }
+}
+
+// Every statement that writes more than one queue row locks them in name order first. A single
+// UPDATE locks rows in whatever order its plan visits them, and every write moves a row, so two
+// multi-row writers - two instances claiming the same queues, or a claim and cacheQueueStats - could
+// otherwise take the same rows in opposite orders and deadlock. A claim also skips rows another
+// session holds: a locked row is in another instance's pass, and the next interval claims it again.
+// NO KEY UPDATE is the lock a plain UPDATE of these columns takes; FOR UPDATE would also block the
+// KEY SHARE lock that inserting a job takes on its queue row through the foreign key.
+function queueRowLock (noSkipLocked?: boolean) {
+  return `ORDER BY name FOR NO KEY UPDATE${noSkipLocked ? '' : ' SKIP LOCKED'}`
 }
 
 export function updateQueue (schema: string) {
@@ -3811,6 +3836,10 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
   // volatile, so this is evaluated as rows are returned - after the aggregate CTE has run, which is
   // the part that pins. It undercounts the tail (the remaining rows and the COMMIT), the safe
   // direction to be wrong in.
+  //
+  // The queue rows are locked in name order (see queueRowLock) by the subquery that feeds the update.
+  // Its count over stats is there only to finish the aggregate before the first row is locked, so no
+  // queue row stays locked through the job table scan.
   const sql = `
     WITH ${lock.cte}stats AS (SELECT * FROM (${statsText}) agg WHERE true${lock.guard})
     UPDATE ${schema}.queue SET
@@ -3837,8 +3866,12 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
         ) capped
       )
     FROM (
-      SELECT q.name
-      FROM unnest(${serializeArrayParam(queues)}) AS q(name)
+      SELECT name
+      FROM ${schema}.queue
+      WHERE name = ANY(${serializeArrayParam(queues)})${lock.guard}
+        AND (SELECT count(*) FROM stats) >= 0
+      ORDER BY name
+      FOR NO KEY UPDATE
     ) q
     LEFT JOIN stats ON stats.name = q.name
     WHERE queue.name = q.name${lock.guard}
