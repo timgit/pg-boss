@@ -31,6 +31,31 @@ export interface ProNavItem {
 export interface ProSlots {
   /** Above the theme controls in the sidebar footer. */
   sidebarFooter?: ComponentType
+
+  /**
+   * In the topbar, immediately after this package's own breadcrumbs.
+   *
+   * For a trail over routes this package does not know about. `Breadcrumbs`
+   * builds its own from a fixed list of paths — queues, schedules, jobs — and
+   * renders nothing for anything else, so an overlay's pages have an empty
+   * topbar and no way back short of the sidebar. Rendering into this slot puts
+   * an overlay's trail where every other trail in the product already is, and
+   * in the server-rendered HTML rather than a frame later.
+   *
+   * The two never collide: a path this package recognises is one no overlay
+   * owns, and a slot component that has nothing to say for the current route
+   * returns null.
+   */
+  topbarStart?: ComponentType
+
+  /**
+   * In the topbar, at the far right, after the theme toggle.
+   *
+   * For controls that belong to the viewer rather than the page, such as
+   * notifications and an account menu; render several as one component. It
+   * shares the row with the phone-width wordmark, so keep them compact.
+   */
+  topbarEnd?: ComponentType
 }
 
 export interface ProOverlay {
