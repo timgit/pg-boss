@@ -602,18 +602,21 @@ describe('timekeeper clock domain', function () {
       clockMonitorIntervalSeconds: 600
     } as any)
 
-    await tk.start()
+    // Released and stopped on a failed assertion too, or the pass stays parked on the gate
+    try {
+      await tk.start()
 
-    while (!tk.timekeeping) {
-      await delay(10)
+      while (!tk.timekeeping) {
+        await delay(10)
+      }
+
+      await tk.onCron()
+
+      expect(tk.timekeeping).toBe(true)
+    } finally {
+      release()
+      await tk.stop()
     }
-
-    await tk.onCron()
-
-    expect(tk.timekeeping).toBe(true)
-
-    release()
-    await tk.stop()
 
     expect(tk.timekeeping).toBe(false)
   })

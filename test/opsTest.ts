@@ -291,17 +291,20 @@ describe('ops', function () {
       return await executeSql(sql, values)
     }
 
-    await clock.tick(1000)
-    await reached
+    // Released on a failed assertion too, or stop() in afterEach waits on the held pass
+    try {
+      await clock.tick(1000)
+      await reached
 
-    expect(ctx.boss.isMaintaining()).toBe(true)
+      expect(ctx.boss.isMaintaining()).toBe(true)
 
-    // The next attempt fires while the tail above is still held, and finds the flag set
-    await clock.tick(1000)
+      // The next attempt fires while the tail above is still held, and finds the flag set
+      await clock.tick(1000)
 
-    expect(ctx.boss.isMaintaining()).toBe(true)
-
-    release()
+      expect(ctx.boss.isMaintaining()).toBe(true)
+    } finally {
+      release()
+    }
   })
 
   it('should allow stop() to be retried after a shutdown failure', async function () {
