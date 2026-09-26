@@ -404,6 +404,63 @@ export async function getQueue (
 // validateIdentifier helper above.
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+export interface JobPageContext {
+  now: Date;
+  isDeadLetterQueue: boolean;
+}
+
+// What the job page needs beyond the row itself. `now` is the database's clock, because every job
+// timestamp comes from it and a browser's clock can be off by more than a live counter can hide.
+// A queue is a dead letter queue when at least one queue names it; which ones, and how many, the
+// page does not need.
+export async function getJobPageContext (
+  dbUrl: string,
+  schema: string,
+  queueName: string
+): Promise<JobPageContext> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT now() as now,
+      EXISTS (SELECT 1 FROM ${s}.queue WHERE dead_letter = $1) as "isDeadLetterQueue"
+  `
+  const row = await queryOne<JobPageContext>(dbUrl, sql, [queueName])
+  return row ?? { now: new Date(), isDeadLetterQueue: false }
+}
+
+export interface LinkedJob {
+  id: string;
+  name: string;
+  state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
+  createdOn: Date;
+  startedOn: Date | null;
+  completedOn: Date | null;
+  retryCount: number;
+  output: unknown;
+}
+
+// A job in another job's lineage, if it still exists. Looked up by (name, id), the primary key, so
+// the caller has to know the queue; null covers both "deleted by retention" and "not in that queue".
+export async function getLinkedJob (
+  dbUrl: string,
+  schema: string,
+  queueName: string,
+  id: string
+): Promise<LinkedJob | null> {
+  if (!UUID_REGEX.test(id)) return null
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT id, name, state,
+      created_on as "createdOn",
+      started_on as "startedOn",
+      completed_on as "completedOn",
+      retry_count as "retryCount",
+      output
+    FROM ${s}.job
+    WHERE name = $1 AND id = $2
+  `
+  return queryOne<LinkedJob>(dbUrl, sql, [queueName, id])
+}
+
 export interface RecentJobsFilterOptions {
   state?: JobStateFilter | null;
   id?: string | null;
