@@ -1,15 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
-import { TestClock } from '../src/index.ts'
-import type { PgBoss } from '../src/index.ts'
 import * as plans from '../src/plans.ts'
 import * as Attorney from '../src/attorney.ts'
 import type { BackendProfile } from '../src/types.ts'
 
 // Several instances supervising one schema claim and update the same queue rows. Unless every
-// statement that writes several queue rows locks them in one order, a claim on one instance can
-// collide with another instance's claim or stats update and Postgres aborts one of them with 40P01.
+// statement that writes several queue rows locks them in one order, two of them can lock the same
+// rows in opposite orders and Postgres aborts one with 40P01. The statements run straight from
+// plans so the contention does not depend on how a clock paces supervise(): an interval of 0 keeps
+// every queue due on every claim, and each call lists the queues in its own order.
+
+function shuffled<T> (items: T[]): T[] {
+  const copy = [...items]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
 
 describe('queue claim SKIP LOCKED', function () {
   const backends: Record<BackendProfile, boolean> = {
@@ -40,62 +49,58 @@ describe('queue claim SKIP LOCKED', function () {
 })
 
 helper.describeMultiConnectionOnly('queue row lock order', function () {
-  it('does not deadlock when several instances supervise the same queues', async function () {
-    const instanceCount = 6
+  it('claims and stats updates on the same queue rows do not deadlock', async function () {
+    const loops = 8
     const queueCount = 100
     const durationMs = 3000
 
-    const clock = new TestClock()
-    const config = {
-      ...ctx.bossConfig,
-      clock,
-      supervise: false,
-      schedule: false,
-      monitorIntervalSeconds: 1,
-      maintenanceIntervalSeconds: 1,
-      noDefault: true
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, schedule: false, noDefault: true })
+
+    const names = Array.from({ length: queueCount }, (_, i) => `q${i}`)
+    for (const name of names) {
+      await ctx.boss.createQueue(name)
     }
 
-    ctx.boss = await helper.start(config)
+    const queue = await ctx.boss.getQueue(names[0])
+    helper.assertTruthy(queue)
 
-    for (let i = 0; i < queueCount; i++) {
-      await ctx.boss.createQueue(`q${i}`)
-    }
+    const { schema, backend, noSkipLocked, persistQueueStats } = ctx.bossConfig
+    const skipLocked = plans.queueClaimSkipLocked(backend, noSkipLocked)
+    const statements: Array<() => { text: string, values?: unknown[] }> = [
+      () => plans.trySetQueueMonitorTime(schema, shuffled(names), 0, skipLocked),
+      () => plans.trySetQueueDeletionTime(schema, shuffled(names), 0, skipLocked),
+      // Without the advisory lock, so stats updates also collide with each other.
+      () => ({ text: plans.cacheQueueStats(schema, queue.table, shuffled(names), true, persistQueueStats) })
+    ]
 
-    const others: PgBoss[] = []
-    for (let i = 1; i < instanceCount; i++) {
-      others.push(await helper.start(config))
-    }
-
+    const db = await helper.getDb()
     const deadline = Date.now() + durationMs
     const deadlocks: string[] = []
+    const errors: Error[] = []
 
-    // Moving the clock past both intervals makes every queue due again, and the instances run
-    // unsynchronized, so one instance's claim can land while another is inside its pass.
-    async function advanceClock () {
-      while (Date.now() < deadline) {
-        await clock.setTime(clock.now() + 2000)
-        await new Promise(resolve => setTimeout(resolve, 10))
-      }
-    }
-
-    async function superviseLoop (boss: PgBoss) {
-      while (Date.now() < deadline) {
+    // Any other error stops every loop, so the first one is the one reported.
+    async function run (offset: number) {
+      for (let n = offset; Date.now() < deadline && !errors.length; n++) {
+        const { text, values } = statements[n % statements.length]()
         try {
-          await boss.supervise()
+          await db.executeSql(text, values)
         } catch (err: any) {
-          if (err.code !== '40P01') throw err
-          deadlocks.push(err.message)
+          if (err.code === '40P01') {
+            deadlocks.push(err.message)
+          } else {
+            errors.push(err)
+          }
         }
       }
     }
 
     try {
-      await Promise.all([advanceClock(), ...[ctx.boss, ...others].map(superviseLoop)])
+      await Promise.all(Array.from({ length: loops }, (_, i) => run(i)))
     } finally {
-      await Promise.all(others.map(boss => boss.stop({ timeout: 2000 })))
+      await db.close()
     }
 
+    expect(errors).toEqual([])
     expect(deadlocks).toEqual([])
   })
 })
