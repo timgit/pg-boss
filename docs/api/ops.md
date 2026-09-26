@@ -99,7 +99,7 @@ await boss.supervise('email-queue')
 
 | Property | Type | Default | Description |
 | --- | --- | --- | --- |
-| `reindex` | bool \| object | the instance's [`reindex`](./constructor.md) setting | Overrides index rebuilding for this pass only |
+| `reindex` | bool \| object | the instance's [`reindex`](./constructor.md#reindex) setting | Overrides index rebuilding for this pass only |
 
 The `reindex` object accepts the same `minPages`, `maxEntriesPerPage` and `maxIndexBytes` thresholds as the constructor option, plus `force`:
 

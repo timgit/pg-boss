@@ -952,8 +952,8 @@ describe('timekeeper clock domain', function () {
 
     // Every other warning type describes something that clears itself, skew converges, a backlog
     // drains, a slow query is a one-off. A bad schedule row sits there until a human edits it, so
-    // warning per pass would persist a row every cronMonitorIntervalSeconds forever, and
-    // warningRetentionDays has no default to bound it.
+    // warning per pass would persist a row every cronMonitorIntervalSeconds for as long as it
+    // stayed broken, kept for a year under the default warningRetentionDays.
     for (let i = 0; i < 5; i++) {
       await tk.cron()
     }

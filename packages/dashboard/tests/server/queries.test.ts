@@ -794,7 +794,7 @@ describe('Job Queries', () => {
 
       // fail() routes the job to the dead letter queue synchronously
       await fetchTestJob('test-queue')
-      await failTestJob('test-queue', jobId!)
+      await failTestJob('test-queue', jobId!, new Error('card declined'))
 
       // The dead-lettered copy is a new job in the DLQ with its own id
       const moved = await fetchTestJob('test-dlq')
@@ -805,6 +805,9 @@ describe('Job Queries', () => {
       expect(dlqJob!.sourceId).toBe(jobId)
       expect(dlqJob!.sourceCreatedOn).toBeTruthy()
       expect(dlqJob!.sourceRetryCount).toBe(0)
+      // The reason it was dead-lettered travels as sourceOutput; the copy's own output starts empty.
+      expect((dlqJob!.sourceOutput as { message: string }).message).toBe('card declined')
+      expect(dlqJob!.output).toBeNull()
     })
   })
 })

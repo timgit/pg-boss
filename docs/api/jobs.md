@@ -408,7 +408,7 @@ Dependent jobs are created in a `blocked` state and won't be eligible for fetchi
 
 When a dependent job uses `startAfter`, both conditions must be met: all dependencies completed and `startAfter` has passed.
 
-Unblocking happens off the completion hot path: a background resolver wakes shortly after a parent completes (see `flowIntervalSeconds` in the [constructor options](./constructor.md)) and unblocks any dependents that are now ready. This keeps completing jobs fast regardless of how many flows exist. The resolver runs when `supervise` is enabled; call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
+Unblocking happens off the completion hot path: a background resolver wakes shortly after a parent completes (see [`flowIntervalSeconds`](./constructor.md#flowintervalseconds) in the constructor options) and unblocks any dependents that are now ready. This keeps completing jobs fast regardless of how many flows exist. The resolver runs when `supervise` is enabled; call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
 
 ### `resolveFlow()`
 
@@ -491,16 +491,24 @@ Returns an array of jobs from a queue
       sourceName: string | null,
       sourceId: string | null,
       sourceCreatedOn: Date | null,
-      sourceRetryCount: number | null
+      sourceRetryCount: number | null,
+      sourceOutput: object | null,
+      sourceRootId: string | null
     }
     ```
 
 When a job is moved into a dead letter queue, the `source*` fields record where it
 came from: `sourceName` is the queue it originally failed on, `sourceId` is the id
-of the original job, `sourceCreatedOn` is the original job's creation time (so its
-true age survives the move), and `sourceRetryCount` is how many retries it consumed
-before being dead-lettered. These are `null` for jobs that were not dead-lettered.
+of the original job, `sourceCreatedOn` is the original job's creation time,
+`sourceRetryCount` is how many retries it consumed before being dead-lettered, and
+`sourceOutput` is the original job's `output` when it failed, usually its error.
+The dead-lettered job's own `output` starts empty, since it is a new job that has not run.
+`sourceId` only names the previous hop, which after a redrive is the redriven copy.
+On the first failure, `sourceRootId` will be the same as `sourceId`.
+These are `null` for jobs that were not dead-lettered.
 
+After a redrive, `sourceRootId` will be carried onto every dead-lettered and redriven job 
+in the future, so the whole history of a job can be found from its original id.
 
 **Notes**
 
@@ -553,7 +561,8 @@ dead letter queue to drain. Returns the number of jobs moved.
 
 Each job is routed back to the queue it originally failed on (its `sourceName`),
 so a single dead letter queue that collects from many source queues fans back out
-correctly. Re-created jobs get a new id, a reset retry count, cleared output, and
+correctly. Re-created jobs get a new id (with [`sourceRootId`](#fetch-name-options) still
+pointing at the job `send()` returned), a reset retry count, cleared output, and
 the destination queue's current retry, retention, policy, expiration, heartbeat, and
 deadLetter configuration. Per-job overrides passed to the original `send()` (such as
 `expireInSeconds` or `retryLimit`) are not restored, since the queue's configuration wins.
@@ -575,7 +584,7 @@ such a job runs it again standalone; the original flow does not resume.
   left in place otherwise.
 - `sourceName`: only redrive jobs that originated from this source queue.
 - `data`: only redrive jobs whose payload contains this object, matched the same
-  way as [`findJobs()`](#findjobsname-options).
+  way as [`findJobs()`](#findjobs-name-options).
 - `createdBefore`: only redrive jobs that arrived in the dead letter queue before
   this `Date`. Pass the same value to every call of a loop to drain a fixed set:
   jobs dead-lettered while it runs are never swept in.
@@ -584,20 +593,37 @@ such a job runs it again standalone; the original flow does not resume.
   `1000`). Loop or schedule repeated calls to drain large dead letter queues at a
   controlled rate.
 
+A job whose re-created copy the destination refuses, because its `short`, `stately` or
+`exclusive` policy already holds a job with the same `singletonKey` (or one earlier in the
+same batch), is not lost: it stays in the dead letter queue in the `failed` state, with an
+`output` saying why (`reason: 'redrive_conflict'`, plus the `destination`, `policy`,
+`singletonKey` and a `message`). Retry it once the job it collided with has finished and it
+becomes a redrive candidate again; otherwise the dead letter queue's `deleteAfterSeconds`
+removes it like any other failed job.
+
+In a dead letter queue with the `key_strict_fifo` policy, only the oldest collision per
+`singletonKey` is failed. Jobs with a key that an active, retrying or failed job holds are
+not redrive candidates until that job is resolved, the same rule fetch follows.
+
 Jobs a dead letter queue's own workers have already failed are never redriven;
-only jobs still waiting there are candidates.
+only jobs still waiting there are candidates. The return value counts only the jobs
+re-created, so a call can return `0` while waiting jobs
+remain, if every one of them collided; those are now failed and the next call moves on.
 
 ```js
-// drain a dead letter queue back to its source queues, 500 at a time
-let moved
+// drain a dead letter queue back to its source queues, 500 at a time, stopping at the
+// jobs that were already there when it started
+const createdBefore = new Date()
+let left
 do {
-  moved = await boss.redrive('email-dlq', { limit: 500 })
-} while (moved > 0)
+  await boss.redrive('email-dlq', { limit: 500, createdBefore })
+  left = await boss.previewRedrive('email-dlq', { createdBefore })
+} while (left.total > left.unroutable)
 ```
 
 ### `previewRedrive(name, options)`
 
-Reports what [`redrive()`](#redrivename-options) would do with the same options,
+Reports what [`redrive()`](#redrive-name-options) would do with the same options,
 without moving anything. Takes every `redrive()` option except `limit`, and uses the
 same matching, so the numbers agree with what a redrive would move at that moment.
 

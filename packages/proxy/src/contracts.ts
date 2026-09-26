@@ -206,6 +206,8 @@ export const jobWithMetadataSchema = jobSchemaBase.extend({
   sourceId: z.string().nullable(),
   sourceCreatedOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
   sourceRetryCount: z.number().nullable(),
+  sourceOutput: jsonRecordSchema.nullable(),
+  sourceRootId: z.string().nullable(),
 }) satisfies z.ZodType<types.HttpJobWithMetadata>
 
 export const commandResponseSchema = z.object({
@@ -252,6 +254,11 @@ export const queueResultSchema = z.object({
   activeCount: z.number(),
   failedCount: z.number(),
   totalCount: z.number(),
+  completedDelta: z.number(),
+  failedDelta: z.number(),
+  createdDelta: z.number(),
+  deltaSeconds: z.number().nullable(),
+  deltaOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
   table: z.string(),
   createdOn: z.iso.datetime().transform((val) => new Date(val)),
   updatedOn: z.iso.datetime().transform((val) => new Date(val)),
@@ -624,6 +631,11 @@ export const queueStatsSchema = z.object({
   activeCount: z.number(),
   failedCount: z.number(),
   totalCount: z.number(),
+  completedDelta: z.number().nullable(),
+  failedDelta: z.number().nullable(),
+  createdDelta: z.number().nullable(),
+  deltaSeconds: z.number().nullable(),
+  deltaOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
   capturedOn: z.iso.datetime().transform((val) => new Date(val)),
 }) satisfies z.ZodType<types.HttpQueueStats>
 

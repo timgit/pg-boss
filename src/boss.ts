@@ -367,7 +367,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       this.#config.schema,
       names,
       this.#config.monitorIntervalSeconds,
-      this.#config.noSkipLocked
+      plans.queueClaimSkipLocked(this.#config.backend, this.#config.noSkipLocked)
     )
     const { rows } = await this.#executeQuery(command)
 
@@ -383,7 +383,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const refreshStats = rows[0].refreshStats !== false
 
       if (refreshStats) {
-        const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+        // A pass needs both timers, so passes are as far apart as the longer of the two.
+        const passSeconds = Math.max(this.#config.monitorIntervalSeconds!, this.#config.superviseIntervalSeconds!)
+        const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks,
+          this.#config.persistQueueStats, { resetMax: plans.deltaResetMax(passSeconds) })
         // The pin this pass cost, taken from the server's own clock (see the pinSeconds column in
         // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
         // network and event-loop lag, none of which hold the horizon. The client measurement stays as
@@ -400,9 +403,27 @@ class Boss extends EventEmitter implements types.EventsMixin {
           this.#statsElapsedSeconds += pinned || (Date.now() - statsStarted) / 1000
         }
 
-        if (this.#config.persistQueueStats) {
-          const insertSql = plans.insertQueueStats(this.#config.schema, queues, this.#config.noAdvisoryLocks)
+        // Only the queues this pass wrote counts for. Another instance holding the stats lock means
+        // nothing was updated, and inserting anyway copied the previous pass's counters into a
+        // second snapshot, which the history then counted twice.
+        if (this.#config.persistQueueStats && rowsCacheStats.length) {
+          const written = rowsCacheStats.map(row => row.name)
+          const insertSql = plans.insertQueueStats(this.#config.schema, written, this.#config.noAdvisoryLocks)
           await this.#executeQuery(insertSql)
+
+          // Jobs committed after the pass that counted their window: the aggregate saw more of them
+          // across the recorded windows than the snapshots hold. Recount those queues' recent windows
+          // and raise the snapshots that fell short. A second scan, so it is paid only when the
+          // check fires, and it counts toward the pin like the aggregate does.
+          const late = rowsCacheStats.filter(row => row.trueUp).map(row => row.name)
+          if (late.length && !this.#stopping) {
+            const trueUpStarted = Date.now()
+            const trueUpSql = plans.trueUpQueueStats(this.#config.schema, table, late, this.#config.noAdvisoryLocks)
+            const { rows: [trued] } = await this.#executeQuery(trueUpSql)
+            if (trued) {
+              this.#statsElapsedSeconds += Number(trued.pinSeconds) || (Date.now() - trueUpStarted) / 1000
+            }
+          }
         }
 
         if (this.#stopping) return
@@ -453,7 +474,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       this.#config.schema,
       names,
       this.#config.maintenanceIntervalSeconds,
-      this.#config.noSkipLocked
+      plans.queueClaimSkipLocked(this.#config.backend, this.#config.noSkipLocked)
     )
     const { rows } = await this.#executeQuery(command)
 

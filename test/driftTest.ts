@@ -17,7 +17,7 @@ describe('drift', function () {
 
       // 5 is absent by design: the fetch index was replaced by job_i11 in v40 and the number was
       // retired rather than reused. See createIndexJobFetch.
-      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11]) {
+      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]) {
         expect(names).toContain(`job_i${n}`)
       }
       expect(names).not.toContain('job_i5')
@@ -31,7 +31,7 @@ describe('drift', function () {
     it('partitioned puts the full set on job_common', function () {
       const names = plans.expectedManagedIndexes('pgboss', true, []).map(i => i.name)
 
-      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11]) {
+      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]) {
         expect(names).toContain(`job_common_i${n}`)
       }
       expect(names).not.toContain('job_common_i5')

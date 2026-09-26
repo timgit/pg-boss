@@ -259,8 +259,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   // Rows already warned about, keyed on (name, key, cron, timezone). Unlike every other warning
   // type, an unusable schedule never heals on its own: clock skew converges, a backlog drains, a
   // slow query is a one-off, but a bad row sits there until a human edits it. Warning every pass
-  // would persist a row every cronMonitorIntervalSeconds forever, and warningRetentionDays has no
-  // default, so a single typo could grow the warning table without bound. Rebuilt each pass from
+  // would persist a row every cronMonitorIntervalSeconds for as long as it stayed broken, a year's
+  // worth under the default warningRetentionDays from a single typo. Rebuilt each pass from
   // the rows still broken, so a fixed or deleted schedule drops out and would warn again if it
   // came back.
   private warnedSchedules = new Set<string>()

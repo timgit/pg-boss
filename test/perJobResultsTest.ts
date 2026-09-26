@@ -189,14 +189,14 @@ describe('perJobResults', function () {
 
     await spy.waitForJobWithId(jobId, 'failed')
 
-    // The dead letter job carries the original data and the per-job failure output.
+    // The dead letter job carries the original data, and the per-job failure output as its sourceOutput.
     const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
     assertTruthy(dlqJob)
     expect(dlqJob.data.key).toBe('payload')
 
     const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
     assertTruthy(dlqWithMeta)
-    expect((dlqWithMeta.output as { message: string }).message).toBe('dlq please')
+    expect((dlqWithMeta.sourceOutput as { message: string }).message).toBe('dlq please')
   })
 
   it('unblocks a dependent child when the blocking parent is completed via perJobResults', async function () {
@@ -271,14 +271,14 @@ describe('perJobResults', function () {
     expect(source.state).toBe('failed')
     expect(source.retryCount).toBe(0)
 
-    // The dead letter job carries the original data and the per-job output.
+    // The dead letter job carries the original data, and the per-job output as its sourceOutput.
     const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
     assertTruthy(dlqJob)
     expect(dlqJob.data.key).toBe('payload')
 
     const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
     assertTruthy(dlqWithMeta)
-    expect((dlqWithMeta.output as { message: string }).message).toBe('fatal, do not retry')
+    expect((dlqWithMeta.sourceOutput as { message: string }).message).toBe('fatal, do not retry')
   })
 
   it('fails a deadletter result terminally when the queue has no DLQ configured', async function () {
@@ -388,7 +388,7 @@ describe('perJobResults', function () {
 
       const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
       assertTruthy(dlqWithMeta)
-      expect((dlqWithMeta.output as { message: string }).message).toBe('dlq please')
+      expect((dlqWithMeta.sourceOutput as { message: string }).message).toBe('dlq please')
     })
 
     it('routes a deadletter result straight to the DLQ, bypassing remaining retries (distributed path)', async function () {
@@ -420,7 +420,7 @@ describe('perJobResults', function () {
 
       const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
       assertTruthy(dlqWithMeta)
-      expect((dlqWithMeta.output as { message: string }).message).toBe('fatal, do not retry')
+      expect((dlqWithMeta.sourceOutput as { message: string }).message).toBe('fatal, do not retry')
     })
 
     it('no-ops the per-job fail when the job already left the active state', async function () {
@@ -520,7 +520,7 @@ describe('perJobResults', function () {
 
       const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
       assertTruthy(dlqWithMeta)
-      expect((dlqWithMeta.output as { message: string }).message).toBe('fatal, do not retry')
+      expect((dlqWithMeta.sourceOutput as { message: string }).message).toBe('fatal, do not retry')
     })
   })
 })

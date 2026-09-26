@@ -141,13 +141,9 @@ export interface MaintenanceOptions {
   migrate?: boolean;
   createSchema?: boolean;
   /**
-   * Skips the startup check that refuses to install into `schema` when another schema differing
-   * from it only by case already holds a pg-boss installation.
-   *
-   * That check exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different
-   * schemas. PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim,
-   * so mis-spelling the quoting installs an empty second schema and every existing job appears to
-   * vanish. Set this only if you genuinely intend two installations whose names differ by case.
+   * Allow installing into `schema` when another schema differing from it only by case already
+   * holds a pg-boss installation.
+   * @see https://pgboss.io/api/constructor#allowschemacasevariant
    * @default false
    */
   allowSchemaCaseVariant?: boolean;
@@ -159,41 +155,32 @@ export interface MaintenanceOptions {
   monitorIntervalSeconds?: number;
   persistWarnings?: boolean;
   warningRetentionDays?: number;
+  /**
+   * Record a snapshot of every queue's counts and throughput on each monitor pass, queryable with
+   * `getQueueStats()`.
+   * @see https://pgboss.io/api/constructor#persistqueuestats
+   * @default false
+   */
   persistQueueStats?: boolean;
   queueStatRetentionDays?: number;
   bamIntervalSeconds?: number;
   flowIntervalSeconds?: number;
   /**
-   * Rebuild bloated job indexes with `REINDEX INDEX CONCURRENTLY` during maintenance.
-   *
-   * Autovacuum reclaims heap space but never shrinks a btree, so a job index stays at the size of
-   * the largest backlog its queue has ever held. Every later vacuum then walks all of those pages,
-   * which is the dominant cost on a drained queue. Rebuilds are gated on a density check, so a
-   * healthy installation never runs one.
-   *
-   * Set `false` to disable rebuilds entirely. Bloat detection and the `index_bloat` warning are
-   * unaffected, use `getReindexCommands()` to run the statements yourself.
+   * Rebuild bloated job indexes with `REINDEX INDEX CONCURRENTLY` during maintenance. Pass an
+   * object to change the thresholds, or `false` to disable rebuilds.
+   * @see https://pgboss.io/api/constructor#reindex
    * @default true
    */
   reindex?: boolean | ReindexOptions;
   /**
-   * How often the bloat check runs. One instance per interval performs it, coordinated through
-   * `version.reindex_on`. Must be >=1 second and cannot exceed 24 hours.
+   * How often the index bloat check runs, in seconds. Must be >=1 and cannot exceed 24 hours.
    * @default 86400
    */
   reindexIntervalSeconds?: number;
   /**
-   * Whether to check that vacuum is keeping up with the queues. Covers two warnings, because the
-   * fixes are opposite: `xmin_horizon` when vacuum runs and reclaims nothing (something is pinning
-   * the MVCC horizon. An idle-in-transaction backend, a lagging replication slot, a standby with
-   * `hot_standby_feedback`, a prepared transaction), and `autovacuum_disabled` when nothing is
-   * vacuuming the table at all. Either way dead tuples and index bloat accumulate without bound,
-   * which is the precondition for every documented Postgres-queue collapse.
-   *
-   * There is no threshold to set. Both fire on measured evidence: a job table past the point
-   * Postgres itself would vacuum it, plus what two consecutive passes show about whether a vacuum
-   * ran and whether it reclaimed anything. Sensitivity is tuned with Postgres's own
-   * `autovacuum_vacuum_threshold` / `autovacuum_vacuum_scale_factor`, per table if wanted.
+   * Check that vacuum is keeping up with the queues, and emit an `xmin_horizon` or
+   * `autovacuum_disabled` warning when it isn't.
+   * @see https://pgboss.io/api/constructor#monitorvacuum
    * @default true
    */
   monitorVacuum?: boolean;
@@ -213,9 +200,6 @@ export interface IndexBloatOptions {
   maxEntriesPerPage?: number;
   /**
    * How many times larger than its live entries need an index must be before it counts as bloated.
-   * The size those entries need is estimated from `pg_stats`, so a legitimately sparse index. A
-   * long `singletonKey` packs fewer than five entries per page while perfectly packed, is not
-   * mistaken for a bloated one.
    * @default 4
    */
   minSizeRatio?: number;
@@ -267,6 +251,23 @@ export interface QueueStats {
   activeCount: number;
   failedCount: number;
   totalCount: number;
+  /**
+   * Jobs completed in the window since the previous monitor pass. Null when `persistQueueStats` is
+   * off, or on a snapshot captured before pg-boss 12.35.
+   * @see https://pgboss.io/api/queues#getqueuestats-name-options
+   */
+  completedDelta: number | null;
+  /** Jobs that failed terminally in the same window. A job that will be retried is not included. */
+  failedDelta: number | null;
+  /** Jobs created in the same window. */
+  createdDelta: number | null;
+  /**
+   * How many seconds the deltas cover, for a per-minute rate of `delta / deltaSeconds * 60`. Null
+   * wherever the deltas are, and on a queue's first counted pass.
+   */
+  deltaSeconds: number | null;
+  /** When the interval the deltas cover ends, 10 seconds behind `capturedOn`. Plot the deltas at this time. */
+  deltaOn: Date | null;
   capturedOn: Date;
 }
 
@@ -915,6 +916,20 @@ export interface QueueResult extends Queue {
    */
   failedCount: number;
   totalCount: number
+  /**
+   * Jobs completed in the window the latest counted monitor pass covered. Zero until an instance
+   * with `persistQueueStats` on has counted this queue.
+   * @see https://pgboss.io/api/queues#getqueues-names
+   */
+  completedDelta: number;
+  /** Jobs failed terminally since the previous monitor pass. */
+  failedDelta: number;
+  /** Jobs that arrived since the previous monitor pass. */
+  createdDelta: number;
+  /** Seconds the three deltas cover. See `QueueStats.deltaSeconds`. Null until a pass counts. */
+  deltaSeconds: number | null;
+  /** When that interval ends, 10 seconds behind the pass. See `QueueStats.deltaOn`. Null until a pass counts. */
+  deltaOn: Date | null;
   table: string;
   createdOn: Date;
   updatedOn: Date;
@@ -944,19 +959,13 @@ export interface PreviewScheduleOptions {
   /**
    * Reference point the walk starts from. Occurrences are strictly after it, so passing the last
    * occurrence of one page back in yields the next page.
-   *
-   * The default is database time, the instance clock plus the skew cached against the database.
-   * Skew is only cached by an instance started with scheduling enabled; on any other instance it is
-   * zero and the default reduces to this process's local clock.
+   * @see https://pgboss.io/api/scheduling#previewschedule-cron-options
    * @default database time (the instance clock plus the cached skew)
    */
   from?: Date;
   /**
    * How many occurrences to return. Must be an integer between 1 and 1000. A finite rule answers
    * with fewer, and one whose last occurrence has passed answers with none.
-   *
-   * A walk that has not produced them within a second gives up, since occurrences of a sparse
-   * expression are expensive to find and the walk holds the event loop while it runs.
    * @default 5
    */
   count?: number;
@@ -1021,18 +1030,11 @@ export interface JobFetchOptions {
   /**
    * @deprecated Ignored since 12.30.0, and removed in the next major. Jobs are always fetched in
    * priority order.
-   *
-   * This existed to skip the priority sort for throughput, but the fetch index is now ordered to
-   * match the fetch, so there is no sort to skip, setting it `false` was measured ~180x *slower*
-   * than leaving it alone, since no index leads with `created_on`.
    */
   priority?: boolean;
   /**
    * @deprecated Ignored since 12.30.0, and removed in the next major. Jobs are always fetched in
    * creation order.
-   *
-   * This existed to skip the `created_on` sort for throughput. The fetch index now provides that
-   * order directly, so disabling it saved nothing measurable.
    */
   orderByCreatedOn?: boolean;
   /**
@@ -1094,42 +1096,17 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
    */
   perJobResults?: boolean;
   /**
-   * Run the handler and the job's completion inside one database transaction.
-   *
-   * The handler receives a second argument, a `db` for that transaction. Anything written through
-   * it commits atomically with the job's completion, so a handler cannot leave its side effects
-   * committed and the job unfinished, or the reverse. Throwing rolls back the handler's writes and
-   * the completion, and the job is then failed on a pooled connection, so retry counts, retry
-   * delays, and dead lettering work exactly as they do without this option.
-   *
-   * The job is claimed before the transaction opens, so it stays `active` for as long as the
-   * handler runs and every supervision path (`expireInSeconds`, heartbeats, another instance's
-   * monitor) sees it.
-   *
-   * Requires a database connection pg-boss can open a transaction on: the built-in pool, or a `db`
-   * adapter implementing `beginTransaction`. Cannot be combined with `perJobResults`, which
-   * settles each job in a batch separately while one transaction has a single outcome.
-   *
-   * Each handler in flight holds a connection for its own duration, so the pool needs room for
-   * `localConcurrency` connections on top of what the rest of pg-boss uses. Long transactions also
-   * hold back vacuum, so this suits handlers that finish in seconds.
+   * Run the handler and the job's completion inside one database transaction. The handler receives
+   * a second argument, a `db` for that transaction, and anything written through it commits with
+   * the job's completion. Cannot be combined with `perJobResults`.
+   * @see https://pgboss.io/api/workers#work-name-options-handler
    * @default false
    */
   transactional?: boolean;
   /**
-   * How long the database gives the handler's transaction before it kills the connection under it,
-   * in seconds. Only valid with `transactional`. `0` removes the bound.
-   *
-   * Backstop for the case the in-process timers cannot cover: not a handler that hangs, which
-   * `expireInSeconds` already ends, but the process failing under it, where an open transaction
-   * goes on holding vacuum off the whole database. Applied as `transaction_timeout` where the
-   * server has it (PostgreSQL 17+, CockroachDB) and `idle_in_transaction_session_timeout`
-   * otherwise, which bounds the gaps between the handler's statements instead of the whole
-   * transaction.
-   *
-   * Defaults to `expireInSeconds` plus the 5 seconds pg-boss allows its own rollback, so the
-   * handler's own timeout and clean rollback always land first and this only fires when they did
-   * not run at all.
+   * How long the database gives the handler's transaction before it ends it, in seconds. Only valid
+   * with `transactional`. `0` removes the bound. Defaults to `expireInSeconds` plus 5.
+   * @see https://pgboss.io/api/workers#work-name-options-handler
    */
   transactionTimeoutSeconds?: number;
 }
@@ -1237,15 +1214,9 @@ export interface Schedule {
   createdOn: Date;
   updatedOn: Date;
   /**
-   * Id of the job this schedule most recently created.
-   *
-   * Recorded on a best-effort basis, in a separate statement once the job exists, so `null` does
-   * not mean the schedule never fired. It also reads `null` for a schedule that last fired before
-   * the upgrade that added the column, and for one whose annotating statement lost its connection
-   * between creating the job and recording it.
-   *
-   * Not a foreign key: the job is subject to the queue's retention policy and will eventually be
-   * deleted, so an id here does not guarantee the job still exists.
+   * Id of the job this schedule most recently created, or `null` when none is recorded. The job
+   * may since have been deleted by the queue's retention policy.
+   * @see https://pgboss.io/api/scheduling#getschedules
    */
   lastJobId: string | null;
 }
@@ -1310,6 +1281,17 @@ export interface JobWithMetadata<T = object> extends Job<T> {
    * before it was dead-lettered. `null` otherwise.
    */
   sourceRetryCount: number | null;
+  /**
+   * For a dead-lettered job, the `output` of the original job when it failed,
+   * usually its error. `null` otherwise.
+   */
+  sourceOutput: object | null;
+  /**
+   * The id `send()` returned for the first job in this job's dead letter chain,
+   * kept through every dead letter and redrive. `null` if it has never been dead-lettered.
+   * @see https://pgboss.io/api/jobs#fetch-name-options
+   */
+  sourceRootId: string | null;
 }
 
 export interface JobInsert<T = object> {

@@ -29,7 +29,7 @@ describe('queueStatsHistory', function () {
     const { rows: persisted } = await db.executeSql(
       `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [queue])
     await db.close()
-    expect(persisted[0].c).toBe(0)
+    expect(Number(persisted[0].c)).toBe(0)
   })
 
   it('serves the cache and forces recompute only when the cache is older than 60s (persistQueueStats off)', async function () {

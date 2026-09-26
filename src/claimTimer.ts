@@ -37,6 +37,7 @@ export class ClaimTimer {
   readonly #fn: () => Promise<void>
 
   #handle: ClockTimer | undefined
+  #due = 0
   #stopped = true
   #anchored = false
 
@@ -81,7 +82,25 @@ export class ClaimTimer {
 
     if (this.#stopped) return
 
-    this.#handle = this.#clock.setTimeout(() => { this.#run() }, ms)
+    this.#due = this.#clock.now() + ms
+    this.#wait(ms)
+  }
+
+  // Node's timers run on the monotonic clock and can fire a millisecond short of the wall clock the
+  // claim is measured on. Against a server whose now() has millisecond resolution and sits in the
+  // same process (PGlite), a reply inside the millisecond it was stamped leaves no round trip to
+  // absorb that, and the claim is refused. Waiting out the remainder keeps the attempt from landing
+  // before the wall clock says the wait is over.
+  #wait (ms: number): void {
+    this.#handle = this.#clock.setTimeout(() => {
+      const remaining = this.#due - this.#clock.now()
+
+      if (remaining > 0) {
+        this.#wait(remaining)
+      } else {
+        this.#run()
+      }
+    }, ms)
   }
 
   #disarm (): void {

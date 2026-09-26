@@ -292,6 +292,35 @@ describe('claim timer', function () {
       expect(clock.live).toBe(1)
     })
 
+    it('does not attempt before the interval is up on a timer that fires early', async function () {
+      // Node's timers run on the monotonic clock and now and then fire a millisecond short of the
+      // wall clock. Against PGlite, whose now() is to the millisecond, that refused the claim. A
+      // wait of a millisecond still waits one, the way a real timer does.
+      class EarlyClock extends RecordingClock {
+        setTimeout (fn: () => void, ms: number): ClockTimer {
+          return super.setTimeout(fn, ms > 1 ? ms - 1 : ms)
+        }
+      }
+
+      const clock = new EarlyClock(0)
+      const stamps: number[] = []
+
+      const timer = new ClaimTimer(clock, 1, async () => {
+        stamps.push(clock.now())
+        timer.anchor()
+      })
+
+      timer.start()
+
+      for (let i = 0; i < 3; i++) {
+        clock.run(1000)
+        await settle()
+      }
+
+      expect(stamps).toEqual([1000, 2000, 3000])
+      expect(clock.live).toBe(1)
+    })
+
     it('stops, and a pass still in flight does not put the chain back', async function () {
       const clock = new RecordingClock(0)
       let attempts = 0

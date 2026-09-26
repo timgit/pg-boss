@@ -4,7 +4,7 @@
 
 Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker and resolve a unqiue worker id.
 
-Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event or by polling [`getWipData()`](#getwipdataoptions).
+Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event or by polling [`getWipData()`](#getwipdata-options).
 
 The default options for `work()` is 1 job every 2 seconds.
 
@@ -19,11 +19,11 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **batchSize**, int, *(default=1)*
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs#fetch-name-options)
 
 * **includeMetadata**, bool, *(default=false)*
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs#fetch-name-options)
 
 * **perJobResults**, bool, *(default=false)*
 
@@ -95,29 +95,29 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **priority**, bool, **deprecated, ignored since 12.30.0**
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs#fetch-name-options)
 
 * **orderByCreatedOn**, bool, **deprecated, ignored since 12.30.0**
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs#fetch-name-options)
 
 * **minPriority**, int
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs#fetch-name-options)
 
 * **maxPriority**, int
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs#fetch-name-options)
 
 * **pollingIntervalSeconds**, int, *(default=2)*
 
   Base interval to check for new jobs, in seconds. Must be >=0.5 (500ms). Used when no faster or slower mode applies: queues without `notify`, or notify-enabled queues when the LISTEN/NOTIFY listener is unavailable.
 
-  > **Note**: When [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for a queue, workers are woken the instant a job is created and polling automatically falls back to the slower `notifyPollingIntervalSeconds` backstop, so you don't need to raise `pollingIntervalSeconds` yourself.
+  > **Note**: When [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for a queue, workers are woken the instant a job is created and polling automatically falls back to the slower `notifyPollingIntervalSeconds` backstop, so you don't need to raise `pollingIntervalSeconds` yourself.
 
 * **notifyPollingIntervalSeconds**, int, *(default=30)*
 
-  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms).
+  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms).
 
 * **burstWhenReadyExceeds**, int
 
@@ -290,8 +290,8 @@ This is an **opt-in optimization on top of polling, not a replacement for it.** 
 
 **Enabling it requires two opt-ins:**
 
-1. Start the instance with [`useListenNotify: true`](./constructor.md#newoptions). This runs a listener on one dedicated database connection.
-2. Mark each queue that should emit notifications with the [`notify: true`](./queues.md#createqueuename-queue) option on `createQueue()` (or `updateQueue()`).
+1. Start the instance with [`useListenNotify: true`](./constructor.md#uselistennotify). This runs a listener on one dedicated database connection.
+2. Mark each queue that should emit notifications with the [`notify: true`](./queues.md#createqueue-name-queue) option on `createQueue()` (or `updateQueue()`).
 
 ```js
 const boss = new PgBoss({ connectionString, useListenNotify: true })

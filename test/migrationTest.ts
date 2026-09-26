@@ -1393,12 +1393,21 @@ describe('migration', function () {
     }
 
     // Rolling v42 back drops the function and leaves the defaults alone.
-    await contractor.rollback(currentSchemaVersion)
+    //
+    // Pinned to 42 rather than to whatever is newest. This case is about one
+    // migration, and rolling back "the current version" quietly made it a test
+    // of the latest migration instead the moment a v43 was added.
+    const CLOCK_VERSION = 42
+
+    while (await contractor.schemaVersion() as number >= CLOCK_VERSION) {
+      await contractor.rollback(await contractor.schemaVersion() as number)
+    }
+
     expect(await hasClockFunction()).toBe(false)
     expect(await clockDefaults()).toEqual(fresh)
 
     // Migrating forward again lands on exactly the fresh-install shape.
-    await contractor.migrate(currentSchemaVersion - 1)
+    await contractor.migrate(CLOCK_VERSION - 1)
     expect(await clockSource()).toBe(freshSource)
     expect(await clockDefaults()).toEqual(fresh)
   })

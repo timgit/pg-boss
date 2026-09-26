@@ -68,10 +68,11 @@ export type HttpJob = Omit<types.Job<HttpJsonRecord>, 'signal'>
 
 export type HttpJobWithMetadata = Omit<
   types.JobWithMetadata<HttpJsonRecord>,
-  'signal' | 'heartbeatOn' | 'singletonOn' | 'output'
+  'signal' | 'heartbeatOn' | 'singletonOn' | 'output' | 'sourceOutput'
 > & {
   singletonOn: string | null
   output: HttpJsonRecord
+  sourceOutput: HttpJsonRecord | null
 }
 
 export type HttpCommandResponse = types.CommandResponse

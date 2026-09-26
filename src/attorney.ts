@@ -559,6 +559,8 @@ function validateWarningConfig (config: any) {
 
   assert(!('warningRetentionDays' in config) || config.warningRetentionDays <= POLICY.MAX_RETENTION_DAYS,
     `configuration assert: warningRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
+
+  config.warningRetentionDays = config.warningRetentionDays || POLICY.MAX_RETENTION_DAYS
 }
 
 // Expands config.backend into the internal compatibility flags. The flags are derived

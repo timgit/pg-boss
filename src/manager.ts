@@ -106,11 +106,17 @@ const NUMERIC_QUEUE_FIELDS = [
   'deferredCount',
   'warningQueueSize',
   'queuedCount',
+  'readyCount',
   'activeCount',
-  'totalCount'
+  'failedCount',
+  'totalCount',
+  'createdDelta',
+  'completedDelta',
+  'failedDelta',
+  'deltaSeconds'
 ] as const
 
-// The count columns shared by live stats and recorded snapshots (the QueueStats shape).
+// The gauges shared by live stats and recorded snapshots (the QueueStats shape).
 const STATS_COUNT_FIELDS = [
   'deferredCount',
   'queuedCount',
@@ -118,6 +124,15 @@ const STATS_COUNT_FIELDS = [
   'activeCount',
   'failedCount',
   'totalCount'
+] as const
+
+// The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
+// getQueueStats.
+const STATS_DELTA_FIELDS = [
+  'completedDelta',
+  'failedDelta',
+  'createdDelta',
+  'deltaSeconds'
 ] as const
 
 // Stale-cache budget for getQueueStats when persistQueueStats is off. A queue-table cache older than
@@ -2180,7 +2195,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2197,12 +2212,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier])
+          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier, job.source_root_id])
         }
       }
 
@@ -2276,18 +2291,25 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
 
     // CockroachDB rejects the single-statement version (a DELETE and an INSERT on one table), so
-    // the same move runs as three statements in one transaction. See plans.selectRedriveCandidates.
+    // the same move runs as statements in one transaction. See plans.selectRedriveCandidates.
     if (this.config.noMultiMutationCte) {
       return this.ensureTransaction(db, async (tx) => {
         const { rows } = await tx.executeSql(plans.selectRedriveCandidates(this.config.schema, table), [name, ...filter, limit])
 
         if (rows.length === 0) return 0
 
-        const ids = rows.map((row: { id: string }) => row.id)
-        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0]])
-        await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [ids])
+        const ids: string[] = rows.map((row: { id: string }) => row.id)
+        const newIds: string[] = rows.map((row: { new_id: string }) => row.new_id)
+        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0], newIds])
 
-        return inserted.length
+        const created = new Set(inserted.map((row: { id: string }) => row.id))
+        const moved = ids.filter((_, i) => created.has(newIds[i]))
+        const conflicted = ids.filter((_, i) => !created.has(newIds[i]))
+
+        if (moved.length) await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [moved])
+        if (conflicted.length) await tx.executeSql(plans.failRedriveConflicts(this.config.schema, table), [conflicted, filter[0]])
+
+        return moved.length
       })
     }
 
@@ -2541,7 +2563,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const isCockroach = this.config.backend === 'cockroachdb'
 
-    const toSnapshot = (row: any): types.QueueStats => {
+    // `counted` is true for recorded snapshots. The cache path serves only gauges: the queue table's
+    // counters describe the last pass that counted, not this reading.
+    const toSnapshot = (row: any, counted = false): types.QueueStats => {
       const snapshot: types.QueueStats = {
         name,
         deferredCount: 0,
@@ -2550,14 +2574,25 @@ class Manager extends EventEmitter implements types.EventsMixin {
         activeCount: 0,
         failedCount: 0,
         totalCount: 0,
+        // Null, not zero, until something counted them: with persistQueueStats off
+        // nobody does, and a snapshot captured before 12.35 predates the columns.
+        // Zero would claim the queue was idle.
+        completedDelta: null,
+        failedDelta: null,
+        createdDelta: null,
+        deltaSeconds: null,
+        deltaOn: null,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
-      for (const field of STATS_COUNT_FIELDS) {
+      for (const field of counted ? [...STATS_COUNT_FIELDS, ...STATS_DELTA_FIELDS] : STATS_COUNT_FIELDS) {
         const value = row?.[field]
         // CockroachDB returns integer columns as strings; normalize the counts.
         if (value !== undefined && value !== null) snapshot[field] = isCockroach ? Number(value) : value
       }
+
+      // The end of the interval the counters cover, handed on as the row holds it, like capturedOn.
+      if (counted && row?.deltaOn != null) snapshot.deltaOn = row.deltaOn
 
       return snapshot
     }
@@ -2587,13 +2622,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const sql = plans.getQueueStatsHistoryBucketed(this.config.schema, aggregate, mode)
         const { rows } = await this.db.executeSql(sql, [name, from, to, limit, width])
 
-        return rows.map(toSnapshot)
+        return rows.map(row => toSnapshot(row, true))
       }
 
       const sql = plans.getQueueStatsHistory(this.config.schema)
       const { rows } = await this.db.executeSql(sql, [name, from, to, limit])
 
-      return rows.map(toSnapshot)
+      return rows.map(row => toSnapshot(row, true))
     }
 
     // persistQueueStats disabled: serve the cached counts the monitor keeps on the queue table.

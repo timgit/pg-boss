@@ -271,6 +271,36 @@ describe('monitoring', function () {
     await db.close()
   })
 
+  it('should keep warnings for 365 days when warningRetentionDays is not set', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      persistWarnings: true,
+      supervise: true,
+      superviseIntervalSeconds: 1
+    }
+
+    ctx.boss = await helper.start(config)
+
+    const db = await helper.getDb()
+    await db.executeSql(`
+      INSERT INTO ${ctx.schema}.warning (type, message, data, created_on)
+      VALUES ('test_expired', 'expired warning', '{}', now() - interval '366 days'),
+             ('test_kept', 'kept warning', '{}', now() - interval '364 days')
+    `)
+
+    await delay(2000)
+
+    const countSql = plans.getWarningsCount(ctx.schema)
+    const expired = await db.executeSql(countSql, ['test_expired'])
+    const kept = await db.executeSql(countSql, ['test_kept'])
+
+    expect(expired.rows[0].count).toBe(0)
+    expect(kept.rows[0].count).toBe(1)
+
+    await ctx.boss.stop()
+    await db.close()
+  })
+
   it('should emit error when warning persistence fails', async function () {
     const config = {
       ...ctx.bossConfig,
@@ -292,7 +322,9 @@ describe('monitoring', function () {
     ctx.boss.on('error', () => errorCount++)
     ctx.boss.on('warning', () => warningCount++)
 
-    await ctx.boss.supervise(ctx.schema)
+    // The pass still rejects at its end: warnings are pruned by default, and the prune runs against
+    // the table this test dropped.
+    await expect(ctx.boss.supervise(ctx.schema)).rejects.toThrow('warning')
 
     // Warning event should still be emitted
     expect(warningCount > 0).toBeTruthy()

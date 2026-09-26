@@ -63,7 +63,7 @@ Allowed policy values:
 
 * **deadLetter**, string
 
-  When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue. The copy is a job on the dead letter queue and runs under *that* queue's configuration. Retry, retention, expiration, and heartbeat all come from the dead letter queue, not the original job. What travels with the job is its identity: `priority`, `singletonKey`, and `group`, so ordering weight and group concurrency limits still apply. The dead-lettered job also records where it came from via the `sourceName`, `sourceId`, `sourceCreatedOn`, and `sourceRetryCount` fields, which power [`redrive()`](jobs#redrivename-options) for moving jobs back to their source queue.
+  When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue. The copy is a job on the dead letter queue and runs under *that* queue's configuration. Retry, retention, expiration, and heartbeat all come from the dead letter queue, not the original job. What travels with the job is its identity: `priority`, `singletonKey`, and `group`, so ordering weight and group concurrency limits still apply. The dead-lettered job also records where it came from via the `sourceName`, `sourceId`, `sourceCreatedOn`, `sourceRetryCount`, and `sourceOutput` fields, plus `sourceRootId`, the first job in the chain, which survives any number of redrives. See [`redrive()`](jobs#redrive-name-options).
 
 * **warningQueueSize**, int
 
@@ -71,7 +71,7 @@ Allowed policy values:
 
 * **notify**, boolean, default false
 
-  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#newoptions) option, which runs the listener. Jobs scheduled for the future (for example via `sendAfter()` or throttling/debouncing) do **not** emit a notification. They are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
+  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#uselistennotify) option, which runs the listener. Jobs scheduled for the future (for example via `sendAfter()` or throttling/debouncing) do **not** emit a notification. They are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify).
 
 **Retry options**
 
@@ -115,7 +115,7 @@ Heartbeat and expiration are two independent mechanisms that address different f
 
 Both mechanisms operate independently and can be used together. When a job fails via either mechanism, it follows the same retry logic (`retryLimit`, `retryDelay`, etc.).
 
-A worker that only looked dead (a network partition, a stalled event loop) keeps running its handler after its job is failed this way, so the job can run twice and handlers should be idempotent. What the original worker cannot do is settle the retry: a worker's completion, failure and heartbeat only apply to the attempt it claimed, identified by the job's `retryCount`. Once the job has been retried, the original worker's result is discarded, and a [transactional worker](./workers.md#workname-options-handler) rolls its writes back. The original worker also finds out: its next heartbeat that reaches the database aborts the job's `signal`, so a handler that listens to it can stop early.
+A worker that only looked dead (a network partition, a stalled event loop) keeps running its handler after its job is failed this way, so the job can run twice and handlers should be idempotent. What the original worker cannot do is settle the retry: a worker's completion, failure and heartbeat only apply to the attempt it claimed, identified by the job's `retryCount`. Once the job has been retried, the original worker's result is discarded, and a [transactional worker](./workers.md#work-name-options-handler) rolls its writes back. The original worker also finds out: its next heartbeat that reaches the database aborts the job's `signal`, so a handler that listens to it can stop early.
 
 **When to use heartbeat:** Long-running jobs where the gap between "worker died" and "job expired" would be unacceptably large. For example, a 2-hour video processing job with `expireInSeconds: 7200` won't be detected as failed until 2 hours after it started, even if the worker crashed immediately. Adding `heartbeatSeconds: 60` means a dead worker is detected within a minute.
 
@@ -149,6 +149,8 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 * **deleteAfterSeconds**, int
 
   Default: 7 days. How long a job should be retained in the database after it's completed. Set to 0 to never delete completed jobs.
+
+  Keep it above a few minutes if you rely on throughput counts. A completed job is counted by the monitor at the first pass at least 10 seconds after it finishes (see [`getQueueStats()`](#getqueuestats-name-options)), and one deleted before then is never counted.
 
 * All retry, expiration, and retention options set on the queue will be inheritied for each job, unless they are overridden.
 
@@ -186,6 +188,13 @@ for (const queue of queues) {
 }
 ```
 
+Each queue also carries the latest monitor pass's `createdDelta`, `completedDelta`,
+`failedDelta`, `deltaSeconds` and `deltaOn` (see [`getQueueStats()`](#getqueuestats-name-options)).
+They are whatever the last pass that counted wrote, whichever instance ran it, and they
+are not revised for late commits the way the history is. The counters are `0`, and
+`deltaSeconds` and `deltaOn` are `null`, until an instance with `persistQueueStats` on has
+counted the queue.
+
 ### `getQueue(name)`
 
 Returns a queue by name, or `null` if it doesn't exist.
@@ -209,15 +218,27 @@ Returns an array of queue-depth snapshots, most recent first. Each snapshot has 
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
 * `totalCount`: all jobs currently stored for the queue
 
+and three deltas: how many jobs were created, completed, and failed in the window since the previous monitor pass. A delta is not the difference between two snapshots' counts: `failedDelta` is not the change in `failedCount`, which also falls as retention deletes failed jobs. Deltas are only recorded when `persistQueueStats` is enabled on the instances that run monitoring, and this method returns them as `null` when it is disabled on the calling instance, or on snapshots captured before pg-boss 12.35.
+
+* `createdDelta`: jobs created
+* `completedDelta`: jobs completed
+* `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not included)
+* `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
+* `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
+
+The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls.
+
 Behavior depends on whether stats are being persisted:
 
-* When [`persistQueueStats`](./constructor.md) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
+* When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
 
   Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets:
 
   * `bucketSeconds` (int): group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
   * `maxDataPoints` (int): auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
-  * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count column is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
+  * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
+
+  `aggregate` applies to the counts only. The deltas and `deltaSeconds` are summed within a bucket. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
 
   `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
 * When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
