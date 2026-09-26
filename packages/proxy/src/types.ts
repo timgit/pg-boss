@@ -243,6 +243,10 @@ export type HttpDeleteJobRequest = HttpCancelRequest
 
 export type HttpDeleteJobResponse = HttpCancelResponse
 
+export type HttpTouchRequest = HttpCancelRequest
+
+export type HttpTouchResponse = HttpCancelResponse
+
 export type HttpRedriveRequest = {
   name: HttpQueueName
   options?: HttpRedriveOptions

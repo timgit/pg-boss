@@ -451,6 +451,11 @@ describe('proxy api routes', () => {
         expected: ['queue', '1']
       },
       {
+        method: 'touch',
+        body: { name: 'queue', id: ['1', '2'] },
+        expected: ['queue', ['1', '2']]
+      },
+      {
         method: 'redrive',
         body: { name: 'dlq', options: { destination: 'dest', sourceName: 'src', data: { tenant: 'acme' }, createdBefore: '2026-09-01T00:00:00.000Z', ids: ['a', 'b'], limit: 50 } },
         expected: ['dlq', { destination: 'dest', sourceName: 'src', data: { tenant: 'acme' }, createdBefore: new Date('2026-09-01T00:00:00.000Z'), ids: ['a', 'b'], limit: 50 }]
@@ -712,6 +717,7 @@ describe('proxy api routes', () => {
       { method: 'fail', body: { name: 'queue', id: [fetched, { id: '2', retryCount: 0 }] }, expected: ['queue', [{ id: '1', retryCount: 2 }, { id: '2', retryCount: 0 }]] },
       { method: 'cancel', body: { name: 'queue', id: { id: '1', retryCount: 2 } }, expected: ['queue', { id: '1', retryCount: 2 }] },
       { method: 'deleteJob', body: { name: 'queue', id: [{ id: '1', retryCount: 2 }] }, expected: ['queue', [{ id: '1', retryCount: 2 }]] },
+      { method: 'touch', body: { name: 'queue', id: fetched }, expected: ['queue', { id: '1', retryCount: 2 }] },
     ]
 
     for (const entry of cases) {
@@ -730,6 +736,7 @@ describe('proxy api routes', () => {
       { method: 'fail', body: { name: 'queue', id: { id: '1', retryCount: -1 } } },
       { method: 'cancel', body: { name: 'queue', id: { id: '1', retryCount: 1.5 } } },
       { method: 'deleteJob', body: { name: 'queue', id: { id: '1' } } },
+      { method: 'touch', body: { name: 'queue', id: [{ id: '1', retryCount: 0 }, '2'] } },
       { method: 'resume', body: { name: 'queue', id: { id: '1', retryCount: 0 } } },
       { method: 'retry', body: { name: 'queue', id: { id: '1', retryCount: 0 } } },
     ]

@@ -490,6 +490,16 @@ export const deleteJobResponseSchema: z.ZodType<types.HttpDeleteJobResponse> = z
   result: commandResponseSchema
 })
 
+export const touchRequestSchema: z.ZodType<types.HttpTouchRequest> = z.object({
+  name: queueNameSchema,
+  id: jobIdOrAttemptSchema
+})
+
+export const touchResponseSchema: z.ZodType<types.HttpTouchResponse> = z.object({
+  ok: z.literal(true),
+  result: commandResponseSchema
+})
+
 export const redriveRequestSchema: z.ZodType<types.HttpRedriveRequest> = z.object({
   name: queueNameSchema,
   options: redriveOptionsSchema.optional()
