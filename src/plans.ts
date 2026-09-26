@@ -1070,45 +1070,17 @@ function createIndexJobSourceRoot (schema: string) {
   return `CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
 }
 
-// The interval claim for a monitor pass, and the vacuum-safety gate on the expensive half of it.
+// The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only
+// the stats aggregate writes, so a pass that skips the aggregate leaves capturedOn aging.
 //
-// getQueueStats() is the only whole-job-table aggregate pg-boss runs, and while it is in flight it
-// advertises a snapshot that Postgres cannot vacuum past: a measured 200,000 deleted rows stayed
-// "dead but not yet removable" for exactly as long as one such snapshot was open, and were removed
-// by the very next vacuum after it closed. Run it densely enough and the job table can never be
-// reclaimed - the failure PlanetScale documents as a queue's death spiral, and the same one
-// #checkVacuum reports after the fact as `xmin_horizon`.
+// The stats aggregate pins the vacuum horizon, so after a slow one setMonitorBackoff() writes
+// monitor_backoff_on and no instance starts another until it passes. The backoff comes back as
+// refreshStats instead of blocking the claim: the pass still runs failJobsByTimeout and
+// failJobsByHeartbeat, and only the aggregate waits.
 //
-// The claim alone doesn't prevent that. It paces the aggregate start-to-start, so once the
-// aggregate itself runs longer than monitorIntervalSeconds the gate stops delaying anything and
-// passes run back to back with no gap at all. `monitor_backoff_on` is the second condition: a
-// deadline written by setMonitorBackoff() after a pass that was measurably slow, before which no
-// instance - timer-driven, manual supervise(), or a fresh CLI process - may start another
-// aggregate. Being a column rather than instance state is the point: the horizon is a property of
-// the database, so the gate has to be too.
-//
-// The backoff is returned as `refreshStats` rather than folded into the WHERE, and that distinction
-// is the whole reason this claim exists separately from the aggregate. A monitor pass is not only
-// the stats scan: it is also failJobsByTimeout and failJobsByHeartbeat, which are narrow indexed
-// updates that pin nothing and are the mechanism by which expired and heartbeat-dead jobs are
-// released. Suppressing the claim during a backoff would suspend those too, for two naptimes at
-// minimum and up to an hour at the cap - the vacuum-safety valve silently becoming a job-expiry
-// outage. So the pass is always claimed and always fails timed-out jobs; only the aggregate is
-// deferred.
-//
-// The claim stamps monitor_claim_on, never monitor_on. monitor_on belongs to the aggregate that
-// writes the counts, so a pass that claims and then skips the aggregate -
-// backed off, or beaten to the stats try-lock - leaves capturedOn correctly aging instead of
-// advertising a freshness the counts do not have.
-//
-// The NULL fallback reads monitor_on before it gives up and reports the queue eligible. A queue that
-// has never been claimed but has been monitored is one that crossed the v40 upgrade: v40 added
-// monitor_claim_on and seeds it from monitor_on so the first pass after a deploy does not make every
-// queue eligible at once, and that seed is the statement CockroachDB cannot run in the transaction
-// that added the column (see noAddColumnBackfill). Falling back to monitor_on here produces the
-// seeded answer without the seed, so the stampede is closed on every backend rather than only on the
-// ones whose migration could write the column. A genuinely new queue has neither stamp and stays
-// immediately eligible, which is what it should be.
+// A queue never claimed falls back to monitor_on, so a queue that crossed the v40 upgrade without
+// its seed (CockroachDB, see noAddColumnBackfill) is not due all at once. A new queue has neither
+// stamp and is due immediately.
 export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number, skipLocked?: boolean): SqlQuery {
   return {
     text: `
