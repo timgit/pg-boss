@@ -220,4 +220,118 @@ describe('TestClock (pure)', function () {
   it('rejects an unparseable start time', function () {
     expect(() => new TestClock('not a date')).toThrow('invalid time')
   })
+
+  describe('settling attached targets', function () {
+    const fakeDb = { executeSql: async () => ({ rows: [] }) }
+
+    // A target that is busy while `pending` is set, like an instance with a statement in flight.
+    function busyTarget () {
+      const state: { pending: Promise<void> | null } = { pending: null }
+      const idle = async () => {
+        if (!state.pending) return false
+        await state.pending
+        state.pending = null
+        return true
+      }
+      return { state, idle }
+    }
+
+    const later = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+    it('settles after each fired timer, so a re-armed poll due by the target fires in the same tick', async function () {
+      const clock = new TestClock(T0)
+      const target = busyTarget()
+      await clock.attach({ db: fakeDb, schema: 'pgboss', idle: target.idle })
+      const fired: number[] = []
+
+      const poll = () => {
+        fired.push(clock.now() - T0)
+        target.state.pending = later(20).then(() => { clock.setTimeout(poll, 100) })
+      }
+      clock.setTimeout(poll, 100)
+
+      await clock.tick(250)
+      expect(fired).toEqual([100, 200])
+    })
+
+    it('settles before firing, so a timer armed by earlier work still fires', async function () {
+      const clock = new TestClock(T0)
+      const target = busyTarget()
+      await clock.attach({ db: fakeDb, schema: 'pgboss', idle: target.idle })
+      const fired: string[] = []
+
+      target.state.pending = later(20).then(() => { clock.setTimeout(() => fired.push('late'), 50) })
+
+      await clock.tick(100)
+      expect(fired).toEqual(['late'])
+    })
+
+    it('repeats until every target is quiet in the same pass', async function () {
+      const clock = new TestClock(T0)
+      const a = busyTarget()
+      const b = busyTarget()
+      await clock.attach({ db: fakeDb, schema: 'a', idle: a.idle })
+      await clock.attach({ db: fakeDb, schema: 'b', idle: b.idle })
+      const fired: string[] = []
+
+      // A going quiet is what wakes B, after B's first idle() has already said false.
+      a.state.pending = later(20).then(() => {
+        b.state.pending = later(20).then(() => { clock.setTimeout(() => fired.push('b'), 50) })
+      })
+
+      await clock.tick(100)
+      expect(fired).toEqual(['b'])
+    })
+
+    it('setTime settles before it jumps', async function () {
+      const clock = new TestClock(T0)
+      const target = busyTarget()
+      await clock.attach({ db: fakeDb, schema: 'pgboss', idle: target.idle })
+      const fired: string[] = []
+
+      target.state.pending = later(20).then(() => { clock.setTimeout(() => fired.push('armed before the jump'), 10) })
+
+      await clock.setTime(T0 + 1000)
+      await clock.tick(0)
+      expect(fired).toEqual(['armed before the jump'])
+    })
+
+    it('rejects a tick while a setTime is still settling', async function () {
+      const clock = new TestClock(T0)
+      const target = busyTarget()
+      await clock.attach({ db: fakeDb, schema: 'pgboss', idle: target.idle })
+
+      target.state.pending = later(20)
+      const jumping = clock.setTime(T0 + 10_000)
+
+      await expect(clock.tick(100)).rejects.toThrow('tick() called while a setTime is in progress')
+      await jumping
+      expect(clock.now()).toBe(T0 + 10_000)
+    })
+
+    it('a long tick across a short interval stays fast', async function () {
+      const clock = new TestClock(T0)
+      await clock.attach({ db: fakeDb, schema: 'pgboss', idle: async () => false })
+      let count = 0
+      clock.setInterval(() => count++, 2000)
+
+      const started = performance.now()
+      await clock.tick(60 * 60 * 1000)
+
+      expect(count).toBe(1800)
+      expect(performance.now() - started).toBeLessThan(5000)
+    })
+
+    it('a target disposed from a timer callback does not stall the tick', async function () {
+      const clock = new TestClock(T0)
+      const handle = await clock.attach({ db: fakeDb, schema: 'pgboss', idle: async () => false })
+      const fired: number[] = []
+
+      clock.setTimeout(() => { fired.push(1); handle[Symbol.asyncDispose]() }, 10)
+      clock.setTimeout(() => fired.push(2), 20)
+
+      await clock.tick(30)
+      expect(fired).toEqual([1, 2])
+    })
+  })
 })

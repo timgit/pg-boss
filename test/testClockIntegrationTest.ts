@@ -23,15 +23,6 @@ async function dbTime (boss: PgBoss): Promise<number> {
   return Number(rows[0].time)
 }
 
-// Real-time wait for I/O a tick started; tick itself never waits on I/O.
-async function until (predicate: () => Promise<boolean>, ms = 5000): Promise<void> {
-  const deadline = Date.now() + ms
-  while (!(await predicate())) {
-    if (Date.now() > deadline) throw new Error('until: condition not met')
-    await delay(10)
-  }
-}
-
 describe('TestClock', function () {
   it('the database clock follows setTime and tick', async function () {
     const clock = new TestClock(T0)
@@ -195,11 +186,9 @@ describe('TestClock', function () {
     expect(await countJobs(ctx.boss, ctx.schema)).toBe(0)
 
     await clock.tick(MINUTE)
-    await until(async () => (await countJobs(ctx.boss!, '__pgboss__send-it')) > 0)
+    expect(await countJobs(ctx.boss, '__pgboss__send-it')).toBeGreaterThan(0)
 
     await clock.tick(1000)
-    await until(async () => (await countJobs(ctx.boss!, ctx.schema)) > 0)
-
     expect(await countJobs(ctx.boss, ctx.schema)).toBeGreaterThanOrEqual(1)
   })
 
@@ -557,5 +546,95 @@ describe('TestClock', function () {
     } finally {
       await db.close()
     }
+  })
+
+  // One tick has to carry a worker through a fetch that misses, the re-armed poll, and the fetch
+  // that hits. With every statement slow, the first fetch outlives a tick that does not wait for it.
+  helper.itPglite('one tick fires a job due just after the poll it fired, on a slow database', async function () {
+    const pool = new pg.Pool({ ...ctx.bossConfig, max: 5 })
+    let sessionStatements: string[] = []
+    pool.on('connect', client => {
+      for (const statement of sessionStatements) client.query(statement).catch(() => {})
+    })
+    const db = {
+      executeSql: async (text: string, values?: unknown[]) => {
+        await delay(50)
+        return pool.query(text, values)
+      },
+      setSessionStatements: async (statements: string[]) => { sessionStatements = statements }
+    }
+
+    try {
+      const clock = new TestClock(T0)
+      ctx.boss = await helper.start({ ...ctx.bossConfig, clock, db, __test__enableSpies: true })
+      const spy = ctx.boss.getSpy(ctx.schema)
+
+      const id = await ctx.boss.send(ctx.schema, null, { startAfter: new Date(T0 + MINUTE + 200) })
+      assertTruthy(id)
+      await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {})
+
+      await clock.setTime(T0 + MINUTE)
+      await clock.tick(500)
+
+      await Promise.race([
+        spy.waitForJobWithId(id, 'completed'),
+        delay(3000).then(() => { throw new Error('job did not complete after one tick') })
+      ])
+    } finally {
+      await ctx.boss?.stop({ graceful: false })
+      ctx.boss = undefined
+      await pool.end()
+    }
+  })
+
+  it('hands back the adapter as given unless the clock is attachable', function () {
+    const adapter = { executeSql: async () => ({ rows: [] }) }
+
+    expect(new PgBoss({ ...ctx.bossConfig, db: adapter }).getDb()).toBe(adapter)
+
+    const tracked = new PgBoss({ ...ctx.bossConfig, db: adapter, clock: new TestClock(T0) }).getDb()
+    expect(tracked).not.toBe(adapter)
+    expect(typeof tracked.executeSql).toBe('function')
+  })
+
+  helper.itPglite('one tick completes a job for a transactional worker', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    await ctx.boss.work(ctx.schema, { transactional: true, pollingIntervalSeconds: 0.5 }, async () => {})
+    const id = await ctx.boss.send(ctx.schema, null)
+    assertTruthy(id)
+
+    await clock.tick(500)
+
+    await Promise.race([
+      spy.waitForJobWithId(id, 'completed'),
+      delay(3000).then(() => { throw new Error('job did not complete after one tick') })
+    ])
+  })
+
+  // Handlers are not waited for, and a statement a transactional handler runs through its tx is
+  // part of the handler, even though it shares the connection pg-boss completes the batch on.
+  helper.itPglite('statements a transactional handler runs do not hold up a tick', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, __test__enableSpies: true })
+    const boss = ctx.boss
+    const spy = boss.getSpy(ctx.schema)
+
+    const id = await boss.send(ctx.schema, null)
+    assertTruthy(id)
+    await boss.work(ctx.schema, { transactional: true, pollingIntervalSeconds: 0.5 }, async ([job], tx) => {
+      await tx.executeSql('SELECT pg_sleep(2)')
+      await boss.complete(ctx.schema, job.id, null, { db: tx })
+    })
+    await spy.waitForJobWithId(id, 'active')
+
+    const started = performance.now()
+    await clock.tick(500)
+    expect(performance.now() - started).toBeLessThan(1500)
+
+    // Settled by the handler through its tx, so pg-boss must still recognize that tx as the batch's.
+    await spy.waitForJobWithId(id, 'completed')
   })
 })

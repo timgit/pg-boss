@@ -134,11 +134,13 @@ The current fake time in epoch milliseconds.
 
 Advances the clock by `ms`, firing every timer that falls due along the way in due order. Before each timer fires, the clock is set to that timer's due time and pushed to the database, so a poll that fires at second 30 runs its SQL against second 30. Intervals reschedule themselves after each firing. When the last due timer has fired, the clock lands on `now + ms`.
 
-`tick` does not wait for the I/O a timer callback starts. A worker poll fired by `tick` has issued its fetch by the time `tick` resolves, but the handler may still be running. Observe outcomes with a spy or by querying, as above. Only one `tick` may be in progress at a time; a second call while one is running rejects. An interval fires once per period crossed, so ticking an hour past a worker polling every two seconds runs 1800 polls; to jump, use `setTime`.
+`tick` waits for pg-boss to settle: before it starts, after each timer it fires, and after it reaches the target, it waits until no pg-boss statement is in flight. A worker poll fired by `tick` has finished its fetch by the time `tick` resolves, and if that fetch came back empty and re-armed the poll before the target, the same `tick` fires it again. `tick` does not wait for your handlers, including statements a transactional handler runs through its `tx`; observe their outcomes with a spy or by querying, as above. Don't tick while your test holds a transaction open: a pg-boss statement waiting on its lock keeps `tick` waiting too. Only one `tick` or `setTime` may be in progress at a time; another call to either while one is running rejects. An interval fires once per period crossed, so ticking an hour past a worker polling every two seconds runs 1800 polls; to jump, use `setTime`.
 
 ### `clock.setTime(t)`
 
 Jumps to `t`, forwards or backwards, without firing anything. A forward jump counts as elapsed time, as it does in Postgres: every timer the jump passed fires once on the next `tick`, and an interval then keeps its period from `t`. After a jump a month ahead, a worker polling every second polls once, not once for every second skipped, and a handler past its expiration is failed. A backward jump leaves timers where they are, so they fire when the clock gets back to their due time. `setTime` rejects while a `tick` is in progress. Postgres will happily evaluate `start_after <= now()` against an earlier time; a test that moves backwards owns the consequences.
+
+`setTime` settles first, like `tick`, then jumps. It takes whole milliseconds. Postgres timestamps carry microseconds, and pg-boss jitters retry backoff, so a job's `start_after` can fall a fraction of a millisecond after the millisecond you read; round up before jumping to it, or the job is not due yet.
 
 ### The Postgres side
 
