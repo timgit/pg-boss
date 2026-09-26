@@ -232,7 +232,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
                 className={cn(
                   'text-xs px-3.5 py-3 rounded-lg border font-mono leading-relaxed text-[var(--text-primary)] overflow-auto max-h-40',
                   isFailed
-                    ? 'border-[var(--error-100)] bg-[var(--error-50)]'
+                    ? 'border-[var(--state-failed-border)] bg-[var(--state-failed-bg)]'
                     : 'border-[var(--border-default)] bg-[var(--surface-sunken)]'
                 )}
               >
@@ -246,7 +246,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
           {job.sourceOutput !== undefined && job.sourceOutput !== null && (
             <div>
               <div className="pgb-eyebrow mb-1.5">Source Output</div>
-              <pre className="text-xs px-3.5 py-3 rounded-lg border border-[var(--error-100)] bg-[var(--error-50)] font-mono leading-relaxed text-[var(--text-primary)] overflow-auto max-h-40">
+              <pre className="text-xs px-3.5 py-3 rounded-lg border border-[var(--state-failed-border)] bg-[var(--state-failed-bg)] font-mono leading-relaxed text-[var(--text-primary)] overflow-auto max-h-40">
                 {JSON.stringify(job.sourceOutput, null, 2)}
               </pre>
             </div>

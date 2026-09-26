@@ -191,6 +191,7 @@
   --state-failed-fg: var(--error-700);
   --state-failed-bg: var(--error-50);
   --state-failed-dot: var(--error-500);
+  --state-failed-border: var(--error-100);
   --state-cancelled-fg: var(--neutral-500);
   --state-cancelled-bg: var(--neutral-100);
   --state-cancelled-dot: var(--neutral-300);
@@ -286,6 +287,7 @@
   --state-completed-fg: #6fd39b;--state-completed-bg: rgba(31, 157, 87, 0.18);  --state-completed-dot: var(--success-500);
   --state-retry-fg: #f0b357;    --state-retry-bg: rgba(223, 138, 5, 0.18);      --state-retry-dot: var(--warning-500);
   --state-failed-fg: #f2918d;   --state-failed-bg: rgba(224, 65, 60, 0.18);     --state-failed-dot: var(--error-500);
+  --state-failed-border: rgba(224, 65, 60, 0.35);
   --state-cancelled-fg: #99a2b2;--state-cancelled-bg: rgba(154, 163, 178, 0.1); --state-cancelled-dot: var(--neutral-500);
 
   --action-primary: var(--primary-500);
