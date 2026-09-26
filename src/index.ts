@@ -534,6 +534,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.checkingSkew
   }
 
+  isTimekeeping (): boolean {
+    return this.#timekeeper.timekeeping
+  }
+
   supervise (name?: string, options?: types.SuperviseOptions): Promise<void> {
     return this.#boss.supervise(name, options)
   }

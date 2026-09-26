@@ -579,6 +579,45 @@ describe('timekeeper clock domain', function () {
     expect(tk.checkingSkew).toBe(false)
   })
 
+  it('leaves the in-flight flag set when a cron pass is skipped', async function () {
+    // The pass that is running owns the flag until it finishes. An attempt that finds it set
+    // returns without doing anything, and clearing it there would tell the next attempt that
+    // nothing is in flight, and let stop() return while the first pass is still going.
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const db = {
+      executeSql: async (sql: string) => {
+        // The claim is the first statement of a pass, so holding it holds the pass
+        if (sql.includes('priorCronOn')) await gate
+        return { rows: [{ time: String(Date.now()) }] }
+      }
+    }
+    const manager = { createQueue: async () => {}, work: async () => {}, offWork: async () => {} }
+    const tk = new Timekeeper(db as any, manager as any, {
+      schema: 'test',
+      clock: systemClock,
+      // far enough out that neither timer fires: the only passes here are the one start() runs
+      // and the one this test calls by hand
+      cronMonitorIntervalSeconds: 600,
+      clockMonitorIntervalSeconds: 600
+    } as any)
+
+    await tk.start()
+
+    while (!tk.timekeeping) {
+      await delay(10)
+    }
+
+    await tk.onCron()
+
+    expect(tk.timekeeping).toBe(true)
+
+    release()
+    await tk.stop()
+
+    expect(tk.timekeeping).toBe(false)
+  })
+
   it('schedules the next clock skew check from the end of the last one', async function () {
     // The check chains a timeout rather than repeating on an interval, so a round trip that runs
     // long costs its own duration instead of having the next check fire on top of it. What that

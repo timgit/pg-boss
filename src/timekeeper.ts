@@ -253,7 +253,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   private stopped = true
   private cronMonitorTimer: ClaimTimer | null | undefined
   private skewMonitorTimer: types.ClockTimer | null | undefined
-  private timekeeping: boolean | undefined
+  private _timekeeping: boolean | undefined
   private _checkingSkew = false
 
   // Rows already warned about, keyed on (name, key, cron, timezone). Unlike every other warning
@@ -278,6 +278,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
   get checkingSkew (): boolean {
     return this._checkingSkew
+  }
+
+  get timekeeping (): boolean {
+    return !!this._timekeeping
   }
 
   // The instance's reading of the database clock. previewSchedule() promises the reference point the
@@ -346,7 +350,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       this.cronMonitorTimer = null
     }
 
-    while (this.timekeeping || this._checkingSkew) {
+    while (this._timekeeping || this._checkingSkew) {
       await delay(10)
     }
   }
@@ -419,14 +423,21 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async onCron () {
-    try {
-      if (this.stopped || this.timekeeping) return
+    // Outside the try: the pass that is running owns the flag, and finally runs for every path
+    // through it, so an attempt that skips inside would clear the flag that pass is holding and let
+    // stop() return while it is still going. Same shape as Bam.#onPoll and cacheClockSkew above.
+    if (this.stopped || this._timekeeping) return
 
+    this._timekeeping = true
+
+    try {
       if (this.config.__test__force_cron_monitoring_error) {
         throw new Error(this.config.__test__force_cron_monitoring_error)
       }
 
-      this.timekeeping = true
+      if (this.config.__test__delay_cron_ms) {
+        await delay(this.config.__test__delay_cron_ms)
+      }
 
       const sql = plans.trySetCronTime(this.config.schema, this.config.cronMonitorIntervalSeconds)
 
@@ -462,7 +473,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     } catch (err) {
       this.emit(this.events.error, err)
     } finally {
-      this.timekeeping = false
+      this._timekeeping = false
     }
   }
 

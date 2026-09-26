@@ -155,6 +155,10 @@ Returns `true` while the background flow resolver is unblocking dependents of co
 
 Returns `true` while the clock skew check is running. Only relevant when `schedule` is enabled.
 
+### `isTimekeeping()`
+
+Returns `true` while a cron pass is in flight. Only relevant when `schedule` is enabled.
+
 ### `getDb()`
 
 Returns the database interface this instance is using: the `db` adapter passed in the constructor, or the connection pool pg-boss created for itself.
