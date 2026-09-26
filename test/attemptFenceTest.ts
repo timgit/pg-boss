@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import type * as types from '../src/types.ts'
+import type { JobAttempt } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
@@ -171,7 +172,7 @@ for (const distributed of [false, true]) {
         return { jobId, stale, newer }
       }
 
-      const settles: Record<string, (job: types.JobAttempt | types.JobAttempt[]) => Promise<types.CommandResponse>> = {
+      const settles: Record<string, (job: JobAttempt | JobAttempt[]) => Promise<types.CommandResponse>> = {
         complete: job => ctx.boss!.complete(ctx.schema, job, { by: 'stale' }),
         fail: job => ctx.boss!.fail(ctx.schema, job, { by: 'stale' }),
         cancel: job => ctx.boss!.cancel(ctx.schema, job),

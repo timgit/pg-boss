@@ -664,6 +664,7 @@ export type {
   IndexBloatOptions,
   InvalidIndex,
   Job,
+  JobAttempt,
   JobFetchOptions,
   JobInsert,
   JobMatchStrategy,
