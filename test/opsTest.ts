@@ -307,6 +307,83 @@ describe('ops', function () {
     }
   })
 
+  it('should wait for a manual supervise() before stop resolves', async function () {
+    // With supervise off, the timer is never armed, and supervise() is the only pass there is
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false })
+
+    const { reached, release } = helper.holdStatement(ctx.boss.getDb())
+
+    let stopped = false
+    let supervising: Promise<void> | undefined
+    let stopping: Promise<void> | undefined
+
+    try {
+      supervising = ctx.boss.supervise()
+      await reached
+
+      expect(ctx.boss.isMaintaining()).toBe(true)
+
+      stopping = ctx.boss.stop().then(() => { stopped = true })
+      await delay(200)
+
+      expect(stopped).toBe(false)
+    } finally {
+      release()
+    }
+
+    await supervising
+    await stopping
+
+    expect(ctx.boss.isMaintaining()).toBe(false)
+  })
+
+  it('should run a manual supervise() after the background pass in flight, not alongside it', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: true, superviseIntervalSeconds: 1 })
+
+    const db = ctx.boss.getDb()
+
+    // The vacuum check is in the tail of the background pass, after its claims
+    const { reached, release } = helper.holdStatement(db, sql => sql.includes('n_dead_tup'))
+
+    let claims = 0
+    const executeSql = db.executeSql.bind(db)
+
+    db.executeSql = async (sql: string, values?: unknown[]) => {
+      if (sql.includes('SET monitor_claim_on')) claims++
+      return await executeSql(sql, values)
+    }
+
+    let supervising: Promise<void> | undefined
+    let before = 0
+
+    try {
+      await clock.tick(1000)
+      await reached
+
+      before = claims
+      supervising = ctx.boss.supervise()
+      await delay(200)
+
+      // A pass that ran alongside would have reached its own monitor claim by now
+      expect(claims).toBe(before)
+    } finally {
+      release()
+    }
+
+    await supervising
+
+    expect(claims).toBeGreaterThan(before)
+  })
+
+  it('should not run supervise() after stop', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
+    await ctx.boss.stop()
+
+    await expect(ctx.boss.supervise()).resolves.toBeUndefined()
+  })
+
   it('should allow stop() to be retried after a shutdown failure', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

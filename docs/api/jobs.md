@@ -414,6 +414,8 @@ Unblocking happens off the completion hot path: a background resolver wakes shor
 
 Forces an immediate flow-resolution pass instead of waiting for the next background cycle, unblocking dependents of any parents that have completed. Returns a promise that resolves when the pass finishes. Useful for deterministic tests, or when you have disabled `supervise` and drive maintenance yourself.
 
+A call made while another pass is in flight waits for it to finish, and `stop()` waits for the call. After `stop()`, it resolves without running.
+
 ```js
 await boss.complete('extract', parentJobId)
 

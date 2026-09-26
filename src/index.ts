@@ -197,10 +197,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#notifier.start()
     }
 
-    if (this.#config.supervise) {
-      await this.#boss.start()
-      await this.#navigator.start()
-    }
+    // Whether or not supervise is set, which only decides if their timers are armed
+    await this.#boss.start()
+    await this.#navigator.start()
 
     if (this.#config.schedule) {
       await this.#timekeeper.start()

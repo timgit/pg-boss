@@ -346,8 +346,34 @@ async function getSchemaDefs (schemas: string[]) {
   return { columns, indexes, constraints, functions }
 }
 
+// Parks the first statement sent through db that matches, until release() is called. Patch the db
+// from boss.getDb(): under a TestClock that is the counting wrapper, and a statement parked here is
+// not yet counted, so tick() still returns.
+function holdStatement (db: IDatabase, match: (sql: string) => boolean = () => true) {
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  let held: () => void = () => {}
+  const reached = new Promise<void>((resolve) => { held = resolve })
+  let armed = true
+
+  const executeSql = db.executeSql.bind(db)
+
+  db.executeSql = async (sql: string, values?: unknown[]) => {
+    if (armed && match(sql)) {
+      armed = false
+      held()
+      await gate
+    }
+
+    return await executeSql(sql, values)
+  }
+
+  return { reached, release }
+}
+
 export {
   assertTruthy,
+  holdStatement,
   dropSchema,
   start,
   fetchWithRetry,

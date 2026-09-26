@@ -175,15 +175,21 @@ class Boss extends EventEmitter implements types.EventsMixin {
     return !!this.#maintaining
   }
 
+  // Started with supervise disabled too, which only leaves the timer unarmed, so stop() still
+  // reaches a supervise() call on an instance that drives maintenance itself.
   async start () {
     if (this.#stopped) {
       this.#stopping = false
-      this.#superviseTimer = new ClaimTimer(
-        this.#config.clock,
-        this.#config.superviseIntervalSeconds!,
-        () => this.#onSupervise()
-      )
-      this.#superviseTimer.start()
+
+      if (this.#config.supervise) {
+        this.#superviseTimer = new ClaimTimer(
+          this.#config.clock,
+          this.#config.superviseIntervalSeconds!,
+          () => this.#onSupervise()
+        )
+        this.#superviseTimer.start()
+      }
+
       this.#stopped = false
     }
   }
@@ -289,8 +295,23 @@ class Boss extends EventEmitter implements types.EventsMixin {
     await this.#executeQuery(sql)
   }
 
+  // Waits for a pass in flight rather than skipping like #onSupervise, since the caller asked for
+  // this one. Holding #maintaining keeps it from overlapping the background pass and makes stop()
+  // wait for it, as Navigator.resolveNow() does.
   async supervise (value?: string | types.QueueResult[], options?: types.SuperviseOptions) {
-    await this.#supervisePass(value, options)
+    while (this.#maintaining) {
+      await delay(10)
+    }
+
+    if (this.#stopping) return
+
+    this.#maintaining = true
+
+    try {
+      await this.#supervisePass(value, options)
+    } finally {
+      this.#maintaining = false
+    }
   }
 
   // onClaimsSettled fires once every monitor and maintain claim in the pass has been stamped, which

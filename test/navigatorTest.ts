@@ -1,7 +1,7 @@
 import { describe, it } from 'vitest'
 import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 import * as plans from '../src/plans.ts'
 import { delay } from '../src/tools.ts'
 
@@ -199,5 +199,43 @@ describe('navigator (flow resolver)', function () {
     // Invoked while a poll is in flight, resolveFlow() must wait its turn (exercises resolveNow's
     // `while (#working)` guard) and then complete without hanging.
     await ctx.boss.resolveFlow()
+  })
+
+  it('waits for a resolveFlow() call before stop resolves with supervise off', async function () {
+    // The poll is never armed, and resolveFlow() is the only pass there is
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false })
+
+    const { reached, release } = helper.holdStatement(ctx.boss.getDb())
+
+    let stopped = false
+    let resolving: Promise<void> | undefined
+    let stopping: Promise<void> | undefined
+
+    try {
+      resolving = ctx.boss.resolveFlow()
+      await reached
+
+      expect(ctx.boss.isResolvingFlow()).toBe(true)
+
+      stopping = ctx.boss.stop().then(() => { stopped = true })
+      await delay(200)
+
+      expect(stopped).toBe(false)
+    } finally {
+      release()
+    }
+
+    await resolving
+    await stopping
+
+    expect(ctx.boss.isResolvingFlow()).toBe(false)
+  })
+
+  it('does not run resolveFlow() after stop', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
+    await ctx.boss.stop()
+
+    await expect(ctx.boss.resolveFlow()).resolves.toBeUndefined()
   })
 })

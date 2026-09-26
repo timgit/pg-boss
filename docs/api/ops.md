@@ -90,6 +90,8 @@ Passing `name` restricts the pass to that queue's own rows, but the index bloat 
 
 This is the same pass the background supervisor runs on `superviseIntervalSeconds`. Call it directly when you have set `supervise: false` and drive maintenance yourself, or in tests where waiting for a timer is not an option.
 
+One pass runs at a time. A call made while another pass is in flight, from the background supervisor or an earlier `supervise()`, waits for it to finish, and `stop()` waits for the call. After `stop()`, it resolves without running.
+
 ```js
 await boss.supervise()
 await boss.supervise('email-queue')
@@ -149,7 +151,7 @@ Returns `true` while a boss async migration (BAM) command is being processed. Se
 
 ### `isResolvingFlow()`
 
-Returns `true` while the background flow resolver is unblocking dependents of completed parent jobs. See [`resolveFlow()`](./jobs.md#resolveflow).
+Returns `true` while a flow-resolution pass is unblocking dependents of completed parent jobs, whether started by the background resolver or by [`resolveFlow()`](./jobs.md#resolveflow).
 
 ### `isCheckingSkew()`
 

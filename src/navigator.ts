@@ -50,10 +50,14 @@ class Navigator extends EventEmitter implements types.EventsMixin {
     return this.#working
   }
 
+  // Started with supervise disabled too, which only leaves the poll unarmed, so stop() still
+  // reaches a resolveNow() call on an instance that drives flows itself.
   async start () {
     if (!this.#stopped) return
     this.#stopped = false
     this.#stopping = false
+
+    if (!this.#config.supervise) return
 
     this.#pollTimer = new ClaimTimer(
       this.#config.clock,
