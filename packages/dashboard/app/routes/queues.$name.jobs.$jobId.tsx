@@ -256,10 +256,6 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
           <div>
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
-                <ConfigItem label="Priority" value={job.priority} />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
                 <ConfigItem label="Retry Count" value={job.retryCount} mono />
                 <ConfigItem label="Retry Limit" value={job.retryLimit} mono />
                 <ConfigItem label="Retry Delay" value={job.retryDelay ? `${job.retryDelay}ms` : '—'} mono />
