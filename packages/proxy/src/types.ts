@@ -211,10 +211,7 @@ export type HttpPublishRequest = {
 
 export type HttpPublishResponse = HttpSubscribeResponse
 
-export type HttpJobAttempt = {
-  id: string
-  retryCount: number
-}
+export type HttpJobAttempt = types.JobAttempt
 
 export type HttpJobIdOrAttempt = string | string[] | HttpJobAttempt | HttpJobAttempt[]
 
