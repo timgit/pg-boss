@@ -229,6 +229,12 @@ describe('FailurePanel', () => {
     expect(screen.getByText('No error message was recorded')).toBeInTheDocument()
     expect(screen.getByText(/No retries left/)).toBeInTheDocument()
   })
+
+  it('does not claim the retries ran out when they did not', () => {
+    render(<MemoryRouter><FailurePanel output="boom" attempt={1} maxAttempts={3} deadLetter={null} /></MemoryRouter>)
+    expect(screen.queryByText(/No retries left/)).not.toBeInTheDocument()
+    expect(screen.getByText(/It stays failed until someone retries it/)).toBeInTheDocument()
+  })
 })
 
 describe('DeadLetterPanel', () => {

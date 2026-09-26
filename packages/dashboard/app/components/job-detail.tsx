@@ -179,13 +179,18 @@ export function FailurePanel ({ output, attempt, maxAttempts, deadLetter }: {
   deadLetter: string | null
 }) {
   const { headline } = summarizeOutput(output)
+  // "No retries left" only when the counters say so: a job can be failed with retries to spare,
+  // by an expiry or by an edit to its row, and the page should not claim otherwise.
+  const exhausted = attempt >= maxAttempts
   return (
     <ProblemPanel eyebrow="Error" headline={headline}>
       <div className="text-sm text-[var(--text-secondary)]">
         Attempt {attempt} of {maxAttempts}.{' '}
         {deadLetter
           ? <>A copy was sent to the dead letter queue <DbLink to={`/queues/${encodeURIComponent(deadLetter)}`} className="font-mono text-primary-600 dark:text-primary-400">{deadLetter}</DbLink>.</>
-          : 'No retries left, so it stays failed until someone retries it.'}
+          : exhausted
+            ? 'No retries left, so it stays failed until someone retries it.'
+            : 'It stays failed until someone retries it.'}
       </div>
       <OutputFacts output={output} />
     </ProblemPanel>
