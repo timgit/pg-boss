@@ -874,6 +874,22 @@ describe('Job Actions', () => {
       expect(job!.state).toBe('retry')
     })
 
+    it('adds one attempt and keeps the start time, so the next run is counted', async () => {
+      await createTestQueue('test-queue', { retryLimit: 0 })
+      const jobId = await sendTestJob('test-queue', { task: 'test' })
+      await fetchTestJob('test-queue')
+      await failTestJob('test-queue', jobId!, new Error('test failure'))
+
+      await retryJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const retried = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      expect(retried!.retryLimit).toBe(1)
+      expect(retried!.startedOn).not.toBeNull()
+
+      await fetchTestJob('test-queue')
+      const running = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      expect(running!.retryCount).toBe(1)
+    })
+
     it('does not retry a non-failed job', async () => {
       await createTestQueue('test-queue')
       const jobId = await sendTestJob('test-queue', { task: 'test' })

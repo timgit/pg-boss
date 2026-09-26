@@ -1007,34 +1007,6 @@ export function isValidIntent (intent: unknown): intent is JobActionIntent {
   return typeof intent === 'string' && JOB_INTENTS.includes(intent as JobActionIntent)
 }
 
-export async function retryJob (
-  dbUrl: string,
-  schema: string,
-  queueName: string,
-  jobId: string
-): Promise<number> {
-  const s = validateIdentifier(schema)
-  const sql = `
-    WITH results as (
-      UPDATE ${s}.job
-      SET state = 'retry',
-        retry_limit = retry_count + 1,
-        completed_on = NULL,
-        started_on = NULL
-      WHERE name = $1
-        AND id = $2
-        AND state = 'failed'
-      RETURNING 1
-    )
-    SELECT COUNT(*)::int as count FROM results
-  `
-  const result = await queryOne<{ count: number }>(dbUrl, sql, [
-    queueName,
-    jobId,
-  ])
-  return result?.count ?? 0
-}
-
 // Get all schedules with pagination
 export async function getSchedules (
   dbUrl: string,
@@ -1103,4 +1075,4 @@ export async function getSchedule (
 }
 
 // Re-export job action methods from boss.server
-export { getJobById, cancelJob, resumeJob, deleteJob } from './boss.server'
+export { getJobById, cancelJob, retryJob, resumeJob, deleteJob } from './boss.server'

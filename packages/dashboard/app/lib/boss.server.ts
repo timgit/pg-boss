@@ -125,6 +125,19 @@ export async function cancelJob (
   return result.affected
 }
 
+// Through pg-boss rather than an UPDATE of our own: retry() adds one attempt to the limit and keeps
+// started_on, so the next fetch counts the earlier run and the attempt numbers stay right.
+export async function retryJob (
+  dbUrl: string,
+  schema: string,
+  name: string,
+  id: string | string[]
+): Promise<number> {
+  const boss = await getInstance(dbUrl, schema)
+  const result = await boss.retry(name, id) as any
+  return result.affected
+}
+
 export async function resumeJob (
   dbUrl: string,
   schema: string,
