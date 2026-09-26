@@ -367,7 +367,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       this.#config.schema,
       names,
       this.#config.monitorIntervalSeconds,
-      this.#config.noSkipLocked
+      plans.queueClaimSkipLocked(this.#config.backend, this.#config.noSkipLocked)
     )
     const { rows } = await this.#executeQuery(command)
 
@@ -474,7 +474,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       this.#config.schema,
       names,
       this.#config.maintenanceIntervalSeconds,
-      this.#config.noSkipLocked
+      plans.queueClaimSkipLocked(this.#config.backend, this.#config.noSkipLocked)
     )
     const { rows } = await this.#executeQuery(command)
 

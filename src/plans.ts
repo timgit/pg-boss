@@ -1109,7 +1109,7 @@ function createIndexJobSourceRoot (schema: string) {
 // seeded answer without the seed, so the stampede is closed on every backend rather than only on the
 // ones whose migration could write the column. A genuinely new queue has neither stamp and stays
 // immediately eligible, which is what it should be.
-export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number, noSkipLocked?: boolean): SqlQuery {
+export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number, skipLocked?: boolean): SqlQuery {
   return {
     text: `
     WITH due AS (
@@ -1117,7 +1117,7 @@ export function trySetQueueMonitorTime (schema: string, queues: string[], second
       FROM ${schema}.queue
       WHERE name = ANY($1::text[])
         AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(monitor_claim_on, monitor_on, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
-      ${queueRowLock(noSkipLocked)}
+      ${queueRowLock(skipLocked)}
     )
     UPDATE ${schema}.queue
     SET monitor_claim_on = ${schema}.job_now()
@@ -1201,8 +1201,8 @@ export function setMonitorBackoff (schema: string, elapsedSeconds: number): SqlQ
   }
 }
 
-export function trySetQueueDeletionTime (schema: string, queues: string[], seconds: number, noSkipLocked?: boolean): SqlQuery {
-  return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds, noSkipLocked)
+export function trySetQueueDeletionTime (schema: string, queues: string[], seconds: number, skipLocked?: boolean): SqlQuery {
+  return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds, skipLocked)
 }
 
 // The cron claim, which also answers with the timestamp it replaced and how old that timestamp was.
@@ -1266,7 +1266,7 @@ function trySetTimestamp (schema: string, column: string, seconds: number) {
   `
 }
 
-function trySetQueueTimestamp (schema: string, queues: string[], column: string, seconds: number, noSkipLocked?: boolean): SqlQuery {
+function trySetQueueTimestamp (schema: string, queues: string[], column: string, seconds: number, skipLocked?: boolean): SqlQuery {
   return {
     text: `
     WITH due AS (
@@ -1274,7 +1274,7 @@ function trySetQueueTimestamp (schema: string, queues: string[], column: string,
       FROM ${schema}.queue
       WHERE name = ANY($1::text[])
         AND EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
-      ${queueRowLock(noSkipLocked)}
+      ${queueRowLock(skipLocked)}
     )
     UPDATE ${schema}.queue
     SET ${column} = ${schema}.job_now()
@@ -1289,12 +1289,20 @@ function trySetQueueTimestamp (schema: string, queues: string[], column: string,
 // Every statement that writes more than one queue row locks them in name order first. A single
 // UPDATE locks rows in whatever order its plan visits them, and every write moves a row, so two
 // multi-row writers - two instances claiming the same queues, or a claim and cacheQueueStats - could
-// otherwise take the same rows in opposite orders and deadlock. A claim also skips rows another
-// session holds: a locked row is in another instance's pass, and the next interval claims it again.
+// otherwise take the same rows in opposite orders and deadlock. With skipLocked a claim also skips
+// rows another session holds: a locked row is in another instance's pass, and the next interval
+// claims it again. Without it the claim waits, which the name order alone keeps deadlock-free.
 // NO KEY UPDATE is the lock a plain UPDATE of these columns takes; FOR UPDATE would also block the
 // KEY SHARE lock that inserting a job takes on its queue row through the foreign key.
-function queueRowLock (noSkipLocked?: boolean) {
-  return `ORDER BY name FOR NO KEY UPDATE${noSkipLocked ? '' : ' SKIP LOCKED'}`
+function queueRowLock (skipLocked?: boolean) {
+  return `ORDER BY name FOR NO KEY UPDATE${skipLocked ? ' SKIP LOCKED' : ''}`
+}
+
+// Whether the queue claims may skip locked rows. Only on stock Postgres: the name order already
+// prevents the deadlock everywhere, and skipping is an optimization the other backends are not
+// tested with. PGlite has a single connection, so it has nothing to skip.
+export function queueClaimSkipLocked (backend: string | undefined, noSkipLocked?: boolean): boolean {
+  return backend === 'postgres' && !noSkipLocked
 }
 
 export function updateQueue (schema: string) {
