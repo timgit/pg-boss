@@ -165,9 +165,15 @@ describe('statusLine', () => {
     expect(statusLine(job({ state: 'created' }), NOW, fmt)).toMatch(/^Waiting to run · created 10 min ago · deleted .* if it never runs$/)
   })
 
-  it('describes a retry and when it is next', () => {
+  it('describes a retry by the attempt it is waiting for, and when', () => {
+    // Two runs so far (retry_count 1 with a start time), so the next is the third of three.
     expect(statusLine(job({ state: 'retry', retryCount: 1, startAfter: at(120), startedOn: at(-40) }), NOW, fmt))
-      .toMatch(/^Waiting to retry, attempt 2 of 3 · next in 2 min/)
+      .toMatch(/^Waiting to retry, attempt 3 of 3 · next in 2 min/)
+  })
+
+  it('describes the first retry as the second attempt', () => {
+    expect(statusLine(job({ state: 'retry', retryCount: 0, startAfter: at(30), startedOn: at(-10) }), NOW, fmt))
+      .toMatch(/^Waiting to retry, attempt 2 of 3/)
   })
 })
 

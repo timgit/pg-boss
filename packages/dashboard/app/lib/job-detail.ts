@@ -214,7 +214,8 @@ export function statusLine (job: JobTimes, now: Date, fmt: (d: Date) => string):
       if (createdOn) parts.push(`created ${timeAgo(createdOn, now)}`)
       break
     case 'retry':
-      parts.push(`Waiting to retry, attempt ${job.retryCount + 1} of ${job.retryLimit + 1}`)
+      // The run it is waiting for is the one after the attempts made so far.
+      parts.push(`Waiting to retry, attempt ${n + 1} of ${job.retryLimit + 1}`)
       if (startAfter) parts.push(startAfter.getTime() > now.getTime() ? `next ${timeUntil(startAfter, now)}` : 'due now')
       break
     case 'active':
