@@ -56,7 +56,20 @@ Event log of warnings emitted by pg-boss when [`persistWarnings`](#enabling-warn
 
 - Node.js 22.12+
 - PostgreSQL database with pg-boss schema
-- pg-boss 12.24+ recommended (12.21 minimum; queue metrics history and ready-count sparklines require 12.24)
+- A pg-boss schema version that matches the dashboard release (see below)
+
+### Matching pg-boss versions
+
+Each dashboard release is built with a specific pg-boss and only works against a database on that pg-boss's schema version. Use the dashboard release that matches the pg-boss version your application runs:
+
+| Dashboard | pg-boss | Schema version |
+| - | - | - |
+| 1.10.x | 12.35.x | 43 |
+| 1.9.x | 12.33.x – 12.34.x | 42 |
+| 1.8.x | 12.31.x – 12.32.x | 41 |
+| 1.7.x | 12.30.x | 40 |
+
+The dashboard does not migrate your schema. If the versions do not match, the overview, queue, job and schedule lists and the warnings page still load. However, opening a job, cancelling, resuming or deleting one, sending a job, creating a queue, and adding or removing a schedule all fail with `pg-boss database requires migrations`. When your application moves to a pg-boss release with a new schema version, upgrade the dashboard with it.
 
 ## Installation
 
