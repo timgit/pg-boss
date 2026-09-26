@@ -234,11 +234,11 @@ export function statusLine (job: JobTimes, now: Date, fmt: (d: Date) => string):
       break
   }
 
+  // A finished job's deletion date belongs in the header; an unfinished one's is conditional on it
+  // never running, which is too much for one line, so it is left to the timeline.
   const rule = retention(job)
-  if (rule?.at) {
-    parts.push(rule.label === 'Deleted if never run'
-      ? `deleted ${fmt(rule.at)} if it never runs`
-      : `deleted ${fmt(rule.at)}`)
+  if (rule?.at && isFinalState(job.state)) {
+    parts.push(`deleted ${fmt(rule.at)}`)
   }
 
   return parts.join(' · ')

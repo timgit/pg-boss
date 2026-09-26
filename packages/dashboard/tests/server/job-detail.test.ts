@@ -161,8 +161,8 @@ describe('statusLine', () => {
     expect(line).toMatch(/^Failed 7 min ago after 3 attempts · deleted /)
   })
 
-  it('describes a waiting job and when it is deleted if it never runs', () => {
-    expect(statusLine(job({ state: 'created' }), NOW, fmt)).toMatch(/^Waiting to run · created 10 min ago · deleted .* if it never runs$/)
+  it('describes a waiting job, leaving its conditional deletion to the timeline', () => {
+    expect(statusLine(job({ state: 'created' }), NOW, fmt)).toBe('Waiting to run · created 10 min ago')
   })
 
   it('describes a retry by the attempt it is waiting for, and when', () => {
