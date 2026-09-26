@@ -159,6 +159,8 @@ Returns `true` while the clock skew check is running. Only relevant when `schedu
 
 Returns the database interface this instance is using: the `db` adapter passed in the constructor, or the connection pool pg-boss created for itself.
 
+With a [`TestClock`](./testing.md#controlling-time) as the `clock` option, it returns a wrapper around that adapter or pool which counts the statements in flight, so `tick` and `setTime` wait for queries run through it.
+
 ```js
 const db = boss.getDb()
 const { rows } = await db.executeSql('SELECT now()')
