@@ -24,9 +24,17 @@ Landing page with aggregate counts across all queues (queued, deferred, ready, a
 
 ### Jobs
 
-Recently created jobs across all queues. Filter by job ID, queue, state (pending, created, retry, active, completed, cancelled or failed) and minimum retry count, or open the advanced filters to match on keys inside the job's `data` or `output` JSON. **Manage view** lets you add custom columns sourced from job fields (for example `data.tenantId`), and **Copy link** produces a shareable URL with the current filters and columns. Clicking a job opens its detail page with the full payload, output, retry and timing metadata, and cancel / retry / resume / delete actions.
+Recently created jobs across all queues. Filter by job ID, queue, state (pending, created, retry, active, completed, cancelled or failed) and minimum retry count, or open the advanced filters to match on keys inside the job's `data` or `output` JSON. **Manage view** lets you add custom columns sourced from job fields (for example `data.tenantId`), and **Copy link** produces a shareable URL with the current filters and columns. Clicking a job opens its detail page.
 
 ![Jobs page](./images/dashboard-jobs.png)
+
+### Job detail
+
+One job: its state, what it's waiting for or why it stopped, its data and output, and cancel / retry / resume / delete actions. A failed job leads with its error and the attempt it failed on. A running job shows how long it has been running, its heartbeat, and a countdown to its time limit, and the page picks up a new state without a reload. A completed job opens on its output.
+
+The timeline shows the times the job's row keeps. A retry overwrites the start time and output, so earlier attempts appear only as a count. The last entry is when [retention](./api/queues.md#createqueue-name-queue) deletes the job: `deleteAfterSeconds` after it finished, or at `keepUntil` if it never ran.
+
+A job copied into a dead letter queue shows why it's there, from the original job's output, and a lineage chain from the first job to this one. Only the first job (the root) and the job this one was copied from (the source) are recorded, so any hops between them show as a gap. Select either to see its timeline, taken from its own row while it still exists, or from what was copied onto this job once it has been deleted. The root is looked up in the queue a redrive returns jobs to, so a root redriven into a different queue is reported as not found.
 
 ### Queues
 
