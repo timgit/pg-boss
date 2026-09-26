@@ -80,7 +80,8 @@ describe("Breadcrumbs", () => {
 
     expect(screen.getByText("Queues")).toBeInTheDocument();
     expect(screen.getByText("my-queue")).toBeInTheDocument();
-    expect(screen.getByText("12345678-abcd")).toBeInTheDocument();
+    expect(screen.getByText("Job Detail")).toBeInTheDocument();
+    expect(screen.queryByText("12345678-abcd")).not.toBeInTheDocument();
   });
 
   it("renders breadcrumbs for schedules path", () => {

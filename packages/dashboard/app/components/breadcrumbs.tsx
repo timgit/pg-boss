@@ -25,9 +25,9 @@ export function Breadcrumbs() {
       const queueName = decodeURIComponent(pathSegments[1])
       breadcrumbs.push({ label: queueName, href: `/queues/${encodeURIComponent(queueName)}` })
 
+      // The page leads with the job id in full, so the trail names the page rather than repeat it.
       if (pathSegments.length > 2 && pathSegments[2] === 'jobs' && pathSegments[3]) {
-        const jobId = pathSegments[3]
-        breadcrumbs.push({ label: jobId })
+        breadcrumbs.push({ label: 'Job Detail' })
       }
     }
   } else if (pathSegments[0] === 'schedules') {
