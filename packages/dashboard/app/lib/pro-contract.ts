@@ -47,6 +47,15 @@ export interface ProSlots {
    * returns null.
    */
   topbarStart?: ComponentType
+
+  /**
+   * In the topbar, at the far right, after the theme toggle.
+   *
+   * For controls that belong to the viewer rather than the page, such as
+   * notifications and an account menu; render several as one component. It
+   * shares the row with the phone-width wordmark, so keep them compact.
+   */
+  topbarEnd?: ComponentType
 }
 
 export interface ProOverlay {

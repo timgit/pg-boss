@@ -73,6 +73,7 @@ function MainContent ({ children }: { children: React.ReactNode }) {
             runs at.
           */}
           <ThemeToggle />
+          <ProSlot name="topbarEnd" />
         </div>
       </div>
       <div className="px-6 py-6 lg:px-8 lg:py-8">

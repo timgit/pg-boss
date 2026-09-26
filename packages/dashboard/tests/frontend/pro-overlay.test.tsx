@@ -28,6 +28,10 @@ function DemoTrail () {
   return <nav data-testid="pro-trail">overlay trail</nav>
 }
 
+function DemoAccount () {
+  return <button type="button" data-testid="pro-account">overlay account</button>
+}
+
 async function renderSidebar () {
   // Import the providers from the same module graph as the sidebar: after
   // `vi.resetModules()` a statically imported provider would carry a different
@@ -103,6 +107,24 @@ describe('pro overlay', () => {
 
       const { ProSlot } = await import('~/components/pro-slot')
       const { container } = render(<ProSlot name="topbarStart" />)
+
+      expect(container).toBeEmptyDOMElement()
+    })
+
+    it('renders the topbar end slot the overlay fills', async () => {
+      mockOverlay({ nav: [], slots: { topbarEnd: DemoAccount } })
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      render(<ProSlot name="topbarEnd" />)
+
+      expect(screen.getByTestId('pro-account')).toBeInTheDocument()
+    })
+
+    it('renders nothing for the topbar end slot when only the start is filled', async () => {
+      mockOverlay({ nav: [], slots: { topbarStart: DemoTrail } })
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      const { container } = render(<ProSlot name="topbarEnd" />)
 
       expect(container).toBeEmptyDOMElement()
     })
