@@ -27,7 +27,6 @@ import {
   getJobById,
   getWarnings,
   getWarningCount,
-  deleteOldWarnings,
   getBamEntries,
   getBamCount,
   getBamStatusSummary,
@@ -1236,44 +1235,6 @@ describe('Warning Queries', () => {
 
       expect(byStatus.pending).toBe(2)
       expect(byStatus.failed).toBe(1)
-    })
-  })
-
-  describe('deleteOldWarnings', () => {
-    it('returns 0 when warning table does not exist', async () => {
-      // Create a minimal schema without the warning table
-      const testSchema = 'pgboss_no_warning_delete'
-      const pool = new Pool({ connectionString: ctx.connectionString })
-      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
-      await pool.query(`CREATE SCHEMA ${testSchema}`)
-      await pool.end()
-
-      const deleted = await deleteOldWarnings(ctx.connectionString, testSchema, 30)
-      expect(deleted).toBe(0)
-    })
-
-    it('returns 0 when no old warnings exist', async () => {
-      await insertTestWarning(ctx.schema, 'slow_query', 'Recent warning')
-
-      const deleted = await deleteOldWarnings(ctx.connectionString, ctx.schema, 1)
-      expect(deleted).toBe(0)
-    })
-
-    it('deletes warnings older than specified days', async () => {
-      const pool = new Pool({ connectionString: ctx.connectionString })
-      await pool.query(`
-        INSERT INTO ${ctx.schema}.warning (type, message, created_on)
-        VALUES ('slow_query', 'Old warning', now() - interval '40 days')
-      `)
-      await pool.query(`
-        INSERT INTO ${ctx.schema}.warning (type, message, created_on)
-        VALUES ('slow_query', 'Recent warning', now())
-      `)
-      await pool.end()
-
-      const deleted = await deleteOldWarnings(ctx.connectionString, ctx.schema, 30)
-
-      expect(deleted).toBe(1)
     })
   })
 })
