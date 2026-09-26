@@ -51,6 +51,12 @@ curl -X POST http://localhost:3000/api/fetch \
   -H "Content-Type: application/json" \
   -d '{"name": "my-queue"}'
 
+# Complete a fetched job. Passing the job (or its id and retryCount) instead of the id
+# settles only the attempt you fetched. See /api/jobs#passing-jobs-instead-of-ids
+curl -X POST http://localhost:3000/api/complete \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-queue", "id": {"id": "<job id>", "retryCount": 0}}'
+
 # Get queue information
 curl "http://localhost:3000/api/getQueue?name=my-queue"
 

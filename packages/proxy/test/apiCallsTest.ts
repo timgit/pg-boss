@@ -701,6 +701,46 @@ describe('proxy api routes', () => {
     expect(body.error.message).toBeTruthy()
   })
 
+  it('settle routes pass job attempts through, reduced to id and retryCount', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const fetched = { id: '1', name: 'queue', data: { x: 1 }, retryCount: 2, expireInSeconds: 900, heartbeatSeconds: null }
+
+    const cases: Array<{ method: string, body: unknown, expected: unknown[] }> = [
+      { method: 'complete', body: { name: 'queue', id: fetched, data: { done: true } }, expected: ['queue', { id: '1', retryCount: 2 }, { done: true }] },
+      { method: 'fail', body: { name: 'queue', id: [fetched, { id: '2', retryCount: 0 }] }, expected: ['queue', [{ id: '1', retryCount: 2 }, { id: '2', retryCount: 0 }]] },
+      { method: 'cancel', body: { name: 'queue', id: { id: '1', retryCount: 2 } }, expected: ['queue', { id: '1', retryCount: 2 }] },
+      { method: 'deleteJob', body: { name: 'queue', id: [{ id: '1', retryCount: 2 }] }, expected: ['queue', [{ id: '1', retryCount: 2 }]] },
+    ]
+
+    for (const entry of cases) {
+      const response = await app.fetch(await postJson(`http://local/api/${entry.method}`, entry.body))
+      expect(response.status, `${entry.method} should return 200`).toBe(200)
+      expect(calls.get(entry.method)?.[0]).toEqual(entry.expected)
+    }
+  })
+
+  it('rejects malformed job attempts, and attempts on routes that take plain ids', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const cases: Array<{ method: string, body: unknown }> = [
+      { method: 'complete', body: { name: 'queue', id: ['1', { id: '2', retryCount: 0 }] } },
+      { method: 'fail', body: { name: 'queue', id: { id: '1', retryCount: -1 } } },
+      { method: 'cancel', body: { name: 'queue', id: { id: '1', retryCount: 1.5 } } },
+      { method: 'deleteJob', body: { name: 'queue', id: { id: '1' } } },
+      { method: 'resume', body: { name: 'queue', id: { id: '1', retryCount: 0 } } },
+      { method: 'retry', body: { name: 'queue', id: { id: '1', retryCount: 0 } } },
+    ]
+
+    for (const entry of cases) {
+      const response = await app.fetch(await postJson(`http://local/api/${entry.method}`, entry.body))
+      expect(response.status, `${entry.method} should return 400`).toBe(400)
+      expect(calls.get(entry.method)?.length, `${entry.method} should not be called`).toBe(0)
+    }
+  })
+
   it('returns 400 for wrong types in POST body', async () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })

@@ -211,9 +211,16 @@ export type HttpPublishRequest = {
 
 export type HttpPublishResponse = HttpSubscribeResponse
 
+export type HttpJobAttempt = {
+  id: string
+  retryCount: number
+}
+
+export type HttpJobIdOrAttempt = string | string[] | HttpJobAttempt | HttpJobAttempt[]
+
 export type HttpCancelRequest = {
   name: HttpQueueName
-  id: string | string[]
+  id: HttpJobIdOrAttempt
 }
 
 export type HttpCancelResponse = {
@@ -221,11 +228,14 @@ export type HttpCancelResponse = {
   result: HttpCommandResponse
 }
 
-export type HttpResumeRequest = HttpCancelRequest
+export type HttpResumeRequest = {
+  name: HttpQueueName
+  id: string | string[]
+}
 
 export type HttpResumeResponse = HttpCancelResponse
 
-export type HttpRetryRequest = HttpCancelRequest
+export type HttpRetryRequest = HttpResumeRequest
 
 export type HttpRetryResponse = HttpCancelResponse
 
@@ -273,7 +283,7 @@ export type HttpDeleteAllJobsResponse = HttpSubscribeResponse
 
 export type HttpCompleteRequest = {
   name: HttpQueueName
-  id: string | string[]
+  id: HttpJobIdOrAttempt
   data?: HttpNullableJsonRecord
   options?: HttpCompleteOptions
 }
@@ -282,7 +292,7 @@ export type HttpCompleteResponse = HttpCancelResponse
 
 export type HttpFailRequest = {
   name: HttpQueueName
-  id: string | string[]
+  id: HttpJobIdOrAttempt
   data?: HttpNullableJsonRecord
 }
 

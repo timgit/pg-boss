@@ -437,9 +437,22 @@ export const publishResponseSchema: z.ZodType<types.HttpPublishResponse> = z.obj
   result: z.null()
 })
 
+// A fetched job, or just its id and retryCount, fences the call to that attempt (pg-boss 12.35.0)
+const jobAttemptSchema = z.object({
+  id: z.string(),
+  retryCount: z.number().int().nonnegative()
+})
+
+const jobIdOrAttemptSchema = z.union([
+  z.string(),
+  z.array(z.string()),
+  jobAttemptSchema,
+  z.array(jobAttemptSchema)
+])
+
 export const cancelRequestSchema: z.ZodType<types.HttpCancelRequest> = z.object({
   name: queueNameSchema,
-  id: z.union([z.string(), z.array(z.string())])
+  id: jobIdOrAttemptSchema
 })
 
 export const cancelResponseSchema: z.ZodType<types.HttpCancelResponse> = z.object({
@@ -469,7 +482,7 @@ export const retryResponseSchema: z.ZodType<types.HttpRetryResponse> = z.object(
 
 export const deleteJobRequestSchema: z.ZodType<types.HttpDeleteJobRequest> = z.object({
   name: queueNameSchema,
-  id: z.union([z.string(), z.array(z.string())])
+  id: jobIdOrAttemptSchema
 })
 
 export const deleteJobResponseSchema: z.ZodType<types.HttpDeleteJobResponse> = z.object({
@@ -530,7 +543,7 @@ export const deleteAllJobsResponseSchema: z.ZodType<types.HttpDeleteAllJobsRespo
 
 export const completeRequestSchema: z.ZodType<types.HttpCompleteRequest> = z.object({
   name: queueNameSchema,
-  id: z.union([z.string(), z.array(z.string())]),
+  id: jobIdOrAttemptSchema,
   data: nullableJsonRecordSchema.optional(),
   options: completeOptionsSchema.optional()
 })
@@ -542,7 +555,7 @@ export const completeResponseSchema: z.ZodType<types.HttpCompleteResponse> = z.o
 
 export const failRequestSchema: z.ZodType<types.HttpFailRequest> = z.object({
   name: queueNameSchema,
-  id: z.union([z.string(), z.array(z.string())]),
+  id: jobIdOrAttemptSchema,
   data: nullableJsonRecordSchema.optional()
 })
 
