@@ -15,11 +15,11 @@ import {
   SortableHeader,
 } from '~/components/ui/table'
 import { FilterSelect } from '~/components/ui/filter-select'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
+import { pageWindow, pageInfo } from '~/lib/pagination'
 import { ErrorCard } from '~/components/error-card'
 import type { BamEntryResult, BamStatus, BamStatusSummary } from '~/lib/types'
 import {
-  parsePageNumber,
   isValidBamStatus,
   formatDateWithSeconds,
   BAM_STATUSES,
@@ -48,8 +48,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   // Validate status filter - invalid values are treated as no filter
   const statusFilter = isValidBamStatus(statusParam) ? statusParam : null
 
-  const page = parsePageNumber(url.searchParams.get('page'))
-  const offset = (page - 1) * PAGE_SIZE
+  const { page, offset } = pageWindow(url, PAGE_SIZE)
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
@@ -59,9 +58,14 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     getBamStatusSummary(DB_URL, SCHEMA),
   ])
 
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE)
-
-  return { entries, summary, statusFilter, page, totalPages }
+  return {
+    entries,
+    summary,
+    statusFilter,
+    totalCount,
+    pageSize: PAGE_SIZE,
+    ...pageInfo(page, PAGE_SIZE, entries.length, totalCount),
+  }
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
@@ -75,7 +79,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function Migrations ({ loaderData }: Route.ComponentProps) {
-  const { entries, summary, statusFilter, page, totalPages } = loaderData
+  const { entries, summary, statusFilter, totalCount, pageSize, page, totalPages, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
 
   const counts = countByStatus(summary)
@@ -88,12 +92,6 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
       params.delete(key)
     }
     params.delete('page')
-    setSearchParams(params)
-  }
-
-  const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
     setSearchParams(params)
   }
 
@@ -198,12 +196,13 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        <Pagination
+        <TablePagination
           page={page}
           totalPages={totalPages}
-          hasNextPage={page < totalPages}
-          hasPrevPage={page > 1}
-          onPageChange={handlePageChange}
+          hasNextPage={hasNextPage}
+          hasPrevPage={hasPrevPage}
+          totalCount={totalCount}
+          pageSize={pageSize}
         />
       </Card>
     </div>

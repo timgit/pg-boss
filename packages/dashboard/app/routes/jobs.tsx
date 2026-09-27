@@ -21,7 +21,8 @@ import {
   TableHead,
   TableCell,
 } from '~/components/ui/table'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
+import { pageWindow, pageInfo } from '~/lib/pagination'
 import { ErrorCard } from '~/components/error-card'
 import { QueryTimeoutBanner } from '~/components/query-timeout-banner'
 import { JobsFilterBar, type JobsFilters } from '~/components/jobs-filter-bar'
@@ -36,7 +37,6 @@ import {
   type JobColumn,
 } from '~/lib/job-columns'
 import {
-  parsePageNumber,
   isValidJobState,
   DEFAULT_STATE_FILTER,
   ALL_STATES_FILTER,
@@ -110,15 +110,15 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
   }
 }
 
+const PAGE_SIZE = 20
+
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const parsed = parseFiltersFromUrl(url.searchParams)
   const jobColumns = parseJobColumns(url.searchParams)
 
-  const page = parsePageNumber(url.searchParams.get('page'))
-  const limit = 20
-  const offset = (page - 1) * limit
+  const { page, limit, offset } = pageWindow(url, PAGE_SIZE)
 
   const [recentJobsResult, queueNames, totalCount] = await Promise.all([
     getRecentJobs(DB_URL, SCHEMA, {
@@ -147,16 +147,18 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   ])
 
   const recentJobs = recentJobsResult.rows
-  const hasNextPage = !recentJobsResult.timedOut && (totalCount != null
-    ? page * limit < totalCount
-    : recentJobs.length === limit)
-  const hasPrevPage = page > 1
+  const info = pageInfo(page, PAGE_SIZE, recentJobs.length, totalCount)
+  // A timed-out list has no rows to page through, whatever the count says.
+  const hasNextPage = !recentJobsResult.timedOut && info.hasNextPage
+  const hasPrevPage = info.hasPrevPage
+  const totalPages = recentJobsResult.timedOut ? null : info.totalPages
 
   return {
     recentJobs,
     queueNames,
     totalCount,
     page,
+    totalPages,
     timedOut: recentJobsResult.timedOut,
     queryTimeoutMs: getQueryTimeoutMs(),
     filters: {
@@ -229,6 +231,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     queueNames,
     totalCount,
     page,
+    totalPages,
     filters,
     hasActiveFilters,
     hasNextPage,
@@ -258,12 +261,6 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
 
   const handleColumnsChange = (columns: JobColumn[]) => {
     setQueryParams(buildParams(filters, columns))
-  }
-
-  const handlePageChange = (newPage: number) => {
-    const params = buildParams(filters, jobColumns)
-    if (newPage > 1) params.set('page', newPage.toString())
-    setQueryParams(params)
   }
 
   const clearAll = () => {
@@ -346,12 +343,13 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        <Pagination
+        <TablePagination
           page={page}
-          totalPages={null}
+          totalPages={totalPages}
           hasNextPage={hasNextPage}
           hasPrevPage={hasPrevPage}
-          onPageChange={handlePageChange}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
         />
       </Card>
     </div>
