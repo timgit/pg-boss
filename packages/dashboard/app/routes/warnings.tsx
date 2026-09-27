@@ -13,12 +13,12 @@ import {
   TableCell,
   SortableHeader,
 } from '~/components/ui/table'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
+import { pageWindow, pageInfo } from '~/lib/pagination'
 import { FilterSelect } from '~/components/ui/filter-select'
 import { ErrorCard } from '~/components/error-card'
 import type { WarningType, WarningResult } from '~/lib/types'
 import {
-  parsePageNumber,
   isValidWarningType,
   formatDateWithSeconds,
   formatWarningData,
@@ -28,6 +28,8 @@ import {
 } from '~/lib/utils'
 import { dbContext } from '~/lib/db-context'
 
+const PAGE_SIZE = 50
+
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
@@ -36,9 +38,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   // Validate warning type filter - invalid values are treated as no filter
   const typeFilter = isValidWarningType(typeParam) ? typeParam : null
 
-  const page = parsePageNumber(url.searchParams.get('page'))
-  const limit = 50
-  const offset = (page - 1) * limit
+  const { page, limit, offset } = pageWindow(url, PAGE_SIZE)
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
@@ -53,9 +53,13 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     getWarningCount(DB_URL, SCHEMA, typeFilter),
   ])
 
-  const totalPages = Math.ceil(totalCount / limit)
-
-  return { warnings, totalCount, page, totalPages, typeFilter }
+  return {
+    warnings,
+    totalCount,
+    typeFilter,
+    pageSize: PAGE_SIZE,
+    ...pageInfo(page, PAGE_SIZE, warnings.length, totalCount),
+  }
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
@@ -69,7 +73,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function Warnings ({ loaderData }: Route.ComponentProps) {
-  const { warnings, totalCount, page, totalPages, typeFilter } = loaderData
+  const { warnings, totalCount, typeFilter, pageSize, page, totalPages, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
 
   const handleFilterChange = (key: string, value: string | null) => {
@@ -83,11 +87,6 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
     setSearchParams(params)
   }
 
-  const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
-    setSearchParams(params)
-  }
 
   return (
     <div className="space-y-4">
@@ -146,12 +145,13 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        <Pagination
+        <TablePagination
           page={page}
           totalPages={totalPages}
-          hasNextPage={page < totalPages}
-          hasPrevPage={page > 1}
-          onPageChange={handlePageChange}
+          hasNextPage={hasNextPage}
+          hasPrevPage={hasPrevPage}
+          totalCount={totalCount}
+          pageSize={pageSize}
         />
       </Card>
     </div>

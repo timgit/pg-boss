@@ -1,4 +1,3 @@
-import { useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/schedules'
 import { useCan } from '~/lib/use-capabilities'
@@ -20,22 +19,22 @@ import {
   TableCell,
   SortableHeader,
 } from '~/components/ui/table'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
+import { pageWindow, pageInfo } from '~/lib/pagination'
 import { ErrorCard } from '~/components/error-card'
 import { dbContext } from '~/lib/db-context'
 import type { ScheduleKind } from '~/lib/types'
 import {
-  parsePageNumber,
   formatDate,
   formatTimeUntil,
 } from '~/lib/utils'
 
+const PAGE_SIZE = 20
+
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
-  const page = parsePageNumber(url.searchParams.get('page'))
-  const limit = 20
-  const offset = (page - 1) * limit
+  const { page, limit, offset } = pageWindow(url, PAGE_SIZE)
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
@@ -51,17 +50,11 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     return { ...schedule, nextOccurrence: next ? next.toISOString() : null }
   })
 
-  const totalPages = Math.ceil(totalCount / limit)
-  const hasNextPage = schedules.length === limit
-  const hasPrevPage = page > 1
-
   return {
     schedules: schedulesWithNext,
     totalCount,
-    page,
-    totalPages,
-    hasNextPage,
-    hasPrevPage,
+    pageSize: PAGE_SIZE,
+    ...pageInfo(page, PAGE_SIZE, schedules.length, totalCount),
   }
 }
 
@@ -121,14 +114,7 @@ export function scheduleHuman (expression: string, kind?: ScheduleKind): string 
 
 export default function Schedules ({ loaderData }: Route.ComponentProps) {
   const mayAct = useCan('schedule:create')
-  const { schedules, totalCount, page, totalPages, hasNextPage, hasPrevPage } = loaderData
-  const [searchParams, setSearchParams] = useSearchParams()
-
-  const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
-    setSearchParams(params)
-  }
+  const { schedules, totalCount, pageSize, page, totalPages, hasNextPage, hasPrevPage } = loaderData
 
   return (
     <div className="space-y-4">
@@ -221,12 +207,13 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
         </CardContent>
 
         {totalCount > 0 && (
-          <Pagination
+          <TablePagination
             page={page}
             totalPages={totalPages}
             hasNextPage={hasNextPage}
             hasPrevPage={hasPrevPage}
-            onPageChange={handlePageChange}
+            totalCount={totalCount}
+            pageSize={pageSize}
           />
         )}
       </Card>

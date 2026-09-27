@@ -31,7 +31,8 @@ import {
   TableHead,
   TableCell,
 } from '~/components/ui/table'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
+import { pageWindow, pageInfo } from '~/lib/pagination'
 import { FilterSelect } from '~/components/ui/filter-select'
 import {
   Dialog,
@@ -46,7 +47,6 @@ import { JobColumnsEditor } from '~/components/job-columns-editor'
 import { JobColumnCell } from '~/components/job-column-cell'
 import type { JobResult } from '~/lib/types'
 import {
-  parsePageNumber,
   isValidJobState,
   formatDate,
   JOB_STATE_OPTIONS,
@@ -61,6 +61,8 @@ import {
   type JobColumn,
 } from '~/lib/job-columns'
 
+const PAGE_SIZE = 50
+
 export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
@@ -73,9 +75,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     ? stateParam
     : DEFAULT_STATE_FILTER
 
-  const page = parsePageNumber(url.searchParams.get('page'))
-  const limit = 50
-  const offset = (page - 1) * limit
+  const { page, limit, offset } = pageWindow(url, PAGE_SIZE)
 
   const queue = await getQueue(DB_URL, SCHEMA, params.name)
 
@@ -93,18 +93,16 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
   // Use cached count from queue table instead of COUNT(*) query
   // Returns null if count not available for this filter
   const totalCount = getJobCountFromQueue(queue, stateFilter)
-  const totalPages = totalCount !== null ? Math.ceil(totalCount / limit) : null
 
-  // Determine if there are more pages based on results
-  const hasNextPage = jobs.length === limit
-  const hasPrevPage = page > 1
+  // The cached count lags the table, so it never decides which pages exist; a full page means
+  // there may be another.
+  const { hasNextPage, hasPrevPage } = pageInfo(page, PAGE_SIZE, jobs.length, null)
 
   return {
     queue,
     jobs,
     totalCount,
     page,
-    totalPages,
     stateFilter,
     jobColumns,
     hasNextPage,
@@ -181,7 +179,6 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     jobs,
     totalCount,
     page,
-    totalPages,
     stateFilter,
     jobColumns,
     hasNextPage,
@@ -206,12 +203,6 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
       params.delete(key)
     }
     params.delete('page')
-    setSearchParams(params)
-  }
-
-  const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
     setSearchParams(params)
   }
 
@@ -417,12 +408,11 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        <Pagination
+        <TablePagination
           page={page}
-          totalPages={totalPages}
+          totalPages={null}
           hasNextPage={hasNextPage}
           hasPrevPage={hasPrevPage}
-          onPageChange={handlePageChange}
         />
       </Card>
     </div>

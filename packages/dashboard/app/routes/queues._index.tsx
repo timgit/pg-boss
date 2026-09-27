@@ -19,18 +19,20 @@ import {
   TableCell,
   SortableHeader,
 } from '~/components/ui/table'
-import { formatTimeAgo, parsePageNumber, cn } from '~/lib/utils'
+import { formatTimeAgo, cn } from '~/lib/utils'
+import { pageWindow, pageInfo } from '~/lib/pagination'
+import { TablePagination } from '~/components/table-pagination'
 import type { QueueResult } from '~/lib/types'
 import { dbContext } from '~/lib/db-context'
+
+const PAGE_SIZE = 50
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
-  const page = parsePageNumber(url.searchParams.get('page'))
+  const { page, limit, offset } = pageWindow(url, PAGE_SIZE)
   const filter = url.searchParams.get('filter') || 'all'
   const search = url.searchParams.get('search') || ''
-  const limit = 50
-  const offset = (page - 1) * limit
 
   // Validate filter
   const validFilter = ['all', 'attention', 'partitioned'].includes(filter)
@@ -55,17 +57,11 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     }),
   ])
 
-  const totalPages = Math.ceil(totalCount / limit)
-  const hasNextPage = queues.length === limit
-  const hasPrevPage = page > 1
-
   return {
     queues,
     totalCount,
-    page,
-    totalPages,
-    hasNextPage,
-    hasPrevPage,
+    pageSize: PAGE_SIZE,
+    ...pageInfo(page, PAGE_SIZE, queues.length, totalCount),
     filter: validFilter,
     search,
   }
@@ -94,7 +90,7 @@ export function ErrorBoundary () {
 
 export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
   const mayAct = useCan('queue:create')
-  const { queues, totalCount, page, totalPages, hasNextPage, hasPrevPage, filter, search } = loaderData
+  const { queues, totalCount, pageSize, page, totalPages, hasNextPage, hasPrevPage, filter, search } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
   const [searchInput, setSearchInput] = useState(search)
 
@@ -102,12 +98,6 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
   useEffect(() => {
     setSearchInput(search)
   }, [search])
-
-  const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
-    setSearchParams(params)
-  }
 
   const handleSearch = (value: string) => {
     const params = new URLSearchParams(searchParams)
@@ -339,32 +329,14 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--border-subtle)]">
-            <div className="text-sm text-[var(--text-tertiary)]">
-              Page <b className="pgb-num text-[var(--text-secondary)] font-medium">{page}</b> of <b className="pgb-num text-[var(--text-secondary)] font-medium">{totalPages}</b>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(page - 1)}
-                disabled={!hasPrevPage}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(page + 1)}
-                disabled={!hasNextPage}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          hasNextPage={hasNextPage}
+          hasPrevPage={hasPrevPage}
+          totalCount={totalCount}
+          pageSize={pageSize}
+        />
       </Card>
     </div>
   )
