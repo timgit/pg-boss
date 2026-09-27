@@ -427,6 +427,21 @@ export async function getJobPageContext (
   return row ?? { now: new Date(), isDeadLetterQueue: false }
 }
 
+// Whether at least one queue names this one as its dead letter queue, for the queue page's header.
+export async function isDeadLetterQueue (
+  dbUrl: string,
+  schema: string,
+  queueName: string
+): Promise<boolean> {
+  const s = validateIdentifier(schema)
+  const row = await queryOne<{ exists: boolean }>(
+    dbUrl,
+    `SELECT EXISTS (SELECT 1 FROM ${s}.queue WHERE dead_letter = $1) as "exists"`,
+    [queueName]
+  )
+  return row?.exists ?? false
+}
+
 export interface LinkedJob {
   id: string;
   name: string;

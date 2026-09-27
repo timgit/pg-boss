@@ -3,6 +3,7 @@ import { useFetcher, useSearchParams } from 'react-router'
 import { MoreHorizontal, ChevronDown, ChevronRight, LineChart } from 'lucide-react'
 import { Menu } from '@base-ui/react/menu'
 import { DbLink } from '~/components/db-link'
+import { ProSlot } from '~/components/pro-slot'
 import type { Route } from './+types/queues.$name'
 import { useCan } from '~/lib/use-capabilities'
 import {
@@ -15,6 +16,7 @@ import {
   resumeJob,
   deleteJob,
   isValidIntent,
+  isDeadLetterQueue,
 } from '~/lib/queries.server'
 import { Sparkline } from '~/components/ui/sparkline'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
@@ -85,9 +87,10 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
 
   // The Ready sparkline comes from the always-on queue.ready_history column (loaded with `queue`).
   // collection drives the banner that points at the interactive metrics chart (needs persistQueueStats).
-  const [jobs, collection] = await Promise.all([
+  const [jobs, collection, isDeadLetter] = await Promise.all([
     getJobs(DB_URL, SCHEMA, params.name, { state: stateFilter, limit, offset, jobColumns }),
     getQueueStatsCollectionStatus(DB_URL, SCHEMA),
+    isDeadLetterQueue(DB_URL, SCHEMA, params.name),
   ])
 
   // Use cached count from queue table instead of COUNT(*) query
@@ -110,6 +113,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     hasNextPage,
     hasPrevPage,
     statsAvailable: collection.available,
+    isDeadLetter,
   }
 }
 
@@ -187,6 +191,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     hasNextPage,
     hasPrevPage,
     statsAvailable,
+    isDeadLetter,
   } = loaderData
 
   // ready_history is stored newest-first; reverse to chronological (oldest → newest) for the chart.
@@ -237,6 +242,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
         title={queue.name}
         action={
           <div className="flex items-center gap-2">
+            <ProSlot name="queueActions" queue={{ name: queue.name, isDeadLetter }} />
             <Button
               variant="outline"
               size="md"

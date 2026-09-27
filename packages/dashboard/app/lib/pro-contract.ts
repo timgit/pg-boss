@@ -27,6 +27,15 @@ export interface ProNavItem {
   icon: ComponentType<{ className?: string }>
 }
 
+/** What the queue page tells the slot in its header about the queue on screen. */
+export interface QueueSlotProps {
+  queue: {
+    name: string
+    /** At least one queue names this one as its `deadLetter`. */
+    isDeadLetter: boolean
+  }
+}
+
 /** Named regions of the free UI an overlay may render into. */
 export interface ProSlots {
   /** Above the theme controls in the sidebar footer. */
@@ -56,6 +65,16 @@ export interface ProSlots {
    * shares the row with the phone-width wordmark, so keep them compact.
    */
   topbarEnd?: ComponentType
+
+  /**
+   * In a queue page's header, before this package's own buttons.
+   *
+   * For actions on the queue on screen, such as moving what waits in a dead
+   * letter queue back into work. The component is told which queue, and
+   * whether it is a dead letter queue, so it can offer only what applies
+   * without a request of its own.
+   */
+  queueActions?: ComponentType<QueueSlotProps>
 }
 
 export interface ProOverlay {
