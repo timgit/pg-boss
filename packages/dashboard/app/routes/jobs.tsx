@@ -20,7 +20,7 @@ import {
   TableHead,
   TableCell,
 } from '~/components/ui/table'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
 import { ErrorCard } from '~/components/error-card'
 import { QueryTimeoutBanner } from '~/components/query-timeout-banner'
 import { JobsFilterBar, type JobsFilters } from '~/components/jobs-filter-bar'
@@ -38,7 +38,6 @@ import {
 } from '~/lib/job-columns'
 import {
   parsePaging,
-  pagingSearchParams,
   isValidJobState,
   DEFAULT_STATE_FILTER,
   ALL_STATES_FILTER,
@@ -248,9 +247,6 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     setQueryParams(buildParams(filters, columns))
   }
 
-  const handlePageChange = (newPage: number) => {
-    setQueryParams(pagingSearchParams(buildParams(filters, jobColumns), newPage, loaderData))
-  }
 
   const clearAll = () => {
     const cleared: JobsFilters = {
@@ -332,12 +328,13 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        <Pagination
+        <TablePagination
           page={page}
+          nextCursor={loaderData.nextCursor}
+          prevCursor={loaderData.prevCursor}
           totalPages={null}
           hasNextPage={hasNextPage}
           hasPrevPage={hasPrevPage}
-          onPageChange={handlePageChange}
         />
       </Card>
     </div>

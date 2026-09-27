@@ -15,12 +15,11 @@ import {
   SortableHeader,
 } from '~/components/ui/table'
 import { FilterSelect } from '~/components/ui/filter-select'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
 import { ErrorCard } from '~/components/error-card'
 import type { BamEntryResult, BamStatus, BamStatusSummary } from '~/lib/types'
 import {
   parsePaging,
-  pagingSearchParams,
   resetPaging,
   isValidBamStatus,
   formatDateWithSeconds,
@@ -66,6 +65,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     entries: entries.rows,
     summary,
     statusFilter,
+    totalCount,
     page: entries.atStart ? 1 : page,
     totalPages,
     hasNextPage: entries.hasNextPage,
@@ -86,7 +86,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function Migrations ({ loaderData }: Route.ComponentProps) {
-  const { entries, summary, statusFilter, page, totalPages, hasNextPage, hasPrevPage } = loaderData
+  const { entries, summary, statusFilter, totalCount, page, totalPages, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
 
   const counts = countByStatus(summary)
@@ -102,9 +102,6 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
     setSearchParams(params)
   }
 
-  const handlePageChange = (newPage: number) => {
-    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
-  }
 
   return (
     <div className="space-y-4">
@@ -207,12 +204,15 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        <Pagination
+        <TablePagination
           page={page}
+          nextCursor={loaderData.nextCursor}
+          prevCursor={loaderData.prevCursor}
           totalPages={totalPages}
           hasNextPage={hasNextPage}
           hasPrevPage={hasPrevPage}
-          onPageChange={handlePageChange}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
         />
       </Card>
     </div>

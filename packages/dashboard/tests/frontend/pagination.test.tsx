@@ -1,109 +1,74 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { Pagination } from "~/components/ui/pagination";
+import { MemoryRouter, useSearchParams } from "react-router";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "~/components/ui/pagination";
 
-describe("Pagination", () => {
-  it("returns null when no navigation needed", () => {
-    const { container } = render(
-      <Pagination
-        page={1}
-        hasNextPage={false}
-        hasPrevPage={false}
-        onPageChange={vi.fn()}
-      />
+function renderInRouter(ui: React.ReactNode, url = "/") {
+  return render(<MemoryRouter initialEntries={[url]}>{ui}</MemoryRouter>);
+}
+
+describe("Pagination primitives", () => {
+  it("is a labelled navigation landmark with a list inside", () => {
+    renderInRouter(
+      <Pagination>
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationLink to="/jobs?page=2">2</PaginationLink>
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
     );
 
-    expect(container.firstChild).toBeNull();
+    expect(screen.getByRole("navigation", { name: "pagination" })).toBeInTheDocument();
+    expect(screen.getByRole("listitem")).toBeInTheDocument();
   });
 
-  it("shows page info", () => {
-    render(
-      <Pagination
-        page={3}
-        totalPages={10}
-        hasNextPage={true}
-        hasPrevPage={true}
-        onPageChange={vi.fn()}
-      />
-    );
+  it("marks the active page as the current one", () => {
+    renderInRouter(<PaginationLink to="/jobs?page=3" isActive>3</PaginationLink>);
 
-    expect(screen.getByText("Page 3 of 10")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "3" });
+    expect(link).toHaveAttribute("aria-current", "page");
+    expect(link).toHaveAttribute("data-active", "true");
   });
 
-  it("shows page without total when totalPages is null", () => {
-    render(
-      <Pagination
-        page={5}
-        totalPages={null}
-        hasNextPage={true}
-        hasPrevPage={true}
-        onPageChange={vi.fn()}
-      />
-    );
+  it("links through the router, keeping the selected database", () => {
+    // tests/setup.ts mocks useSearchParams, which is where DbLink reads the database from.
+    vi.mocked(useSearchParams).mockReturnValueOnce([new URLSearchParams("db=orders"), vi.fn()]);
+    renderInRouter(<PaginationLink to="/jobs?page=2">2</PaginationLink>, "/jobs?db=orders");
 
-    expect(screen.getByText("Page 5")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "2" })).toHaveAttribute("href", "/jobs?page=2&db=orders");
   });
 
-  it("calls onPageChange with previous page", async () => {
-    const user = userEvent.setup();
-    const onPageChange = vi.fn();
+  it("renders a control with nowhere to go as disabled, not as a link", () => {
+    renderInRouter(<PaginationPrevious />);
 
-    render(
-      <Pagination
-        page={3}
-        hasNextPage={true}
-        hasPrevPage={true}
-        onPageChange={onPageChange}
-      />
-    );
-
-    await user.click(screen.getByText("Previous"));
-    expect(onPageChange).toHaveBeenCalledWith(2);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Go to previous page")).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("calls onPageChange with next page", async () => {
-    const user = userEvent.setup();
-    const onPageChange = vi.fn();
-
-    render(
-      <Pagination
-        page={3}
-        hasNextPage={true}
-        hasPrevPage={true}
-        onPageChange={onPageChange}
-      />
+  it("labels Previous and Next for assistive technology", () => {
+    renderInRouter(
+      <>
+        <PaginationPrevious to="/jobs" />
+        <PaginationNext to="/jobs?page=3" />
+      </>
     );
 
-    await user.click(screen.getByText("Next"));
-    expect(onPageChange).toHaveBeenCalledWith(4);
+    expect(screen.getByRole("link", { name: "Go to previous page" })).toHaveAttribute("href", "/jobs");
+    expect(screen.getByRole("link", { name: "Go to next page" })).toHaveAttribute("href", "/jobs?page=3");
   });
 
-  it("disables Previous button when on first page", () => {
-    render(
-      <Pagination
-        page={1}
-        hasNextPage={true}
-        hasPrevPage={false}
-        onPageChange={vi.fn()}
-      />
-    );
+  it("gives the ellipsis a name only screen readers see", () => {
+    renderInRouter(<PaginationEllipsis />);
 
-    expect(screen.getByText("Previous").closest("button")).toBeDisabled();
-    expect(screen.getByText("Next").closest("button")).not.toBeDisabled();
-  });
-
-  it("disables Next button when on last page", () => {
-    render(
-      <Pagination
-        page={10}
-        hasNextPage={false}
-        hasPrevPage={true}
-        onPageChange={vi.fn()}
-      />
-    );
-
-    expect(screen.getByText("Previous").closest("button")).not.toBeDisabled();
-    expect(screen.getByText("Next").closest("button")).toBeDisabled();
+    expect(screen.getByText("More pages")).toHaveClass("sr-only");
   });
 });

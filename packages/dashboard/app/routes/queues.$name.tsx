@@ -31,7 +31,7 @@ import {
   TableHead,
   TableCell,
 } from '~/components/ui/table'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
 import { FilterSelect } from '~/components/ui/filter-select'
 import {
   Dialog,
@@ -47,7 +47,6 @@ import { JobColumnCell } from '~/components/job-column-cell'
 import type { JobResult } from '~/lib/types'
 import {
   parsePaging,
-  pagingSearchParams,
   resetPaging,
   isValidJobState,
   formatDate,
@@ -65,6 +64,8 @@ import {
   type JobColumn,
 } from '~/lib/job-columns'
 
+const PAGE_SIZE = 50
+
 export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
@@ -78,7 +79,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const jobColumns = parseJobColumns(url.searchParams, defaultJobColumnsFor(stateFilter, DEFAULT_QUEUE_JOB_COLUMNS))
 
   const { page, cursor } = parsePaging(url.searchParams)
-  const limit = 50
+  const limit = PAGE_SIZE
 
   const queue = await getQueue(DB_URL, SCHEMA, params.name)
 
@@ -210,9 +211,6 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     setSearchParams(params)
   }
 
-  const handlePageChange = (newPage: number) => {
-    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
-  }
 
   // Default columns are left out of the URL, so they follow the state filter's defaults.
   const defaultColumns = defaultJobColumnsFor(stateFilter, DEFAULT_QUEUE_JOB_COLUMNS)
@@ -419,12 +417,15 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        <Pagination
+        <TablePagination
           page={page}
+          nextCursor={loaderData.nextCursor}
+          prevCursor={loaderData.prevCursor}
           totalPages={totalPages}
           hasNextPage={hasNextPage}
           hasPrevPage={hasPrevPage}
-          onPageChange={handlePageChange}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
         />
       </Card>
     </div>

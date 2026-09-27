@@ -20,22 +20,23 @@ import {
   TableCell,
   SortableHeader,
 } from '~/components/ui/table'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
 import { ErrorCard } from '~/components/error-card'
 import { dbContext } from '~/lib/db-context'
 import type { ScheduleKind } from '~/lib/types'
 import {
   parsePaging,
-  pagingSearchParams,
   formatDate,
   formatTimeUntil,
 } from '~/lib/utils'
+
+const PAGE_SIZE = 20
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const { page, cursor } = parsePaging(url.searchParams)
-  const limit = 20
+  const limit = PAGE_SIZE
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
@@ -124,9 +125,6 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
   const { schedules, totalCount, page, totalPages, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const handlePageChange = (newPage: number) => {
-    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
-  }
 
   return (
     <div className="space-y-4">
@@ -219,12 +217,15 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
         </CardContent>
 
         {totalCount > 0 && (
-          <Pagination
+          <TablePagination
             page={page}
+            nextCursor={loaderData.nextCursor}
+            prevCursor={loaderData.prevCursor}
             totalPages={totalPages}
             hasNextPage={hasNextPage}
             hasPrevPage={hasPrevPage}
-            onPageChange={handlePageChange}
+            totalCount={totalCount}
+            pageSize={PAGE_SIZE}
           />
         )}
       </Card>

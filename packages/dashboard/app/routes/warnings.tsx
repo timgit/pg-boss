@@ -13,13 +13,12 @@ import {
   TableCell,
   SortableHeader,
 } from '~/components/ui/table'
-import { Pagination } from '~/components/ui/pagination'
+import { TablePagination } from '~/components/table-pagination'
 import { FilterSelect } from '~/components/ui/filter-select'
 import { ErrorCard } from '~/components/error-card'
 import type { WarningType, WarningResult } from '~/lib/types'
 import {
   parsePaging,
-  pagingSearchParams,
   resetPaging,
   isValidWarningType,
   formatDateWithSeconds,
@@ -30,6 +29,8 @@ import {
 } from '~/lib/utils'
 import { dbContext } from '~/lib/db-context'
 
+const PAGE_SIZE = 50
+
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
@@ -39,7 +40,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const typeFilter = isValidWarningType(typeParam) ? typeParam : null
 
   const { page, cursor } = parsePaging(url.searchParams)
-  const limit = 50
+  const limit = PAGE_SIZE
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
@@ -94,9 +95,6 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
     setSearchParams(params)
   }
 
-  const handlePageChange = (newPage: number) => {
-    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
-  }
 
   return (
     <div className="space-y-4">
@@ -155,12 +153,15 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        <Pagination
+        <TablePagination
           page={page}
+          nextCursor={loaderData.nextCursor}
+          prevCursor={loaderData.prevCursor}
           totalPages={totalPages}
           hasNextPage={hasNextPage}
           hasPrevPage={hasPrevPage}
-          onPageChange={handlePageChange}
+          totalCount={totalCount.capped ? null : totalCount.count}
+          pageSize={PAGE_SIZE}
         />
       </Card>
     </div>

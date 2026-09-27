@@ -19,9 +19,12 @@ import {
   TableCell,
   SortableHeader,
 } from '~/components/ui/table'
-import { formatTimeAgo, parsePaging, pagingSearchParams, resetPaging, cn } from '~/lib/utils'
+import { formatTimeAgo, parsePaging, resetPaging, cn } from '~/lib/utils'
+import { TablePagination } from '~/components/table-pagination'
 import type { QueueResult } from '~/lib/types'
 import { dbContext } from '~/lib/db-context'
+
+const PAGE_SIZE = 50
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
@@ -29,7 +32,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const { page, cursor } = parsePaging(url.searchParams)
   const filter = url.searchParams.get('filter') || 'all'
   const search = url.searchParams.get('search') || ''
-  const limit = 50
+  const limit = PAGE_SIZE
 
   // Validate filter
   const validFilter = ['all', 'attention', 'partitioned'].includes(filter)
@@ -102,9 +105,6 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
     setSearchInput(search)
   }, [search])
 
-  const handlePageChange = (newPage: number) => {
-    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
-  }
 
   const handleSearch = (value: string) => {
     const params = new URLSearchParams(searchParams)
@@ -336,32 +336,16 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        {/* Pagination */}
-        {(hasPrevPage || hasNextPage) && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--border-subtle)]">
-            <div className="text-sm text-[var(--text-tertiary)]">
-              Page <b className="pgb-num text-[var(--text-secondary)] font-medium">{page}</b> of <b className="pgb-num text-[var(--text-secondary)] font-medium">{totalPages}</b>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(page - 1)}
-                disabled={!hasPrevPage}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(page + 1)}
-                disabled={!hasNextPage}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <TablePagination
+          page={page}
+          nextCursor={loaderData.nextCursor}
+          prevCursor={loaderData.prevCursor}
+          totalPages={totalPages}
+          hasNextPage={hasNextPage}
+          hasPrevPage={hasPrevPage}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+        />
       </Card>
     </div>
   )
