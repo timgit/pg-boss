@@ -32,6 +32,10 @@ function DemoAccount () {
   return <button type="button" data-testid="pro-account">overlay account</button>
 }
 
+function DemoQueueActions ({ queue }: { queue: { name: string, isDeadLetter: boolean } }) {
+  return <span data-testid="pro-queue-actions">{queue.name}{queue.isDeadLetter ? ' (dead letter)' : ''}</span>
+}
+
 async function renderSidebar () {
   // Import the providers from the same module graph as the sidebar: after
   // `vi.resetModules()` a statically imported provider would carry a different
@@ -125,6 +129,26 @@ describe('pro overlay', () => {
 
       const { ProSlot } = await import('~/components/pro-slot')
       const { container } = render(<ProSlot name="topbarEnd" />)
+
+      expect(container).toBeEmptyDOMElement()
+    })
+
+    // The one slot with props: the queue page says which queue it is showing,
+    // so the overlay can decide what to offer without asking the server.
+    it('hands the queue actions slot the queue on screen', async () => {
+      mockOverlay({ nav: [], slots: { queueActions: DemoQueueActions } })
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      render(<ProSlot name="queueActions" queue={{ name: 'email-dlq', isDeadLetter: true }} />)
+
+      expect(screen.getByTestId('pro-queue-actions')).toHaveTextContent('email-dlq (dead letter)')
+    })
+
+    it('renders nothing for the queue actions slot when the overlay does not fill it', async () => {
+      mockOverlay({ nav: [], slots: { topbarEnd: DemoAccount } })
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      const { container } = render(<ProSlot name="queueActions" queue={{ name: 'email', isDeadLetter: false }} />)
 
       expect(container).toBeEmptyDOMElement()
     })
