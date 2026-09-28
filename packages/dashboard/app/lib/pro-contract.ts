@@ -36,7 +36,39 @@ export interface QueueSlotProps {
   }
 }
 
-/** Named regions of the free UI an overlay may render into. */
+/** The pages whose header carries a `pageActions` slot. */
+export type ActionPage = 'overview' | 'jobs' | 'queues' | 'schedules'
+
+/** What a page header tells `pageActions` about where it is. */
+export interface PageSlotProps {
+  page: ActionPage
+}
+
+/** One job, as the job page and each row of the queue page know it. */
+export interface JobSlotProps {
+  job: {
+    id: string
+    /** The queue the job is in. */
+    name: string
+    state: string
+  }
+}
+
+/** One schedule, as its page knows it. */
+export interface ScheduleSlotProps {
+  schedule: {
+    name: string
+    /** Null for the queue's default schedule. */
+    key: string | null
+  }
+}
+
+/**
+ * Named regions of the free UI an overlay may render into.
+ *
+ * This package makes no changes of its own: every button that sends, retries,
+ * creates or deletes something is an overlay's, drawn into one of these.
+ */
 export interface ProSlots {
   /** Above the theme controls in the sidebar footer. */
   sidebarFooter?: ComponentType
@@ -75,6 +107,18 @@ export interface ProSlots {
    * without a request of its own.
    */
   queueActions?: ComponentType<QueueSlotProps>
+
+  /** In the header of the overview, jobs, queues and schedules pages, for actions that start there. */
+  pageActions?: ComponentType<PageSlotProps>
+
+  /** In a job page's header, for actions on that job. */
+  jobActions?: ComponentType<JobSlotProps>
+
+  /** At the end of each row in a queue page's jobs table, for actions on that job. */
+  jobRowActions?: ComponentType<JobSlotProps>
+
+  /** In a schedule page's header, for actions on that schedule. */
+  scheduleActions?: ComponentType<ScheduleSlotProps>
 }
 
 export interface ProOverlay {
@@ -120,14 +164,6 @@ export interface ProServerOverlay {
    * After, so the overlay can both add its own values (the actor) and narrow
    * what the free dashboard chose (the database a viewer is allowed to see).
    * Running first would mean the free defaults silently overwrote the narrowing.
-   *
-   * This is also where an overlay says what the person may *do*: set
-   * `capabilityContext` (`~/lib/capability-context`) and the root loader
-   * publishes it instead of deriving the answer from read-only mode, so every
-   * mutating control in the free UI is drawn per role. It replaces rather than
-   * merges — a role that permits less has to be able to permit less — and an
-   * unlisted capability is denied. Enforcement is still the overlay's own
-   * middleware; this only decides what is drawn.
    */
   loadContext?: (c: Context, context: RouterContextProvider) => void
 }
