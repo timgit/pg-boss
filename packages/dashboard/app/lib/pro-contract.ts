@@ -2,6 +2,8 @@ import type { ComponentType } from 'react'
 import type { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { RouterContextProvider } from 'react-router'
+import type { QueueThroughputPoint } from '~/lib/types'
+import type { StatsInterval } from '~/lib/stats'
 
 /**
  * The contract between this package and an optional Pro overlay.
@@ -64,6 +66,66 @@ export interface ScheduleSlotProps {
 }
 
 /**
+ * One queue's throughput as a /stats page already holds it: every bucket of the previous window
+ * then the current one, the two halves equal in length, empty buckets as nulls.
+ */
+export interface StatsQueueSeries {
+  name: string
+  interval: StatsInterval
+  /** The width of each point, in seconds. */
+  bucketSeconds: number
+  points: QueueThroughputPoint[]
+}
+
+/** What `/stats/:queue` tells `statsQueueKpi`: the queue at the page's own resolution. */
+export interface StatsQueueKpiProps {
+  queue: StatsQueueSeries
+}
+
+/** What `/stats` tells `statsOverviewKpi`: every queue, at its tile's resolution. */
+export interface StatsOverviewKpiProps {
+  queues: StatsQueueSeries[]
+}
+
+/** One tile on `/stats`. */
+export interface StatsTileProps {
+  queue: StatsQueueSeries
+}
+
+/** How a tile stands: its border, and its place in the overlay's order. */
+export interface StatsTileAssessment {
+  /** A red border for critical, amber for watch, none for null. */
+  severity: 'critical' | 'watch' | null
+  /** Lower comes first in the overlay's order; ties go busiest first. */
+  rank: number
+}
+
+/**
+ * The overlay's part in each `/stats` tile. Not a component: a tile's border and the grid's order
+ * are the tile's own, so the overlay says how a queue stands and the grid draws it.
+ */
+export interface StatsTileSlot {
+  /** Drawn beside the queue's name. */
+  Badge?: ComponentType<StatsTileProps>
+  /** Called once per tile per render. */
+  assess?: (tile: StatsTileProps) => StatsTileAssessment
+  /** The name of the order `assess` ranks by, offered beside "Busiest first" and chosen by default. */
+  sortLabel?: string
+}
+
+/** What a `/stats` chart tells `statsChartMarkers` about the axis the row sits under. */
+export interface StatsChartMarkersProps {
+  /** Null on the all-queues chart. */
+  queue: string | null
+  chart: 'throughput' | 'depth'
+  /** Unix seconds at the left and right edges of the plot. */
+  from: number
+  to: number
+  /** Where the plot sits across the chart, in CSS pixels, so a marker at time t lines up with the axis. */
+  plot: { left: number, width: number }
+}
+
+/**
  * Named regions of the free UI an overlay may render into.
  *
  * This package makes no changes of its own: every button that sends, retries,
@@ -119,6 +181,21 @@ export interface ProSlots {
 
   /** In a schedule page's header, for actions on that schedule. */
   scheduleActions?: ComponentType<ScheduleSlotProps>
+
+  /**
+   * A third card in the `/stats/:queue` key figures, after the two rates. Given the series the page
+   * loaded, so the common case needs no request of its own.
+   */
+  statsQueueKpi?: ComponentType<StatsQueueKpiProps>
+
+  /** A third card in the `/stats` key figures, given every queue's tile series. */
+  statsOverviewKpi?: ComponentType<StatsOverviewKpiProps>
+
+  /** A badge, a border and an order for the `/stats` tiles. */
+  statsQueueTile?: StatsTileSlot
+
+  /** A row under a `/stats` chart's time axis, lined up with the plot. */
+  statsChartMarkers?: ComponentType<StatsChartMarkersProps>
 }
 
 export interface ProOverlay {

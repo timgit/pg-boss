@@ -4,7 +4,8 @@ import type { AlignedData } from 'uplot'
 import type { QueueStatsAggregate, QueueStatsPoint } from '~/lib/types'
 import { DEPTH_SERIES, type DepthSeriesKey } from '~/lib/stats'
 import { FilterSelect } from '~/components/ui/filter-select'
-import { UplotChart, type UplotSeries } from '~/components/ui/uplot-chart'
+import { ProSlot, hasProSlot } from '~/components/pro-slot'
+import { UplotChart, type PlotBox, type UplotSeries } from '~/components/ui/uplot-chart'
 import { useCssColors, useElementWidth } from '~/components/ui/use-chart-frame'
 import { cn } from '~/lib/utils'
 
@@ -43,6 +44,7 @@ function previousBandPlugin (color: string, boundary: { current: number }): uPlo
 }
 
 interface DepthPanelProps {
+  queue: string
   history: QueueStatsPoint[]
   selected: DepthSeriesKey[]
   onToggle: (key: DepthSeriesKey) => void
@@ -58,11 +60,12 @@ interface DepthPanelProps {
 
 // The queue's gauges over the previous and current windows, ready only by default, the rest behind
 // the series picker. Shares the throughput panel's time axis and cursor.
-export function DepthPanel ({ history, selected, onToggle, aggregate, onAggregate, range, boundary, noun, syncKey }: DepthPanelProps) {
+export function DepthPanel ({ queue, history, selected, onToggle, aggregate, onAggregate, range, boundary, noun, syncKey }: DepthPanelProps) {
   const [mounted, setMounted] = useState(false)
   const [frameRef, width] = useElementWidth<HTMLDivElement>(800)
   const colors = useCssColors(COLOR_VARS)
   const boundaryRef = useRef(boundary)
+  const [plotBox, setPlotBox] = useState<PlotBox | null>(null)
   boundaryRef.current = boundary
 
   useEffect(() => setMounted(true), [])
@@ -136,6 +139,7 @@ export function DepthPanel ({ history, selected, onToggle, aggregate, onAggregat
             yValue={formatCount}
             xRange={range}
             syncKey={syncKey}
+            onPlotBox={setPlotBox}
           />
         ) : (
           <div className="flex items-center justify-center text-sm text-[var(--text-tertiary)]" style={{ height: HEIGHT }}>
@@ -143,6 +147,9 @@ export function DepthPanel ({ history, selected, onToggle, aggregate, onAggregat
           </div>
         )}
       </div>
+      {plotBox && hasProSlot('statsChartMarkers') && (
+        <ProSlot name="statsChartMarkers" queue={queue} chart="depth" from={range[0]} to={range[1]} plot={plotBox} />
+      )}
     </section>
   )
 }

@@ -16,6 +16,8 @@ const point = (bucketStart: number, rates: Partial<QueueThroughputPoint> = {}): 
 
 const tile = (name: string, arrivedPerMin: number | null, share: number | null = 0.1): StatsQueueSummary => ({
   name,
+  interval: '6h',
+  bucketSeconds: 900,
   arrivedPerMin,
   finishingPerMin: arrivedPerMin,
   share,

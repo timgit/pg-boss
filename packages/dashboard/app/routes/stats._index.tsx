@@ -22,6 +22,8 @@ import { StatsIntervalSwitch } from '~/components/stats-interval-switch'
 import { StatsRateCard } from '~/components/stats-rate-card'
 import { ThroughputPanel } from '~/components/throughput-panel'
 import { StatsTileGrid } from '~/components/stats-tiles'
+import { ProSlot, hasProSlot } from '~/components/pro-slot'
+import { cn } from '~/lib/utils'
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
@@ -49,7 +51,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     bucketSeconds,
     arrived: { current: windowAverage(points, current, arrived), previous: windowAverage(points, previous, arrived) },
     finishing: { current: windowAverage(points, current, settledPerMin), previous: windowAverage(points, previous, settledPerMin) },
-    tiles: queueSummaries(names, series, windows),
+    tiles: queueSummaries(names, series, interval, windows),
   }
 }
 
@@ -67,6 +69,7 @@ export default function StatsPage ({ loaderData }: Route.ComponentProps) {
   const { interval, queueCount, statsAvailable, points, range, bucketSeconds, arrived, finishing, tiles } = loaderData
   const { noun } = STATS_INTERVALS[interval]
   const counted = arrived.current != null || arrived.previous != null
+  const withKpiSlot = hasProSlot('statsOverviewKpi')
 
   return (
     <div className="space-y-4">
@@ -85,7 +88,7 @@ export default function StatsPage ({ loaderData }: Route.ComponentProps) {
         </p>
       )}
 
-      <section aria-label="Key figures, all queues" className="grid gap-4 sm:grid-cols-2">
+      <section aria-label="Key figures, all queues" className={cn('grid gap-4 sm:grid-cols-2', withKpiSlot && 'lg:grid-cols-[1fr_1fr_1.6fr]')}>
         <StatsRateCard
           label="Arrival rate, all queues"
           color="var(--stats-arrived)"
@@ -104,10 +107,15 @@ export default function StatsPage ({ loaderData }: Route.ComponentProps) {
           noun={noun}
           series={points.map(settledPerMin)}
         />
+        {withKpiSlot && (
+          <div className="grid sm:col-span-2 lg:col-span-1">
+            <ProSlot name="statsOverviewKpi" queues={tiles} />
+          </div>
+        )}
       </section>
 
       {statsAvailable && (
-        <ThroughputPanel title="Throughput, all queues" points={points} noun={noun} range={range} bucketSeconds={bucketSeconds} />
+        <ThroughputPanel title="Throughput, all queues" queue={null} points={points} noun={noun} range={range} bucketSeconds={bucketSeconds} />
       )}
 
       <StatsTileGrid tiles={tiles} interval={interval} noun={noun} />

@@ -251,9 +251,10 @@ describe('queueSummaries', () => {
     const tiles = queueSummaries(['quiet', 'small', 'big'], [
       { name: 'big', points: [point(t, { arrivedPerMin: 30, completedPerMin: 20, failedPerMin: 5 })] },
       { name: 'small', points: [point(t, { arrivedPerMin: 10 })] },
-    ], windows)
+    ], '1h', windows)
 
     expect(tiles.map((q) => q.name)).toEqual(['big', 'small', 'quiet'])
+    expect(tiles[0]).toMatchObject({ interval: '1h', bucketSeconds: 180 })
     expect(tiles[0]).toMatchObject({ arrivedPerMin: 30, finishingPerMin: 25, share: 0.75 })
     expect(tiles[2]).toMatchObject({ arrivedPerMin: null, finishingPerMin: null, share: 0 })
     expect(tiles[0].points).toHaveLength(40)
