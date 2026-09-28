@@ -328,6 +328,13 @@ export async function insertQueueStatsHistory (
     activeCount?: number;
     failedCount?: number;
     totalCount?: number;
+    // Throughput counters (v43). Left out, they stay null, as on a pass that counted nothing.
+    // deltaOn defaults to 10 seconds before capturedOn, where core puts it.
+    createdDelta?: number;
+    completedDelta?: number;
+    failedDelta?: number;
+    deltaSeconds?: number;
+    deltaOn?: Date;
   }>
 ): Promise<void> {
   const p = getPool()
@@ -346,8 +353,9 @@ export async function insertQueueStatsHistory (
   for (const r of rows) {
     await p.query(
       `INSERT INTO ${schema}.queue_stats
-         (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, captured_on)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, captured_on,
+          created_delta, completed_delta, failed_delta, delta_seconds, delta_on)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         queueName,
         r.deferredCount ?? 0,
@@ -357,6 +365,11 @@ export async function insertQueueStatsHistory (
         r.failedCount ?? 0,
         r.totalCount ?? 0,
         r.capturedOn,
+        r.createdDelta ?? null,
+        r.completedDelta ?? null,
+        r.failedDelta ?? null,
+        r.deltaSeconds ?? null,
+        r.deltaSeconds == null ? null : (r.deltaOn ?? new Date(r.capturedOn.getTime() - 10_000)),
       ]
     )
   }

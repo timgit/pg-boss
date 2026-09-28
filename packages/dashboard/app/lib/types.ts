@@ -96,6 +96,18 @@ export interface QueueStatsPoint {
 
 export type QueueStatsAggregate = 'max' | 'min' | 'avg'
 
+// One throughput bucket for a queue. bucketStart is epoch seconds. The three rates are jobs per
+// minute over the monitor passes whose counting window ended in the bucket, null where no pass
+// counted (persistQueueStats off, or history from before pg-boss 12.35). completedPerMin excludes
+// failures. readyCount is the bucket's highest ready gauge, null where no snapshot was captured.
+export interface QueueThroughputPoint {
+  bucketStart: number;
+  arrivedPerMin: number | null;
+  completedPerMin: number | null;
+  failedPerMin: number | null;
+  readyCount: number | null;
+}
+
 // Background async migration (BAM) status. Mirrors src/types.ts in the pg-boss core.
 export type BamStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
 

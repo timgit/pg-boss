@@ -12,6 +12,7 @@ import type {
   QueueStats,
   QueueStatsPoint,
   QueueStatsAggregate,
+  QueueThroughputPoint,
   ScheduleResult,
   BamEntryResult,
   BamStatusSummary,
@@ -960,6 +961,72 @@ export async function getQueueStatsHistory (
   } catch (err: unknown) {
     // Table doesn't exist - schema predates queue stats (v35)
     if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return []
+    }
+    throw err
+  }
+}
+
+export interface QueueThroughputOptions {
+  from: Date;
+  to: Date;
+  bucketSeconds: number;
+}
+
+// Throughput for one queue over [from, to), in fixed epoch-aligned buckets of bucketSeconds. The
+// counters are bucketed on delta_on, the end of the window a pass counted, and the ready gauge on
+// captured_on; core puts delta_on 10 seconds behind captured_on, so the two are aggregated apart
+// and joined on the bucket. Passes are unevenly spaced, so a rate is sum(delta) / sum(delta_seconds),
+// never delta / bucket width. The captured_on bound on the counters keeps the index and partition
+// pruning; its 15-minute margin covers the lag with room to spare. Returns buckets ascending, and
+// only buckets with data: the caller fills gaps. [] before v43 (42703) or before v35 (42P01).
+export async function getQueueThroughput (
+  dbUrl: string,
+  schema: string,
+  name: string,
+  options: QueueThroughputOptions
+): Promise<QueueThroughputPoint[]> {
+  const s = validateIdentifier(schema)
+  const { from, to } = options
+  const bucketSeconds = Math.max(1, Math.floor(options.bucketSeconds))
+
+  const sql = `
+    WITH d AS (
+      SELECT
+        (floor(extract(epoch from delta_on) / $4) * $4)::float8 AS t,
+        sum(created_delta)::float8   AS created,
+        sum(completed_delta)::float8 AS completed,
+        sum(failed_delta)::float8    AS failed,
+        sum(delta_seconds)::float8   AS secs
+      FROM ${s}.queue_stats
+      WHERE name = $1
+        AND captured_on >= $2 AND captured_on < $3::timestamptz + interval '15 minutes'
+        AND delta_on >= $2 AND delta_on < $3
+        AND delta_seconds > 0
+      GROUP BY 1
+    ),
+    g AS (
+      SELECT
+        (floor(extract(epoch from captured_on) / $4) * $4)::float8 AS t,
+        max(ready_count)::int AS ready
+      FROM ${s}.queue_stats
+      WHERE name = $1 AND captured_on >= $2 AND captured_on < $3
+      GROUP BY 1
+    )
+    SELECT
+      coalesce(d.t, g.t)            AS "bucketStart",
+      d.created / d.secs * 60       AS "arrivedPerMin",
+      d.completed / d.secs * 60     AS "completedPerMin",
+      d.failed / d.secs * 60        AS "failedPerMin",
+      g.ready                       AS "readyCount"
+    FROM d FULL JOIN g ON g.t = d.t
+    ORDER BY 1
+  `
+  try {
+    return await query<QueueThroughputPoint>(dbUrl, sql, [name, from, to, bucketSeconds])
+  } catch (err: unknown) {
+    // 42P01: no queue_stats (before v35). 42703: no delta columns (before v43).
+    if (err && typeof err === 'object' && 'code' in err && (err.code === '42P01' || err.code === '42703')) {
       return []
     }
     throw err
