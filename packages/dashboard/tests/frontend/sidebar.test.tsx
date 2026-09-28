@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { AppSidebar } from '~/components/sidebar'
 import { ThemeProvider } from '~/components/theme-provider'
 import { SidebarProvider } from '~/components/ui/sidebar'
+
+// The free sidebar, whatever the build: a Pro build mounts its overlay at `~pro`,
+// and the wordmark tests below are about what a free build draws.
+vi.mock('~pro', () => ({ default: { nav: [], slots: {} } }))
 
 function renderWithRouter (initialRoute = '/') {
   return render(
@@ -112,6 +116,14 @@ describe('Sidebar', () => {
 
       expect(container.querySelector('.pgboss-tier')).not.toBeInTheDocument()
       expect(screen.queryByText('Pro')).not.toBeInTheDocument()
+    })
+
+    // Console is Pro's word: interactive, and every change has a person attached.
+    it('calls the free build a dashboard', () => {
+      renderWithRouter()
+
+      expect(screen.getByText('DASHBOARD')).toBeInTheDocument()
+      expect(screen.queryByText('CONSOLE')).not.toBeInTheDocument()
     })
   })
 

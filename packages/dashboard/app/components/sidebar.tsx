@@ -312,7 +312,13 @@ export function AppSidebar () {
           </ColorThemePicker>
           <div className="leading-tight whitespace-nowrap group-data-[state=collapsed]:hidden">
             <div className="pgboss-wordmark text-sm text-sidebar-accent-foreground">pg-boss</div>
-            <div className="font-mono text-[9px] tracking-[0.15em] text-sidebar-foreground/60">CONSOLE</div>
+            {/*
+              The free build is a dashboard; with Pro it is a console, where every
+              change is made by a signed-in person and recorded as theirs.
+            */}
+            <div className="font-mono text-[9px] tracking-[0.15em] text-sidebar-foreground/60">
+              {proPresent ? 'CONSOLE' : 'DASHBOARD'}
+            </div>
           </div>
           {/*
             Beside the whole lockup rather than on the wordmark's line: the
