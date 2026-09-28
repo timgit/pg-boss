@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest'
 import {
   STATS_INTERVALS,
   byBusiest,
+  downsample,
   fillBuckets,
   metricsRedirectSearch,
   niceMax,
   parseDepthSeries,
   parseStatsInterval,
   percentChange,
+  queueSummaries,
   settledPerMin,
   statsWindows,
   sumSeries,
@@ -215,5 +217,45 @@ describe('metricsRedirectSearch', () => {
   it('drops a range with no interval, and custom bounds', () => {
     expect(metricsRedirectSearch(new URLSearchParams('range=7d'))).toBe('')
     expect(metricsRedirectSearch(new URLSearchParams('range=custom&from=2026-01-01&to=2026-01-02'))).toBe('')
+  })
+})
+
+describe('downsample', () => {
+  it('merges buckets so no point spans both windows', () => {
+    const points = Array.from({ length: 120 }, (_, i) => point(i * 60, { arrivedPerMin: i < 60 ? 1 : 2 }))
+    const out = downsample(points, 48)
+    expect(out).toHaveLength(40)
+    expect(out.slice(0, 20).every((p) => p.arrivedPerMin === 1)).toBe(true)
+    expect(out.slice(20).every((p) => p.arrivedPerMin === 2)).toBe(true)
+  })
+
+  it('averages what was counted, keeps the last ready count, and leaves an empty group null', () => {
+    const out = downsample([
+      point(0, { arrivedPerMin: 4, readyCount: 1 }),
+      point(60, { arrivedPerMin: null, readyCount: 7 }),
+      point(120),
+      point(180),
+    ], 2)
+    expect(out).toEqual([
+      point(0, { arrivedPerMin: 4, completedPerMin: null, failedPerMin: null, readyCount: 7 }),
+      point(120),
+    ])
+  })
+})
+
+describe('queueSummaries', () => {
+  it('gives every queue a tile with its current rates and share, busiest first', () => {
+    const now = new Date('2026-09-28T12:00:30Z')
+    const windows = statsWindows('1h', now)
+    const t = seconds(windows.current.from)
+    const tiles = queueSummaries(['quiet', 'small', 'big'], [
+      { name: 'big', points: [point(t, { arrivedPerMin: 30, completedPerMin: 20, failedPerMin: 5 })] },
+      { name: 'small', points: [point(t, { arrivedPerMin: 10 })] },
+    ], windows)
+
+    expect(tiles.map((q) => q.name)).toEqual(['big', 'small', 'quiet'])
+    expect(tiles[0]).toMatchObject({ arrivedPerMin: 30, finishingPerMin: 25, share: 0.75 })
+    expect(tiles[2]).toMatchObject({ arrivedPerMin: null, finishingPerMin: null, share: 0 })
+    expect(tiles[0].points).toHaveLength(40)
   })
 })

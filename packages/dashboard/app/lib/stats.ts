@@ -186,3 +186,75 @@ export function metricsRedirectSearch (from: URLSearchParams): string {
   const search = to.toString()
   return search ? `?${search}` : ''
 }
+
+/**
+ * Fewer, wider buckets for a small chart: consecutive buckets merged in groups, at most `max`
+ * points. The group size divides each window's bucket count, so no merged point spans both
+ * windows. Rates are the mean of the buckets that counted something; ready is the last value seen,
+ * the backlog at the end of the group.
+ */
+export function downsample (points: QueueThroughputPoint[], max: number): QueueThroughputPoint[] {
+  const half = points.length / 2
+  let size = Math.max(1, Math.ceil(points.length / max))
+  while (Number.isInteger(half) && half % size !== 0) size++
+
+  const mean = (group: QueueThroughputPoint[], rate: (p: QueueThroughputPoint) => number | null) => {
+    const values = group.map(rate).filter((v): v is number => v != null)
+    return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null
+  }
+
+  const out: QueueThroughputPoint[] = []
+  for (let i = 0; i < points.length; i += size) {
+    const group = points.slice(i, i + size)
+    const ready = group.map((p) => p.readyCount).filter((v): v is number => v != null)
+    out.push({
+      bucketStart: group[0].bucketStart,
+      arrivedPerMin: mean(group, (p) => p.arrivedPerMin),
+      completedPerMin: mean(group, (p) => p.completedPerMin),
+      failedPerMin: mean(group, (p) => p.failedPerMin),
+      readyCount: ready.length ? ready[ready.length - 1] : null,
+    })
+  }
+  return out
+}
+
+// One queue's tile on /stats.
+export interface StatsQueueSummary {
+  name: string;
+  /** Averages over the current window, per minute. */
+  arrivedPerMin: number | null;
+  finishingPerMin: number | null;
+  /** This queue's part of all arrivals in the current window, 0 to 1. Null when nothing arrived anywhere. */
+  share: number | null;
+  /** Both windows, the previous first, downsampled for the tile's chart. */
+  points: QueueThroughputPoint[];
+}
+
+export const TILE_POINTS = 48
+
+/**
+ * A tile per queue, busiest first. Every queue named gets one, including a queue with no stats in
+ * the span, which reads as nothing counted.
+ */
+export function queueSummaries (
+  names: string[],
+  series: QueueThroughputSeries[],
+  windows: StatsWindows
+): StatsQueueSummary[] {
+  const { previous, current, bucketSeconds } = windows
+  const span = { from: previous.from, to: current.to }
+  const byName = new Map(series.map((s) => [s.name, s.points]))
+  const tiles = names.map((name) => {
+    const filled = fillBuckets(byName.get(name) ?? [], span, bucketSeconds)
+    return {
+      name,
+      arrivedPerMin: windowAverage(filled, current, (p) => p.arrivedPerMin),
+      finishingPerMin: windowAverage(filled, current, settledPerMin),
+      share: null as number | null,
+      points: downsample(filled, TILE_POINTS),
+    }
+  })
+  const total = tiles.reduce((sum, t) => sum + (t.arrivedPerMin ?? 0), 0)
+  for (const t of tiles) t.share = total > 0 ? (t.arrivedPerMin ?? 0) / total : null
+  return tiles.sort(byBusiest)
+}

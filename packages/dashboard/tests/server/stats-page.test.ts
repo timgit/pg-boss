@@ -35,6 +35,7 @@ describe('/stats loader', () => {
     expect(data.points).toHaveLength(120)
     expect(data.arrived).toEqual({ current: 120, previous: 60 })
     expect(data.finishing).toEqual({ current: 90, previous: 60 })
+    expect(data.tiles.map((t) => [t.name, t.arrivedPerMin, t.share])).toEqual([['all-a', 90, 0.75], ['all-b', 30, 0.25]])
   })
 
   it('counts queues with nothing counted, and reports no rate', async () => {
@@ -46,5 +47,6 @@ describe('/stats loader', () => {
     expect(data.queueCount).toBe(1)
     expect(data.points).toHaveLength(192)
     expect(data.arrived).toEqual({ current: null, previous: null })
+    expect(data.tiles).toMatchObject([{ name: 'all-quiet', arrivedPerMin: null, share: null }])
   })
 })
