@@ -62,14 +62,14 @@ describe("ErrorCard", () => {
         <MemoryRouter>
           <ErrorCard
             title="Failed to load queue"
-            error={routeError(403, "Read-only mode", "This dashboard is read-only (PGBOSS_DASHBOARD_READ_ONLY=1).")}
+            error={routeError(403, "Not permitted", "Your role does not include this action.")}
           />
         </MemoryRouter>
       );
 
-      expect(screen.getByText("Read-only mode")).toBeInTheDocument();
+      expect(screen.getByText("Not permitted")).toBeInTheDocument();
       expect(
-        screen.getByText("This dashboard is read-only (PGBOSS_DASHBOARD_READ_ONLY=1).")
+        screen.getByText("Your role does not include this action.")
       ).toBeInTheDocument();
       expect(
         screen.queryByText("Please check your database connection and try again.")

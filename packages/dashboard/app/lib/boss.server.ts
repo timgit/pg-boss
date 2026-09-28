@@ -1,5 +1,5 @@
 import { PgBoss } from 'pg-boss'
-import type { SendOptions, ScheduleOptions, JobWithMetadata } from './types'
+import type { JobWithMetadata } from './types'
 
 // Cache pg-boss instances by connection string + schema
 const instances = new Map<string, PgBoss>()
@@ -70,39 +70,6 @@ const globalStore = globalThis as typeof globalThis & { [STOP_INSTANCES_KEY]?: (
 
 globalStore[STOP_INSTANCES_KEY] = stopAllInstances
 
-export async function sendJob (
-  dbUrl: string,
-  schema: string,
-  queueName: string,
-  data: object | null,
-  options?: SendOptions
-): Promise<string | null> {
-  const boss = await getInstance(dbUrl, schema)
-  return boss.send(queueName, data, options)
-}
-
-export async function schedule (
-  dbUrl: string,
-  schema: string,
-  name: string,
-  cron: string,
-  data?: object,
-  options?: ScheduleOptions
-): Promise<void> {
-  const boss = await getInstance(dbUrl, schema)
-  return boss.schedule(name, cron, data, options)
-}
-
-export async function unschedule (
-  dbUrl: string,
-  schema: string,
-  name: string,
-  key?: string
-): Promise<void> {
-  const boss = await getInstance(dbUrl, schema)
-  return boss.unschedule(name, key)
-}
-
 export async function getJobById<T = object> (
   dbUrl: string,
   schema: string,
@@ -112,78 +79,4 @@ export async function getJobById<T = object> (
   const boss = await getInstance(dbUrl, schema)
   const [job] = await boss.findJobs<T>(name, { id })
   return job ?? null
-}
-
-export async function cancelJob (
-  dbUrl: string,
-  schema: string,
-  name: string,
-  id: string | string[]
-): Promise<number> {
-  const boss = await getInstance(dbUrl, schema)
-  const result = await boss.cancel(name, id) as any
-  return result.affected
-}
-
-// Through pg-boss rather than an UPDATE of our own: retry() adds one attempt to the limit and keeps
-// started_on, so the next fetch counts the earlier run and the attempt numbers stay right.
-export async function retryJob (
-  dbUrl: string,
-  schema: string,
-  name: string,
-  id: string | string[]
-): Promise<number> {
-  const boss = await getInstance(dbUrl, schema)
-  const result = await boss.retry(name, id) as any
-  return result.affected
-}
-
-export async function resumeJob (
-  dbUrl: string,
-  schema: string,
-  name: string,
-  id: string | string[]
-): Promise<number> {
-  const boss = await getInstance(dbUrl, schema)
-  const result = await boss.resume(name, id) as any
-  return result.affected
-}
-
-export async function deleteJob (
-  dbUrl: string,
-  schema: string,
-  name: string,
-  id: string | string[]
-): Promise<number> {
-  const boss = await getInstance(dbUrl, schema)
-
-  // Check if job(s) are active - don't delete active jobs
-  const ids = Array.isArray(id) ? id : [id]
-  const deletableIds: string[] = []
-
-  // Check each job individually
-  for (const jobId of ids) {
-    const [job] = await boss.findJobs(name, { id: jobId })
-    // Only add to deletableIds if job exists and is not active
-    if (job && job.state !== 'active') {
-      deletableIds.push(jobId)
-    }
-  }
-
-  if (deletableIds.length === 0) {
-    return 0
-  }
-
-  const result = await boss.deleteJob(name, deletableIds.length === 1 ? deletableIds[0] : deletableIds) as any
-  return result.affected
-}
-
-export async function createQueue (
-  dbUrl: string,
-  schema: string,
-  queueName: string,
-  options?: Record<string, any>
-): Promise<void> {
-  const boss = await getInstance(dbUrl, schema)
-  return boss.createQueue(queueName, options)
 }

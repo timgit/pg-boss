@@ -1,22 +1,15 @@
 import { useEffect, useRef } from 'react'
-import { useFetcher, useRevalidator, redirect } from 'react-router'
-import { Inbox, Play, RotateCcw, Trash2, Ban } from 'lucide-react'
+import { useRevalidator } from 'react-router'
+import { Inbox } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
-import { useCan } from '~/lib/use-capabilities'
+import { ProSlot } from '~/components/pro-slot'
 import {
   getJobById,
   getJobPageContext,
   getLinkedJob,
-  cancelJob,
-  retryJob,
-  resumeJob,
-  deleteJob,
-  isValidIntent,
 } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
-import { Button } from '~/components/ui/button'
-import { ConfirmDialog } from '~/components/ui/confirm-dialog'
 import { ErrorCard } from '~/components/error-card'
 import {
   ConfigCard,
@@ -69,63 +62,6 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
   }
 }
 
-export async function action ({ params, request, context }: Route.ActionArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
-  const formData = await request.formData()
-  const intent = formData.get('intent')
-  const jobId = params.jobId
-
-  if (!isValidIntent(intent)) {
-    return { error: 'Invalid action', affected: 0 }
-  }
-
-  let affected = 0
-  let message = ''
-
-  try {
-    switch (intent) {
-      case 'cancel':
-        affected = await cancelJob(DB_URL, SCHEMA, params.name, jobId)
-        message = affected > 0
-          ? 'Job cancelled'
-          : 'Job could not be cancelled (may already be completed or cancelled)'
-        break
-      case 'retry':
-        affected = await retryJob(DB_URL, SCHEMA, params.name, jobId)
-        message = affected > 0
-          ? 'Job queued for retry'
-          : 'Job could not be retried (only failed jobs can be retried)'
-        break
-      case 'resume':
-        affected = await resumeJob(DB_URL, SCHEMA, params.name, jobId)
-        message = affected > 0
-          ? 'Job resumed'
-          : 'Job could not be resumed (only cancelled jobs can be resumed)'
-        break
-      case 'delete':
-        affected = await deleteJob(DB_URL, SCHEMA, params.name, jobId)
-        message = affected > 0
-          ? 'Job deleted'
-          : 'Job could not be deleted (may be active or already deleted)'
-
-        // Redirect to queue jobs list after successful delete
-        if (affected > 0) {
-          const url = new URL(request.url)
-          const dbParam = url.searchParams.get('db')
-          const redirectUrl = dbParam
-            ? `/queues/${params.name}?db=${encodeURIComponent(dbParam)}`
-            : `/queues/${params.name}`
-          return redirect(redirectUrl)
-        }
-        break
-    }
-  } catch (err) {
-    return { error: 'Database error occurred', affected: 0 }
-  }
-
-  return { success: affected > 0, affected, message }
-}
-
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
@@ -161,26 +97,11 @@ function useRefreshWhileUnfinished (unfinished: boolean) {
 
 export default function JobDetail ({ loaderData }: Route.ComponentProps) {
   const { job, queueName, isDeadLetterQueue, rootQueue, source, root } = loaderData
-  // One per verb, not one for the page. An operator may retry, resume and cancel
-  // a job but not delete it, which is precisely what a single flag could not say.
-  const mayRetry = useCan('job:retry')
-  const mayResume = useCan('job:resume')
-  const mayCancel = useCan('job:cancel')
-  const mayDelete = useCan('job:delete')
-  const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>()
-  const isLoading = fetcher.state !== 'idle'
 
   const state = job.state
   const unfinished = !isFinalState(state)
   const now = useLiveNow(loaderData.now, state === 'active')
   useRefreshWhileUnfinished(unfinished)
-
-  const actionResult = fetcher.data
-  const showError = actionResult && !actionResult.success && actionResult.affected === 0
-
-  const submitAction = (intent: string) => {
-    fetcher.submit({ intent }, { method: 'post' })
-  }
 
   const times: JobTimes = {
     state,
@@ -195,8 +116,6 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
     deleteAfterSeconds: job.deleteAfterSeconds,
   }
   const startedOn = toDate(job.startedOn)
-  const canCancel = mayCancel && (state === 'created' || state === 'retry' || state === 'active')
-  const canDelete = mayDelete && state !== 'active'
 
   const rows: ConfigRow[] = []
   const unset: string[] = []
@@ -278,47 +197,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {showError && (
-            <span className="text-xs text-[var(--warning-600)]" title={actionResult.message}>
-              Action failed
-            </span>
-          )}
-          {mayRetry && state === 'failed' && (
-            <Button variant="primary" size="md" disabled={isLoading} onClick={() => submitAction('retry')}>
-              <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />
-              Retry job
-            </Button>
-          )}
-          {mayResume && state === 'cancelled' && (
-            <Button variant="primary" size="md" disabled={isLoading} onClick={() => submitAction('resume')}>
-              <Play className="mr-2 h-4 w-4" aria-hidden="true" />
-              Resume job
-            </Button>
-          )}
-          {canCancel && (
-            <ConfirmDialog
-              title="Cancel Job"
-              description={`Are you sure you want to cancel job ${job.id}? This will prevent the job from being processed.`}
-              confirmLabel="Cancel Job"
-              confirmVariant="danger"
-              triggerVariant="outline"
-              trigger={<span className="inline-flex items-center gap-2"><Ban className="h-4 w-4" aria-hidden="true" />Cancel job</span>}
-              onConfirm={() => submitAction('cancel')}
-              disabled={isLoading}
-            />
-          )}
-          {canDelete && (
-            <ConfirmDialog
-              title="Delete Job"
-              description={`Are you sure you want to delete job ${job.id}? This action cannot be undone.`}
-              confirmLabel="Delete"
-              confirmVariant="danger"
-              triggerVariant="ghost"
-              trigger={<span className="inline-flex items-center gap-2 text-[var(--state-failed-fg)]"><Trash2 className="h-4 w-4" aria-hidden="true" />Delete</span>}
-              onConfirm={() => submitAction('delete')}
-              disabled={isLoading}
-            />
-          )}
+          <ProSlot name="jobActions" job={{ id: job.id, name: queueName, state }} />
         </div>
       </div>
 

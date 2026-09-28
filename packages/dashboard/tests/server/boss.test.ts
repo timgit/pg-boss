@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { PgBoss } from 'pg-boss'
 import { ctx, createTestQueue } from './helpers'
-import { sendJob, stopAllInstances } from '~/lib/boss.server'
+import { getJobById, stopAllInstances } from '~/lib/boss.server'
+
+// Any call that goes through a pg-boss instance starts one; this is the only one left.
+const NO_JOB = '00000000-0000-4000-8000-000000000000'
 
 describe('boss.server', () => {
   afterEach(() => {
@@ -16,9 +19,9 @@ describe('boss.server', () => {
     /**
      * Asserts that `stop()` was reached on the instance that was started.
      *
-     * The obvious test — send, stop, send again, expect the second send to work
+     * The obvious test — call, stop, call again, expect the second call to work
      * — passes whether or not anything was stopped, because a cleared cache and
-     * an untouched one both serve the next write. It also pins the wrong thing:
+     * an untouched one both serve the next call. It also pins the wrong thing:
      * the reason to stop these is that `Manager`'s intervals hold the event loop
      * open, and a write succeeding afterwards says nothing about that.
      *
@@ -37,7 +40,7 @@ describe('boss.server', () => {
       const stop = vi.spyOn(PgBoss.prototype, 'stop')
 
       try {
-        await sendJob(ctx.connectionString, ctx.schema, queue, { n: 1 })
+        await getJobById(ctx.connectionString, ctx.schema, queue, NO_JOB)
         expect(stop).not.toHaveBeenCalled()
 
         await stopAllInstances()
@@ -49,15 +52,15 @@ describe('boss.server', () => {
       }
     })
 
-    it('leaves the next write working, on a fresh instance', async () => {
+    it('leaves the next call working, on a fresh instance', async () => {
       const queue = 'stop-instances-reopen'
       await createTestQueue(queue)
-      await sendJob(ctx.connectionString, ctx.schema, queue, { n: 1 })
+      await getJobById(ctx.connectionString, ctx.schema, queue, NO_JOB)
 
       await stopAllInstances()
 
-      await expect(sendJob(ctx.connectionString, ctx.schema, queue, { n: 2 }))
-        .resolves.toEqual(expect.any(String))
+      await expect(getJobById(ctx.connectionString, ctx.schema, queue, NO_JOB))
+        .resolves.toBeNull()
 
       await stopAllInstances()
     })
@@ -67,7 +70,7 @@ describe('boss.server', () => {
       const queue = 'error-listener'
       await createTestQueue(queue)
 
-      await sendJob(ctx.connectionString, ctx.schema, queue, {})
+      await getJobById(ctx.connectionString, ctx.schema, queue, NO_JOB)
 
       expect(on).toHaveBeenCalledWith('error', expect.any(Function))
       await stopAllInstances()
@@ -76,7 +79,7 @@ describe('boss.server', () => {
     it('stops an instance whose start failed: it already opened a pool', async () => {
       const stop = vi.spyOn(PgBoss.prototype, 'stop')
 
-      await expect(sendJob(ctx.connectionString, 'schema_that_does_not_exist', 'q', {})).rejects.toThrow()
+      await expect(getJobById(ctx.connectionString, 'schema_that_does_not_exist', 'q', NO_JOB)).rejects.toThrow()
 
       expect(stop).toHaveBeenCalled()
     })

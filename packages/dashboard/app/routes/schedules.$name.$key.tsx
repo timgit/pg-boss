@@ -1,25 +1,13 @@
-import { useState } from 'react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/schedules.$name.$key'
-import { useCan } from '~/lib/use-capabilities'
+import { ProSlot } from '~/components/pro-slot'
 import { getSchedule } from '~/lib/queries.server'
 import { nextScheduleOccurrence } from '~/lib/schedule.server'
-import { unschedule } from '~/lib/boss.server'
 import { dbContext } from '~/lib/db-context'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '~/components/ui/dialog'
 import { ErrorCard } from '~/components/error-card'
 import { formatDate, formatTimeUntil } from '~/lib/utils'
-import { redirect } from 'react-router'
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
@@ -35,25 +23,6 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
   return { schedule, nextOccurrence: next ? next.toISOString() : null }
 }
 
-export async function action ({ params, request, context }: Route.ActionArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
-  const formData = await request.formData()
-  const intent = formData.get('intent')
-
-  if (intent === 'unschedule') {
-    try {
-      // Decode __default__ placeholder back to empty string
-      const key = params.key === '__default__' ? undefined : params.key
-      await unschedule(DB_URL, SCHEMA, params.name, key)
-      return redirect('/schedules')
-    } catch (err) {
-      return { error: `Failed to unschedule: ${err}` }
-    }
-  }
-
-  return { error: 'Invalid action' }
-}
-
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
@@ -64,10 +33,8 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   )
 }
 
-export default function ScheduleDetail ({ loaderData, actionData }: Route.ComponentProps) {
+export default function ScheduleDetail ({ loaderData }: Route.ComponentProps) {
   const { schedule, nextOccurrence } = loaderData
-  const mayUnschedule = useCan('schedule:delete')
-  const [confirmDialog, setConfirmDialog] = useState(false)
 
   return (
     <div className="space-y-6">
@@ -81,16 +48,7 @@ export default function ScheduleDetail ({ loaderData, actionData }: Route.Compon
           </h1>
         </div>
         <div className="flex flex-col items-end gap-3">
-          {mayUnschedule && (
-            <Button
-              variant="danger"
-              size="md"
-              className="cursor-pointer"
-              onClick={() => setConfirmDialog(true)}
-            >
-              Unschedule
-            </Button>
-          )}
+          <ProSlot name="scheduleActions" schedule={{ name: schedule.name, key: schedule.key || null }} />
           <div className="flex gap-6 text-sm text-[var(--text-tertiary)]">
             <span>Created {formatDate(new Date(schedule.createdOn))}</span>
             {new Date(schedule.updatedOn).getTime() !== new Date(schedule.createdOn).getTime() && (
@@ -99,12 +57,6 @@ export default function ScheduleDetail ({ loaderData, actionData }: Route.Compon
           </div>
         </div>
       </div>
-
-      {actionData?.error && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 p-4">
-          <p className="text-sm text-red-800 dark:text-red-200">{actionData.error}</p>
-        </div>
-      )}
 
       <div className="grid gap-6">
         <Card>
@@ -204,39 +156,6 @@ export default function ScheduleDetail ({ loaderData, actionData }: Route.Compon
         )}
       </div>
 
-      {/* Confirmation Dialog */}
-      <Dialog open={confirmDialog} onOpenChange={setConfirmDialog}>
-        <DialogContent hideCloseButton className="w-[28rem] max-w-[calc(100vw-2rem)]">
-          <form method="post">
-            <input type="hidden" name="intent" value="unschedule" />
-            <DialogHeader>
-              <DialogTitle>Unschedule Job</DialogTitle>
-<DialogDescription className="mt-2">
-                 Are you sure you want to unschedule? This will stop the recurring job from being created.
-               </DialogDescription>
-            </DialogHeader>
-            <DialogFooter className="mt-6 flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="cursor-pointer"
-                onClick={() => setConfirmDialog(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="danger"
-                size="sm"
-                className="cursor-pointer"
-              >
-                Unschedule
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

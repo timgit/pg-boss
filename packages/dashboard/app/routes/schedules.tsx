@@ -1,7 +1,6 @@
-import { useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
+import { ProSlot } from '~/components/pro-slot'
 import type { Route } from './+types/schedules'
-import { useCan } from '~/lib/use-capabilities'
 import {
   getSchedules,
   getScheduleCount,
@@ -10,7 +9,6 @@ import { nextScheduleOccurrence } from '~/lib/schedule.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
 import {
   Table,
   TableHeader,
@@ -121,19 +119,14 @@ export function scheduleHuman (expression: string, kind?: ScheduleKind): string 
 }
 
 export default function Schedules ({ loaderData }: Route.ComponentProps) {
-  const mayAct = useCan('schedule:create')
   const { schedules, totalCount, page, totalPages, hasNextPage, hasPrevPage } = loaderData
-  const [searchParams, setSearchParams] = useSearchParams()
-
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Schedules"
         subtitle="Jobs queued automatically by pg-boss, on a cron expression or a recurrence rule"
-        action={!mayAct ? undefined : (
-          <Button variant="primary" size="md" className='cursor-pointer' render={<DbLink to="/schedules/new" />}>Schedule Job</Button>
-        )}
+        action={<ProSlot name="pageActions" page="schedules" />}
       />
 
       <Card>

@@ -1,7 +1,6 @@
 import { useSearchParams } from 'react-router'
-import { DbLink } from '~/components/db-link'
+import { ProSlot } from '~/components/pro-slot'
 import type { Route } from './+types/jobs'
-import { useCan } from '~/lib/use-capabilities'
 import {
   getRecentJobs,
   getQueueNames,
@@ -11,7 +10,6 @@ import { dbContext } from '~/lib/db-context'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
 import {
   Table,
   TableHeader,
@@ -205,7 +203,6 @@ export function buildParams (
 }
 
 export default function Jobs ({ loaderData }: Route.ComponentProps) {
-  const mayAct = useCan('job:send')
   const {
     recentJobs,
     queueNames,
@@ -267,9 +264,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
       <PageHeader
         title="Jobs"
         subtitle={subtitle}
-        action={!mayAct ? undefined : (
-          <Button variant="primary" size="md" render={<DbLink to="/send" />}>Send Job</Button>
-        )}
+        action={<ProSlot name="pageActions" page="jobs" />}
       />
 
       <JobsFilterBar

@@ -1,6 +1,6 @@
 import { DbLink } from '~/components/db-link'
+import { ProSlot } from '~/components/pro-slot'
 import type { Route } from './+types/_index'
-import { useCan } from '~/lib/use-capabilities'
 import {
   getWarnings,
   getQueueStats,
@@ -13,7 +13,6 @@ import { StatsCards } from '~/components/stats-cards'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
 import {
   Table,
   TableHeader,
@@ -71,7 +70,6 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function Overview ({ loaderData }: Route.ComponentProps) {
-  const mayAct = useCan('job:send')
   const { stats, warnings, topQueues, migrations } = loaderData
 
   return (
@@ -79,9 +77,7 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
       <PageHeader
         title="Overview"
         subtitle="Monitor your pg-boss job queues"
-        action={!mayAct ? undefined : (
-          <Button variant="primary" size="md" render={<DbLink to="/send" />}>Send Job</Button>
-        )}
+        action={<ProSlot name="pageActions" page="overview" />}
       />
 
       {/* Stat row */}

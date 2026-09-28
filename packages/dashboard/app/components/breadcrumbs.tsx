@@ -33,9 +33,7 @@ export function Breadcrumbs() {
   } else if (pathSegments[0] === 'schedules') {
     breadcrumbs.push({ label: 'Schedules', href: '/schedules' })
 
-    if (pathSegments.length > 1 && pathSegments[1] === 'new') {
-      breadcrumbs.push({ label: 'New Schedule' })
-    } else if (pathSegments.length > 1) {
+    if (pathSegments.length > 1) {
       const scheduleName = decodeURIComponent(pathSegments[1])
       breadcrumbs.push({ label: scheduleName })
     }
@@ -43,9 +41,6 @@ export function Breadcrumbs() {
     breadcrumbs.push({ label: 'Jobs' })
   } else if (pathSegments[0] === 'warnings') {
     breadcrumbs.push({ label: 'Warnings' })
-  } else if (pathSegments[0] === 'send') {
-    breadcrumbs.push({ label: 'Queues', href: '/queues' })
-    breadcrumbs.push({ label: 'Send Job' })
   }
 
   // Only the Home root and no page-specific crumb (unmatched route) — show nothing.
