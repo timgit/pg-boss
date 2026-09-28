@@ -1,7 +1,8 @@
 import { cn } from '~/lib/utils'
 
 interface SparklineProps {
-  data: number[]
+  /** A null leaves a gap: the line breaks there rather than bridging or dropping to zero. */
+  data: Array<number | null>
   width?: number
   height?: number
   /** Stroke color — defaults to a CSS variable so it themes automatically. */
@@ -9,13 +10,18 @@ interface SparklineProps {
   strokeWidth?: number
   /** Draw a filled dot on the latest value. */
   showDot?: boolean
+  /** Scale from zero rather than from the series' own minimum, so a rate's noise is not magnified. */
+  zeroBased?: boolean
+  /** Shade the left part of the plot, as a fraction of its width (0.5 marks a previous half). */
+  shadeTo?: number
   className?: string
   'aria-label'?: string
 }
 
 // Zero-dependency inline-SVG sparkline. Pure and SSR-safe: it self-normalizes the series to its own
-// min/max and renders a single <polyline>. Nothing renders for an empty series; a single point shows
-// just the trailing dot; a flat series draws a centered horizontal line.
+// min/max (or 0/max when zeroBased) and renders a <polyline> per run of values between gaps. Nothing
+// renders for an empty or all-null series; a lone point shows only the trailing dot; a flat series
+// draws a centered horizontal line.
 export function Sparkline ({
   data,
   width = 80,
@@ -23,18 +29,21 @@ export function Sparkline ({
   color = 'var(--text-tertiary)',
   strokeWidth = 1.5,
   showDot = true,
+  zeroBased = false,
+  shadeTo,
   className,
   'aria-label': ariaLabel,
 }: SparklineProps) {
-  if (!data || data.length === 0) return null
+  const values = (data ?? []).filter((v): v is number => v != null)
+  if (values.length === 0) return null
 
   // Inset so the stroke and trailing dot aren't clipped at the edges.
   const pad = strokeWidth + (showDot ? 2 : 0)
   const innerW = Math.max(width - pad * 2, 0)
   const innerH = Math.max(height - pad * 2, 0)
 
-  const min = Math.min(...data)
-  const max = Math.max(...data)
+  const min = zeroBased ? Math.min(0, ...values) : Math.min(...values)
+  const max = Math.max(...values)
   const span = max - min
   const n = data.length
 
@@ -42,7 +51,20 @@ export function Sparkline ({
   // Flat series has no span to normalize against — center it instead of pinning it to the baseline.
   const y = (v: number) => (max === min ? height / 2 : pad + (1 - (v - min) / span) * innerH)
 
-  const points = data.map((v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ')
+  // Consecutive non-null values, each drawn as its own line.
+  const runs: string[] = []
+  let run: string[] = []
+  data.forEach((v, i) => {
+    if (v == null) {
+      if (run.length > 1) runs.push(run.join(' '))
+      run = []
+      return
+    }
+    run.push(`${x(i).toFixed(2)},${y(v).toFixed(2)}`)
+  })
+  if (run.length > 1) runs.push(run.join(' '))
+
+  const last = data[n - 1]
 
   return (
     <svg
@@ -54,8 +76,12 @@ export function Sparkline ({
       role="img"
       aria-label={ariaLabel}
     >
-      {n > 1 && (
+      {shadeTo != null && shadeTo > 0 && (
+        <rect x={0} y={0} width={width * Math.min(shadeTo, 1)} height={height} fill="var(--stats-previous-band)" />
+      )}
+      {runs.map((points, i) => (
         <polyline
+          key={i}
           points={points}
           fill="none"
           stroke={color}
@@ -63,9 +89,9 @@ export function Sparkline ({
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-      )}
-      {showDot && (
-        <circle cx={x(n - 1)} cy={y(data[n - 1])} r={strokeWidth + 0.5} fill={color} />
+      ))}
+      {showDot && last != null && (
+        <circle cx={x(n - 1)} cy={y(last)} r={strokeWidth + 0.5} fill={color} />
       )}
     </svg>
   )
