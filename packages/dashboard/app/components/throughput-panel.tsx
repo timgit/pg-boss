@@ -86,13 +86,15 @@ export function throughputPlugin (colors: Colors, onHover: (hover: Hover | null)
 }
 
 function formatTime (seconds: number, withDay: boolean): string {
-  return new Date(seconds * 1000).toLocaleString('en-US', {
+  return new Date(seconds * 1000).toLocaleString(undefined, {
     ...(withDay ? { weekday: 'short' } : {}),
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
-    hourCycle: 'h23',
   })
 }
+
+// Axis ticks are round numbers, so no decimals unless the scale is below one.
+const formatTick = (v: number) => (Number.isInteger(v) ? Math.round(v).toLocaleString('en-US') : formatRate(v))
 
 const rate = (v: number | null | undefined) => (v == null ? '—' : `${formatRate(v)}/min`)
 
@@ -112,6 +114,10 @@ interface ThroughputPanelProps {
   points: QueueThroughputPoint[]
   /** "hour", "6 hours", "24 hours": what the shaded half stands for. */
   noun: string
+  /** The x extent in unix seconds: the previous window's start to the current window's end. */
+  range?: [number, number]
+  /** Bucket width in seconds: a line bridges one missing bucket rather than breaking. */
+  bucketSeconds?: number
   /** Charts sharing a key move one cursor together. */
   syncKey?: string
 }
@@ -119,7 +125,7 @@ interface ThroughputPanelProps {
 // Arrivals against jobs finishing (completed + failed), per minute, over the previous and current
 // windows: the gap between the lines shaded, failures as bars along the bottom, and a tooltip.
 // Fixed series, no toggles.
-export function ThroughputPanel ({ title, points, noun, syncKey }: ThroughputPanelProps) {
+export function ThroughputPanel ({ title, points, noun, range, bucketSeconds, syncKey }: ThroughputPanelProps) {
   const [mounted, setMounted] = useState(false)
   const [frameRef, width] = useElementWidth<HTMLDivElement>(800)
   const colors = useCssColors(COLOR_VARS)
@@ -173,7 +179,9 @@ export function ThroughputPanel ({ title, points, noun, syncKey }: ThroughputPan
               theme={{ grid: colors.grid, text: colors.text }}
               plugins={plugins}
               zeroBased
-              yValue={formatRate}
+              yValue={formatTick}
+              xRange={range}
+              bridgeSeconds={bucketSeconds && 2 * bucketSeconds}
               syncKey={syncKey}
               legend={false}
             />

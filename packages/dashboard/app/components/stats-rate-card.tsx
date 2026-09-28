@@ -21,6 +21,7 @@ interface StatsRateCardProps {
 }
 
 export function formatRate (perMin: number): string {
+  if (perMin === 0) return '0'
   if (perMin >= 100) return Math.round(perMin).toLocaleString('en-US')
   if (perMin >= 10) return perMin.toFixed(0)
   return perMin.toFixed(1)
@@ -85,7 +86,7 @@ export function StatsRateCard ({ label, color, current, previous, tone, noun, se
           showDot={false}
           zeroBased
           shadeTo={0.5}
-          className="w-full"
+          stretch
           aria-label={`${label} over the previous and current ${noun}`}
         />
       </div>

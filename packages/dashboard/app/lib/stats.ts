@@ -148,3 +148,41 @@ export function throughputColumns (points: QueueThroughputPoint[]): [number[], A
     points.map((p) => p.failedPerMin),
   ]
 }
+
+// The depth panel's series: which QueueStatsPoint gauge each plots and the CSS variable for its color.
+export const DEPTH_SERIES = [
+  { key: 'ready', label: 'Ready', field: 'readyCount', cssVar: '--stats-ready' },
+  { key: 'active', label: 'Active', field: 'activeCount', cssVar: '--state-active-dot' },
+  { key: 'queued', label: 'Queued', field: 'queuedCount', cssVar: '--warning-600' },
+  { key: 'deferred', label: 'Deferred', field: 'deferredCount', cssVar: '--text-tertiary' },
+  { key: 'failed', label: 'Failed', field: 'failedCount', cssVar: '--error-600' },
+  { key: 'total', label: 'Total', field: 'totalCount', cssVar: '--text-secondary' },
+] as const
+
+export type DepthSeriesKey = (typeof DEPTH_SERIES)[number]['key']
+
+/** The `series` param: absent means ready only, an empty string means none, unknown keys drop. */
+export function parseDepthSeries (raw: string | null): DepthSeriesKey[] {
+  if (raw === null) return ['ready']
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is DepthSeriesKey => DEPTH_SERIES.some((d) => d.key === s))
+}
+
+/**
+ * The /stats/:queue query for an old /queues/:name/metrics URL. A range that is also an interval
+ * carries over, as do the series, the aggregate and the database; 7d, 30d and custom ranges have no
+ * interval, so the page opens on its default. The chart width is dropped: the page measures its own.
+ */
+export function metricsRedirectSearch (from: URLSearchParams): string {
+  const to = new URLSearchParams()
+  const range = from.get('range')
+  if (range != null && Object.hasOwn(STATS_INTERVALS, range)) to.set('interval', range)
+  for (const key of ['series', 'agg', 'db']) {
+    const value = from.get(key)
+    if (value != null) to.set(key, value)
+  }
+  const search = to.toString()
+  return search ? `?${search}` : ''
+}

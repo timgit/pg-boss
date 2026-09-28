@@ -129,9 +129,9 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
   // ready_history is stored newest-first; reverse to chronological (oldest → newest) for the chart.
   const readyTrend = queue.readyHistory ? [...queue.readyHistory].reverse() : []
 
-  // Link a StatCard to the metrics page pre-filtered to that single series.
+  // Link a StatCard to the queue's stats page, its depth panel showing that single series.
   const metricsHref = (series: string) =>
-    `/queues/${encodeURIComponent(queue.name)}/metrics?series=${series}`
+    `/stats/${encodeURIComponent(queue.name)}?series=${series}`
   const [searchParams, setSearchParams] = useSearchParams()
   const [configExpanded, setConfigExpanded] = useState(false)
 
@@ -172,10 +172,10 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
             <Button
               variant="outline"
               size="md"
-              render={<DbLink to={`/queues/${encodeURIComponent(queue.name)}/metrics`} />}
+              render={<DbLink to={`/stats/${encodeURIComponent(queue.name)}`} />}
             >
               <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
-              View metrics
+              View stats
             </Button>
           </div>
         }
@@ -189,7 +189,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
 
       {!statsAvailable && <StatsDisabledBanner />}
 
-      {/* Queue Stats — each card opens the metrics page filtered to that series. */}
+      {/* Queue Stats — each card opens the stats page with its depth panel on that series. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard
           label="Queued"

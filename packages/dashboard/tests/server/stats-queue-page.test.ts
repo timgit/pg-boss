@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { ctx, createTestQueue, insertQueueStatsHistory, makeContext } from './helpers'
 import { statsWindows } from '~/lib/stats'
 import { loader } from '~/routes/stats.$queue'
+import { loader as metricsLoader } from '~/routes/queues.$name.metrics'
 
 async function loadStats (queue: string, search = '') {
   return loader({
@@ -63,5 +64,37 @@ describe('/stats/:queue loader', () => {
     expect(data.statsAvailable).toBe(false)
     expect(data.arrived).toEqual({ current: null, previous: null })
     expect(data.finishing).toEqual({ current: null, previous: null })
+  })
+
+  it('loads the depth gauges over both windows, ready only unless the URL picks others', async () => {
+    await createTestQueue('st-depth')
+    const { previous, current } = statsWindows('1h')
+    await insertQueueStatsHistory(ctx.schema, 'st-depth', [
+      { capturedOn: midway(previous), readyCount: 3 },
+      { capturedOn: midway(current), readyCount: 7 },
+    ])
+
+    const data = await loadStats('st-depth')
+    expect(data.history.map((p) => p.readyCount)).toEqual([3, 7])
+    expect(data.depthSeries).toEqual(['ready'])
+    expect(data.aggregate).toBe('max')
+    expect(data.range).toEqual([previous.from.getTime() / 1000, current.to.getTime() / 1000])
+    expect(data.boundary).toBe(current.from.getTime() / 1000)
+
+    const picked = await loadStats('st-depth', '?series=ready,failed&agg=avg')
+    expect(picked.depthSeries).toEqual(['ready', 'failed'])
+    expect(picked.aggregate).toBe('avg')
+  })
+})
+
+describe('/queues/:name/metrics', () => {
+  it('redirects to /stats/:queue, keeping what still applies', async () => {
+    const response = metricsLoader({
+      params: { name: 'a b' },
+      request: new Request('http://localhost/queues/a%20b/metrics?range=24h&series=queued&w=800'),
+    } as unknown as Parameters<typeof metricsLoader>[0]) as Response
+
+    expect(response.status).toBe(301)
+    expect(response.headers.get('Location')).toBe('/stats/a%20b?interval=24h&series=queued')
   })
 })
