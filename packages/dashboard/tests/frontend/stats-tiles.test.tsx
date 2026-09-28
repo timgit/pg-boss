@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { StatsTileGrid, TILE_LIMIT, TileChart } from '~/components/stats-tiles'
 import type { StatsQueueSummary } from '~/lib/stats'
 import type { QueueThroughputPoint } from '~/lib/types'
+
+// The free grid, whatever the build: a Pro build mounts its overlay at `~pro`, and its tile
+// assessments are tested in pro-overlay.test.tsx against the fixture.
+vi.mock('~pro', () => ({ default: { nav: [], slots: {} } }))
 
 const point = (bucketStart: number, rates: Partial<QueueThroughputPoint> = {}): QueueThroughputPoint => ({
   bucketStart,
