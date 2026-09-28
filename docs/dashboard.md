@@ -1,14 +1,13 @@
 # Dashboard
 
-A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring and managing jobs, queues and schedules.
+A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring jobs, queues and schedules. It is read-only: it shows what pg-boss is doing and changes nothing. Send, retry, cancel, resume and delete jobs, and create queues and schedules, through the pg-boss API.
 
 ## Features
 
 - **Overview**: Aggregate statistics, problem queues, and recent warnings at a glance
-- **Queue Management**: View all queues with cached statistics and create new queues
+- **Queues**: View all queues with cached statistics
 - **Job List**: View jobs with state and queue filtering
 - **Job Details**: View full job payloads, output data, and metadata
-- **Job Actions**: Create, cancel, retry, resume, or delete jobs directly from the UI
 - **Warning History**: When `persistWarnings` is enabled, browse through previously emitted warning events
 - **Multi-Schema Support**: Monitor multiple pg-boss instances from a single dashboard
 - **Mobile Responsive**: Full functionality on mobile devices with collapsible sidebar
@@ -18,7 +17,7 @@ A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npm
 
 ### Overview
 
-Landing page with aggregate counts across all queues (queued, deferred, ready, active, failed and total jobs), the top queues by backlog with a ready-count trend sparkline and status badge, and the most recent warnings. The **Send Job** button opens a form to enqueue a job into any queue.
+Landing page with aggregate counts across all queues (queued, deferred, ready, active, failed and total jobs), the top queues by backlog with a ready-count trend sparkline and status badge, and the most recent warnings.
 
 ![Overview page](./images/dashboard-overview.png)
 
@@ -30,7 +29,7 @@ Recently created jobs across all queues. Filter by job ID, queue, state (pending
 
 ### Job detail
 
-One job: its state, what it's waiting for or why it stopped, its data and output, and cancel / retry / resume / delete actions. A failed job leads with its error and the attempt it failed on. A running job shows how long it has been running, its heartbeat, and a countdown to its time limit, and the page picks up a new state without a reload. A completed job opens on its output.
+One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on. A running job shows how long it has been running, its heartbeat, and a countdown to its time limit, and the page picks up a new state without a reload. A completed job opens on its output.
 
 The timeline shows the times the job's row keeps. A retry overwrites the start time and output, so earlier attempts appear only as a count. The last entry is when [retention](./api/queues.md#createqueue-name-queue) deletes the job: `deleteAfterSeconds` after it finished, or at `keepUntil` if it never ran.
 
@@ -38,13 +37,13 @@ A job copied into a dead letter queue shows why it's there, from the original jo
 
 ### Queues
 
-Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline, storage mode (shared or partitioned) and a status badge (idle, processing or backlogged). Columns are sortable and the list can be searched by name. **Create Queue** creates a new queue with its policy and retry / expiration / retention options. Clicking a queue opens its detail page with configuration, a 24-hour ready-count history and the jobs in that queue.
+Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline, storage mode (shared or partitioned) and a status badge (idle, processing or backlogged). Columns are sortable and the list can be searched by name. Clicking a queue opens its detail page with configuration, a 24-hour ready-count history and the jobs in that queue.
 
 ![Queues page](./images/dashboard-queues.png)
 
 ### Schedules
 
-Schedules registered with `boss.schedule()`, showing the target queue, optional key, expression, a human-readable frequency, the next occurrence and timezone. Both schedule kinds are read through pg-boss itself, so a schedule stored as an [RRULE](./api/scheduling.md#rrule-expressions) is badged as one and gets the same next occurrence the scheduling pass will use. **Schedule Job** creates a new schedule from either a cron expression or a rule, with a [missed occurrence](./api/scheduling.md#catch-up-after-an-outage) policy, and each schedule's detail page shows its data, options, the last job it created and lets you unschedule it.
+Schedules registered with `boss.schedule()`, showing the target queue, optional key, expression, a human-readable frequency, the next occurrence and timezone. Both schedule kinds are read through pg-boss itself, so a schedule stored as an [RRULE](./api/scheduling.md#rrule-expressions) is badged as one and gets the same next occurrence the scheduling pass will use. Each schedule's detail page shows its data, options and the last job it created.
 
 ![Schedules page](./images/dashboard-schedules.png)
 
@@ -77,7 +76,7 @@ Each dashboard release is built with a specific pg-boss and only works against a
 | 1.8.x | 12.31.x – 12.32.x | 41 |
 | 1.7.x | 12.30.x | 40 |
 
-The dashboard does not migrate your schema. If the versions do not match, the overview, queue, job and schedule lists and the warnings page still load. However, opening a job, cancelling, resuming or deleting one, sending a job, creating a queue, and adding or removing a schedule all fail with `pg-boss database requires migrations`. When your application moves to a pg-boss release with a new schema version, upgrade the dashboard with it.
+The dashboard does not migrate your schema. If the versions do not match, the overview, queue, job and schedule lists and the warnings page still load. However, opening a job fails with `pg-boss database requires migrations`. When your application moves to a pg-boss release with a new schema version, upgrade the dashboard with it.
 
 ## Installation
 
@@ -106,7 +105,6 @@ The dashboard is configured via environment variables:
 | `PORT` | Server port | `3000` |
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
-| `PGBOSS_DASHBOARD_READ_ONLY` | Set to `1` to disable every mutating action (see [Read-only mode](#read-only-mode)) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
 
@@ -122,23 +120,6 @@ npx pg-boss-dashboard
 ```
 
 Both variables must be provided together. If only one is set, the dashboard will throw an error on startup.
-
-### Read-only mode
-
-Set `PGBOSS_DASHBOARD_READ_ONLY=1` to serve the dashboard as a viewer:
-
-```bash
-PGBOSS_DASHBOARD_READ_ONLY=1 \
-DATABASE_URL="postgres://localhost/mydb" \
-npx pg-boss-dashboard
-```
-
-Every page still loads and every query still runs. What changes:
-
-- The server rejects every non-`GET`/`HEAD` request with `403`, so sending, retrying, cancelling, resuming, deleting, creating queues, and scheduling are all refused, including a request crafted by hand.
-- The controls for those actions are not rendered, and `/send`, `/queues/create`, and `/schedules/new` explain themselves instead of showing a form.
-
-This is a global switch rather than a permission system: everyone who can reach the dashboard sees the same read-only view. It is independent of basic authentication and can be combined with it.
 
 ### Multi-Database Configuration
 
@@ -303,14 +284,13 @@ app.use(['/admin/queues', '/admin/queues.data'], requireAdmin, (req, res) => {
 
 A few things worth knowing:
 
-- **Authentication is yours.** The handler adds none of its own. Mounted without a guard, it lets anyone read job payloads and send, retry, cancel or delete jobs. Place it behind whatever already protects your admin routes.
-- **Its forms carry no CSRF token.** They rely on React Router's `Origin` check. If your application authenticates with a session cookie, keep your usual CSRF protection on the mounted path, or set `PGBOSS_DASHBOARD_READ_ONLY=1`.
+- **Authentication is yours.** The handler adds none of its own. Mounted without a guard, it lets anyone read job payloads. Place it behind whatever already protects your admin routes.
 - **It is lazy.** Nothing is imported and no database connection is opened until the first request arrives. The connection pool drains again when the dashboard is idle.
 - **It does not depend on the working directory.** Static assets are resolved relative to the installed package.
 - **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, a sibling of the mount path rather than a child, so a `/admin/queues/*` pattern alone misses it and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
-- **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`; the handler leaves signals to you. A write action starts a pg-boss instance whose timers keep the process alive until `await dashboard.close()`. A closed handler answers 503.
+- **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`; the handler leaves signals to you. Opening a job starts a pg-boss instance whose timers keep the process alive until `await dashboard.close()`. A closed handler answers 503.
 - **Behind a reverse proxy, list your public host.** React Router rejects a form submission whose `Origin` does not match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `allowedActionOrigins: ['admin.example.com']`.
-- **Environment variables.** `PGBOSS_DASHBOARD_READ_ONLY` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST` and `PGBOSS_DASHBOARD_BASE_PATH` do not: the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`, and if it is set while `auth` is off the dashboard says so when you construct the handler rather than ignoring it quietly.
+- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` applies. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST` and `PGBOSS_DASHBOARD_BASE_PATH` do not: the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`, and if it is set while `auth` is off the dashboard says so when you construct the handler rather than ignoring it quietly.
 
 ## Enabling Warning Persistence
 
