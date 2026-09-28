@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import type { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { RouterContextProvider } from 'react-router'
@@ -87,29 +87,27 @@ export interface StatsOverviewKpiProps {
   queues: StatsQueueSeries[]
 }
 
-/** One tile on `/stats`. */
-export interface StatsTileProps {
-  queue: StatsQueueSeries
-}
-
-/** How a tile stands: its border, and its place in the overlay's order. */
+/** How a tile stands: its border, its place in the overlay's order, and a badge beside its name. */
 export interface StatsTileAssessment {
   /** A red border for critical, amber for watch, none for null. */
   severity: 'critical' | 'watch' | null
   /** Lower comes first in the overlay's order; ties go busiest first. */
   rank: number
+  badge?: ReactNode
 }
 
 /**
- * The overlay's part in each `/stats` tile. Not a component: a tile's border and the grid's order
- * are the tile's own, so the overlay says how a queue stands and the grid draws it.
+ * The overlay's part in the `/stats` tiles. Not a component: a tile's border and the grid's order
+ * are the grid's own, so the overlay says how each queue stands and the grid draws it.
  */
 export interface StatsTileSlot {
-  /** Drawn beside the queue's name. */
-  Badge?: ComponentType<StatsTileProps>
-  /** Called once per tile per render. */
-  assess?: (tile: StatsTileProps) => StatsTileAssessment
-  /** The name of the order `assess` ranks by, offered beside "Busiest first" and chosen by default. */
+  /**
+   * A React hook the grid calls on every render with every queue's tile series, so the overlay can
+   * load what it needs once for all of them. Returns how each queue stands, by name; a queue left
+   * out gets no badge, no border and the last place in the overlay's order.
+   */
+  useAssessments: (queues: StatsQueueSeries[]) => ReadonlyMap<string, StatsTileAssessment>
+  /** The name of the order `rank` gives, offered beside "Busiest first" and chosen by default. */
   sortLabel?: string
 }
 

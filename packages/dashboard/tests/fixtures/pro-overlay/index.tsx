@@ -1,9 +1,11 @@
+import { useMemo } from 'react'
 import type {
   ProOverlay,
   StatsChartMarkersProps,
   StatsOverviewKpiProps,
   StatsQueueKpiProps,
-  StatsTileProps,
+  StatsQueueSeries,
+  StatsTileAssessment,
 } from '~/lib/pro-contract'
 
 function DemoIcon ({ className }: { className?: string }) {
@@ -25,8 +27,15 @@ function DemoOverviewKpi ({ queues }: StatsOverviewKpiProps) {
 // A queue whose name starts "bad" is critical, "meh" watch; the rest are fine.
 const rankOf = (name: string) => (name.startsWith('bad') ? 0 : name.startsWith('meh') ? 1 : 2)
 
-function DemoTileBadge ({ queue }: StatsTileProps) {
-  return <span data-testid="pro-stats-tile-badge">{['critical', 'watch', 'ok'][rankOf(queue.name)]}</span>
+function useDemoAssessments (queues: StatsQueueSeries[]): ReadonlyMap<string, StatsTileAssessment> {
+  return useMemo(() => new Map(queues.map((queue) => {
+    const rank = rankOf(queue.name)
+    return [queue.name, {
+      rank,
+      severity: rank === 0 ? 'critical' : rank === 1 ? 'watch' : null,
+      badge: <span data-testid="pro-stats-tile-badge">{['critical', 'watch', 'ok'][rank]}</span>,
+    }]
+  })), [queues])
 }
 
 function DemoMarkers ({ queue, chart, from, to, plot }: StatsChartMarkersProps) {
@@ -43,11 +52,7 @@ export const overlay: ProOverlay = {
     statsQueueKpi: DemoQueueKpi,
     statsOverviewKpi: DemoOverviewKpi,
     statsQueueTile: {
-      Badge: DemoTileBadge,
-      assess: ({ queue }) => {
-        const rank = rankOf(queue.name)
-        return { rank, severity: rank === 0 ? 'critical' : rank === 1 ? 'watch' : null }
-      },
+      useAssessments: useDemoAssessments,
       sortLabel: 'Worst first',
     },
     statsChartMarkers: DemoMarkers,
