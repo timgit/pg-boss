@@ -184,6 +184,8 @@
   --stats-failed: #c5302b;
   --stats-ready: #6a4bc9;
   --stats-previous-band: rgba(24, 27, 33, 0.035);
+  --stats-gap-ahead: rgba(223, 138, 5, 0.20);
+  --stats-gap-behind: rgba(31, 111, 178, 0.10);
 
   /* ---- Job lifecycle (the core product motif) ---- */
   --state-created-fg: var(--neutral-600);
@@ -296,6 +298,8 @@
   --stats-failed: #f2918d;
   --stats-ready: #a58ff0;
   --stats-previous-band: rgba(255, 255, 255, 0.035);
+  --stats-gap-ahead: rgba(240, 179, 87, 0.18);
+  --stats-gap-behind: rgba(88, 151, 224, 0.10);
 
   --state-created-fg: #c2c9d4;  --state-created-bg: rgba(154, 163, 178, 0.14);  --state-created-dot: var(--neutral-400);
   --state-active-fg: #9fb6ff;   --state-active-bg: rgba(59, 102, 245, 0.18);    --state-active-dot: var(--primary-400);

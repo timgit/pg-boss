@@ -3,11 +3,13 @@ import {
   STATS_INTERVALS,
   byBusiest,
   fillBuckets,
+  niceMax,
   parseStatsInterval,
   percentChange,
   settledPerMin,
   statsWindows,
   sumSeries,
+  throughputColumns,
   windowAverage,
 } from '~/lib/stats'
 import type { QueueThroughputPoint } from '~/lib/types'
@@ -162,5 +164,31 @@ describe('byBusiest', () => {
       { name: 'quiet', arrivedPerMin: 0 },
     ]
     expect(queues.sort(byBusiest).map((q) => q.name)).toEqual(['busy', 'a', 'b', 'quiet', 'idle'])
+  })
+})
+
+describe('niceMax', () => {
+  it('rounds up to four steps of 1, 2 or 5 × 10ⁿ', () => {
+    expect(niceMax(3.7)).toBe(4)
+    expect(niceMax(130)).toBe(200)
+    expect(niceMax(0.32)).toBe(0.4)
+    expect(niceMax(1900)).toBe(2000)
+    expect(niceMax(4100)).toBe(8000)
+  })
+
+  it('gives an axis to a series with nothing on it', () => {
+    expect(niceMax(0)).toBe(1)
+    expect(niceMax(null)).toBe(1)
+    expect(niceMax(Number.NaN)).toBe(1)
+  })
+})
+
+describe('throughputColumns', () => {
+  it('lays out times, arrivals, finishing and failures, keeping gaps', () => {
+    const cols = throughputColumns([
+      point(60, { arrivedPerMin: 5, completedPerMin: 3, failedPerMin: 1 }),
+      point(120),
+    ])
+    expect(cols).toEqual([[60, 120], [5, null], [4, null], [1, null]])
   })
 })

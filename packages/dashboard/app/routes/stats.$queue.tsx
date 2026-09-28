@@ -23,6 +23,7 @@ import { Button } from '~/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { StatsRateCard } from '~/components/stats-rate-card'
+import { ThroughputPanel } from '~/components/throughput-panel'
 
 export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
@@ -132,6 +133,8 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
           series={points.map(settledPerMin)}
         />
       </section>
+
+      {statsAvailable && <ThroughputPanel title="Throughput" points={points} noun={noun} />}
     </div>
   )
 }
