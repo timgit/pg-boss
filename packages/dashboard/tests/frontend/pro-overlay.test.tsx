@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 
 // The `~pro` alias is decided once at config load and cannot vary per test, so
@@ -209,6 +209,85 @@ describe('pro overlay', () => {
 
       expect(screen.getByRole('link', { name: 'Demo' })).toHaveAttribute('href', '/pro-demo')
       expect(screen.getByTestId('pro-footer')).toBeInTheDocument()
+    })
+  })
+
+  // The /stats slots, as the fixture overlay fills them.
+  describe('on /stats', () => {
+    const point = { bucketStart: 0, arrivedPerMin: 1, completedPerMin: 1, failedPerMin: 0, readyCount: 0 }
+    const tile = (name: string, arrivedPerMin: number) => ({
+      name,
+      interval: '1h' as const,
+      bucketSeconds: 180,
+      arrivedPerMin,
+      finishingPerMin: arrivedPerMin,
+      share: 0.1,
+      points: [point, point],
+    })
+
+    async function renderTiles () {
+      const { StatsTileGrid } = await import('~/components/stats-tiles')
+      return render(
+        <MemoryRouter>
+          <StatsTileGrid tiles={[tile('busy', 50), tile('meh-q', 20), tile('bad-q', 5)]} interval="1h" noun="hour" />
+        </MemoryRouter>
+      )
+    }
+
+    const tileNames = () => screen.getAllByRole('link').map((a) => a.getAttribute('href'))
+
+    it('hands the KPI slots the series the page loaded', async () => {
+      const { overlay } = await import('../fixtures/pro-overlay')
+      mockOverlay(overlay)
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      render(
+        <>
+          <ProSlot name="statsQueueKpi" queue={{ name: 'emails', interval: '6h', bucketSeconds: 300, points: [point, point] }} />
+          <ProSlot name="statsOverviewKpi" queues={[tile('a', 1), tile('b', 2)]} />
+        </>
+      )
+
+      expect(screen.getByTestId('pro-stats-queue-kpi')).toHaveTextContent('emails 6h 2 points')
+      expect(screen.getByTestId('pro-stats-overview-kpi')).toHaveTextContent('a,b')
+    })
+
+    it('badges and borders each tile, and orders them worst first by default', async () => {
+      const { overlay } = await import('../fixtures/pro-overlay')
+      mockOverlay(overlay)
+
+      await renderTiles()
+
+      expect(tileNames()).toEqual(['/stats/bad-q?interval=1h', '/stats/meh-q?interval=1h', '/stats/busy?interval=1h'])
+      expect(screen.getAllByTestId('pro-stats-tile-badge').map((b) => b.textContent)).toEqual(['critical', 'watch', 'ok'])
+      const [bad, meh, busy] = screen.getAllByRole('link')
+      expect(bad.className).toContain('border-[var(--error-500)]')
+      expect(meh.className).toContain('border-[var(--warning-500)]')
+      expect(busy.className).toContain('border-[var(--border-default)]')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Busiest first' }))
+      expect(tileNames()).toEqual(['/stats/busy?interval=1h', '/stats/meh-q?interval=1h', '/stats/bad-q?interval=1h'])
+    })
+
+    it('leaves the tiles plain and busiest first without an overlay', async () => {
+      mockOverlay(NO_OVERLAY)
+
+      await renderTiles()
+
+      expect(tileNames()).toEqual(['/stats/busy?interval=1h', '/stats/meh-q?interval=1h', '/stats/bad-q?interval=1h'])
+      expect(screen.queryByTestId('pro-stats-tile-badge')).toBeNull()
+      expect(screen.queryByRole('group', { name: 'Sort queues' })).toBeNull()
+      expect(screen.getByText('Busiest first')).toBeInTheDocument()
+    })
+
+    it('hands the marker row the chart, its time span and where the plot sits', async () => {
+      const { overlay } = await import('../fixtures/pro-overlay')
+      mockOverlay(overlay)
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      render(<ProSlot name="statsChartMarkers" queue={null} chart="throughput" from={0} to={7200} plot={{ left: 48, width: 900 }} />)
+
+      expect(screen.getByTestId('pro-stats-markers')).toHaveTextContent('all throughput 0-7200 at 48+900')
     })
   })
 })

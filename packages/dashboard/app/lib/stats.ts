@@ -187,6 +187,14 @@ export function metricsRedirectSearch (from: URLSearchParams): string {
   return search ? `?${search}` : ''
 }
 
+/** How many buckets `downsample` merges into each point. */
+export function downsampleSize (count: number, max: number): number {
+  const half = count / 2
+  let size = Math.max(1, Math.ceil(count / max))
+  while (Number.isInteger(half) && half % size !== 0) size++
+  return size
+}
+
 /**
  * Fewer, wider buckets for a small chart: consecutive buckets merged in groups, at most `max`
  * points. The group size divides each window's bucket count, so no merged point spans both
@@ -194,9 +202,7 @@ export function metricsRedirectSearch (from: URLSearchParams): string {
  * the backlog at the end of the group.
  */
 export function downsample (points: QueueThroughputPoint[], max: number): QueueThroughputPoint[] {
-  const half = points.length / 2
-  let size = Math.max(1, Math.ceil(points.length / max))
-  while (Number.isInteger(half) && half % size !== 0) size++
+  const size = downsampleSize(points.length, max)
 
   const mean = (group: QueueThroughputPoint[], rate: (p: QueueThroughputPoint) => number | null) => {
     const values = group.map(rate).filter((v): v is number => v != null)
@@ -221,6 +227,9 @@ export function downsample (points: QueueThroughputPoint[], max: number): QueueT
 // One queue's tile on /stats.
 export interface StatsQueueSummary {
   name: string;
+  interval: StatsInterval;
+  /** The width of each of `points`, in seconds. */
+  bucketSeconds: number;
   /** Averages over the current window, per minute. */
   arrivedPerMin: number | null;
   finishingPerMin: number | null;
@@ -239,15 +248,20 @@ export const TILE_POINTS = 48
 export function queueSummaries (
   names: string[],
   series: QueueThroughputSeries[],
+  interval: StatsInterval,
   windows: StatsWindows
 ): StatsQueueSummary[] {
   const { previous, current, bucketSeconds } = windows
   const span = { from: previous.from, to: current.to }
   const byName = new Map(series.map((s) => [s.name, s.points]))
+  const count = (span.to.getTime() - span.from.getTime()) / 1000 / bucketSeconds
+  const tileBucketSeconds = bucketSeconds * downsampleSize(count, TILE_POINTS)
   const tiles = names.map((name) => {
     const filled = fillBuckets(byName.get(name) ?? [], span, bucketSeconds)
     return {
       name,
+      interval,
+      bucketSeconds: tileBucketSeconds,
       arrivedPerMin: windowAverage(filled, current, (p) => p.arrivedPerMin),
       finishingPerMin: windowAverage(filled, current, settledPerMin),
       share: null as number | null,

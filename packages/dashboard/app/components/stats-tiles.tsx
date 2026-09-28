@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
+import overlay from '~pro'
+import type { StatsTileAssessment } from '~/lib/pro-contract'
 import type { QueueThroughputPoint } from '~/lib/types'
-import { niceMax, throughputColumns, type StatsInterval, type StatsQueueSummary } from '~/lib/stats'
+import { byBusiest, niceMax, throughputColumns, type StatsInterval, type StatsQueueSummary } from '~/lib/stats'
 import { formatRate } from '~/components/stats-rate-card'
 import { DbLink } from '~/components/db-link'
+import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { cn } from '~/lib/utils'
 
 export const TILE_LIMIT = 8
@@ -92,26 +95,37 @@ function formatShare (share: number | null): string | null {
   return `${Math.round(share * 100)}% of arrivals`
 }
 
+const SEVERITY_BORDER = {
+  critical: 'border-[var(--error-500)]',
+  watch: 'border-[var(--warning-500)]',
+}
+
 interface StatsTileProps {
   tile: StatsQueueSummary
   interval: StatsInterval
   noun: string
+  /** The overlay's view of the queue, when it gives one. */
+  assessment?: StatsTileAssessment | null
 }
 
 // One queue on /stats: its rates this window, a chart across both, and its share of all arrivals.
-// Opens /stats/:queue at the same interval.
-export function StatsTile ({ tile, interval, noun }: StatsTileProps) {
+// Opens /stats/:queue at the same interval. An overlay may add a badge and a coloured border.
+export function StatsTile ({ tile, interval, noun, assessment }: StatsTileProps) {
   const share = formatShare(tile.share)
+  const Badge = overlay.slots.statsQueueTile?.Badge
+  const severity = assessment?.severity
   return (
     <DbLink
       to={`/stats/${encodeURIComponent(tile.name)}?interval=${interval}`}
       className={cn(
-        'group grid gap-2 rounded-[10px] border border-[var(--border-default)] bg-[var(--surface-card)] px-3.5 pb-2.5 pt-3',
+        'group grid gap-2 rounded-[10px] border bg-[var(--surface-card)] px-3.5 pb-2.5 pt-3',
+        severity ? SEVERITY_BORDER[severity] : 'border-[var(--border-default)]',
         'transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]'
       )}
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <span className="truncate font-medium text-[var(--text-primary)]">{tile.name}</span>
+        {Badge && <Badge queue={tile} />}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <Rate value={tile.arrivedPerMin} color="var(--stats-arrived)" label="arriving" />
@@ -135,11 +149,23 @@ interface StatsTileGridProps {
 // Small multiples: one tile per queue, busiest first, the first eight until asked for the rest,
 // with a name filter for databases with many queues.
 export function StatsTileGrid ({ tiles, interval, noun }: StatsTileGridProps) {
+  const slot = overlay.slots.statsQueueTile
+  const overlaySort = slot?.assess && slot.sortLabel ? slot.sortLabel : null
   const [filter, setFilter] = useState('')
   const [showAll, setShowAll] = useState(false)
+  const [sort, setSort] = useState<'overlay' | 'busiest'>(overlaySort ? 'overlay' : 'busiest')
+
+  // Tiles arrive busiest first. The overlay's order ranks them, busiest first within a rank.
+  const assessed = useMemo(
+    () => tiles.map((tile) => ({ tile, assessment: slot?.assess?.({ queue: tile }) ?? null })),
+    [tiles, slot]
+  )
+  const ordered = sort === 'overlay'
+    ? [...assessed].sort((a, b) => (a.assessment?.rank ?? Infinity) - (b.assessment?.rank ?? Infinity) || byBusiest(a.tile, b.tile))
+    : assessed
 
   const needle = filter.trim().toLowerCase()
-  const matching = needle ? tiles.filter((t) => t.name.toLowerCase().includes(needle)) : tiles
+  const matching = needle ? ordered.filter(({ tile }) => tile.name.toLowerCase().includes(needle)) : ordered
   const shown = showAll ? matching : matching.slice(0, TILE_LIMIT)
 
   return (
@@ -150,7 +176,18 @@ export function StatsTileGrid ({ tiles, interval, noun }: StatsTileGridProps) {
           <p className="mt-0.5 text-sm text-[var(--text-tertiary)]">Each tile has its own scale. Open one for its rates and backlog.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-tertiary)]">
-          <span>Busiest first</span>
+          {overlaySort
+            ? (
+              <ToggleGroup
+                aria-label="Sort queues"
+                value={[sort]}
+                onValueChange={(value) => { if (value[0]) setSort(value[0] as 'overlay' | 'busiest') }}
+              >
+                <ToggleGroupItem value="overlay">{overlaySort}</ToggleGroupItem>
+                <ToggleGroupItem value="busiest">Busiest first</ToggleGroupItem>
+              </ToggleGroup>
+              )
+            : <span>Busiest first</span>}
           <div className="relative">
             <input
               type="search"
@@ -172,7 +209,9 @@ export function StatsTileGrid ({ tiles, interval, noun }: StatsTileGridProps) {
       {shown.length > 0
         ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
-            {shown.map((tile) => <StatsTile key={tile.name} tile={tile} interval={interval} noun={noun} />)}
+            {shown.map(({ tile, assessment }) => (
+              <StatsTile key={tile.name} tile={tile} interval={interval} noun={noun} assessment={assessment} />
+            ))}
           </div>
           )
         : (

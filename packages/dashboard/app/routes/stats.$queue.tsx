@@ -29,6 +29,8 @@ import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { StatsRateCard } from '~/components/stats-rate-card'
 import { ThroughputPanel } from '~/components/throughput-panel'
 import { DepthPanel } from '~/components/depth-panel'
+import { ProSlot, hasProSlot } from '~/components/pro-slot'
+import { cn } from '~/lib/utils'
 
 export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
@@ -88,6 +90,7 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const { noun } = STATS_INTERVALS[interval]
   const counted = arrived.current != null || arrived.previous != null
+  const withKpiSlot = hasProSlot('statsQueueKpi')
 
   const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams)
@@ -129,7 +132,7 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
         </p>
       )}
 
-      <section aria-label="Key figures" className="grid gap-4 sm:grid-cols-2">
+      <section aria-label="Key figures" className={cn('grid gap-4 sm:grid-cols-2', withKpiSlot && 'lg:grid-cols-[1fr_1fr_1.6fr]')}>
         <StatsRateCard
           label="Arrival rate"
           color="var(--stats-arrived)"
@@ -148,12 +151,18 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
           noun={noun}
           series={points.map(settledPerMin)}
         />
+        {withKpiSlot && (
+          <div className="grid sm:col-span-2 lg:col-span-1">
+            <ProSlot name="statsQueueKpi" queue={{ name, interval, bucketSeconds, points }} />
+          </div>
+        )}
       </section>
 
       {statsAvailable && (
         <>
-          <ThroughputPanel title="Throughput" points={points} noun={noun} range={range} bucketSeconds={bucketSeconds} syncKey={`stats:${name}`} />
+          <ThroughputPanel title="Throughput" queue={name} points={points} noun={noun} range={range} bucketSeconds={bucketSeconds} syncKey={`stats:${name}`} />
           <DepthPanel
+            queue={name}
             history={history}
             selected={depthSeries}
             onToggle={toggleSeries}

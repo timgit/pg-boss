@@ -4,7 +4,8 @@ import type { AlignedData } from 'uplot'
 import type { QueueThroughputPoint } from '~/lib/types'
 import { throughputColumns } from '~/lib/stats'
 import { formatRate } from '~/components/stats-rate-card'
-import { UplotChart } from '~/components/ui/uplot-chart'
+import { ProSlot, hasProSlot } from '~/components/pro-slot'
+import { UplotChart, type PlotBox } from '~/components/ui/uplot-chart'
 import { useCssColors, useElementWidth } from '~/components/ui/use-chart-frame'
 
 const HEIGHT = 220
@@ -110,12 +111,14 @@ function LegendKey ({ color, shape, children }: { color: string, shape: 'line' |
 
 interface ThroughputPanelProps {
   title: string
+  /** The queue charted, or null for all queues together. */
+  queue: string | null
   /** Every bucket across the previous and current windows, in order, gaps as empty points. */
   points: QueueThroughputPoint[]
   /** "hour", "6 hours", "24 hours": what the shaded half stands for. */
   noun: string
   /** The x extent in unix seconds: the previous window's start to the current window's end. */
-  range?: [number, number]
+  range: [number, number]
   /** Bucket width in seconds: a line bridges one missing bucket rather than breaking. */
   bucketSeconds?: number
   /** Charts sharing a key move one cursor together. */
@@ -125,11 +128,12 @@ interface ThroughputPanelProps {
 // Arrivals against jobs finishing (completed + failed), per minute, over the previous and current
 // windows: the gap between the lines shaded, failures as bars along the bottom, and a tooltip.
 // Fixed series, no toggles.
-export function ThroughputPanel ({ title, points, noun, range, bucketSeconds, syncKey }: ThroughputPanelProps) {
+export function ThroughputPanel ({ title, queue, points, noun, range, bucketSeconds, syncKey }: ThroughputPanelProps) {
   const [mounted, setMounted] = useState(false)
   const [frameRef, width] = useElementWidth<HTMLDivElement>(800)
   const colors = useCssColors(COLOR_VARS)
   const [hover, setHover] = useState<Hover | null>(null)
+  const [plotBox, setPlotBox] = useState<PlotBox | null>(null)
   const tipRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => setMounted(true), [])
@@ -184,6 +188,7 @@ export function ThroughputPanel ({ title, points, noun, range, bucketSeconds, sy
               bridgeSeconds={bucketSeconds && 2 * bucketSeconds}
               syncKey={syncKey}
               legend={false}
+              onPlotBox={setPlotBox}
             />
             {hover && (
               <div
@@ -204,6 +209,9 @@ export function ThroughputPanel ({ title, points, noun, range, bucketSeconds, sy
           </div>
         )}
       </div>
+      {plotBox && hasProSlot('statsChartMarkers') && (
+        <ProSlot name="statsChartMarkers" queue={queue} chart="throughput" from={range[0]} to={range[1]} plot={plotBox} />
+      )}
     </section>
   )
 }

@@ -12,6 +12,11 @@ export interface UplotSeries {
   bars?: boolean
 }
 
+export interface PlotBox {
+  left: number
+  width: number
+}
+
 interface UplotChartProps {
   /** uPlot aligned data: [xValues, ...ySeries]. x is unix seconds. */
   data: AlignedData
@@ -35,6 +40,8 @@ interface UplotChartProps {
   bridgeSeconds?: number
   /** Charts sharing a key move one cursor together. */
   syncKey?: string
+  /** Told where the plot area sits across the chart, in CSS pixels, whenever that changes. */
+  onPlotBox?: (box: PlotBox) => void
   /** uPlot's live legend under the plot. Off when the caller draws its own legend or tooltip. */
   legend?: boolean
 }
@@ -55,6 +62,7 @@ export function UplotChart ({
   xRange,
   bridgeSeconds,
   syncKey,
+  onPlotBox,
   legend = true,
 }: UplotChartProps) {
   const elRef = useRef<HTMLDivElement>(null)
@@ -63,6 +71,8 @@ export function UplotChart ({
   const xRangeRef = useRef(xRange)
   xRangeRef.current = xRange
   const fixedX = xRange != null
+  const onPlotBoxRef = useRef(onPlotBox)
+  onPlotBoxRef.current = onPlotBox
 
   // Rebuild key — only the structure, not the data/size, forces a fresh uPlot instance.
   const seriesKey = series.map((s) => `${s.label}:${s.stroke}:${s.bars ? 'bars' : 'line'}`).join('|')
@@ -89,6 +99,8 @@ export function UplotChart ({
         }
       : undefined
 
+    const reportBox = (u: uPlot) => onPlotBoxRef.current?.({ left: u.bbox.left / uPlot.pxRatio, width: u.bbox.width / uPlot.pxRatio })
+
     const opts: Options = {
       width,
       height,
@@ -104,6 +116,11 @@ export function UplotChart ({
       },
       axes: [axis, yAxis],
       plugins,
+      hooks: {
+        // bbox is in canvas pixels; the page lays out in CSS pixels.
+        ready: [reportBox],
+        setSize: [reportBox],
+      },
       series: [
         {},
         ...series.map((s) => s.bars
