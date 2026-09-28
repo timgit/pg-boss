@@ -18,14 +18,13 @@ import {
   statsWindows,
   windowAverage,
   type DepthSeriesKey,
-  type StatsInterval,
 } from '~/lib/stats'
 import type { QueueStatsAggregate } from '~/lib/types'
 import { DbLink } from '~/components/db-link'
 import { ErrorCard } from '~/components/error-card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Button } from '~/components/ui/button'
-import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
+import { StatsIntervalSwitch } from '~/components/stats-interval-switch'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { StatsRateCard } from '~/components/stats-rate-card'
 import { ThroughputPanel } from '~/components/throughput-panel'
@@ -95,7 +94,6 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
     params.set(key, value)
     setSearchParams(params, { preventScrollReset: true })
   }
-  const changeInterval = (next: StatsInterval) => setParam('interval', next)
   const toggleSeries = (key: DepthSeriesKey) => setParam(
     'series',
     (depthSeries.includes(key) ? depthSeries.filter((s) => s !== key) : [...depthSeries, key]).join(',')
@@ -109,15 +107,7 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
         subtitle={`Work arriving and finishing, compared with the previous ${noun}`}
         action={
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <ToggleGroup
-              aria-label="Interval"
-              value={[interval]}
-              onValueChange={(value) => { if (value[0]) changeInterval(value[0] as StatsInterval) }}
-            >
-              {Object.keys(STATS_INTERVALS).map((key) => (
-                <ToggleGroupItem key={key} value={key}>{key}</ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+            <StatsIntervalSwitch interval={interval} />
             <Button
               variant="outline"
               size="md"
