@@ -108,6 +108,12 @@ export interface QueueThroughputPoint {
   readyCount: number | null;
 }
 
+// One queue's throughput buckets, as the /stats overview reads them for every queue at once.
+export interface QueueThroughputSeries {
+  name: string;
+  points: QueueThroughputPoint[];
+}
+
 // Background async migration (BAM) status. Mirrors src/types.ts in the pg-boss core.
 export type BamStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import pg from 'pg'
 import { ctx, createTestQueue, insertQueueStatsHistory } from './helpers'
-import { getQueueThroughput } from '~/lib/queries.server'
+import { getQueueThroughput, getThroughputOverview } from '~/lib/queries.server'
 
 const MISSING_SCHEMA = 'pgboss_does_not_exist_xyz'
 const BUCKET = 300
@@ -104,5 +104,64 @@ describe('getQueueThroughput', () => {
     const points = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-a', window)
 
     expect(points.map((p) => [p.arrivedPerMin, p.readyCount])).toEqual([[60, 1]])
+  })
+})
+
+describe('getThroughputOverview', () => {
+  it('returns [] when the queue_stats table is absent (before v35)', async () => {
+    expect(await getThroughputOverview(ctx.connectionString, MISSING_SCHEMA, window)).toEqual([])
+  })
+
+  it('returns one series per queue, by name, each ascending', async () => {
+    await createTestQueue('ov-b')
+    await createTestQueue('ov-a')
+    await insertQueueStatsHistory(ctx.schema, 'ov-b', [
+      { capturedOn: at(BUCKET + 30), readyCount: 4, createdDelta: 4, completedDelta: 4, failedDelta: 0, deltaSeconds: 60 },
+      { capturedOn: at(30), readyCount: 2, createdDelta: 2, completedDelta: 1, failedDelta: 1, deltaSeconds: 60 },
+    ])
+    await insertQueueStatsHistory(ctx.schema, 'ov-a', [
+      { capturedOn: at(30), readyCount: 9, createdDelta: 90, completedDelta: 90, failedDelta: 0, deltaSeconds: 60 },
+    ])
+
+    const series = await getThroughputOverview(ctx.connectionString, ctx.schema, window)
+
+    expect(series).toEqual([
+      { name: 'ov-a', points: [{ bucketStart: t0, arrivedPerMin: 90, completedPerMin: 90, failedPerMin: 0, readyCount: 9 }] },
+      {
+        name: 'ov-b',
+        points: [
+          { bucketStart: t0, arrivedPerMin: 2, completedPerMin: 1, failedPerMin: 1, readyCount: 2 },
+          { bucketStart: t0 + BUCKET, arrivedPerMin: 4, completedPerMin: 4, failedPerMin: 0, readyCount: 4 },
+        ],
+      },
+    ])
+  })
+
+  it('keeps each queue\'s rate its own, not pooled across queues', async () => {
+    await createTestQueue('ov-fast')
+    await createTestQueue('ov-slow')
+    // Pooling would give (120 + 1) / (60 + 600) * 60 = 11 a minute for both.
+    await insertQueueStatsHistory(ctx.schema, 'ov-fast', [
+      { capturedOn: at(70), createdDelta: 120, completedDelta: 120, failedDelta: 0, deltaSeconds: 60 },
+    ])
+    await insertQueueStatsHistory(ctx.schema, 'ov-slow', [
+      { capturedOn: at(70), createdDelta: 1, completedDelta: 1, failedDelta: 0, deltaSeconds: 600 },
+    ])
+
+    const series = await getThroughputOverview(ctx.connectionString, ctx.schema, window)
+
+    expect(series.map((s) => [s.name, s.points[0].arrivedPerMin])).toEqual([
+      ['ov-fast', 120],
+      ['ov-slow', 0.1],
+    ])
+  })
+
+  it('includes a queue that has gauges but no counted pass yet', async () => {
+    await createTestQueue('ov-new')
+    await insertQueueStatsHistory(ctx.schema, 'ov-new', [{ capturedOn: at(30), readyCount: 5 }])
+
+    expect(await getThroughputOverview(ctx.connectionString, ctx.schema, window)).toEqual([
+      { name: 'ov-new', points: [{ bucketStart: t0, arrivedPerMin: null, completedPerMin: null, failedPerMin: null, readyCount: 5 }] },
+    ])
   })
 })

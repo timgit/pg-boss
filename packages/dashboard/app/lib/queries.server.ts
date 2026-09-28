@@ -13,6 +13,7 @@ import type {
   QueueStatsPoint,
   QueueStatsAggregate,
   QueueThroughputPoint,
+  QueueThroughputSeries,
   ScheduleResult,
   BamEntryResult,
   BamStatusSummary,
@@ -973,57 +974,67 @@ export interface QueueThroughputOptions {
   bucketSeconds: number;
 }
 
-// Throughput for one queue over [from, to), in fixed epoch-aligned buckets of bucketSeconds. The
-// counters are bucketed on delta_on, the end of the window a pass counted, and the ready gauge on
-// captured_on; core puts delta_on 10 seconds behind captured_on, so the two are aggregated apart
-// and joined on the bucket. Passes are unevenly spaced, so a rate is sum(delta) / sum(delta_seconds),
-// never delta / bucket width. The captured_on bound on the counters keeps the index and partition
-// pruning; its 15-minute margin covers the lag with room to spare. Returns buckets ascending, and
-// only buckets with data: the caller fills gaps. [] before v43 (42703) or before v35 (42P01).
-export async function getQueueThroughput (
-  dbUrl: string,
-  schema: string,
-  name: string,
-  options: QueueThroughputOptions
-): Promise<QueueThroughputPoint[]> {
-  const s = validateIdentifier(schema)
-  const { from, to } = options
-  const bucketSeconds = Math.max(1, Math.floor(options.bucketSeconds))
-
-  const sql = `
+// Throughput over [from, to), in fixed epoch-aligned buckets of bucketSeconds, for one queue or,
+// with no name, for every queue at once. The counters are bucketed on delta_on, the end of the
+// window a pass counted, and the ready gauge on captured_on; core puts delta_on 10 seconds behind
+// captured_on, so the two are aggregated apart and joined on queue and bucket. Passes are unevenly
+// spaced, so a rate is sum(delta) / sum(delta_seconds), never delta / bucket width. The captured_on
+// bound on the counters keeps the index and partition pruning; its 15-minute margin covers the lag
+// with room to spare. Only buckets with data come back: the caller fills gaps.
+function throughputSql (s: string, oneQueue: boolean): string {
+  const byName = oneQueue ? 'AND name = $4' : ''
+  return `
     WITH d AS (
       SELECT
-        (floor(extract(epoch from delta_on) / $4) * $4)::float8 AS t,
+        name,
+        (floor(extract(epoch from delta_on) / $3) * $3)::float8 AS t,
         sum(created_delta)::float8   AS created,
         sum(completed_delta)::float8 AS completed,
         sum(failed_delta)::float8    AS failed,
         sum(delta_seconds)::float8   AS secs
       FROM ${s}.queue_stats
-      WHERE name = $1
-        AND captured_on >= $2 AND captured_on < $3::timestamptz + interval '15 minutes'
-        AND delta_on >= $2 AND delta_on < $3
+      WHERE captured_on >= $1 AND captured_on < $2::timestamptz + interval '15 minutes'
+        AND delta_on >= $1 AND delta_on < $2
         AND delta_seconds > 0
-      GROUP BY 1
+        ${byName}
+      GROUP BY 1, 2
     ),
     g AS (
       SELECT
-        (floor(extract(epoch from captured_on) / $4) * $4)::float8 AS t,
+        name,
+        (floor(extract(epoch from captured_on) / $3) * $3)::float8 AS t,
         max(ready_count)::int AS ready
       FROM ${s}.queue_stats
-      WHERE name = $1 AND captured_on >= $2 AND captured_on < $3
-      GROUP BY 1
+      WHERE captured_on >= $1 AND captured_on < $2
+        ${byName}
+      GROUP BY 1, 2
     )
     SELECT
+      coalesce(d.name, g.name)      AS name,
       coalesce(d.t, g.t)            AS "bucketStart",
       d.created / d.secs * 60       AS "arrivedPerMin",
       d.completed / d.secs * 60     AS "completedPerMin",
       d.failed / d.secs * 60        AS "failedPerMin",
       g.ready                       AS "readyCount"
-    FROM d FULL JOIN g ON g.t = d.t
-    ORDER BY 1
+    FROM d FULL JOIN g ON g.name = d.name AND g.t = d.t
+    ORDER BY 1, 2
   `
+}
+
+type ThroughputRow = QueueThroughputPoint & { name: string }
+
+async function queryThroughput (
+  dbUrl: string,
+  schema: string,
+  options: QueueThroughputOptions,
+  name?: string
+): Promise<ThroughputRow[]> {
+  const s = validateIdentifier(schema)
+  const bucketSeconds = Math.max(1, Math.floor(options.bucketSeconds))
+  const params: unknown[] = [options.from, options.to, bucketSeconds]
+  if (name !== undefined) params.push(name)
   try {
-    return await query<QueueThroughputPoint>(dbUrl, sql, [name, from, to, bucketSeconds])
+    return await query<ThroughputRow>(dbUrl, throughputSql(s, name !== undefined), params)
   } catch (err: unknown) {
     // 42P01: no queue_stats (before v35). 42703: no delta columns (before v43).
     if (err && typeof err === 'object' && 'code' in err && (err.code === '42P01' || err.code === '42703')) {
@@ -1031,6 +1042,33 @@ export async function getQueueThroughput (
     }
     throw err
   }
+}
+
+// One queue's throughput, buckets ascending. [] before v43 or before v35.
+export async function getQueueThroughput (
+  dbUrl: string,
+  schema: string,
+  name: string,
+  options: QueueThroughputOptions
+): Promise<QueueThroughputPoint[]> {
+  const rows = await queryThroughput(dbUrl, schema, options, name)
+  return rows.map(({ name: _name, ...point }) => point)
+}
+
+// Every queue's throughput in one query, for the /stats overview: one entry per queue that has
+// stats in the window, by name, buckets ascending. A queue with no rows in the window is absent.
+export async function getThroughputOverview (
+  dbUrl: string,
+  schema: string,
+  options: QueueThroughputOptions
+): Promise<QueueThroughputSeries[]> {
+  const series: QueueThroughputSeries[] = []
+  for (const { name, ...point } of await queryThroughput(dbUrl, schema, options)) {
+    const last = series[series.length - 1]
+    if (last?.name === name) last.points.push(point)
+    else series.push({ name, points: [point] })
+  }
+  return series
 }
 
 // Whether queue stats are being collected. The queue_stats table is always created at schema v35;
