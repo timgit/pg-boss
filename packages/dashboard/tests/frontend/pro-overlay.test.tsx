@@ -36,6 +36,10 @@ function DemoQueueActions ({ queue }: { queue: { name: string, isDeadLetter: boo
   return <span data-testid="pro-queue-actions">{queue.name}{queue.isDeadLetter ? ' (dead letter)' : ''}</span>
 }
 
+function DemoJobActions ({ job }: { job: { id: string, name: string, state: string } }) {
+  return <span data-testid="pro-job-actions">{job.name}/{job.id} {job.state}</span>
+}
+
 async function renderSidebar () {
   // Import the providers from the same module graph as the sidebar: after
   // `vi.resetModules()` a statically imported provider would carry a different
@@ -70,6 +74,16 @@ describe('pro overlay', () => {
       const { container } = render(<ProSlot name="sidebarFooter" />)
 
       expect(container).toBeEmptyDOMElement()
+    })
+
+    it('fills no slot, so the free build draws no write controls', async () => {
+      mockOverlay(NO_OVERLAY)
+
+      const { hasProSlot } = await import('~/components/pro-slot')
+
+      for (const name of ['pageActions', 'queueActions', 'jobActions', 'jobRowActions', 'scheduleActions'] as const) {
+        expect(hasProSlot(name)).toBe(false)
+      }
     })
 
     it('leaves the free navigation untouched', async () => {
@@ -151,6 +165,25 @@ describe('pro overlay', () => {
       const { container } = render(<ProSlot name="queueActions" queue={{ name: 'email', isDeadLetter: false }} />)
 
       expect(container).toBeEmptyDOMElement()
+    })
+
+    // The free build has no actions of its own, so every write control arrives through a slot.
+    it('hands the job action slots the job, its queue and its state', async () => {
+      mockOverlay({ nav: [], slots: { jobActions: DemoJobActions, jobRowActions: DemoJobActions } })
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      render(<ProSlot name="jobRowActions" job={{ id: 'j1', name: 'emails', state: 'failed' }} />)
+
+      expect(screen.getByTestId('pro-job-actions')).toHaveTextContent('emails/j1 failed')
+    })
+
+    it('says which slots an overlay fills, so a page can leave out a column it would leave empty', async () => {
+      mockOverlay({ nav: [], slots: { jobActions: DemoJobActions } })
+
+      const { hasProSlot } = await import('~/components/pro-slot')
+
+      expect(hasProSlot('jobActions')).toBe(true)
+      expect(hasProSlot('jobRowActions')).toBe(false)
     })
 
     it('renders nothing for a slot the overlay leaves empty', async () => {
