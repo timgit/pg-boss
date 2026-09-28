@@ -9,6 +9,7 @@ import {
   STATS_INTERVALS,
   fillBuckets,
   parseStatsInterval,
+  queueSummaries,
   settledPerMin,
   statsWindows,
   sumSeries,
@@ -20,11 +21,13 @@ import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { StatsIntervalSwitch } from '~/components/stats-interval-switch'
 import { StatsRateCard } from '~/components/stats-rate-card'
 import { ThroughputPanel } from '~/components/throughput-panel'
+import { StatsTileGrid } from '~/components/stats-tiles'
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const interval = parseStatsInterval(new URL(request.url).searchParams.get('interval'))
-  const { bucketSeconds, previous, current } = statsWindows(interval)
+  const windows = statsWindows(interval)
+  const { bucketSeconds, previous, current } = windows
   const span = { from: previous.from, to: current.to }
 
   // One query for every queue: the per-queue series and, summed, the all-queues one.
@@ -46,6 +49,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     bucketSeconds,
     arrived: { current: windowAverage(points, current, arrived), previous: windowAverage(points, previous, arrived) },
     finishing: { current: windowAverage(points, current, settledPerMin), previous: windowAverage(points, previous, settledPerMin) },
+    tiles: queueSummaries(names, series, windows),
   }
 }
 
@@ -60,7 +64,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function StatsPage ({ loaderData }: Route.ComponentProps) {
-  const { interval, queueCount, statsAvailable, points, range, bucketSeconds, arrived, finishing } = loaderData
+  const { interval, queueCount, statsAvailable, points, range, bucketSeconds, arrived, finishing, tiles } = loaderData
   const { noun } = STATS_INTERVALS[interval]
   const counted = arrived.current != null || arrived.previous != null
 
@@ -105,6 +109,8 @@ export default function StatsPage ({ loaderData }: Route.ComponentProps) {
       {statsAvailable && (
         <ThroughputPanel title="Throughput, all queues" points={points} noun={noun} range={range} bucketSeconds={bucketSeconds} />
       )}
+
+      <StatsTileGrid tiles={tiles} interval={interval} noun={noun} />
     </div>
   )
 }
