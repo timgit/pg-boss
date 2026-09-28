@@ -124,6 +124,33 @@ describe("Breadcrumbs", () => {
     expect(screen.getByText("Jobs")).toBeInTheDocument();
   });
 
+  it("renders breadcrumbs for the stats page", () => {
+    vi.mocked(useLocation).mockReturnValue({ pathname: "/stats" } as any);
+    vi.mocked(useMatches).mockReturnValue([]);
+
+    render(
+      <MemoryRouter>
+        <Breadcrumbs />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Stats").closest("a")).toBeNull();
+  });
+
+  it("renders breadcrumbs for a queue's stats, linking back to all of them", () => {
+    vi.mocked(useLocation).mockReturnValue({ pathname: "/stats/my%20queue" } as any);
+    vi.mocked(useMatches).mockReturnValue([]);
+
+    render(
+      <MemoryRouter>
+        <Breadcrumbs />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Stats").closest("a")).toHaveAttribute("href", "/stats");
+    expect(screen.getByText("my queue")).toBeInTheDocument();
+  });
+
   it("renders breadcrumbs for warnings path", () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: "/warnings" } as any);
     vi.mocked(useMatches).mockReturnValue([]);
