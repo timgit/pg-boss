@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { RouterContextProvider } from 'react-router'
 import { ctx } from './helpers'
 import { dbContext } from '~/lib/db-context'
-import { capabilityContext } from '~/lib/capability-context'
-import { CAPABILITIES, DEFAULT_DENIAL, defaultCapabilities } from '~/lib/capabilities'
 import { loader as rootLoader } from '~/root'
 
 // A loader's return value is serialized into the HTML for hydration, so
@@ -47,57 +45,6 @@ async function load (databases = [primary, secondary]) {
 }
 
 describe('root loader', () => {
-  it('publishes capabilities so the UI can hide mutating controls', async () => {
-    const original = process.env.PGBOSS_DASHBOARD_READ_ONLY
-
-    try {
-      delete process.env.PGBOSS_DASHBOARD_READ_ONLY
-      const writable = (await load()).can
-      expect(CAPABILITIES.every((capability) => writable[capability] === true)).toBe(true)
-
-      process.env.PGBOSS_DASHBOARD_READ_ONLY = '1'
-      const readOnly = (await load()).can
-      expect(CAPABILITIES.every((capability) => readOnly[capability] === false)).toBe(true)
-    } finally {
-      if (original === undefined) {
-        delete process.env.PGBOSS_DASHBOARD_READ_ONLY
-      } else {
-        process.env.PGBOSS_DASHBOARD_READ_ONLY = original
-      }
-    }
-  })
-
-  /**
-   * The seam the Pro overlay uses: whatever it set in `loadContext` is what the
-   * browser is told, and the free dashboard's own answer is not merged into it.
-   * A role that permits less has to be able to permit less.
-   */
-  it('lets an overlay replace the capabilities and the denial wording', async () => {
-    const provider = new RouterContextProvider()
-
-    provider.set(dbContext, {
-      databases: [primary],
-      currentDb: primary,
-      DB_URL: primary.url,
-      SCHEMA: primary.schema,
-    })
-
-    provider.set(capabilityContext, {
-      capabilities: { 'job:retry': true },
-      denial: { title: 'Not permitted', detail: 'Your role does not include this.' },
-    })
-
-    const data = await rootLoader({
-      request: new Request('http://localhost/'),
-      context: provider,
-      params: {},
-    } as Parameters<typeof rootLoader>[0])
-
-    expect(data.can).toEqual({ 'job:retry': true })
-    expect(data.can['job:delete']).toBeUndefined()
-    expect(data.denial.title).toBe('Not permitted')
-  })
-
   it('never sends a connection string to the browser', async () => {
     const data = await load()
 
@@ -146,8 +93,6 @@ describe('root loader', () => {
     expect(data).toEqual({
       databases: [],
       currentDb: undefined,
-      can: defaultCapabilities(false),
-      denial: DEFAULT_DENIAL,
     })
   })
 })

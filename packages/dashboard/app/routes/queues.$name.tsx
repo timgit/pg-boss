@@ -1,21 +1,14 @@
 import { useState } from 'react'
-import { useFetcher, useSearchParams } from 'react-router'
-import { MoreHorizontal, ChevronDown, ChevronRight, LineChart } from 'lucide-react'
-import { Menu } from '@base-ui/react/menu'
+import { useSearchParams } from 'react-router'
+import { ChevronDown, ChevronRight, LineChart } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
-import { ProSlot } from '~/components/pro-slot'
+import { ProSlot, hasProSlot } from '~/components/pro-slot'
 import type { Route } from './+types/queues.$name'
-import { useCan } from '~/lib/use-capabilities'
 import {
   getQueue,
   getJobs,
   getJobCountFromQueue,
   getQueueStatsCollectionStatus,
-  cancelJob,
-  retryJob,
-  resumeJob,
-  deleteJob,
-  isValidIntent,
   isDeadLetterQueue,
 } from '~/lib/queries.server'
 import { Sparkline } from '~/components/ui/sparkline'
@@ -36,14 +29,6 @@ import {
 import { TablePagination } from '~/components/table-pagination'
 import { pageWindow, pageInfo } from '~/lib/pagination'
 import { FilterSelect } from '~/components/ui/filter-select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '~/components/ui/dialog'
 import { ErrorCard } from '~/components/error-card'
 import { JobColumnsEditor } from '~/components/job-columns-editor'
 import { JobColumnCell } from '~/components/job-column-cell'
@@ -115,57 +100,6 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
   }
 }
 
-export async function action ({ params, request, context }: Route.ActionArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
-  const formData = await request.formData()
-  const intent = formData.get('intent')
-  const jobId = formData.get('jobId') as string
-
-  if (!jobId || typeof jobId !== 'string') {
-    return { error: 'Job ID is required', affected: 0 }
-  }
-
-  if (!isValidIntent(intent)) {
-    return { error: 'Invalid action', affected: 0 }
-  }
-
-  let affected = 0
-  let message = ''
-
-  try {
-    switch (intent) {
-      case 'cancel':
-        affected = await cancelJob(DB_URL, SCHEMA, params.name, jobId)
-        message = affected > 0
-          ? 'Job cancelled'
-          : 'Job could not be cancelled (may already be completed or cancelled)'
-        break
-      case 'retry':
-        affected = await retryJob(DB_URL, SCHEMA, params.name, jobId)
-        message = affected > 0
-          ? 'Job queued for retry'
-          : 'Job could not be retried (only failed jobs can be retried)'
-        break
-      case 'resume':
-        affected = await resumeJob(DB_URL, SCHEMA, params.name, jobId)
-        message = affected > 0
-          ? 'Job resumed'
-          : 'Job could not be resumed (only cancelled jobs can be resumed)'
-        break
-      case 'delete':
-        affected = await deleteJob(DB_URL, SCHEMA, params.name, jobId)
-        message = affected > 0
-          ? 'Job deleted'
-          : 'Job could not be deleted (may be active or already deleted)'
-        break
-    }
-  } catch (err) {
-    return { error: 'Database error occurred', affected: 0 }
-  }
-
-  return { success: affected > 0, affected, message }
-}
-
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
@@ -177,7 +111,8 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
-  const maySend = useCan('job:send')
+  // Only an overlay acts on jobs; without one there is nothing to put in the column.
+  const withActions = hasProSlot('jobRowActions')
   const {
     queue,
     jobs,
@@ -242,13 +177,6 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
               <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
               View metrics
             </Button>
-            {maySend && (
-              <Button
-                variant="primary"
-                size="md"
-                render={<DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`} />}
-              >Send Job</Button>
-            )}
           </div>
         }
       />
@@ -395,19 +323,19 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
                 {jobColumns.map((col, index) => (
                   <TableHead key={`${col.path}-${index}`}>{col.name}</TableHead>
                 ))}
-                <TableHead>Actions</TableHead>
+                {withActions && <TableHead>Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {jobs.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={jobColumns.length + 1}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={jobColumns.length + (withActions ? 1 : 0)}>
                     No jobs found
                   </TableCell>
                 </TableRow>
               ) : (
                 jobs.map((job: JobResult) => (
-                  <JobRow key={job.id} job={job} queueName={queue.name} jobColumns={jobColumns} />
+                  <JobRow key={job.id} job={job} queueName={queue.name} jobColumns={jobColumns} withActions={withActions} />
                 ))
               )}
             </TableBody>
@@ -429,185 +357,29 @@ function JobRow ({
   job,
   queueName,
   jobColumns,
+  withActions,
 }: {
   job: JobResult
   queueName: string
   jobColumns: JobColumn[]
+  withActions: boolean
 }) {
-  // `canRetry` and friends below are job-state checks — whether this job can be
-  // retried at all. These are whether this person may. Both have to be true, and
-  // conflating them is how a viewer ends up looking at a Delete button.
-  const mayRetry = useCan('job:retry')
-  const mayResume = useCan('job:resume')
-  const mayCancel = useCan('job:cancel')
-  const mayDelete = useCan('job:delete')
-  const mayAct = mayRetry || mayResume || mayCancel || mayDelete
-  const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>()
-  const isLoading = fetcher.state !== 'idle'
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean
-    title: string
-    description: string
-    confirmLabel: string
-    intent: string
-  } | null>(null)
-
-  // Show feedback after action completes
-  const actionResult = fetcher.data
-  const showError = actionResult && !actionResult.success && actionResult.affected === 0
-
-  const submitAction = (intent: string) => {
-    fetcher.submit({ jobId: job.id, intent }, { method: 'post' })
-  }
-
-  const openConfirmDialog = (intent: string, title: string, description: string, confirmLabel: string) => {
-    setConfirmDialog({ open: true, title, description, confirmLabel, intent })
-  }
-
-  const handleConfirm = () => {
-    if (confirmDialog) {
-      submitAction(confirmDialog.intent)
-      setConfirmDialog(null)
-    }
-  }
-
-  // Determine available actions based on job state
-  const canCancel = job.state === 'created' || job.state === 'retry' || job.state === 'active'
-  const canRetry = job.state === 'failed'
-  const canResume = job.state === 'cancelled'
-  const canDelete = job.state !== 'active'
-
-  const menuItemClass = cn(
-    'flex w-full items-center px-3 py-2 text-sm cursor-pointer',
-    'outline-none transition-colors rounded-sm',
-    'text-gray-700 data-highlighted:bg-gray-100 data-highlighted:text-gray-900',
-    'dark:text-gray-300 dark:data-highlighted:bg-gray-800 dark:data-highlighted:text-gray-100'
-  )
-
-  const dangerMenuItemClass = cn(
-    'flex w-full items-center px-3 py-2 text-sm cursor-pointer',
-    'outline-none transition-colors rounded-sm',
-    'text-red-600 data-highlighted:bg-red-50 data-highlighted:text-red-700',
-    'dark:text-red-400 dark:data-highlighted:bg-red-950 dark:data-highlighted:text-red-300'
-  )
-
   return (
-    <>
-      <TableRow to={`/queues/${encodeURIComponent(queueName)}/jobs/${job.id}`}>
-        {jobColumns.map((column, index) => (
-          <JobColumnCell
-            key={`${column.path}-${index}`}
-            row={job}
-            column={column}
-            queueName={queueName}
-          />
-        ))}
+    <TableRow to={`/queues/${encodeURIComponent(queueName)}/jobs/${job.id}`}>
+      {jobColumns.map((column, index) => (
+        <JobColumnCell
+          key={`${column.path}-${index}`}
+          row={job}
+          column={column}
+          queueName={queueName}
+        />
+      ))}
+      {withActions && (
         <TableCell>
-          <div className="flex items-center gap-2">
-            {showError && (
-              <span className="text-xs text-amber-600 dark:text-amber-400" title={actionResult.message}>
-                Failed
-              </span>
-            )}
-            {mayAct && (
-              <Menu.Root>
-                <Menu.Trigger
-                  className={cn(
-                    'inline-flex items-center justify-center rounded-md p-1.5',
-                    'text-gray-500 hover:text-gray-900 hover:bg-gray-100',
-                    'dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800',
-                    'focus:outline-none focus:ring-2 focus:ring-primary-500',
-                    'transition-colors disabled:opacity-50'
-                  )}
-                  disabled={isLoading}
-                  aria-label="Job actions"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Menu.Trigger>
-                <Menu.Portal>
-                  <Menu.Positioner>
-                    <Menu.Popup
-                      className={cn(
-                        'min-w-[10rem] rounded-md border p-1 shadow-md z-50',
-                        'bg-white border-gray-200',
-                        'dark:bg-gray-900 dark:border-gray-800',
-                        'animate-in fade-in-0 zoom-in-95'
-                      )}
-                    >
-                      {mayRetry && canRetry && (
-                        <Menu.Item
-                          className={menuItemClass}
-                          onClick={() => submitAction('retry')}
-                        >
-                          Retry
-                        </Menu.Item>
-                      )}
-                      {mayResume && canResume && (
-                        <Menu.Item
-                          className={menuItemClass}
-                          onClick={() => submitAction('resume')}
-                        >
-                          Resume
-                        </Menu.Item>
-                      )}
-                      {mayCancel && canCancel && (
-                        <Menu.Item
-                          className={dangerMenuItemClass}
-                          onClick={() => openConfirmDialog(
-                            'cancel',
-                            'Cancel Job',
-                            `Are you sure you want to cancel job ${job.id}? This will stop the job from being processed.`,
-                            'Cancel Job'
-                          )}
-                        >
-                          Cancel
-                        </Menu.Item>
-                      )}
-                      {mayDelete && canDelete && (
-                        <Menu.Item
-                          className={dangerMenuItemClass}
-                          onClick={() => openConfirmDialog(
-                            'delete',
-                            'Delete Job',
-                            `Are you sure you want to delete job ${job.id}? This action cannot be undone.`,
-                            'Delete'
-                          )}
-                        >
-                          Delete
-                        </Menu.Item>
-                      )}
-                    </Menu.Popup>
-                  </Menu.Positioner>
-                </Menu.Portal>
-              </Menu.Root>
-            )}
-          </div>
+          <ProSlot name="jobRowActions" job={{ id: job.id, name: queueName, state: job.state }} />
         </TableCell>
-      </TableRow>
-
-      {/* Confirmation Dialog */}
-      <Dialog open={confirmDialog?.open ?? false} onOpenChange={(open) => !open && setConfirmDialog(null)}>
-        <DialogContent hideCloseButton className="w-[28rem] max-w-[calc(100vw-2rem)]">
-          <DialogHeader>
-            <DialogTitle>{confirmDialog?.title}</DialogTitle>
-            <DialogDescription className="mt-2">{confirmDialog?.description}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-6 flex justify-end gap-3">
-            <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => setConfirmDialog(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              className="cursor-pointer"
-              onClick={handleConfirm}
-            >
-              {confirmDialog?.confirmLabel}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+      )}
+    </TableRow>
   )
 }
 

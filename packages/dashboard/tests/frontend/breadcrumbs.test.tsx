@@ -97,20 +97,6 @@ describe("Breadcrumbs", () => {
     expect(screen.getByText("Schedules")).toBeInTheDocument();
   });
 
-  it("renders breadcrumbs for new schedule", () => {
-    vi.mocked(useLocation).mockReturnValue({ pathname: "/schedules/new" } as any);
-    vi.mocked(useMatches).mockReturnValue([]);
-
-    render(
-      <MemoryRouter>
-        <Breadcrumbs />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText("Schedules")).toBeInTheDocument();
-    expect(screen.getByText("New Schedule")).toBeInTheDocument();
-  });
-
   it("renders breadcrumbs for specific schedule", () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: "/schedules/my-schedule" } as any);
     vi.mocked(useMatches).mockReturnValue([]);
@@ -149,20 +135,6 @@ describe("Breadcrumbs", () => {
     );
 
     expect(screen.getByText("Warnings")).toBeInTheDocument();
-  });
-
-  it("renders breadcrumbs for send job path", () => {
-    vi.mocked(useLocation).mockReturnValue({ pathname: "/send" } as any);
-    vi.mocked(useMatches).mockReturnValue([]);
-
-    render(
-      <MemoryRouter>
-        <Breadcrumbs />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText("Queues")).toBeInTheDocument();
-    expect(screen.getByText("Send Job")).toBeInTheDocument();
   });
 
   it("returns null for unknown path", () => {

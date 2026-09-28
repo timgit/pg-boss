@@ -1,14 +1,13 @@
 import { useSearchParams } from 'react-router'
 import { useState, useEffect } from 'react'
 import { DbLink } from '~/components/db-link'
+import { ProSlot } from '~/components/pro-slot'
 import type { Route } from './+types/queues._index'
-import { useCan } from '~/lib/use-capabilities'
 import { getQueues, getQueueCount } from '~/lib/queries.server'
 import { Sparkline } from '~/components/ui/sparkline'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
 import { FilterSelect } from '~/components/ui/filter-select'
 import {
   Table,
@@ -89,7 +88,6 @@ export function ErrorBoundary () {
 }
 
 export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
-  const mayAct = useCan('queue:create')
   const { queues, totalCount, pageSize, page, totalPages, hasNextPage, hasPrevPage, filter, search } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
   const [searchInput, setSearchInput] = useState(search)
@@ -139,9 +137,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
       <PageHeader
         title="Queues"
         subtitle={`${totalCount.toLocaleString()} queue${totalCount !== 1 ? 's' : ''} ${hasActiveFilters ? 'found' : 'configured'}`}
-        action={!mayAct ? undefined : (
-          <Button variant="primary" size="md" render={<DbLink to="/queues/create" />}>Create Queue</Button>
-        )}
+        action={<ProSlot name="pageActions" page="queues" />}
       />
 
       {/* Search and Filters */}

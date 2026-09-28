@@ -987,13 +987,6 @@ export async function getQueueStatsCollectionStatus (
   }
 }
 
-const JOB_INTENTS = ['cancel', 'retry', 'resume', 'delete'] as const
-type JobActionIntent = (typeof JOB_INTENTS)[number]
-
-export function isValidIntent (intent: unknown): intent is JobActionIntent {
-  return typeof intent === 'string' && JOB_INTENTS.includes(intent as JobActionIntent)
-}
-
 // Get all schedules with pagination
 export async function getSchedules (
   dbUrl: string,
@@ -1061,5 +1054,5 @@ export async function getSchedule (
   return await queryOne<ScheduleResult>(dbUrl, sql, [name, key])
 }
 
-// Re-export job action methods from boss.server
-export { getJobById, cancelJob, retryJob, resumeJob, deleteJob } from './boss.server'
+// Re-exported so routes read jobs through one module
+export { getJobById } from './boss.server'

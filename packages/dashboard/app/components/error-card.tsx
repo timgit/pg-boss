@@ -9,7 +9,7 @@ interface ErrorCardProps {
    * The boundary's error, forwarded from `ErrorBoundary({ error })`.
    *
    * When it is a thrown `Response` the server wrote an explanation worth showing —
-   * a read-only refusal, or a "Queue not found" 404 — so it wins over the generic
+   * a refusal, or a "Queue not found" 404 — so it wins over the generic
    * copy below. Optional: a boundary with nothing better to say still renders fine.
    */
   error?: unknown
