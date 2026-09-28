@@ -3,19 +3,24 @@ import { ArrowLeft } from 'lucide-react'
 import type { Route } from './+types/stats.$queue'
 import {
   getQueue,
+  getQueueStatsHistory,
   getQueueThroughput,
   getQueueStatsCollectionStatus,
+  resolveAggregate,
 } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
 import {
   STATS_INTERVALS,
   fillBuckets,
+  parseDepthSeries,
   parseStatsInterval,
   settledPerMin,
   statsWindows,
   windowAverage,
+  type DepthSeriesKey,
   type StatsInterval,
 } from '~/lib/stats'
+import type { QueueStatsAggregate } from '~/lib/types'
 import { DbLink } from '~/components/db-link'
 import { ErrorCard } from '~/components/error-card'
 import { PageHeader } from '~/components/ui/page-header'
@@ -24,10 +29,13 @@ import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { StatsRateCard } from '~/components/stats-rate-card'
 import { ThroughputPanel } from '~/components/throughput-panel'
+import { DepthPanel } from '~/components/depth-panel'
 
 export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
-  const interval = parseStatsInterval(new URL(request.url).searchParams.get('interval'))
+  const search = new URL(request.url).searchParams
+  const interval = parseStatsInterval(search.get('interval'))
+  const aggregate = resolveAggregate(search.get('agg'))
   const { bucketSeconds, previous, current } = statsWindows(interval)
   const span = { from: previous.from, to: current.to }
 
@@ -36,8 +44,14 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     throw new Response('Queue not found', { status: 404 })
   }
 
-  const [points, collection] = await Promise.all([
+  const [points, history, collection] = await Promise.all([
     getQueueThroughput(DB_URL, SCHEMA, params.queue, { ...span, bucketSeconds }),
+    // The gauges at about the throughput panel's resolution, one point per bucket.
+    getQueueStatsHistory(DB_URL, SCHEMA, params.queue, {
+      ...span,
+      aggregate,
+      maxDataPoints: Math.round((span.to.getTime() - span.from.getTime()) / 1000 / bucketSeconds),
+    }),
     getQueueStatsCollectionStatus(DB_URL, SCHEMA),
   ])
 
@@ -49,6 +63,12 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     interval,
     statsAvailable: collection.available,
     points: filled,
+    range: [span.from.getTime() / 1000, span.to.getTime() / 1000] as [number, number],
+    boundary: current.from.getTime() / 1000,
+    bucketSeconds,
+    history,
+    aggregate,
+    depthSeries: parseDepthSeries(search.get('series')),
     arrived: { current: windowAverage(filled, current, arrived), previous: windowAverage(filled, previous, arrived) },
     finishing: { current: windowAverage(filled, current, settledPerMin), previous: windowAverage(filled, previous, settledPerMin) },
   }
@@ -65,16 +85,22 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
-  const { name, interval, statsAvailable, points, arrived, finishing } = loaderData
+  const { name, interval, statsAvailable, points, range, boundary, bucketSeconds, history, aggregate, depthSeries, arrived, finishing } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
   const { noun } = STATS_INTERVALS[interval]
   const counted = arrived.current != null || arrived.previous != null
 
-  const changeInterval = (next: StatsInterval) => {
+  const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams)
-    params.set('interval', next)
+    params.set(key, value)
     setSearchParams(params, { preventScrollReset: true })
   }
+  const changeInterval = (next: StatsInterval) => setParam('interval', next)
+  const toggleSeries = (key: DepthSeriesKey) => setParam(
+    'series',
+    (depthSeries.includes(key) ? depthSeries.filter((s) => s !== key) : [...depthSeries, key]).join(',')
+  )
+  const changeAggregate = (next: QueueStatsAggregate) => setParam('agg', next)
 
   return (
     <div className="space-y-4">
@@ -134,7 +160,22 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
         />
       </section>
 
-      {statsAvailable && <ThroughputPanel title="Throughput" points={points} noun={noun} />}
+      {statsAvailable && (
+        <>
+          <ThroughputPanel title="Throughput" points={points} noun={noun} range={range} bucketSeconds={bucketSeconds} syncKey={`stats:${name}`} />
+          <DepthPanel
+            history={history}
+            selected={depthSeries}
+            onToggle={toggleSeries}
+            aggregate={aggregate}
+            onAggregate={changeAggregate}
+            range={range}
+            boundary={boundary}
+            noun={noun}
+            syncKey={`stats:${name}`}
+          />
+        </>
+      )}
     </div>
   )
 }

@@ -81,3 +81,13 @@ describe('Sparkline', () => {
     expect(container.querySelector('rect')!.getAttribute('width')).toBe('100')
   })
 })
+
+describe('Sparkline stretch', () => {
+  it('fills the width without keeping its aspect ratio, strokes unscaled', () => {
+    const { container } = render(<Sparkline data={[1, 2, 3]} stretch />)
+    const svg = container.querySelector('svg')!
+    expect(svg.getAttribute('preserveAspectRatio')).toBe('none')
+    expect(svg.getAttribute('class')).toContain('w-full')
+    expect(container.querySelector('polyline')!.getAttribute('vector-effect')).toBe('non-scaling-stroke')
+  })
+})

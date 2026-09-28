@@ -14,6 +14,8 @@ interface SparklineProps {
   zeroBased?: boolean
   /** Shade the left part of the plot, as a fraction of its width (0.5 marks a previous half). */
   shadeTo?: number
+  /** Fill the container's width, stretching the plot rather than keeping its aspect ratio. */
+  stretch?: boolean
   className?: string
   'aria-label'?: string
 }
@@ -31,6 +33,7 @@ export function Sparkline ({
   showDot = true,
   zeroBased = false,
   shadeTo,
+  stretch = false,
   className,
   'aria-label': ariaLabel,
 }: SparklineProps) {
@@ -72,7 +75,8 @@ export function Sparkline ({
       height={height}
       viewBox={`0 0 ${width} ${height}`}
       // max-w-full keeps the fixed-width SVG from spilling out of a narrower container (e.g. a stat card).
-      className={cn('max-w-full overflow-visible', className)}
+      className={cn('max-w-full overflow-visible', stretch && 'w-full', className)}
+      preserveAspectRatio={stretch ? 'none' : undefined}
       role="img"
       aria-label={ariaLabel}
     >
@@ -88,6 +92,7 @@ export function Sparkline ({
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
+          vectorEffect={stretch ? 'non-scaling-stroke' : undefined}
         />
       ))}
       {showDot && last != null && (

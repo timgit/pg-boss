@@ -3,7 +3,9 @@ import {
   STATS_INTERVALS,
   byBusiest,
   fillBuckets,
+  metricsRedirectSearch,
   niceMax,
+  parseDepthSeries,
   parseStatsInterval,
   percentChange,
   settledPerMin,
@@ -190,5 +192,28 @@ describe('throughputColumns', () => {
       point(120),
     ])
     expect(cols).toEqual([[60, 120], [5, null], [4, null], [1, null]])
+  })
+})
+
+describe('parseDepthSeries', () => {
+  it('shows ready only by default, and nothing for an empty param', () => {
+    expect(parseDepthSeries(null)).toEqual(['ready'])
+    expect(parseDepthSeries('')).toEqual([])
+  })
+
+  it('keeps known series and drops the rest', () => {
+    expect(parseDepthSeries('ready, failed,bogus')).toEqual(['ready', 'failed'])
+  })
+})
+
+describe('metricsRedirectSearch', () => {
+  it('carries a range that is an interval, the series, the aggregate and the database', () => {
+    const search = metricsRedirectSearch(new URLSearchParams('range=6h&series=ready,failed&agg=avg&db=two&w=900'))
+    expect(new URLSearchParams(search)).toEqual(new URLSearchParams('interval=6h&series=ready,failed&agg=avg&db=two'))
+  })
+
+  it('drops a range with no interval, and custom bounds', () => {
+    expect(metricsRedirectSearch(new URLSearchParams('range=7d'))).toBe('')
+    expect(metricsRedirectSearch(new URLSearchParams('range=custom&from=2026-01-01&to=2026-01-02'))).toBe('')
   })
 })
