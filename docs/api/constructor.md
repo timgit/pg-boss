@@ -58,7 +58,7 @@ Maximum number of connections that will be shared by all operations in this inst
 
 ### `application_name`
 
-String, defaults to "pgboss"
+String, defaults to `pgboss:` followed by the first 8 characters of the instance's id, so each instance's connections can be told apart in `pg_stat_activity` and joined to [`getInstances()`](./ops.md#getinstances). With `registerInstance: false` the default is `"pgboss"`.
 
 ### `connectionTimeoutMillis`
 
@@ -297,11 +297,31 @@ Bool, default false
 
 If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
+With it on, each monitor pass also counts how many jobs were created, completed and failed, and how long the finished ones waited and ran, from the same pass over the job table that takes the counts. Measured on a job table of 2.5 million rows, the wait and run times add about 10% to that pass (about 55 ms on 560 ms). They also make a `queue_stats` snapshot larger: about 70 to 100 bytes a histogram, two per snapshot, where jobs finished, and a few bytes where none did.
+
 ### `queueStatRetentionDays`
 
 Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
+
+### `registerInstance`
+
+Bool, default true
+
+Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`, so [`getInstances()`](./ops.md#getinstances) can list every pg-boss instance sharing the database. The heartbeat is one statement per instance every `instanceHeartbeatSeconds`, on its own timer, and nothing on the job path waits for it. Set to false to leave this instance out of the registry.
+
+### `instanceName`
+
+String, optional
+
+A name for this instance in the registry, such as `api` or `billing-worker`. Instances of the same deployment can share one.
+
+### `instanceHeartbeatSeconds`
+
+Int, default 30
+
+How often this instance refreshes its registry row. It reads as quiet, rather than live, once three heartbeats are missed. Must be from 1 to 3600.
 
 ## Testing
 

@@ -66,6 +66,15 @@ type XminHorizonRow = Partial<Record<plans.XminHorizonSource, number | null>> & 
   selfApplicationName?: string | null
 }
 
+// Whether a backend's application_name says it is pg-boss, as this connection is: the same name, or
+// both named for a registered instance (pgboss:<id>). Another pg-boss instance pinning the horizon
+// takes the same fix as this one doing it.
+function isPgBossHolder (app: string | null, self: string | null | undefined): boolean {
+  if (!app) return false
+  if (app === self) return true
+  return app.startsWith('pgboss:') && !!self?.startsWith('pgboss:')
+}
+
 // Name the holder as specifically as the catalog allowed. Falls back to the holder class when the
 // source is not a backend (a replication slot has no pid to report) or when no backend row came
 // back, so the warning never loses the description it had before.
@@ -94,7 +103,9 @@ function describeXminHolder (source: plans.XminHorizonSource, row: XminHorizonRo
     ? 'a backend with no application_name'
     : app === row.selfApplicationName
       ? "this application's own connection"
-      : 'another application'
+      : isPgBossHolder(app, row.selfApplicationName)
+        ? "another pg-boss instance's connection"
+        : 'another application'
 
   return `${who} (${where}) has held a transaction open ${open}`
 }
@@ -279,6 +290,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
     await this.#executeQuery(sql)
   }
 
+  // Whether or not this instance registers: the registry is the database's, not this instance's.
+  async #maintainInstances () {
+    await this.#executeQuery(plans.deleteOldInstances(this.#config.schema, plans.INSTANCE_RETENTION_DAYS))
+  }
+
   async #ensureQueueStatsPartitions () {
     const sql = plans.ensureQueueStatsPartitions(this.#config.schema)
     await this.#executeQuery(sql)
@@ -377,6 +393,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     await this.#maintainWarnings()
     await this.#maintainQueueStats()
+    await this.#maintainInstances()
 
     // Last in the pass: a rebuild is DDL that can run for seconds, so nothing time-sensitive
     // (expiry, deletion, stats) should ever queue behind it.
@@ -763,14 +780,14 @@ class Boss extends EventEmitter implements types.EventsMixin {
         holder: describeXminHolder(holder.source, horizon.row),
         holderClass: XMIN_HOLDERS[holder.source],
         // Null unless the holder is a backend this role could read a row for. `self` says whether it
-        // shares this connection's application_name. A pg-boss instance pinning its own horizon and an
-        // external reporting tool pinning it have opposite fixes.
+        // is pg-boss: this connection's application_name, or another registered instance's. A pg-boss
+        // instance pinning its own horizon and an external reporting tool pinning it have opposite fixes.
         holderPid: backend?.pid ?? null,
         holderApplicationName: backend?.applicationName ?? null,
         holderUserName: backend?.userName ?? null,
         holderState: backend?.state ?? null,
         holderTransactionSeconds: backend?.xactSeconds ?? null,
-        self: backend ? backend.applicationName === horizon.row.selfApplicationName : null,
+        self: backend ? isPgBossHolder(backend.applicationName || null, horizon.row.selfApplicationName) : null,
         // Backends whose transaction this role is not allowed to time. Non-zero means the picture is
         // partial, whether or not a holder was named.
         opaqueBackends: opaque,

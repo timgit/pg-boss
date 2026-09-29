@@ -76,7 +76,8 @@ export default defineConfig({
         items: [
           { text: 'Job Table', link: '/sql/job-table' },
           { text: 'Queue Functions', link: '/sql/queue-functions' },
-          { text: 'Warning Table', link: '/sql/warning-table' }
+          { text: 'Warning Table', link: '/sql/warning-table' },
+          { text: 'Instance Table', link: '/sql/instance-table' }
         ]
       }
     ],

@@ -205,6 +205,8 @@ export function create (schema: string, version: number, options?: CreateOptions
     createTableJobDependency(schema),
     createIndexJobDependencyParent(schema),
 
+    createTableInstance(schema),
+
     createQueueFunction(schema, noPartitioning),
     deleteQueueFunction(schema, noPartitioning),
 
@@ -235,6 +237,7 @@ function createInline (schema: string, version: number, options: { createSchema?
     inlineIntoCreateTable(createTableWarning(schema), [createIndexWarning(schema)]),
     inlineIntoCreateTable(createTableQueueStats(schema, true), [createIndexQueueStats(schema, options.noCovering)]),
     inlineIntoCreateTable(createTableJobDependency(schema), [createIndexJobDependencyParent(schema)]),
+    createTableInstance(schema),
 
     createQueueFunction(schema, true),
     deleteQueueFunction(schema, true),
@@ -371,7 +374,11 @@ function createTableVersion (schema: string) {
 // try-lock - without capturedOn claiming a freshness the counts do not have.
 // created_delta / completed_delta / failed_delta are not gauges like the counts beside them: they
 // are how many jobs went through between the previous monitor pass and the latest one. delta_on and
-// delta_seconds are the window those three cover, null until a pass counts.
+// delta_seconds are the window those three cover, null until a pass counts. wait_slots/wait_counts
+// and run_slots/run_counts are the wait and run times of the jobs that finished in that window, as
+// sparse histograms (see LATENCY_BINS), and oldest_ready_seconds is how long the oldest job ready to
+// run had waited at the pass. Like the deltas, all of them are null until a pass counts, and a pass
+// that counts writes a value: empty histograms when nothing finished, 0 when nothing was waiting.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -400,6 +407,11 @@ function createTableQueue (schema: string) {
       failed_delta int NOT NULL default 0,
       delta_on timestamp with time zone,
       delta_seconds int,
+      wait_slots smallint[],
+      wait_counts int[],
+      run_slots smallint[],
+      run_counts int[],
+      oldest_ready_seconds int,
       ready_history int[] NOT NULL default '{}',
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
@@ -513,9 +525,145 @@ export function createTableJobDependency (schema: string) {
   `
 }
 
+// An instance is live until it misses this many heartbeats, and its row is deleted once its heartbeat
+// has not moved for this many days.
+export const INSTANCE_QUIET_BEATS = 3
+export const INSTANCE_RETENTION_DAYS = 7
+
+// Instance registry statements. $1 is the instance id throughout. Registering replaces the row, so a
+// PgBoss object restarted after stop() reads as live again from a new started_on. A heartbeat is an
+// upsert too: a row pruned while its process was paused (a laptop asleep past the retention) comes
+// back on the next beat, keeping the started_on the instance registered with ($17).
+const INSTANCE_COLUMNS = `id, name, host, pid, version, node_version, heartbeat_seconds,
+      supervise, schedule, migrate, persist_queue_stats, persist_warnings,
+      pool_max, pool_total, pool_idle, pool_waiting, workers, application_name, started_on, heartbeat_on`
+
+const INSTANCE_VALUES = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb,
+      current_setting('application_name')`
+
+const INSTANCE_BEAT = `pool_max = EXCLUDED.pool_max,
+        pool_total = EXCLUDED.pool_total,
+        pool_idle = EXCLUDED.pool_idle,
+        pool_waiting = EXCLUDED.pool_waiting,
+        workers = EXCLUDED.workers,
+        heartbeat_on = EXCLUDED.heartbeat_on`
+
+export function registerInstance (schema: string) {
+  return `
+    INSERT INTO ${schema}.instance (${INSTANCE_COLUMNS})
+    VALUES (${INSTANCE_VALUES}, ${schema}.job_now(), ${schema}.job_now())
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      host = EXCLUDED.host,
+      pid = EXCLUDED.pid,
+      version = EXCLUDED.version,
+      node_version = EXCLUDED.node_version,
+      heartbeat_seconds = EXCLUDED.heartbeat_seconds,
+      supervise = EXCLUDED.supervise,
+      schedule = EXCLUDED.schedule,
+      migrate = EXCLUDED.migrate,
+      persist_queue_stats = EXCLUDED.persist_queue_stats,
+      persist_warnings = EXCLUDED.persist_warnings,
+      application_name = EXCLUDED.application_name,
+      started_on = EXCLUDED.started_on,
+      stopped_on = NULL,
+      ${INSTANCE_BEAT}
+    RETURNING started_on as "startedOn"
+  `
+}
+
+export function heartbeatInstance (schema: string) {
+  return `
+    INSERT INTO ${schema}.instance (${INSTANCE_COLUMNS})
+    VALUES (${INSTANCE_VALUES}, $18::timestamptz, ${schema}.job_now())
+    ON CONFLICT (id) DO UPDATE SET
+      ${INSTANCE_BEAT}
+  `
+}
+
+export function stopInstance (schema: string) {
+  return `UPDATE ${schema}.instance SET stopped_on = ${schema}.job_now() WHERE id = $1`
+}
+
+// Rows whose heartbeat has not moved for the retention, stopped or quiet alike. A live instance's
+// row never qualifies, since its heartbeat keeps moving.
+export function deleteOldInstances (schema: string, days: number) {
+  return `
+    DELETE FROM ${schema}.instance
+    WHERE heartbeat_on < ${schema}.job_now() - interval '${days} days'
+  `
+}
+
+export function getInstances (schema: string) {
+  return `
+    SELECT
+      id,
+      name,
+      host,
+      pid,
+      version,
+      node_version as "nodeVersion",
+      application_name as "applicationName",
+      heartbeat_seconds as "heartbeatSeconds",
+      supervise,
+      schedule,
+      migrate,
+      persist_queue_stats as "persistQueueStats",
+      persist_warnings as "persistWarnings",
+      pool_max as "poolMax",
+      pool_total as "poolTotal",
+      pool_idle as "poolIdle",
+      pool_waiting as "poolWaiting",
+      workers,
+      started_on as "startedOn",
+      heartbeat_on as "heartbeatOn",
+      stopped_on as "stoppedOn",
+      stopped_on IS NULL AND heartbeat_on >= ${schema}.job_now() - heartbeat_seconds * ${INSTANCE_QUIET_BEATS} * interval '1 second' as live
+    FROM ${schema}.instance
+    ORDER BY started_on, id
+  `
+}
+
 export function createIndexJobDependencyParent (schema: string) {
   return `CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`
 }
+
+/* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
+// One row per PgBoss object, written by the object itself at start() and on each heartbeat, so a
+// database can say which instances share it and what each is doing. A crashed process never sets
+// stopped_on; it goes quiet instead, when heartbeat_on stops moving, and heartbeat_seconds says how
+// long that takes for this row, since the interval is per instance. workers is one entry per work()
+// call. The pool columns are node-postgres's counts at the last heartbeat, null for a pool pg-boss
+// was handed and cannot read. application_name is the one the registering session carried, so
+// pg_stat_activity joins to the row wherever it is unique.
+export function createTableInstance (schema: string) {
+  return `
+    CREATE TABLE ${schema}.instance (
+      id uuid PRIMARY KEY,
+      name text,
+      host text NOT NULL,
+      pid int NOT NULL,
+      version text NOT NULL,
+      node_version text NOT NULL,
+      application_name text,
+      heartbeat_seconds int NOT NULL,
+      supervise bool NOT NULL,
+      schedule bool NOT NULL,
+      migrate bool NOT NULL,
+      persist_queue_stats bool NOT NULL,
+      persist_warnings bool NOT NULL,
+      pool_max int,
+      pool_total int,
+      pool_idle int,
+      pool_waiting int,
+      workers jsonb NOT NULL DEFAULT '[]'::jsonb,
+      started_on timestamptz NOT NULL DEFAULT now(),
+      heartbeat_on timestamptz NOT NULL DEFAULT now(),
+      stopped_on timestamptz
+    )
+  `
+}
+/* eslint-enable no-restricted-syntax */
 
 // Anchored so a schema name that itself contains these substrings (e.g. `job_intake`) isn't
 // mangled: `\.job\y` matches only the base table reference (`schema.job`, not `schema.job_i5` whose
@@ -1558,6 +1706,11 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       failed_delta    int,
       delta_seconds   int,
       delta_on        timestamptz,
+      wait_slots      smallint[],
+      wait_counts     int[],
+      run_slots       smallint[],
+      run_counts      int[],
+      oldest_ready_seconds int,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
@@ -1656,9 +1809,11 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
   const sql = `
     INSERT INTO ${schema}.queue_stats
       (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-       created_delta, completed_delta, failed_delta, delta_seconds, delta_on, captured_on)
+       created_delta, completed_delta, failed_delta, delta_seconds, delta_on,
+       wait_slots, wait_counts, run_slots, run_counts, oldest_ready_seconds, captured_on)
     SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-           created_delta, completed_delta, failed_delta, delta_seconds, delta_on, ${schema}.job_now()
+           created_delta, completed_delta, failed_delta, delta_seconds, delta_on,
+           wait_slots, wait_counts, run_slots, run_counts, oldest_ready_seconds, ${schema}.job_now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -1692,6 +1847,11 @@ export function getQueueStatsCache (schema: string): string {
       failed_delta    as "failedDelta",
       delta_seconds   as "deltaSeconds",
       delta_on        as "deltaOn",
+      wait_slots      as "waitSlots",
+      wait_counts     as "waitCounts",
+      run_slots       as "runSlots",
+      run_counts      as "runCounts",
+      oldest_ready_seconds as "oldestReadySeconds",
       table_name     as "table",
       monitor_on     as "capturedOn",
       (extract(epoch from (${schema}.job_now() - monitor_on)) * 1000)::float8 as "cacheAgeMs",
@@ -1716,6 +1876,11 @@ export function getQueueStatsHistory (schema: string): string {
       failed_delta    as "failedDelta",
       delta_seconds   as "deltaSeconds",
       delta_on        as "deltaOn",
+      wait_slots      as "waitSlots",
+      wait_counts     as "waitCounts",
+      run_slots       as "runSlots",
+      run_counts      as "runCounts",
+      oldest_ready_seconds as "oldestReadySeconds",
       captured_on    as "capturedOn"
     FROM ${schema}.queue_stats
     WHERE name = $1
@@ -1825,7 +1990,9 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         sum(completed_delta)::int as "completedDelta",
         sum(failed_delta)::int    as "failedDelta",
         sum(delta_seconds)::int   as "deltaSeconds",
-        max(delta_on)             as "deltaOn"
+        max(delta_on)             as "deltaOn",
+        bool_or(wait_slots IS NOT NULL) as "latencyMeasured",
+        max(oldest_ready_seconds) as "oldestReadySeconds"
       FROM ${schema}.queue_stats, w
       WHERE name = $1
         AND delta_on IS NOT NULL
@@ -1849,10 +2016,49 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         c."completedDelta",
         c."failedDelta",
         c."deltaSeconds",
-        c."deltaOn"
+        c."deltaOn",
+        c."latencyMeasured",
+        c."oldestReadySeconds",
+        c.bucket as "counterBucket"
       FROM gauges g
         FULL JOIN counters c ON c.bucket = g.bucket
-    )
+    ),
+    -- Wait and run histograms, added up per returned bucket in SQL, so a bucket comes back as one
+    -- histogram however many passes it covers. Each pass lands in the bucket its counters were placed
+    -- in above, then its (slot, count) pairs are summed per bucket and slot.
+    passes AS (
+      SELECT ${bucket('delta_on')} as "counterBucket", wait_slots, wait_counts, run_slots, run_counts
+      FROM ${schema}.queue_stats, w
+      WHERE name = $1
+        AND delta_on IS NOT NULL
+        AND wait_slots IS NOT NULL
+        AND ($2::timestamptz IS NULL OR delta_on >= $2)
+        AND ($3::timestamptz IS NULL OR delta_on <= $3)
+    ),
+    slots AS (
+      SELECT p.bucket, 'wait' AS kind, u.slot::int AS slot, sum(u.n)::bigint AS n
+      FROM (SELECT DISTINCT bucket, "counterBucket" FROM placed) p
+        JOIN passes r ON r."counterBucket" = p."counterBucket",
+        unnest(r.wait_slots, r.wait_counts) AS u(slot, n)
+      GROUP BY 1, 2, 3
+      UNION ALL
+      SELECT p.bucket, 'run' AS kind, u.slot::int AS slot, sum(u.n)::bigint AS n
+      FROM (SELECT DISTINCT bucket, "counterBucket" FROM placed) p
+        JOIN passes r ON r."counterBucket" = p."counterBucket",
+        unnest(r.run_slots, r.run_counts) AS u(slot, n)
+      GROUP BY 1, 2, 3
+    ),
+    histograms AS (
+      SELECT
+        bucket,
+        array_agg(slot ORDER BY slot) FILTER (WHERE kind = 'wait') as "waitSlots",
+        array_agg(n ORDER BY slot) FILTER (WHERE kind = 'wait')    as "waitCounts",
+        array_agg(slot ORDER BY slot) FILTER (WHERE kind = 'run')  as "runSlots",
+        array_agg(n ORDER BY slot) FILTER (WHERE kind = 'run')     as "runCounts"
+      FROM slots
+      GROUP BY 1
+    ),
+    folded AS (
     SELECT
       bucket as "capturedOn",
       max("deferredCount")::int as "deferredCount",
@@ -1865,11 +2071,17 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
       sum("completedDelta")::int as "completedDelta",
       sum("failedDelta")::int    as "failedDelta",
       sum("deltaSeconds")::int   as "deltaSeconds",
-      max("deltaOn")             as "deltaOn"
+      max("deltaOn")             as "deltaOn",
+      bool_or("latencyMeasured") as "latencyMeasured",
+      max("oldestReadySeconds")::int as "oldestReadySeconds"
     FROM placed
     WHERE bucket IS NOT NULL
     GROUP BY 1
-    ORDER BY 1 DESC
+    )
+    SELECT f.*, h."waitSlots", h."waitCounts", h."runSlots", h."runCounts"
+    FROM folded f
+      LEFT JOIN histograms h ON h.bucket = f."capturedOn"
+    ORDER BY f."capturedOn" DESC
     LIMIT ${limit}
   `
 }
@@ -3517,7 +3729,12 @@ function throughputAssignments (end: string, resetMax?: string): string {
       completed_delta = COALESCE(stats."completedDelta", 0),
       failed_delta = COALESCE(stats."failedDelta", 0),
       delta_seconds = CASE WHEN ${seconds} < 0 THEN 0 ELSE ${seconds} END,
-      delta_on = GREATEST(queue.delta_on, ${end}),`
+      delta_on = GREATEST(queue.delta_on, ${end}),
+      wait_slots = COALESCE(stats."waitSlots", '{}'::smallint[]),
+      wait_counts = COALESCE(stats."waitCounts", '{}'::int[]),
+      run_slots = COALESCE(stats."runSlots", '{}'::smallint[]),
+      run_counts = COALESCE(stats."runCounts", '{}'::int[]),
+      oldest_ready_seconds = COALESCE(stats."oldestReadySeconds", 0),`
 }
 
 // The windows a true-up may still revise, per queue: every recorded snapshot whose window ends
@@ -3691,6 +3908,55 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
   return transaction(sql)
 }
 
+// Wait and run times, as the monitor records them: a histogram per counted pass, of the jobs that
+// finished in its window. Slot 0 holds times under 10 ms, slots 1 to LATENCY_BINS bins that each
+// grow by √2 (slot k runs from 10 ms · √2^(k-1) to 10 ms · √2^k), and the last slot everything past
+// about 23 hours. Log-spaced because the times span six orders of magnitude, and a percentile read
+// from them is within one bin, 19% at most. Histograms rather than percentiles, because histograms
+// add: a reader sums them across passes, buckets or queues and reads any percentile from the sum.
+// Stored sparse, the used slots and their counts in two arrays side by side: a pass covers one
+// queue for one interval and its times cluster, so most of the 48 slots are empty (measured at 5 to
+// 10 used, 70 to 100 bytes a histogram against 216 for all 48). getQueueStats() hands them out whole.
+export const LATENCY_BINS = 46
+export const LATENCY_SLOTS = LATENCY_BINS + 2
+export const LATENCY_MIN_SECONDS = 0.01
+
+// Both bins travel packed in one integer (wait * LATENCY_PACK + run), so the aggregate needs one
+// array and one filter. Two arrays, each with its own filter evaluated on every row of the table,
+// cost twice as much: measured on 2.5M rows, +55 ms on a ~560 ms pass packed, +80 to 120 ms apart.
+const LATENCY_PACK = 64
+
+const waitSeconds = 'extract(epoch from (j.started_on - GREATEST(j.created_on, j.start_after)))'
+const runSeconds = 'extract(epoch from (j.completed_on - j.started_on))'
+
+// The slot is width_bucket's, written out: CockroachDB's width_bucket takes decimals, not float8.
+// ln(t / 10 ms) over ln(√2), plus one, clamped to slot 0 below 10 ms and the last slot past the end.
+// A duration of zero or less (stamps from two clocks) lands in slot 0.
+function latencyBin (seconds: string): string {
+  const lo = Math.log(LATENCY_MIN_SECONDS)
+  const width = Math.log(2) / 2
+  const raw = `floor((ln(GREATEST((${seconds})::float8, 0.001::float8)) - ${lo}::float8) / ${width}::float8)::int + 1`
+  return `LEAST(GREATEST(${raw}, 0), ${LATENCY_SLOTS - 1})`
+}
+
+// Unpacks the aggregate's array into one sparse histogram: the slots that hold a job, ascending, and
+// beside them how many jobs each holds. A slot not listed holds none. Empty rather than null when
+// nothing finished, so a pass that counted says so, as its deltas do. floor() of a float division
+// rather than integer division, which CockroachDB answers in decimal.
+function latencySlotOf (which: 'wait' | 'run'): string {
+  return which === 'wait' ? `floor(p / ${LATENCY_PACK}.0)::int` : `(p % ${LATENCY_PACK})::int`
+}
+
+function latencySlots (packed: string, which: 'wait' | 'run'): string {
+  return `COALESCE((SELECT array_agg(slot::smallint ORDER BY slot)
+          FROM (SELECT DISTINCT ${latencySlotOf(which)} AS slot FROM unnest(${packed}) AS u(p)) x), '{}'::smallint[])`
+}
+
+function latencyCounts (packed: string, which: 'wait' | 'run'): string {
+  return `COALESCE((SELECT array_agg(n ORDER BY slot)
+          FROM (SELECT ${latencySlotOf(which)} AS slot, count(*)::int AS n FROM unnest(${packed}) AS u(p) GROUP BY 1) x), '{}'::int[])`
+}
+
 // Every count the monitor keeps, from one pass over the queue's table.
 //
 // Six of them are gauges — what the queue looks like right now. Three are not:
@@ -3728,11 +3994,20 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         "createdDelta",
         "completedDelta",
         "failedDelta",
+        ${latencySlots('"latencyBins"', 'wait')} as "waitSlots",
+        ${latencyCounts('"latencyBins"', 'wait')} as "waitCounts",
+        ${latencySlots('"latencyBins"', 'run')} as "runSlots",
+        ${latencyCounts('"latencyBins"', 'run')} as "runCounts",
+        "oldestReadySeconds",
         COALESCE("recount" > "settled", false) as "trueUp",`,
         counts: `
             (count(*) FILTER (WHERE ${inWindow('created_on')}))::int as "createdDelta",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}' AND ${inWindow('completed_on')}))::int as "completedDelta",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND ${inWindow('completed_on')}))::int as "failedDelta",
+            array_agg(${latencyBin(waitSeconds)} * ${LATENCY_PACK} + ${latencyBin(runSeconds)})
+              FILTER (WHERE j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') AND j.started_on IS NOT NULL AND ${inWindow('completed_on')}) as "latencyBins",
+            round(extract(epoch from (${schema}.job_now() - min(GREATEST(j.created_on, j.start_after))
+              FILTER (WHERE j.state < '${JOB_STATES.active}' AND NOT j.blocked AND j.start_after <= ${schema}.job_now()))))::int as "oldestReadySeconds",
             sum(
               CASE WHEN ${settled('created_on')} THEN 1 ELSE 0 END +
               CASE WHEN ${settled('completed_on')} AND j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') THEN 1 ELSE 0 END
@@ -4392,7 +4667,7 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
 const BASE_JOB_INDEXES = [4, 7, 9, 11, 12]
 
 // The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
-const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency']
+const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency', 'instance']
 
 // Selects the manifest section for the live architecture, and substitutes the real schema name back in
 // for the placeholder the manifest stores.

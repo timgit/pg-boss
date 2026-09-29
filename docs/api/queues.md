@@ -226,6 +226,43 @@ and three deltas: how many jobs were created, completed, and failed in the windo
 * `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
 * `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
 
+Alongside the deltas, and recorded under the same conditions, how long jobs waited and ran. Like the deltas, they are `null` when nothing measured them (`persistQueueStats` disabled on the calling instance, or a snapshot captured before pg-boss 12.36), and a measured pass in which nothing finished has histograms of all zeros.
+
+* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, or a retry sitting out its backoff, is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
+* `runBins`: how long the same jobs ran, from start to finish, in the same bins.
+* `oldestReadySeconds`: how long the oldest job ready to run had waited when the snapshot was captured, leaving out deferred jobs and jobs blocked by a dependency. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
+
+#### Latency histograms
+
+`waitBins` and `runBins` each hold 48 counts. Slot 0 counts times under 10 ms, slot `k` from 1 to 46 counts times from `0.01 * √2^(k-1)` up to `0.01 * √2^k` seconds, and slot 47 everything longer (about 23 hours). Histograms add: to read a percentile over several snapshots, or several queues, add the counts slot by slot first, then read it from the sum. Averaging percentiles taken from smaller spans does not give a percentile. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up.
+
+In `queue_stats` each histogram is stored as two arrays side by side, the slots that hold at least one job (`wait_slots`, ascending) and how many each holds (`wait_counts`); a slot not listed holds none, and a measured pass in which nothing finished stores two empty arrays. To add them up in SQL, unnest the two together: `SELECT u.slot, sum(u.n) FROM queue_stats s, unnest(s.wait_slots, s.wait_counts) AS u(slot, n) WHERE … GROUP BY 1`.
+
+```js
+// The p95 wait over the last hour, from the snapshots in it
+const hour = await boss.getQueueStats('email-send', { from: new Date(Date.now() - 3600_000) })
+const sum = new Array(48).fill(0)
+for (const s of hour) s.waitBins?.forEach((n, i) => { sum[i] += n })
+
+function percentile (bins, p) {
+  const total = bins.reduce((a, b) => a + b, 0)
+  if (total === 0) return null
+  let seen = 0
+  for (let k = 0; k < bins.length; k++) {
+    if (seen + bins[k] >= p * total) {
+      if (k === 0) return 0.01
+      const lo = 0.01 * Math.SQRT2 ** (k - 1)
+      return lo * Math.SQRT2 ** ((p * total - seen) / bins[k]) // within the slot, on the log scale
+    }
+    seen += bins[k]
+  }
+}
+
+console.log(`p95 wait ${percentile(sum, 0.95)?.toFixed(1)} s`)
+```
+
+A slot is √2 wide, so a percentile read this way is within 19% of the exact one. A job that finishes inside a transaction longer than 10 seconds is added to the deltas afterwards, as described below, but not to the histograms.
+
 The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls.
 
 Behavior depends on whether stats are being persisted:
@@ -238,7 +275,7 @@ Behavior depends on whether stats are being persisted:
   * `maxDataPoints` (int): auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
   * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
 
-  `aggregate` applies to the counts only. The deltas and `deltaSeconds` are summed within a bucket. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
+  `aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `oldestReadySeconds` is the largest in it. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
 
   `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
 * When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
