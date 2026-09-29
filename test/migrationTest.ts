@@ -1404,7 +1404,8 @@ describe('migration', function () {
     }
 
     expect(await hasClockFunction()).toBe(false)
-    expect(await clockDefaults()).toEqual(fresh)
+    // v44's instance table goes with the rollback, and its defaults with it.
+    expect(await clockDefaults()).toEqual(fresh.filter(row => row.table_name !== 'instance'))
 
     // Migrating forward again lands on exactly the fresh-install shape.
     await contractor.migrate(CLOCK_VERSION - 1)

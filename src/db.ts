@@ -69,6 +69,17 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     }
   }
 
+  // The pool's size and use, for the instance registry's heartbeat. Null before open() and after close().
+  poolCounts (): types.PoolCounts | null {
+    if (!this.opened) return null
+    return {
+      max: this.pool.options.max ?? 10,
+      total: this.pool.totalCount,
+      idle: this.pool.idleCount,
+      waiting: this.pool.waitingCount
+    }
+  }
+
   async setSessionStatements (statements: string[]) {
     // Clearing is always safe: the statements it would have run are the ones already applied, and
     // undoing them is the caller's job.

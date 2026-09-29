@@ -58,7 +58,7 @@ Maximum number of connections that will be shared by all operations in this inst
 
 ### `application_name`
 
-String, defaults to "pgboss"
+String, defaults to `pgboss:` followed by the first 8 characters of the instance's id, so each instance's connections can be told apart in `pg_stat_activity` and joined to [`getInstances()`](./ops.md#getinstances). With `registerInstance: false` the default is `"pgboss"`.
 
 ### `connectionTimeoutMillis`
 
@@ -304,6 +304,24 @@ With it on, each monitor pass also counts how many jobs were created, completed 
 Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
+
+### `registerInstance`
+
+Bool, default true
+
+Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`, so [`getInstances()`](./ops.md#getinstances) can list every pg-boss instance sharing the database. The heartbeat is one statement per instance every `instanceHeartbeatSeconds`, on its own timer, and nothing on the job path waits for it. Set to false to leave this instance out of the registry.
+
+### `instanceName`
+
+String, optional
+
+A name for this instance in the registry, such as `api` or `billing-worker`. Instances of the same deployment can share one.
+
+### `instanceHeartbeatSeconds`
+
+Int, default 30
+
+How often this instance refreshes its registry row. It reads as quiet, rather than live, once three heartbeats are missed. Must be from 1 to 3600.
 
 ## Testing
 
