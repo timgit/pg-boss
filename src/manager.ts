@@ -129,6 +129,24 @@ const STATS_COUNT_FIELDS = [
 
 // The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
 // getQueueStats.
+// A snapshot's histogram as the row holds it: an int[] from a recorded pass, or from the bucketed
+// history the histograms of every pass in the bucket, nested in JSON, which are added slot by slot.
+// Null when no pass in it recorded one. CockroachDB hands integers over as strings.
+function sumLatencyBins (value: unknown): number[] | null {
+  if (value == null) return null
+  const found: unknown[][] = []
+  const collect = (v: unknown) => {
+    if (!Array.isArray(v)) return
+    if (v.every(x => !Array.isArray(x))) found.push(v)
+    else v.forEach(collect)
+  }
+  collect(typeof value === 'string' ? JSON.parse(value) : value)
+  if (found.length === 0) return null
+  const sum = new Array(plans.LATENCY_SLOTS).fill(0)
+  for (const bins of found) bins.forEach((n, i) => { sum[i] += Number(n) })
+  return sum
+}
+
 const STATS_DELTA_FIELDS = [
   'completedDelta',
   'failedDelta',
@@ -2612,6 +2630,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
         createdDelta: null,
         deltaSeconds: null,
         deltaOn: null,
+        waitBins: null,
+        runBins: null,
+        oldestReadySeconds: null,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
@@ -2623,6 +2644,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       // The end of the interval the counters cover, handed on as the row holds it, like capturedOn.
       if (counted && row?.deltaOn != null) snapshot.deltaOn = row.deltaOn
+
+      if (counted) {
+        snapshot.waitBins = sumLatencyBins(row?.waitBins)
+        snapshot.runBins = sumLatencyBins(row?.runBins)
+        if (row?.oldestReadySeconds != null) snapshot.oldestReadySeconds = Number(row.oldestReadySeconds)
+      }
 
       return snapshot
     }

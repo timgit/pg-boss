@@ -235,6 +235,7 @@ describe('queueStats', function () {
       const row = rows[0]
       for (const [key, value] of Object.entries(row)) {
         if (typeof value === 'string' && /^-?\d+$/.test(value)) row[key] = Number(value)
+        if (Array.isArray(value)) row[key] = value.map(v => (typeof v === 'string' && /^-?\d+$/.test(v) ? Number(v) : v))
       }
 
       return row
@@ -688,6 +689,175 @@ describe('queueStats', function () {
       expect(result!.createdDelta).toBe(1)
       expect(result!.completedDelta).toBe(0)
       expect(result!.deltaSeconds).toBeGreaterThanOrEqual(30)
+    })
+
+    describe('wait and run times', function () {
+      /** The slot a duration lands in: slot k holds 10 ms · √2^(k-1) up to 10 ms · √2^k. */
+      const slotOf = (seconds: number) => Math.floor(2 * Math.log2(seconds / plans.LATENCY_MIN_SECONDS)) + 1
+
+      /**
+       * Finishes one job whose wait and run are known: its stamps are set to them, relative to a
+       * completion inside the window the next pass counts.
+       */
+      async function finishJob (queue: string, times: { wait: number, run: number, deferBy?: number }, fail = false) {
+        await ctx.boss!.send(queue, null, fail ? { retryLimit: 0 } : {})
+        const [job] = await ctx.boss!.fetch(queue)
+        if (fail) await ctx.boss!.fail(queue, job.id)
+        else await ctx.boss!.complete(queue, job.id)
+
+        const db = await helper.getDb()
+        const schema = ctx.bossConfig.schema
+        await db.executeSql(
+          `UPDATE ${schema}.job
+           SET started_on = completed_on - $3::float8 * interval '1 second',
+               start_after = completed_on - ($3::float8 + $2::float8) * interval '1 second',
+               created_on = completed_on - ($3::float8 + $2::float8 + $4::float8) * interval '1 second'
+           WHERE name = $1 AND id = $5`,
+          [queue, times.wait, times.run, times.deferBy ?? 0, job.id])
+      }
+
+      it('records the wait and run of each job that finished, in log-spaced bins', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+
+        await finishJob(queue, { wait: 30, run: 2 })
+        await finishJob(queue, { wait: 0.5, run: 2 })
+
+        const row = await monitorPass(queue)
+        expect(row.waitBins).toHaveLength(plans.LATENCY_SLOTS)
+        expect(row.runBins).toHaveLength(plans.LATENCY_SLOTS)
+        expect(row.waitBins[slotOf(30)]).toBe(1)
+        expect(row.waitBins[slotOf(0.5)]).toBe(1)
+        expect(row.runBins[slotOf(2)]).toBe(2)
+        expect(row.waitBins.reduce((a: number, b: number) => a + b, 0)).toBe(2)
+      })
+
+      /** A deferred job, or a retry sitting out its backoff, is not waiting until it may start. */
+      it('counts a wait from when the job could start, not from when it was sent', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+
+        await finishJob(queue, { wait: 3, run: 1, deferBy: 600 })
+
+        const row = await monitorPass(queue)
+        expect(row.waitBins[slotOf(3)]).toBe(1)
+      })
+
+      it('records a terminal failure beside the completions', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+
+        await finishJob(queue, { wait: 1, run: 20 }, true)
+
+        const row = await monitorPass(queue)
+        expect(row.failedDelta).toBe(1)
+        expect(row.runBins[slotOf(20)]).toBe(1)
+      })
+
+      /** Not a histogram of zeros: the deltas already say nothing finished. */
+      it('records no histogram for a pass in which nothing finished', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+        await ctx.boss.send(queue)
+
+        const row = await monitorPass(queue)
+        expect(row.waitBins).toBe(null)
+        expect(row.runBins).toBe(null)
+      })
+
+      it('does not record wait and run times when tracking is off', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue, false)
+        await finishJob(queue, { wait: 1, run: 1 })
+
+        const row = await monitorPass(queue, false)
+        expect(row.waitBins).toBe(null)
+        expect(row.oldestReadySeconds).toBe(null)
+      })
+
+      /**
+       * The one figure that moves while nothing finishes: a stuck queue records no waits, because a
+       * wait is counted when its job finishes, but its oldest ready job keeps getting older.
+       */
+      it('records how long the oldest ready job has waited, leaving out deferred and blocked ones', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        const db = await helper.getDb()
+        const schema = ctx.bossConfig.schema
+
+        expect((await monitorPass(queue)).oldestReadySeconds).toBe(0)
+
+        const ready = await ctx.boss.send(queue)
+        await ctx.boss.send(queue, null, { startAfter: 3600 })
+        await db.executeSql(
+          `UPDATE ${schema}.job SET created_on = created_on - interval '90 seconds', start_after = start_after - interval '90 seconds'
+           WHERE name = $1 AND id = $2`, [queue, ready])
+
+        const row = await monitorPass(queue)
+        expect(row.oldestReadySeconds).toBeGreaterThanOrEqual(89)
+        expect(row.oldestReadySeconds).toBeLessThan(120)
+      })
+
+      it('adds the histograms of a bucket slot by slot, and keeps its oldest wait', async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+        const to = new Date(hour - 1)
+        const db = await helper.getDb()
+        const schema = ctx.bossConfig.schema
+        await ensurePreviousDayPartition(db, schema)
+        const bins = (slot: number, n: number) => Array.from({ length: plans.LATENCY_SLOTS }, (_, i) => (i === slot ? n : 0))
+        await db.executeSql(
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on, wait_bins, run_bins, oldest_ready_seconds)
+           VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2, $4, $5, 40),
+                  ($1, 3, 60, $3::timestamptz - interval '60 seconds', $3, $6, $5, 75)`,
+          [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000), bins(10, 2), bins(5, 2), bins(10, 3)]
+        )
+
+        const [newest] = await ctx.boss.getQueueStats(queue, { to })
+        expect(newest.waitBins![10]).toBe(3)
+        expect(newest.oldestReadySeconds).toBe(75)
+
+        const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
+        expect(bucket.waitBins![10]).toBe(5)
+        expect(bucket.runBins![5]).toBe(4)
+        expect(bucket.waitBins).toHaveLength(plans.LATENCY_SLOTS)
+        expect(bucket.oldestReadySeconds).toBe(75)
+      })
+
+      it('reports no histogram for a snapshot captured before they were counted', async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+        const to = new Date(hour - 1)
+        const db = await helper.getDb()
+        const schema = ctx.bossConfig.schema
+        await ensurePreviousDayPartition(db, schema)
+        await db.executeSql(
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on)
+           VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2)`, [queue, new Date(hour - 50 * 60_000)])
+
+        const [row] = await ctx.boss.getQueueStats(queue, { to })
+        expect(row.waitBins).toBe(null)
+        expect(row.oldestReadySeconds).toBe(null)
+        const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
+        expect(bucket.waitBins).toBe(null)
+      })
     })
 
     /**

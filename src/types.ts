@@ -268,6 +268,16 @@ export interface QueueStats {
   deltaSeconds: number | null;
   /** When the interval the deltas cover ends, 10 seconds behind `capturedOn`. Plot the deltas at this time. */
   deltaOn: Date | null;
+  /**
+   * Wait times of the jobs that finished in the deltas' window, as a histogram of 48 counts in
+   * log-spaced bins; sum histograms to read a percentile over any span. Null when none finished.
+   * @see https://pgboss.io/api/queues#latency-histograms
+   */
+  waitBins: number[] | null;
+  /** Run times of the same jobs, in the same bins as `waitBins`. */
+  runBins: number[] | null;
+  /** How long the oldest job ready to run had waited when the snapshot was captured. */
+  oldestReadySeconds: number | null;
   capturedOn: Date;
 }
 
