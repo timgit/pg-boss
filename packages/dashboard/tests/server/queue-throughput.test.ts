@@ -10,6 +10,8 @@ const BUCKET = 300
 const t0 = Math.floor((Date.now() / 1000 - 7200) / BUCKET) * BUCKET
 const at = (seconds: number) => new Date((t0 + seconds) * 1000)
 const window = { from: at(0), to: at(3600), bucketSeconds: BUCKET }
+// What a v44 point carries when its passes recorded no wait and run times.
+const UNMEASURED = { waitBins: null, runBins: null, oldestReadySeconds: null }
 
 describe('getQueueThroughput', () => {
   it('returns [] when no stats have been recorded', async () => {
@@ -48,6 +50,7 @@ describe('getQueueThroughput', () => {
       completedPerMin: 30,
       failedPerMin: 1,
       readyCount: 9,
+      ...UNMEASURED,
     })
   })
 
@@ -56,7 +59,7 @@ describe('getQueueThroughput', () => {
     await insertQueueStatsHistory(ctx.schema, 'tp-null', [{ capturedOn: at(60), readyCount: 7 }])
 
     expect(await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-null', window)).toEqual([
-      { bucketStart: t0, arrivedPerMin: null, completedPerMin: null, failedPerMin: null, readyCount: 7 },
+      { bucketStart: t0, arrivedPerMin: null, completedPerMin: null, failedPerMin: null, readyCount: 7, ...UNMEASURED },
     ])
   })
 
@@ -69,8 +72,8 @@ describe('getQueueThroughput', () => {
     ])
 
     expect(await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-lag', window)).toEqual([
-      { bucketStart: t0, arrivedPerMin: 6, completedPerMin: 6, failedPerMin: 0, readyCount: null },
-      { bucketStart: t0 + BUCKET, arrivedPerMin: null, completedPerMin: null, failedPerMin: null, readyCount: 2 },
+      { bucketStart: t0, arrivedPerMin: 6, completedPerMin: 6, failedPerMin: 0, readyCount: null, ...UNMEASURED },
+      { bucketStart: t0 + BUCKET, arrivedPerMin: null, completedPerMin: null, failedPerMin: null, readyCount: 2, ...UNMEASURED },
     ])
   })
 
@@ -126,12 +129,12 @@ describe('getThroughputOverview', () => {
     const series = await getThroughputOverview(ctx.connectionString, ctx.schema, window)
 
     expect(series).toEqual([
-      { name: 'ov-a', points: [{ bucketStart: t0, arrivedPerMin: 90, completedPerMin: 90, failedPerMin: 0, readyCount: 9 }] },
+      { name: 'ov-a', points: [{ bucketStart: t0, arrivedPerMin: 90, completedPerMin: 90, failedPerMin: 0, readyCount: 9, ...UNMEASURED }] },
       {
         name: 'ov-b',
         points: [
-          { bucketStart: t0, arrivedPerMin: 2, completedPerMin: 1, failedPerMin: 1, readyCount: 2 },
-          { bucketStart: t0 + BUCKET, arrivedPerMin: 4, completedPerMin: 4, failedPerMin: 0, readyCount: 4 },
+          { bucketStart: t0, arrivedPerMin: 2, completedPerMin: 1, failedPerMin: 1, readyCount: 2, ...UNMEASURED },
+          { bucketStart: t0 + BUCKET, arrivedPerMin: 4, completedPerMin: 4, failedPerMin: 0, readyCount: 4, ...UNMEASURED },
         ],
       },
     ])
@@ -161,24 +164,16 @@ describe('getThroughputOverview', () => {
     await insertQueueStatsHistory(ctx.schema, 'ov-new', [{ capturedOn: at(30), readyCount: 5 }])
 
     expect(await getThroughputOverview(ctx.connectionString, ctx.schema, window)).toEqual([
-      { name: 'ov-new', points: [{ bucketStart: t0, arrivedPerMin: null, completedPerMin: null, failedPerMin: null, readyCount: 5 }] },
+      { name: 'ov-new', points: [{ bucketStart: t0, arrivedPerMin: null, completedPerMin: null, failedPerMin: null, readyCount: 5, ...UNMEASURED }] },
     ])
   })
 })
 
-// Wait and run times arrive with pg-boss 12.36 (schema v44). The test schema is built by the pg-boss
-// this package is developed against, so the columns are added here the way that migration adds them.
+// Wait and run times arrive with pg-boss 12.36 (schema v44), which the test schema is built on.
 describe('wait and run times', () => {
   const SLOTS = 48
 
-  async function addLatencyColumns () {
-    const pool = new pg.Pool({ connectionString: ctx.connectionString })
-    await pool.query(`ALTER TABLE ${ctx.schema}.queue_stats
-      ADD COLUMN wait_slots smallint[], ADD COLUMN wait_counts int[],
-      ADD COLUMN run_slots smallint[], ADD COLUMN run_counts int[],
-      ADD COLUMN oldest_ready_seconds int`)
-    return pool
-  }
+  const openPool = () => new pg.Pool({ connectionString: ctx.connectionString })
 
   // A pass's histograms as the monitor stores them: the slots it used and their counts.
   async function setLatency (pool: pg.Pool, name: string, capturedOn: Date, wait: [number[], number[]], run: [number[], number[]], oldest: number) {
@@ -195,7 +190,7 @@ describe('wait and run times', () => {
       { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 1, failedDelta: 0, deltaSeconds: 30 },
       { capturedOn: at(130), readyCount: 1, createdDelta: 1, completedDelta: 3, failedDelta: 0, deltaSeconds: 90 },
     ])
-    const pool = await addLatencyColumns()
+    const pool = openPool()
     await setLatency(pool, 'tp-latency', at(40), [[10], [1]], [[4], [1]], 12)
     await setLatency(pool, 'tp-latency', at(130), [[10, 12], [2, 1]], [[5], [3]], 30)
     await pool.end()
@@ -219,7 +214,7 @@ describe('wait and run times', () => {
     await insertQueueStatsHistory(ctx.schema, 'tp-latency-idle', [
       { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 0, failedDelta: 0, deltaSeconds: 30 },
     ])
-    const pool = await addLatencyColumns()
+    const pool = openPool()
     await setLatency(pool, 'tp-latency-idle', at(40), [[], []], [[], []], 25)
     await pool.end()
 
@@ -234,7 +229,7 @@ describe('wait and run times', () => {
     await insertQueueStatsHistory(ctx.schema, 'tp-latency-none', [
       { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 0, failedDelta: 0, deltaSeconds: 30 },
     ])
-    const pool = await addLatencyColumns()
+    const pool = openPool()
     await pool.end()
 
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-none', window)
@@ -248,6 +243,12 @@ describe('wait and run times', () => {
     await insertQueueStatsHistory(ctx.schema, 'tp-latency-old', [
       { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 1, failedDelta: 0, deltaSeconds: 30 },
     ])
+    // Back to the v43 shape, as the migration's uninstall leaves it.
+    const pool = openPool()
+    await pool.query(`ALTER TABLE ${ctx.schema}.queue_stats
+      DROP COLUMN wait_slots, DROP COLUMN wait_counts, DROP COLUMN run_slots, DROP COLUMN run_counts,
+      DROP COLUMN oldest_ready_seconds`)
+    await pool.end()
 
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-old', window)
     expect(point).not.toHaveProperty('waitBins')

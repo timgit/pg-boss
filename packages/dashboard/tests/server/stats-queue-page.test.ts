@@ -78,8 +78,12 @@ describe('/stats/:queue loader', () => {
     expect(data.history.map((p) => p.readyCount)).toEqual([3, 7])
     expect(data.depthSeries).toEqual(['ready'])
     expect(data.aggregate).toBe('max')
-    // The test schema is v43: no wait and run times to carry.
-    expect(data.latency).toBeNull()
+    // v44, but the rows above carry no wait and run times: a summary of nothing measured.
+    expect(data.latency).toEqual({
+      previous: { waitBins: null, runBins: null },
+      current: { waitBins: null, runBins: null },
+      oldestReadySeconds: null,
+    })
     expect(data.range).toEqual([previous.from.getTime() / 1000, current.to.getTime() / 1000])
     expect(data.boundary).toBe(current.from.getTime() / 1000)
 
