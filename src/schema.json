@@ -711,8 +711,15 @@
       },
       {
         "table": "queue_stats",
-        "column": "run_bins",
+        "column": "run_counts",
         "type": "integer[]",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
+        "column": "run_slots",
+        "type": "smallint[]",
         "notNull": false,
         "default": null
       },
@@ -725,8 +732,15 @@
       },
       {
         "table": "queue_stats",
-        "column": "wait_bins",
+        "column": "wait_counts",
         "type": "integer[]",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
+        "column": "wait_slots",
+        "type": "smallint[]",
         "notNull": false,
         "default": null
       },
@@ -935,8 +949,15 @@
       },
       {
         "table": "queue",
-        "column": "run_bins",
+        "column": "run_counts",
         "type": "integer[]",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue",
+        "column": "run_slots",
+        "type": "smallint[]",
         "notNull": false,
         "default": null
       },
@@ -970,8 +991,15 @@
       },
       {
         "table": "queue",
-        "column": "wait_bins",
+        "column": "wait_counts",
         "type": "integer[]",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue",
+        "column": "wait_slots",
+        "type": "smallint[]",
         "notNull": false,
         "default": null
       },
@@ -1816,8 +1844,15 @@
       },
       {
         "table": "queue_stats",
-        "column": "run_bins",
+        "column": "run_counts",
         "type": "integer[]",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
+        "column": "run_slots",
+        "type": "smallint[]",
         "notNull": false,
         "default": null
       },
@@ -1830,8 +1865,15 @@
       },
       {
         "table": "queue_stats",
-        "column": "wait_bins",
+        "column": "wait_counts",
         "type": "integer[]",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue_stats",
+        "column": "wait_slots",
+        "type": "smallint[]",
         "notNull": false,
         "default": null
       },
@@ -2040,8 +2082,15 @@
       },
       {
         "table": "queue",
-        "column": "run_bins",
+        "column": "run_counts",
         "type": "integer[]",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue",
+        "column": "run_slots",
+        "type": "smallint[]",
         "notNull": false,
         "default": null
       },
@@ -2075,8 +2124,15 @@
       },
       {
         "table": "queue",
-        "column": "wait_bins",
+        "column": "wait_counts",
         "type": "integer[]",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "queue",
+        "column": "wait_slots",
+        "type": "smallint[]",
         "notNull": false,
         "default": null
       },

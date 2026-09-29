@@ -270,7 +270,7 @@ export interface QueueStats {
   deltaOn: Date | null;
   /**
    * Wait times of the jobs that finished in the deltas' window, as a histogram of 48 counts in
-   * log-spaced bins; sum histograms to read a percentile over any span. Null when none finished.
+   * log-spaced bins; sum histograms to read a percentile over any span. Null wherever the deltas are.
    * @see https://pgboss.io/api/queues#latency-histograms
    */
   waitBins: number[] | null;

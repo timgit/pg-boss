@@ -664,6 +664,14 @@ describe('queueStats', function () {
       /** The slot a duration lands in: slot k holds 10 ms · √2^(k-1) up to 10 ms · √2^k. */
       const slotOf = (seconds: number) => Math.floor(2 * Math.log2(seconds / plans.LATENCY_MIN_SECONDS)) + 1
 
+      /** A stored histogram, the used slots and their counts, as the 48 counts getQueueStats hands out. */
+      function dense (slots: number[] | null, counts: number[] | null): number[] | null {
+        if (slots == null) return null
+        const bins = new Array(plans.LATENCY_SLOTS).fill(0)
+        slots.forEach((slot, i) => { bins[slot] += counts![i] })
+        return bins
+      }
+
       /**
        * Finishes one job whose wait and run are known: its stamps are set to them, relative to a
        * completion inside the window the next pass counts.
@@ -695,12 +703,11 @@ describe('queueStats', function () {
         await finishJob(queue, { wait: 0.5, run: 2 })
 
         const row = await monitorPass(queue)
-        expect(row.waitBins).toHaveLength(plans.LATENCY_SLOTS)
-        expect(row.runBins).toHaveLength(plans.LATENCY_SLOTS)
-        expect(row.waitBins[slotOf(30)]).toBe(1)
-        expect(row.waitBins[slotOf(0.5)]).toBe(1)
-        expect(row.runBins[slotOf(2)]).toBe(2)
-        expect(row.waitBins.reduce((a: number, b: number) => a + b, 0)).toBe(2)
+        // Stored sparse: only the slots that hold a job, ascending, and beside them the counts.
+        expect(row.waitSlots).toEqual([slotOf(0.5), slotOf(30)])
+        expect(row.waitCounts).toEqual([1, 1])
+        expect(row.runSlots).toEqual([slotOf(2)])
+        expect(row.runCounts).toEqual([2])
       })
 
       /** A deferred job, or a retry sitting out its backoff, is not waiting until it may start. */
@@ -713,7 +720,7 @@ describe('queueStats', function () {
         await finishJob(queue, { wait: 3, run: 1, deferBy: 600 })
 
         const row = await monitorPass(queue)
-        expect(row.waitBins[slotOf(3)]).toBe(1)
+        expect(dense(row.waitSlots, row.waitCounts)![slotOf(3)]).toBe(1)
       })
 
       it('records a terminal failure beside the completions', async function () {
@@ -726,11 +733,11 @@ describe('queueStats', function () {
 
         const row = await monitorPass(queue)
         expect(row.failedDelta).toBe(1)
-        expect(row.runBins[slotOf(20)]).toBe(1)
+        expect(dense(row.runSlots, row.runCounts)![slotOf(20)]).toBe(1)
       })
 
-      /** Not a histogram of zeros: the deltas already say nothing finished. */
-      it('records no histogram for a pass in which nothing finished', async function () {
+      /** Like the deltas: a pass that counted says so, with empty histograms rather than null. */
+      it('records empty histograms for a pass in which nothing finished', async function () {
         ctx.boss = await helper.start(ctx.bossConfig)
         const queue = randomUUID()
         await ctx.boss.createQueue(queue)
@@ -738,8 +745,20 @@ describe('queueStats', function () {
         await ctx.boss.send(queue)
 
         const row = await monitorPass(queue)
-        expect(row.waitBins).toBe(null)
-        expect(row.runBins).toBe(null)
+        expect(row.waitSlots).toEqual([])
+        expect(row.waitCounts).toEqual([])
+        expect(row.runSlots).toEqual([])
+      })
+
+      /** A queue with no job rows has no aggregate row at all; its pass still counted. */
+      it('records empty histograms for a queue with no jobs', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const row = await monitorPass(queue)
+        expect(row.waitSlots).toEqual([])
+        expect(row.oldestReadySeconds).toBe(0)
       })
 
       it('does not record wait and run times when tracking is off', async function () {
@@ -750,7 +769,7 @@ describe('queueStats', function () {
         await finishJob(queue, { wait: 1, run: 1 })
 
         const row = await monitorPass(queue, false)
-        expect(row.waitBins).toBe(null)
+        expect(row.waitSlots).toBe(null)
         expect(row.oldestReadySeconds).toBe(null)
       })
 
@@ -788,23 +807,50 @@ describe('queueStats', function () {
         const db = await helper.getDb()
         const schema = ctx.bossConfig.schema
         await ensurePreviousDayPartition(db, schema)
-        const bins = (slot: number, n: number) => Array.from({ length: plans.LATENCY_SLOTS }, (_, i) => (i === slot ? n : 0))
         await db.executeSql(
-          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on, wait_bins, run_bins, oldest_ready_seconds)
-           VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2, $4, $5, 40),
-                  ($1, 3, 60, $3::timestamptz - interval '60 seconds', $3, $6, $5, 75)`,
-          [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000), bins(10, 2), bins(5, 2), bins(10, 3)]
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
+             wait_slots, wait_counts, run_slots, run_counts, oldest_ready_seconds)
+           VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2, '{10}', '{2}', '{5}', '{2}', 40),
+                  ($1, 3, 60, $3::timestamptz - interval '60 seconds', $3, '{10,12}', '{3,1}', '{5}', '{2}', 75)`,
+          [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000)]
         )
 
         const [newest] = await ctx.boss.getQueueStats(queue, { to })
+        expect(newest.waitBins).toHaveLength(plans.LATENCY_SLOTS)
         expect(newest.waitBins![10]).toBe(3)
+        expect(newest.waitBins![12]).toBe(1)
         expect(newest.oldestReadySeconds).toBe(75)
 
+        // Added up in SQL: one histogram for the bucket, not one per pass.
         const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
         expect(bucket.waitBins![10]).toBe(5)
+        expect(bucket.waitBins![12]).toBe(1)
         expect(bucket.runBins![5]).toBe(4)
         expect(bucket.waitBins).toHaveLength(plans.LATENCY_SLOTS)
         expect(bucket.oldestReadySeconds).toBe(75)
+      })
+
+      it('reports zeros, not null, for a bucket whose passes counted and saw nothing finish', async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+        const to = new Date(hour - 1)
+        const db = await helper.getDb()
+        const schema = ctx.bossConfig.schema
+        await ensurePreviousDayPartition(db, schema)
+        await db.executeSql(
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
+             wait_slots, wait_counts, run_slots, run_counts, oldest_ready_seconds)
+           VALUES ($1, 0, 60, $2::timestamptz - interval '60 seconds', $2, '{}', '{}', '{}', '{}', 0)`,
+          [queue, new Date(hour - 50 * 60_000)])
+
+        const [row] = await ctx.boss.getQueueStats(queue, { to })
+        expect(row.waitBins).toEqual(new Array(plans.LATENCY_SLOTS).fill(0))
+        const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
+        expect(bucket.waitBins).toEqual(new Array(plans.LATENCY_SLOTS).fill(0))
+        expect(bucket.runBins).toEqual(new Array(plans.LATENCY_SLOTS).fill(0))
       })
 
       it('reports no histogram for a snapshot captured before they were counted', async function () {

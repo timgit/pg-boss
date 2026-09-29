@@ -226,15 +226,17 @@ and three deltas: how many jobs were created, completed, and failed in the windo
 * `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
 * `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
 
-Alongside the deltas, and recorded under the same conditions, how long jobs waited and ran. `null` when `persistQueueStats` is disabled on the calling instance, or on snapshots captured before pg-boss 12.36.
+Alongside the deltas, and recorded under the same conditions, how long jobs waited and ran. Like the deltas, they are `null` when nothing measured them (`persistQueueStats` disabled on the calling instance, or a snapshot captured before pg-boss 12.36), and a measured pass in which nothing finished has histograms of all zeros.
 
-* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, or a retry sitting out its backoff, is not counted as waiting. `null` when no job finished in the window.
+* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, or a retry sitting out its backoff, is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
 * `runBins`: how long the same jobs ran, from start to finish, in the same bins.
 * `oldestReadySeconds`: how long the oldest job ready to run had waited when the snapshot was captured, leaving out deferred jobs and jobs blocked by a dependency. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
 
 #### Latency histograms
 
-`waitBins` and `runBins` each hold 48 counts. Slot 0 counts times under 10 ms, slot `k` from 1 to 46 counts times from `0.01 * √2^(k-1)` up to `0.01 * √2^k` seconds, and slot 47 everything longer (about 23 hours). Histograms add: to read a percentile over several snapshots, or several queues, add the counts slot by slot first, then read it from the sum. Averaging percentiles taken from smaller spans does not give a percentile.
+`waitBins` and `runBins` each hold 48 counts. Slot 0 counts times under 10 ms, slot `k` from 1 to 46 counts times from `0.01 * √2^(k-1)` up to `0.01 * √2^k` seconds, and slot 47 everything longer (about 23 hours). Histograms add: to read a percentile over several snapshots, or several queues, add the counts slot by slot first, then read it from the sum. Averaging percentiles taken from smaller spans does not give a percentile. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up.
+
+In `queue_stats` each histogram is stored as two arrays side by side, the slots that hold at least one job (`wait_slots`, ascending) and how many each holds (`wait_counts`); a slot not listed holds none, and a measured pass in which nothing finished stores two empty arrays. To add them up in SQL, unnest the two together: `SELECT u.slot, sum(u.n) FROM queue_stats s, unnest(s.wait_slots, s.wait_counts) AS u(slot, n) WHERE … GROUP BY 1`.
 
 ```js
 // The p95 wait over the last hour, from the snapshots in it
