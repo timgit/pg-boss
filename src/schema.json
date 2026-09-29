@@ -103,6 +103,27 @@
       },
       {
         "table": "instance",
+        "column": "config",
+        "type": "jsonb",
+        "notNull": true,
+        "default": "'{}'::jsonb"
+      },
+      {
+        "table": "instance",
+        "column": "crash_restarts",
+        "type": "integer",
+        "notNull": true,
+        "default": "0"
+      },
+      {
+        "table": "instance",
+        "column": "crash_restarts_since",
+        "type": "timestamp with time zone",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "instance",
         "column": "heartbeat_on",
         "type": "timestamp with time zone",
         "notNull": true,
@@ -127,6 +148,13 @@
         "column": "id",
         "type": "uuid",
         "notNull": true,
+        "default": null
+      },
+      {
+        "table": "instance",
+        "column": "metrics",
+        "type": "jsonb",
+        "notNull": false,
         "default": null
       },
       {
@@ -1633,6 +1661,27 @@
       },
       {
         "table": "instance",
+        "column": "config",
+        "type": "jsonb",
+        "notNull": true,
+        "default": "'{}'::jsonb"
+      },
+      {
+        "table": "instance",
+        "column": "crash_restarts",
+        "type": "integer",
+        "notNull": true,
+        "default": "0"
+      },
+      {
+        "table": "instance",
+        "column": "crash_restarts_since",
+        "type": "timestamp with time zone",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "instance",
         "column": "heartbeat_on",
         "type": "timestamp with time zone",
         "notNull": true,
@@ -1657,6 +1706,13 @@
         "column": "id",
         "type": "uuid",
         "notNull": true,
+        "default": null
+      },
+      {
+        "table": "instance",
+        "column": "metrics",
+        "type": "jsonb",
+        "notNull": false,
         "default": null
       },
       {

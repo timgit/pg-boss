@@ -530,15 +530,143 @@ export function createTableJobDependency (schema: string) {
 export const INSTANCE_QUIET_BEATS = 3
 export const INSTANCE_RETENTION_DAYS = 7
 
+// A crash never sets stopped_on, so a crash loop leaves a quiet row per restart, and a deploy whose
+// processes never call stop() leaves one per replica. Registering keeps the newest of these dead rows
+// for its own name (for its host, when unnamed), and maintenance keeps the newest overall, so neither
+// can grow the table for the whole retention. Keyed on the name rather than the host because a
+// Kubernetes pod that is recreated comes back under a new hostname.
+export const INSTANCE_DEAD_KEPT_PER_NAME = 20
+export const INSTANCE_DEAD_KEPT = 1000
+
+// Stopped, or quiet: the complement of getInstances' live.
+function instanceDead (schema: string) {
+  return `(stopped_on IS NOT NULL OR heartbeat_on < ${schema}.job_now() - heartbeat_seconds * ${INSTANCE_QUIET_BEATS} * interval '1 second')`
+}
+
+// Deletes the dead rows ranked past `keep`, newest start first, among those `where` selects. Ranked
+// before locking and locked with SKIP LOCKED, so a registration and maintenance pruning at once
+// cannot deadlock, and neither deletes a row the other's ranking kept. Used on every backend, unlike
+// the fetch's SKIP LOCKED: where it can pass over an unlocked row (CockroachDB), that row is only
+// left for the next prune.
+function pruneDeadInstances (schema: string, where: string, keep: number) {
+  return `
+    DELETE FROM ${schema}.instance
+    WHERE id IN (
+      SELECT id FROM ${schema}.instance
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id, row_number() OVER (ORDER BY started_on DESC, id DESC) as n
+          FROM ${schema}.instance
+          WHERE ${where} AND ${instanceDead(schema)}
+        ) ranked
+        WHERE n > ${keep}
+      )
+      FOR UPDATE SKIP LOCKED
+    )
+  `
+}
+
+// Run by an instance after it registers: $1 its id, $2 its name, $3 its host.
+export function pruneInstanceLives (schema: string, keep: number) {
+  return pruneDeadInstances(schema, 'id <> $1 AND (CASE WHEN $2::text IS NULL THEN name IS NULL AND host = $3 ELSE name = $2 END)', keep)
+}
+
+export function trimDeadInstances (schema: string, keep: number) {
+  return pruneDeadInstances(schema, 'true', keep)
+}
+
+// Crash restarts: how many lives in a row on this name and host ended without stop() before this one
+// started. Worked out from the rows rather than carried from one life to the next, because at
+// registration a row that still reads live is either a sibling process (pm2, a second PgBoss) or a
+// predecessor that crashed seconds ago, and only its next missed heartbeats tell which. So a crashed
+// life counts toward an instance only once it is dead, and only if its last heartbeat came before the
+// instance started, which a live sibling's keeps moving past.
+//
+// $1 this instance's id, $2 its name, $3 its host, $4 its pid, $5 when its process started: a row
+// with this pid whose heartbeat predates that is an earlier process that reused the pid, dead at once
+// (a container restart, pid 1 each time), and a row with this pid started since is another PgBoss
+// object in this same process, never a predecessor.
+function crashSlot (schema: string) {
+  return `
+    me AS (SELECT id, started_on FROM ${schema}.instance WHERE id = $1),
+    slot AS (
+      SELECT i.*
+      FROM ${schema}.instance i, me
+      WHERE i.id <> me.id
+        AND i.host = $3
+        AND (i.name = $2 OR (i.name IS NULL AND $2::text IS NULL))
+        AND i.started_on < me.started_on
+        AND i.heartbeat_on <= me.started_on
+        AND NOT (i.pid = $4 AND i.started_on >= $5::timestamptz)
+    ),
+    boundary AS (SELECT max(started_on) as at FROM slot WHERE stopped_on IS NOT NULL),
+    streak AS (
+      SELECT s.*
+      FROM slot s, boundary b
+      WHERE s.stopped_on IS NULL
+        AND (b.at IS NULL OR s.started_on > b.at)
+    )`
+}
+
+function crashDead (schema: string) {
+  return `(heartbeat_on < ${schema}.job_now() - heartbeat_seconds * ${INSTANCE_QUIET_BEATS} * interval '1 second'
+        OR (pid = $4 AND heartbeat_on < $5::timestamptz))`
+}
+
+// Numbers the dead lives of the current streak from the earliest one still kept, whose count stands
+// for any the pruning has taken, and writes each later life's count and this instance's. Rewriting
+// the streak is what keeps the counts exact: a life that crashed before its own recheck is corrected
+// by its successor, so the earliest kept row is always right when the pruning moves past it.
+export function countCrashRestarts (schema: string) {
+  return `
+    WITH ${crashSlot(schema)},
+    crashed AS (
+      SELECT id, crash_restarts, crash_restarts_since, heartbeat_on,
+        row_number() OVER (ORDER BY started_on, id) as n,
+        count(*) OVER () as k
+      FROM streak
+      WHERE ${crashDead(schema)}
+    ),
+    head AS (
+      SELECT crash_restarts as base, COALESCE(crash_restarts_since, heartbeat_on) as since, k
+      FROM crashed WHERE n = 1
+    ),
+    counts AS (
+      SELECT c.id, h.base + c.n - 1 as restarts, h.since
+      FROM crashed c, head h
+      WHERE c.n > 1
+      UNION ALL
+      SELECT me.id, COALESCE(h.base + h.k, 0), h.since
+      FROM me LEFT JOIN head h ON true
+    )
+    UPDATE ${schema}.instance i
+    SET crash_restarts = counts.restarts::int,
+      crash_restarts_since = counts.since
+    FROM counts
+    WHERE i.id = counts.id
+  `
+}
+
+// When the rows this count could not yet judge would go quiet, or null when there are none: the
+// registrar counts again then.
+export function crashRecountAt (schema: string) {
+  return `
+    WITH ${crashSlot(schema)}
+    SELECT max(heartbeat_on + heartbeat_seconds * ${INSTANCE_QUIET_BEATS} * interval '1 second') as "recountAt"
+    FROM streak
+    WHERE NOT ${crashDead(schema)}
+  `
+}
+
 // Instance registry statements. $1 is the instance id throughout. Registering replaces the row, so a
 // PgBoss object restarted after stop() reads as live again from a new started_on. A heartbeat is an
 // upsert too: a row pruned while its process was paused (a laptop asleep past the retention) comes
-// back on the next beat, keeping the started_on the instance registered with ($17).
+// back on the next beat, keeping the started_on the instance registered with ($20).
 const INSTANCE_COLUMNS = `id, name, host, pid, version, node_version, heartbeat_seconds,
       supervise, schedule, migrate, persist_queue_stats, persist_warnings,
-      pool_max, pool_total, pool_idle, pool_waiting, workers, application_name, started_on, heartbeat_on`
+      pool_max, pool_total, pool_idle, pool_waiting, workers, metrics, config, application_name, started_on, heartbeat_on`
 
-const INSTANCE_VALUES = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb,
+const INSTANCE_VALUES = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19::jsonb,
       current_setting('application_name')`
 
 const INSTANCE_BEAT = `pool_max = EXCLUDED.pool_max,
@@ -546,6 +674,7 @@ const INSTANCE_BEAT = `pool_max = EXCLUDED.pool_max,
         pool_idle = EXCLUDED.pool_idle,
         pool_waiting = EXCLUDED.pool_waiting,
         workers = EXCLUDED.workers,
+        metrics = EXCLUDED.metrics,
         heartbeat_on = EXCLUDED.heartbeat_on`
 
 export function registerInstance (schema: string) {
@@ -565,8 +694,11 @@ export function registerInstance (schema: string) {
       persist_queue_stats = EXCLUDED.persist_queue_stats,
       persist_warnings = EXCLUDED.persist_warnings,
       application_name = EXCLUDED.application_name,
+      config = EXCLUDED.config,
       started_on = EXCLUDED.started_on,
       stopped_on = NULL,
+      crash_restarts = 0,
+      crash_restarts_since = NULL,
       ${INSTANCE_BEAT}
     RETURNING started_on as "startedOn"
   `
@@ -575,7 +707,7 @@ export function registerInstance (schema: string) {
 export function heartbeatInstance (schema: string) {
   return `
     INSERT INTO ${schema}.instance (${INSTANCE_COLUMNS})
-    VALUES (${INSTANCE_VALUES}, $18::timestamptz, ${schema}.job_now())
+    VALUES (${INSTANCE_VALUES}, $20::timestamptz, ${schema}.job_now())
     ON CONFLICT (id) DO UPDATE SET
       ${INSTANCE_BEAT}
   `
@@ -615,6 +747,10 @@ export function getInstances (schema: string) {
       pool_idle as "poolIdle",
       pool_waiting as "poolWaiting",
       workers,
+      metrics,
+      config,
+      crash_restarts as "crashRestarts",
+      crash_restarts_since as "crashRestartsSince",
       started_on as "startedOn",
       heartbeat_on as "heartbeatOn",
       stopped_on as "stoppedOn",
@@ -634,8 +770,11 @@ export function createIndexJobDependencyParent (schema: string) {
 // stopped_on; it goes quiet instead, when heartbeat_on stops moving, and heartbeat_seconds says how
 // long that takes for this row, since the interval is per instance. workers is one entry per work()
 // call. The pool columns are node-postgres's counts at the last heartbeat, null for a pool pg-boss
-// was handed and cannot read. application_name is the one the registering session carried, so
-// pg_stat_activity joins to the row wherever it is unique.
+// was handed and cannot read. metrics is the process's CPU, memory and event loop at the last
+// heartbeat against its container's limits (see nurse.ts), null until the first sample lands.
+// config is the options it runs with, as the registrar's allowlist picks them, for comparing instances.
+// application_name is the one the registering session carried, so pg_stat_activity joins to the row
+// wherever it is unique.
 export function createTableInstance (schema: string) {
   return `
     CREATE TABLE ${schema}.instance (
@@ -657,6 +796,10 @@ export function createTableInstance (schema: string) {
       pool_idle int,
       pool_waiting int,
       workers jsonb NOT NULL DEFAULT '[]'::jsonb,
+      metrics jsonb,
+      config jsonb NOT NULL DEFAULT '{}'::jsonb,
+      crash_restarts int NOT NULL DEFAULT 0,
+      crash_restarts_since timestamptz,
       started_on timestamptz NOT NULL DEFAULT now(),
       heartbeat_on timestamptz NOT NULL DEFAULT now(),
       stopped_on timestamptz

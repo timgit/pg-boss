@@ -178,6 +178,10 @@ const { rows } = await db.executeSql('SELECT now()')
 
 Returns every pg-boss instance registered in this database, oldest first. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never says it stopped, so its row goes quiet instead: `live` turns false once it has missed three heartbeats. Rows whose heartbeat has not moved for 7 days are deleted during maintenance.
 
+Every `start()` of a new `PgBoss` object is a new row, so a crash loop, or a deploy whose processes exit without calling `stop()`, leaves a quiet row per life. To keep that bounded, an instance deletes all but the 20 newest stopped or quiet rows with its name when it registers (with its host, when it has no name), and maintenance keeps the 1,000 newest stopped or quiet rows in all. Calling `stop()` on `SIGTERM` marks a row stopped rather than quiet, which tells a deploy apart from a crash. `crashRestarts` survives that pruning.
+
+A life counts toward `crashRestarts` once it is quiet, and only if its last heartbeat came before this instance started, so a sibling process with the same name on the same host (a pm2 cluster, say) is never counted. A crash moments before a restart is counted when it goes quiet, up to three heartbeats after `start()`. A process that reuses the previous one's pid, as a container restart does, is counted at once.
+
 ```js
 const instances = await boss.getInstances()
 const working = instances.filter(i => i.live && i.workers.some(w => w.queue === 'emails'))
@@ -200,11 +204,31 @@ Array of objects with the following properties:
 | `supervise`, `schedule`, `migrate`, `persistQueueStats`, `persistWarnings` | boolean | Its constructor options |
 | `poolMax`, `poolTotal`, `poolIdle`, `poolWaiting` | number \| null | Its pool at the last heartbeat; null for a `db` adapter |
 | `workers` | array | One entry per `work()` call, below |
+| `metrics` | object \| null | Its process's CPU, memory and event loop at the last heartbeat, below |
+| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Options left at their defaults are absent. Connection settings and credentials are never recorded |
+| `crashRestarts` | number | Lives in a row with this name on this host that ended without `stop()` before this one started |
+| `crashRestartsSince` | Date \| null | When the first of those went quiet |
 | `startedOn`, `heartbeatOn` | Date | When it started, and its last heartbeat |
 | `stoppedOn` | Date \| null | Set by `stop()` |
 | `live` | boolean | Not stopped, and heard from within three heartbeats |
 
 Each `workers` entry has `id` (the id `work()` returned), `queue`, `localConcurrency`, `batchSize`, `pollingIntervalSeconds`, `active` (jobs in hand at the heartbeat), and `lastFetchedOn`, `lastJobEndedOn` and `lastErrorOn` as ISO strings or null. Error messages are not stored, since they can carry job data.
+
+`metrics` is sampled on each heartbeat. Rates cover the time since the previous heartbeat, so they are null in the row written at `start()`.
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `cgroup` | 1 \| 2 \| null | The cgroup version its limits were read from, or null when they are the host's |
+| `cpu` | number \| null | CPU cores this process used |
+| `cpuLimit` | number | Cores it may use: its container's CPU quota, capped at the CPUs it may run on |
+| `cpuThrottled` | number \| null | Share of CPU periods its container was paused for reaching its quota, 0 to 1; null without a quota |
+| `rss`, `heapUsed`, `heapLimit` | number \| null | Resident set size and V8 heap, in bytes |
+| `memoryUsed` | number \| null | Its container's working set in bytes (memory in use less inactive file cache, as container runtimes count it); null without a memory limit |
+| `memoryLimit` | number | Its container's memory limit in bytes, or the host's total memory |
+| `loopDelay`, `loopDelayMax` | number \| null | Event loop delay in milliseconds, p99 and worst |
+| `loopUtilization` | number \| null | Share of the time the event loop was busy, 0 to 1 |
+
+Limits come from the cgroup the process is charged to (v1 or v2, with a private or host cgroup namespace), including limits set on a parent such as a Kubernetes pod. The host-wide figures Node reports in a container are not used: `os.totalmem()`, `os.freemem()`, `os.loadavg()` and `os.cpus()` describe the machine, and `os.availableParallelism()` ignores a CPU quota under one core. Off Linux, or where the cgroup files cannot be read, the limits are the host's and the container-only figures are null. A figure the runtime cannot provide is null; Bun, for example, has no event loop utilization.
 
 ### `getBamStatus()`
 
