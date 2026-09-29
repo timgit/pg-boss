@@ -3,6 +3,8 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import * as Attorney from '../src/attorney.ts'
+import { systemClock } from '../src/clock.ts'
+import Manager from '../src/manager.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
@@ -357,7 +359,7 @@ describe('work', function () {
 
     // Both calls opt out of waiting, so neither may block on the held handler - but the second one
     // must still queue a real cleanup rather than short-circuiting, because that cleanup is what
-    // stop({ graceful: true }) drains through hasPendingCleanups().
+    // stop({ graceful: true }) drains through settleCleanups().
     await boss.offWork(ctx.schema, { wait: false })
     await boss.offWork(ctx.schema, { wait: false })
 
@@ -371,6 +373,60 @@ describe('work', function () {
     ctx.boss = undefined
 
     expect(finished).toBe(true)
+  })
+
+  describe('settleCleanups', function () {
+    const newManager = () => new Manager({ executeSql: async () => ({ rows: [] }) }, { clock: systemClock } as any)
+
+    function gate () {
+      let open: () => void = () => { throw new Error('Gate not initialized') }
+      const promise = new Promise<void>(resolve => { open = resolve })
+      return { promise, open }
+    }
+
+    // Settling on a timer instead of on the cleanups would lose to one set at the same moment.
+    const beforeATimer = async (settling: Promise<void>) => {
+      const timer = new Promise<string>(resolve => setTimeout(() => resolve('timer'), 0))
+      return await Promise.race([settling.then(() => 'settled'), timer])
+    }
+
+    it('resolves at once when nothing is pending', async function () {
+      expect(await beforeATimer(newManager().settleCleanups())).toBe('settled')
+    })
+
+    it('waits for a held cleanup and resolves as soon as it settles', async function () {
+      const manager = newManager()
+      const held = gate()
+      manager.trackCleanup(held.promise)
+
+      let settled = false
+      const settling = manager.settleCleanups().then(() => { settled = true })
+
+      await setImmediate()
+      await setImmediate()
+      expect(settled).toBe(false)
+
+      held.open()
+      expect(await beforeATimer(settling)).toBe('settled')
+    })
+
+    it('also waits for a cleanup registered while it waits', async function () {
+      const manager = newManager()
+      const first = gate()
+      const second = gate()
+      manager.trackCleanup(first.promise.then(() => manager.trackCleanup(second.promise)))
+
+      let settled = false
+      const settling = manager.settleCleanups().then(() => { settled = true })
+
+      first.open()
+      await setImmediate()
+      await setImmediate()
+      expect(settled).toBe(false)
+
+      second.open()
+      expect(await beforeATimer(settling)).toBe('settled')
+    })
   })
 
   it('offWork resolves without error when no worker matches', async function () {

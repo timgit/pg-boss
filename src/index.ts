@@ -324,13 +324,11 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     // Real time, not the configured clock: the deadline bounds shutdown I/O, and under a test
     // clock nothing would tick it while the test is blocked inside stop().
-    const deadline = { reached: false }
-    const deadlineTimer = setTimeout(() => { deadline.reached = true }, timeout)
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<void>(resolve => { deadlineTimer = setTimeout(resolve, timeout) })
 
     try {
-      while (!deadline.reached && this.#manager.hasPendingCleanups()) {
-        await delay(500)
-      }
+      await Promise.race([this.#manager.settleCleanups(), deadline])
     } finally {
       clearTimeout(deadlineTimer)
     }

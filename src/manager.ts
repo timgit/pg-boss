@@ -1255,8 +1255,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return data
   }
 
-  hasPendingCleanups (): boolean {
-    return this.pendingOffWorkCleanups.size > 0
+  trackCleanup (cleanup: Promise<unknown>): void {
+    this.pendingOffWorkCleanups.add(cleanup)
+    const settled = () => { this.pendingOffWorkCleanups.delete(cleanup) }
+    cleanup.then(settled, settled)
+  }
+
+  // Resolves once no cleanup is pending, including any a settling cleanup registers, so a graceful
+  // stop() carries on the moment its last worker has stopped.
+  async settleCleanups (): Promise<void> {
+    while (this.pendingOffWorkCleanups.size > 0) {
+      await Promise.allSettled([...this.pendingOffWorkCleanups])
+    }
   }
 
   async offWork (name: string, options: types.OffWorkOptions = { wait: true }): Promise<void> {
@@ -1291,11 +1301,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       await cleanupPromise
       this.#cleanupLocalGroupTracking(name)
     } else {
-      this.pendingOffWorkCleanups.add(cleanupPromise)
-      cleanupPromise.finally(() => {
-        this.pendingOffWorkCleanups.delete(cleanupPromise)
-        this.#cleanupLocalGroupTracking(name)
-      })
+      this.trackCleanup(cleanupPromise)
+      cleanupPromise.finally(() => this.#cleanupLocalGroupTracking(name))
     }
   }
 
