@@ -285,9 +285,9 @@ describe('pro overlay', () => {
       mockOverlay(overlay)
 
       const { ProSlot } = await import('~/components/pro-slot')
-      render(<ProSlot name="statsChartMarkers" queue={null} chart="throughput" from={0} to={7200} plot={{ left: 48, width: 900 }} />)
+      render(<ProSlot name="statsChartMarkers" queue={null} chart="throughput" from={0} to={7200} bucketSeconds={60} plot={{ left: 48, width: 900 }} />)
 
-      expect(screen.getByTestId('pro-stats-markers')).toHaveTextContent('all throughput 0-7200 at 48+900')
+      expect(screen.getByTestId('pro-stats-markers')).toHaveTextContent('all throughput 0-7200 by 60 at 48+900')
     })
   })
 })

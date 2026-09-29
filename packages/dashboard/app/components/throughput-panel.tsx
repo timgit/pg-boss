@@ -120,7 +120,7 @@ interface ThroughputPanelProps {
   /** The x extent in unix seconds: the previous window's start to the current window's end. */
   range: [number, number]
   /** Bucket width in seconds: a line bridges one missing bucket rather than breaking. */
-  bucketSeconds?: number
+  bucketSeconds: number
   /** Charts sharing a key move one cursor together. */
   syncKey?: string
 }
@@ -185,7 +185,7 @@ export function ThroughputPanel ({ title, queue, points, noun, range, bucketSeco
               zeroBased
               yValue={formatTick}
               xRange={range}
-              bridgeSeconds={bucketSeconds && 2 * bucketSeconds}
+              bridgeSeconds={2 * bucketSeconds}
               syncKey={syncKey}
               legend={false}
               onPlotBox={setPlotBox}
@@ -210,7 +210,7 @@ export function ThroughputPanel ({ title, queue, points, noun, range, bucketSeco
         )}
       </div>
       {plotBox && hasProSlot('statsChartMarkers') && (
-        <ProSlot name="statsChartMarkers" queue={queue} chart="throughput" from={range[0]} to={range[1]} plot={plotBox} />
+        <ProSlot name="statsChartMarkers" queue={queue} chart="throughput" from={range[0]} to={range[1]} bucketSeconds={bucketSeconds} plot={plotBox} />
       )}
     </section>
   )
