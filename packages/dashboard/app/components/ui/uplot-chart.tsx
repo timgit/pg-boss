@@ -35,7 +35,7 @@ interface UplotChartProps {
   zeroBased?: boolean
   /** A log scale for y, for durations that span orders of magnitude. Values must be above zero. */
   yLog?: boolean
-  /** Formats a y-axis tick. Pass a stable function: a new one rebuilds the plot. */
+  /** Formats a y-axis tick and the legend's values. Pass a stable function: a new one rebuilds the plot. */
   yValue?: (value: number) => string
   /** The x extent in unix seconds, so charts over the same window line up whatever their data covers. */
   xRange?: [number, number]
@@ -145,6 +145,8 @@ export function UplotChart ({
               label: s.label,
               stroke: s.stroke,
               width: s.width ?? 2,
+              // The legend's live readout in the axis's own format, rather than the raw number.
+              ...(yValue ? { value: (_u: uPlot, v: number | null) => (v == null ? '—' : yValue(v)) } : {}),
               ...(s.dash ? { dash: s.dash } : {}),
               points: { show: false },
               // Only when set: an explicit undefined replaces uPlot's default and breaks drawing.
