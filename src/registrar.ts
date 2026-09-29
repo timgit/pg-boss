@@ -1,6 +1,7 @@
 import EventEmitter from 'node:events'
 import os from 'node:os'
 import packageJson from '../package.json' with { type: 'json' }
+import Nurse from './nurse.ts'
 import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import * as types from './types.ts'
@@ -8,6 +9,20 @@ import * as types from './types.ts'
 const events = {
   error: 'error'
 }
+
+// The constructor options recorded in the registry, so instances sharing a database can be compared.
+// An allowlist on purpose: the table is readable by anything that can read the schema, and an option
+// added later that carries a credential, a connection string or an object must not land in it by
+// default. The adapter itself is recorded only as whether one was given.
+const RECORDED_OPTIONS = [
+  'backend', 'max', 'useListenNotify', 'instanceHeartbeatSeconds',
+  'supervise', 'schedule', 'migrate', 'createSchema',
+  'superviseIntervalSeconds', 'maintenanceIntervalSeconds', 'monitorIntervalSeconds', 'queueCacheIntervalSeconds',
+  'bamIntervalSeconds', 'flowIntervalSeconds', 'reindex', 'reindexIntervalSeconds', 'monitorVacuum',
+  'clockMonitorIntervalSeconds', 'cronMonitorIntervalSeconds', 'cronWorkerIntervalSeconds',
+  'persistWarnings', 'warningRetentionDays', 'persistQueueStats', 'queueStatRetentionDays',
+  'warningSlowQuerySeconds', 'warningQueueSize'
+] as const satisfies ReadonlyArray<keyof types.ResolvedConstructorOptions>
 
 // Keeps this PgBoss object's row in the instance table: registered at start(), refreshed on its own
 // heartbeat timer whether or not this instance supervises (an instance with supervise off is exactly
@@ -22,6 +37,9 @@ class Registrar extends EventEmitter implements types.EventsMixin {
   #timer: types.ClockTimer | undefined
   #beating: Promise<void> | null = null
   #startedOn: Date | null = null
+  #nurse = new Nurse()
+  #recount: types.ClockTimer | undefined
+  #active = false
 
   events = events
 
@@ -37,9 +55,19 @@ class Registrar extends EventEmitter implements types.EventsMixin {
   async start () {
     if (!this.#config.registerInstance || this.#timer) return
 
+    this.#active = true
+    this.#nurse.start()
+
     try {
-      const { rows } = await this.#db.executeSql(plans.registerInstance(this.#config.schema), this.#values())
+      const { rows } = await this.#db.executeSql(plans.registerInstance(this.#config.schema), await this.#values())
       this.#startedOn = rows[0]?.startedOn ?? null
+
+      // Counted before the pruning, which keeps the earliest rows' counts only if they are already right.
+      await this.#countCrashRestarts()
+
+      // A crash-looping process registers once per life, so this is where its dead rows are bounded.
+      await this.#db.executeSql(plans.pruneInstanceLives(this.#config.schema, plans.INSTANCE_DEAD_KEPT_PER_NAME),
+        [this.id, this.#config.instanceName ?? null, os.hostname()])
     } catch (err) {
       this.emit(events.error, err)
     }
@@ -50,10 +78,17 @@ class Registrar extends EventEmitter implements types.EventsMixin {
   async stop () {
     if (!this.#timer) return
 
+    this.#active = false
     this.#config.clock.clearInterval(this.#timer)
     this.#timer = undefined
 
+    if (this.#recount !== undefined) {
+      this.#config.clock.clearTimeout(this.#recount)
+      this.#recount = undefined
+    }
+
     await this.#beating
+    this.#nurse.stop()
 
     // Best effort and silent: a stop that cannot reach the database leaves a row that goes quiet
     // after three missed heartbeats, which is the same ending a crash gets, and a host that closed
@@ -77,8 +112,32 @@ class Registrar extends EventEmitter implements types.EventsMixin {
       poolTotal: num(row.poolTotal),
       poolIdle: num(row.poolIdle),
       poolWaiting: num(row.poolWaiting),
-      workers: typeof row.workers === 'string' ? JSON.parse(row.workers) : row.workers
+      workers: typeof row.workers === 'string' ? JSON.parse(row.workers) : row.workers,
+      metrics: typeof row.metrics === 'string' ? JSON.parse(row.metrics) : row.metrics,
+      config: typeof row.config === 'string' ? JSON.parse(row.config) : row.config,
+      crashRestarts: Number(row.crashRestarts)
     }))
+  }
+
+  // Counts this instance's crash restarts, and when a row on its name and host still reads live
+  // without having beaten since this instance started, counts again once that row would go quiet.
+  async #countCrashRestarts () {
+    const clock = this.#config.clock
+    const processStart = new Date(clock.now() - process.uptime() * 1000)
+    const values = [this.id, this.#config.instanceName ?? null, os.hostname(), process.pid, processStart]
+
+    await this.#db.executeSql(plans.countCrashRestarts(this.#config.schema), values)
+
+    const { rows } = await this.#db.executeSql(plans.crashRecountAt(this.#config.schema), values)
+    const at = rows[0]?.recountAt ? new Date(rows[0].recountAt).getTime() : null
+
+    if (at === null || !this.#active) return
+
+    this.#recount = clock.setTimeout(() => {
+      this.#recount = undefined
+      if (!this.#active) return
+      this.#countCrashRestarts().catch(err => this.emit(events.error, err))
+    }, Math.max(1000, at - clock.now() + 1000))
   }
 
   #beat () {
@@ -87,7 +146,7 @@ class Registrar extends EventEmitter implements types.EventsMixin {
 
     this.#beating = (async () => {
       try {
-        await this.#db.executeSql(plans.heartbeatInstance(this.#config.schema), [...this.#values(), this.#startedOn])
+        await this.#db.executeSql(plans.heartbeatInstance(this.#config.schema), [...await this.#values(), this.#startedOn])
       } catch (err) {
         this.emit(events.error, err)
       } finally {
@@ -97,7 +156,7 @@ class Registrar extends EventEmitter implements types.EventsMixin {
   }
 
   // In the column order of plans.registerInstance.
-  #values (): unknown[] {
+  async #values (): Promise<unknown[]> {
     const config = this.#config
     const pool = typeof this.#db.poolCounts === 'function' ? this.#db.poolCounts() : null
 
@@ -118,8 +177,22 @@ class Registrar extends EventEmitter implements types.EventsMixin {
       pool?.total ?? null,
       pool?.idle ?? null,
       pool?.waiting ?? null,
-      JSON.stringify(this.#workers())
+      JSON.stringify(this.#workers()),
+      JSON.stringify(await this.#nurse.sample()),
+      JSON.stringify(this.#recordedConfig())
     ]
+  }
+
+  // Options left unset are absent rather than null, so two instances on the same defaults compare equal.
+  #recordedConfig (): Record<string, unknown> {
+    const config: Record<string, unknown> = { adapter: this.#config.db ? 'custom' : 'pg' }
+
+    for (const key of RECORDED_OPTIONS) {
+      const value = this.#config[key]
+      if (value !== undefined) config[key] = value
+    }
+
+    return config
   }
 
   // One entry per work() call. Each call spawns localConcurrency workers sharing a workId, so they are

@@ -293,6 +293,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // Whether or not this instance registers: the registry is the database's, not this instance's.
   async #maintainInstances () {
     await this.#executeQuery(plans.deleteOldInstances(this.#config.schema, plans.INSTANCE_RETENTION_DAYS))
+    await this.#executeQuery(plans.trimDeadInstances(this.#config.schema, plans.INSTANCE_DEAD_KEPT))
   }
 
   async #ensureQueueStatsPartitions () {

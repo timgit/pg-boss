@@ -1399,6 +1399,35 @@ export interface InstanceWorker {
 }
 
 /**
+ * A registered instance's process at its last heartbeat. Limits are its container's where one is set
+ * (cgroup v1 or v2), else the host's; rates cover the time since the previous heartbeat.
+ * @see https://pgboss.io/api/ops#getinstances
+ */
+export interface InstanceMetrics {
+  /** 1 or 2 when the limits were read from a cgroup, null when they are the host's. */
+  cgroup: 1 | 2 | null;
+  /** CPU cores this process used; null on the first sample. */
+  cpu: number | null;
+  /** Cores it may use: its container's CPU quota, or the CPUs it may run on. */
+  cpuLimit: number;
+  /** Share of CPU periods its container was throttled for, 0 to 1; null without a CPU quota. */
+  cpuThrottled: number | null;
+  /** Resident set size in bytes. */
+  rss: number | null;
+  heapUsed: number | null;
+  heapLimit: number | null;
+  /** Its container's working set in bytes; null without a memory limit. */
+  memoryUsed: number | null;
+  /** Its container's memory limit in bytes, or the host's total memory. */
+  memoryLimit: number;
+  /** Event loop delay, p99 and worst, in milliseconds. */
+  loopDelay: number | null;
+  loopDelayMax: number | null;
+  /** Share of the time the event loop was busy, 0 to 1. */
+  loopUtilization: number | null;
+}
+
+/**
  * A PgBoss object that registered itself in this database.
  * @see https://pgboss.io/api/ops#getinstances
  */
@@ -1424,6 +1453,14 @@ export interface Instance {
   poolIdle: number | null;
   poolWaiting: number | null;
   workers: InstanceWorker[];
+  /** Its process at the last heartbeat; null before the first sample. */
+  metrics: InstanceMetrics | null;
+  /** The options it runs with: timings, roles, retention and backend, never connection details. */
+  config: Record<string, unknown>;
+  /** Lives in a row on this name and host that ended without `stop()` before this one started. */
+  crashRestarts: number;
+  /** When the first of those crashed; null when there were none. */
+  crashRestartsSince: Date | null;
   startedOn: Date;
   heartbeatOn: Date;
   /** Set by a graceful `stop()`; a crashed instance goes quiet instead. */
