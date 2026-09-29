@@ -371,7 +371,10 @@ function createTableVersion (schema: string) {
 // try-lock - without capturedOn claiming a freshness the counts do not have.
 // created_delta / completed_delta / failed_delta are not gauges like the counts beside them: they
 // are how many jobs went through between the previous monitor pass and the latest one. delta_on and
-// delta_seconds are the window those three cover, null until a pass counts.
+// delta_seconds are the window those three cover, null until a pass counts. wait_bins and run_bins
+// are the wait and run times of the jobs that finished in that window, as histograms (see
+// LATENCY_BINS), null when none did; oldest_ready_seconds is how long the oldest job ready to run
+// had waited at the pass. All three are written only by a pass that counts.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -400,6 +403,9 @@ function createTableQueue (schema: string) {
       failed_delta int NOT NULL default 0,
       delta_on timestamp with time zone,
       delta_seconds int,
+      wait_bins int[],
+      run_bins int[],
+      oldest_ready_seconds int,
       ready_history int[] NOT NULL default '{}',
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
@@ -1558,6 +1564,9 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       failed_delta    int,
       delta_seconds   int,
       delta_on        timestamptz,
+      wait_bins       int[],
+      run_bins        int[],
+      oldest_ready_seconds int,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
@@ -1656,9 +1665,11 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
   const sql = `
     INSERT INTO ${schema}.queue_stats
       (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-       created_delta, completed_delta, failed_delta, delta_seconds, delta_on, captured_on)
+       created_delta, completed_delta, failed_delta, delta_seconds, delta_on,
+       wait_bins, run_bins, oldest_ready_seconds, captured_on)
     SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
-           created_delta, completed_delta, failed_delta, delta_seconds, delta_on, ${schema}.job_now()
+           created_delta, completed_delta, failed_delta, delta_seconds, delta_on,
+           wait_bins, run_bins, oldest_ready_seconds, ${schema}.job_now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -1692,6 +1703,9 @@ export function getQueueStatsCache (schema: string): string {
       failed_delta    as "failedDelta",
       delta_seconds   as "deltaSeconds",
       delta_on        as "deltaOn",
+      wait_bins       as "waitBins",
+      run_bins        as "runBins",
+      oldest_ready_seconds as "oldestReadySeconds",
       table_name     as "table",
       monitor_on     as "capturedOn",
       (extract(epoch from (${schema}.job_now() - monitor_on)) * 1000)::float8 as "cacheAgeMs",
@@ -1716,6 +1730,9 @@ export function getQueueStatsHistory (schema: string): string {
       failed_delta    as "failedDelta",
       delta_seconds   as "deltaSeconds",
       delta_on        as "deltaOn",
+      wait_bins       as "waitBins",
+      run_bins        as "runBins",
+      oldest_ready_seconds as "oldestReadySeconds",
       captured_on    as "capturedOn"
     FROM ${schema}.queue_stats
     WHERE name = $1
@@ -1825,7 +1842,10 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         sum(completed_delta)::int as "completedDelta",
         sum(failed_delta)::int    as "failedDelta",
         sum(delta_seconds)::int   as "deltaSeconds",
-        max(delta_on)             as "deltaOn"
+        max(delta_on)             as "deltaOn",
+        jsonb_agg(wait_bins) FILTER (WHERE wait_bins IS NOT NULL) as "waitBins",
+        jsonb_agg(run_bins) FILTER (WHERE run_bins IS NOT NULL)   as "runBins",
+        max(oldest_ready_seconds) as "oldestReadySeconds"
       FROM ${schema}.queue_stats, w
       WHERE name = $1
         AND delta_on IS NOT NULL
@@ -1849,7 +1869,10 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         c."completedDelta",
         c."failedDelta",
         c."deltaSeconds",
-        c."deltaOn"
+        c."deltaOn",
+        c."waitBins",
+        c."runBins",
+        c."oldestReadySeconds"
       FROM gauges g
         FULL JOIN counters c ON c.bucket = g.bucket
     )
@@ -1865,7 +1888,10 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
       sum("completedDelta")::int as "completedDelta",
       sum("failedDelta")::int    as "failedDelta",
       sum("deltaSeconds")::int   as "deltaSeconds",
-      max("deltaOn")             as "deltaOn"
+      max("deltaOn")             as "deltaOn",
+      jsonb_agg("waitBins") FILTER (WHERE "waitBins" IS NOT NULL) as "waitBins",
+      jsonb_agg("runBins") FILTER (WHERE "runBins" IS NOT NULL)   as "runBins",
+      max("oldestReadySeconds")::int as "oldestReadySeconds"
     FROM placed
     WHERE bucket IS NOT NULL
     GROUP BY 1
@@ -3517,7 +3543,10 @@ function throughputAssignments (end: string, resetMax?: string): string {
       completed_delta = COALESCE(stats."completedDelta", 0),
       failed_delta = COALESCE(stats."failedDelta", 0),
       delta_seconds = CASE WHEN ${seconds} < 0 THEN 0 ELSE ${seconds} END,
-      delta_on = GREATEST(queue.delta_on, ${end}),`
+      delta_on = GREATEST(queue.delta_on, ${end}),
+      wait_bins = stats."waitBins",
+      run_bins = stats."runBins",
+      oldest_ready_seconds = COALESCE(stats."oldestReadySeconds", 0),`
 }
 
 // The windows a true-up may still revise, per queue: every recorded snapshot whose window ends
@@ -3691,6 +3720,47 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
   return transaction(sql)
 }
 
+// Wait and run times, as the monitor records them: a histogram per counted pass, of the jobs that
+// finished in its window. Slot 0 holds times under 10 ms, slots 1 to LATENCY_BINS bins that each
+// grow by √2 (slot k runs from 10 ms · √2^(k-1) to 10 ms · √2^k), and the last slot everything past
+// about 23 hours. Log-spaced because the times span six orders of magnitude, and a percentile read
+// from them is within one bin, 19% at most. Histograms rather than percentiles, because histograms
+// add: a reader sums them across passes, buckets or queues and reads any percentile from the sum.
+export const LATENCY_BINS = 46
+export const LATENCY_SLOTS = LATENCY_BINS + 2
+export const LATENCY_MIN_SECONDS = 0.01
+
+// Both bins travel packed in one integer (wait * LATENCY_PACK + run), so the aggregate needs one
+// array and one filter. Two arrays, each with its own filter evaluated on every row of the table,
+// cost twice as much: measured on 2.5M rows, +55 ms on a ~560 ms pass packed, +80 to 120 ms apart.
+const LATENCY_PACK = 64
+
+const waitSeconds = 'extract(epoch from (j.started_on - GREATEST(j.created_on, j.start_after)))'
+const runSeconds = 'extract(epoch from (j.completed_on - j.started_on))'
+
+// The slot is width_bucket's, written out: CockroachDB's width_bucket takes decimals, not float8.
+// ln(t / 10 ms) over ln(√2), plus one, clamped to slot 0 below 10 ms and the last slot past the end.
+// A duration of zero or less (stamps from two clocks) lands in slot 0.
+function latencyBin (seconds: string): string {
+  const lo = Math.log(LATENCY_MIN_SECONDS)
+  const width = Math.log(2) / 2
+  const raw = `floor((ln(GREATEST((${seconds})::float8, 0.001::float8)) - ${lo}::float8) / ${width}::float8)::int + 1`
+  return `LEAST(GREATEST(${raw}, 0), ${LATENCY_SLOTS - 1})`
+}
+
+// Unpacks the aggregate's array into one histogram: a count per slot, zeros included, so every
+// histogram has LATENCY_SLOTS entries and they add position by position. Null when nothing finished.
+// floor() of a float division rather than integer division, which CockroachDB answers in decimal.
+function latencyHistogram (packed: string, which: 'wait' | 'run'): string {
+  const slot = which === 'wait' ? `floor(p / ${LATENCY_PACK}.0)::int` : `(p % ${LATENCY_PACK})::int`
+  return `CASE WHEN ${packed} IS NULL THEN NULL ELSE (
+          SELECT array_agg(COALESCE(c.n, 0) ORDER BY s.slot)
+          FROM generate_series(0, ${LATENCY_SLOTS - 1}) AS s(slot)
+          LEFT JOIN (SELECT ${slot} AS slot, count(*)::int AS n FROM unnest(${packed}) AS u(p) GROUP BY 1) c
+            ON c.slot = s.slot
+        ) END`
+}
+
 // Every count the monitor keeps, from one pass over the queue's table.
 //
 // Six of them are gauges — what the queue looks like right now. Three are not:
@@ -3728,11 +3798,18 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         "createdDelta",
         "completedDelta",
         "failedDelta",
+        ${latencyHistogram('"latencyBins"', 'wait')} as "waitBins",
+        ${latencyHistogram('"latencyBins"', 'run')} as "runBins",
+        "oldestReadySeconds",
         COALESCE("recount" > "settled", false) as "trueUp",`,
         counts: `
             (count(*) FILTER (WHERE ${inWindow('created_on')}))::int as "createdDelta",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}' AND ${inWindow('completed_on')}))::int as "completedDelta",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND ${inWindow('completed_on')}))::int as "failedDelta",
+            array_agg(${latencyBin(waitSeconds)} * ${LATENCY_PACK} + ${latencyBin(runSeconds)})
+              FILTER (WHERE j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') AND j.started_on IS NOT NULL AND ${inWindow('completed_on')}) as "latencyBins",
+            round(extract(epoch from (${schema}.job_now() - min(GREATEST(j.created_on, j.start_after))
+              FILTER (WHERE j.state < '${JOB_STATES.active}' AND NOT j.blocked AND j.start_after <= ${schema}.job_now()))))::int as "oldestReadySeconds",
             sum(
               CASE WHEN ${settled('created_on')} THEN 1 ELSE 0 END +
               CASE WHEN ${settled('completed_on')} AND j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') THEN 1 ELSE 0 END

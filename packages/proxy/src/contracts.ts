@@ -659,6 +659,9 @@ export const queueStatsSchema = z.object({
   createdDelta: z.number().nullable(),
   deltaSeconds: z.number().nullable(),
   deltaOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
+  waitBins: z.array(z.number()).nullable(),
+  runBins: z.array(z.number()).nullable(),
+  oldestReadySeconds: z.number().nullable(),
   capturedOn: z.iso.datetime().transform((val) => new Date(val)),
 }) satisfies z.ZodType<types.HttpQueueStats>
 
