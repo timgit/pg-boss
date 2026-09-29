@@ -37,6 +37,10 @@ interface UplotChartProps {
   yLog?: boolean
   /** Formats a y-axis tick and the legend's values. Pass a stable function: a new one rebuilds the plot. */
   yValue?: (value: number) => string
+  /** Formats a y-axis tick when it should read shorter than the legend, as on a log axis. */
+  yTick?: (value: number) => string
+  /** Where the y ticks go, given the scale's range; uPlot's own choice when left out. Pass a stable function. */
+  ySplits?: (min: number, max: number) => number[]
   /** The x extent in unix seconds, so charts over the same window line up whatever their data covers. */
   xRange?: [number, number]
   /**
@@ -66,6 +70,8 @@ export function UplotChart ({
   zeroBased = false,
   yLog = false,
   yValue,
+  yTick,
+  ySplits,
   xRange,
   bridgeSeconds,
   syncKey,
@@ -92,9 +98,18 @@ export function UplotChart ({
       grid: { stroke: theme.grid, width: 1 },
       ticks: { stroke: theme.grid, width: 1 },
     }
-    const yAxis = yValue
-      ? { ...axis, values: (_u: uPlot, splits: number[]) => splits.map(yValue) }
-      : axis
+    const tick = yTick ?? yValue
+    const yAxis = {
+      ...axis,
+      ...(tick ? { values: (_u: uPlot, splits: number[]) => splits.map(tick) } : {}),
+      // Given its own ticks, the axis labels every one: a log axis otherwise blanks all but powers of ten.
+      ...(ySplits
+        ? {
+            splits: (_u: uPlot, _axis: number, min: number, max: number) => ySplits(min, max),
+            filter: (_u: uPlot, splits: number[]) => splits,
+          }
+        : {}),
+    }
 
     // Gaps arrive in canvas pixels; convert their width to seconds on the x scale.
     const gaps: uPlot.Series.GapsRefiner | undefined = bridgeSeconds
@@ -163,7 +178,7 @@ export function UplotChart ({
     }
     // Rebuild on structure/theme change only; data & size are handled by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seriesKey, theme.grid, theme.text, plugins, zeroBased, yLog, yValue, fixedX, bridgeSeconds, syncKey, legend])
+  }, [seriesKey, theme.grid, theme.text, plugins, zeroBased, yLog, yValue, yTick, ySplits, fixedX, bridgeSeconds, syncKey, legend])
 
   // Update data in place (range/aggregate changes) without rebuilding.
   useEffect(() => {
