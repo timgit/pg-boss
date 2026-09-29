@@ -191,9 +191,10 @@ export async function hasLatencyColumns (dbUrl: string, schema: string): Promise
 
   validateIdentifier(schema)
   const row = await queryOne<{ exists: boolean }>(dbUrl, `
-    SELECT COUNT(*)::int = 3 as "exists"
+    SELECT COUNT(*)::int = 5 as "exists"
     FROM information_schema.columns
-    WHERE table_schema = $1 AND table_name = 'queue_stats' AND column_name IN ('wait_bins', 'run_bins', 'oldest_ready_seconds')
+    WHERE table_schema = $1 AND table_name = 'queue_stats'
+      AND column_name IN ('wait_slots', 'wait_counts', 'run_slots', 'run_counts', 'oldest_ready_seconds')
   `, [schema])
   const exists = row?.exists ?? false
   latencyColumnsCache.set(key, { exists, checkedAt: Date.now() })
@@ -1011,37 +1012,68 @@ export interface QueueThroughputOptions {
 // bound on the counters keeps the index and partition pruning; its 15-minute margin covers the lag
 // with room to spare. Only buckets with data come back: the caller fills gaps.
 //
-// With the v44 columns, each bucket also carries the wait and run histograms of its passes, as a JSON
-// array of arrays that the caller adds up (JSON rather than a sum in SQL, which would need arrays of
-// arrays CockroachDB does not have), and the longest oldest-ready wait among them.
+// With the v44 columns, each bucket also carries the wait and run histograms of its passes, stored
+// sparse (the slots a pass used and their counts, side by side) and summed per bucket and slot here,
+// so a bucket comes back as one histogram however many passes it covers. `measured` tells a bucket
+// whose passes counted no finished jobs (empty histograms) from one they did not measure at all.
 function throughputSql (s: string, oneQueue: boolean, latency: boolean): string {
   const byName = oneQueue ? 'AND name = $4' : ''
+  const counterBucket = '(floor(extract(epoch from delta_on) / $3) * $3)::float8'
+  const counterWhere = `captured_on >= $1 AND captured_on < $2::timestamptz + interval '15 minutes'
+        AND delta_on >= $1 AND delta_on < $2
+        AND delta_seconds > 0
+        ${byName}`
   const latencyAgg = latency
     ? `,
-        jsonb_agg(wait_bins) FILTER (WHERE wait_bins IS NOT NULL) AS wait_bins,
-        jsonb_agg(run_bins) FILTER (WHERE run_bins IS NOT NULL)   AS run_bins,
+        bool_or(wait_slots IS NOT NULL) AS measured,
         max(oldest_ready_seconds)    AS oldest_ready`
+    : ''
+  const latencyCtes = latency
+    ? `,
+    slots AS (
+      SELECT name, ${counterBucket} AS t, 'wait' AS kind, u.slot::int AS slot, sum(u.n)::bigint AS n
+      FROM ${s}.queue_stats, unnest(wait_slots, wait_counts) AS u(slot, n)
+      WHERE ${counterWhere}
+      GROUP BY 1, 2, 3, 4
+      UNION ALL
+      SELECT name, ${counterBucket} AS t, 'run' AS kind, u.slot::int AS slot, sum(u.n)::bigint AS n
+      FROM ${s}.queue_stats, unnest(run_slots, run_counts) AS u(slot, n)
+      WHERE ${counterWhere}
+      GROUP BY 1, 2, 3, 4
+    ),
+    h AS (
+      SELECT
+        name,
+        t,
+        array_agg(slot ORDER BY slot) FILTER (WHERE kind = 'wait') AS wait_slots,
+        array_agg(n ORDER BY slot) FILTER (WHERE kind = 'wait')    AS wait_counts,
+        array_agg(slot ORDER BY slot) FILTER (WHERE kind = 'run')  AS run_slots,
+        array_agg(n ORDER BY slot) FILTER (WHERE kind = 'run')     AS run_counts
+      FROM slots
+      GROUP BY 1, 2
+    )`
     : ''
   const latencyCols = latency
     ? `,
-      d.wait_bins                   AS "waitBins",
-      d.run_bins                    AS "runBins",
+      d.measured                    AS "latencyMeasured",
+      h.wait_slots                  AS "waitSlots",
+      h.wait_counts                 AS "waitCounts",
+      h.run_slots                   AS "runSlots",
+      h.run_counts                  AS "runCounts",
       d.oldest_ready                AS "oldestReadySeconds"`
     : ''
+  const latencyJoin = latency ? '\n    LEFT JOIN h ON h.name = d.name AND h.t = d.t' : ''
   return `
     WITH d AS (
       SELECT
         name,
-        (floor(extract(epoch from delta_on) / $3) * $3)::float8 AS t,
+        ${counterBucket} AS t,
         sum(created_delta)::float8   AS created,
         sum(completed_delta)::float8 AS completed,
         sum(failed_delta)::float8    AS failed,
         sum(delta_seconds)::float8   AS secs${latencyAgg}
       FROM ${s}.queue_stats
-      WHERE captured_on >= $1 AND captured_on < $2::timestamptz + interval '15 minutes'
-        AND delta_on >= $1 AND delta_on < $2
-        AND delta_seconds > 0
-        ${byName}
+      WHERE ${counterWhere}
       GROUP BY 1, 2
     ),
     g AS (
@@ -1053,7 +1085,7 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
       WHERE captured_on >= $1 AND captured_on < $2
         ${byName}
       GROUP BY 1, 2
-    )
+    )${latencyCtes}
     SELECT
       coalesce(d.name, g.name)      AS name,
       coalesce(d.t, g.t)            AS "bucketStart",
@@ -1061,22 +1093,33 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
       d.completed / d.secs * 60     AS "completedPerMin",
       d.failed / d.secs * 60        AS "failedPerMin",
       g.ready                       AS "readyCount"${latencyCols}
-    FROM d FULL JOIN g ON g.name = d.name AND g.t = d.t
+    FROM d FULL JOIN g ON g.name = d.name AND g.t = d.t${latencyJoin}
     ORDER BY 1, 2
   `
 }
 
 type ThroughputRow = QueueThroughputPoint & { name: string }
 
-// A bucket's histograms, as the JSON array of per-pass arrays the query returns, added slot by slot.
-// CockroachDB hands the counts over as strings.
-function sumPassBins (value: unknown): number[] | null {
-  if (!Array.isArray(value) || value.length === 0) return null
-  const sum = new Array(LATENCY_SLOTS).fill(0)
-  for (const bins of value) {
-    if (Array.isArray(bins)) bins.forEach((n, i) => { sum[i] += Number(n) })
+type LatencyRow = ThroughputRow & {
+  latencyMeasured?: boolean | null
+  waitSlots?: unknown
+  waitCounts?: unknown
+  runSlots?: unknown
+  runCounts?: unknown
+}
+
+// A bucket's summed (slot, count) pairs spread over all 48 slots: zeros where its passes measured and
+// no job finished, null where they did not measure. CockroachDB hands the numbers over as strings.
+function denseBins (slots: unknown, counts: unknown, measured: boolean): number[] | null {
+  if (!measured) return null
+  const bins = new Array(LATENCY_SLOTS).fill(0)
+  if (Array.isArray(slots) && Array.isArray(counts)) {
+    slots.forEach((slot, i) => {
+      const k = Number(slot)
+      if (k >= 0 && k < LATENCY_SLOTS) bins[k] += Number(counts[i])
+    })
   }
-  return sum
+  return bins
 }
 
 async function queryThroughput (
@@ -1091,12 +1134,12 @@ async function queryThroughput (
   if (name !== undefined) params.push(name)
   try {
     const latency = await hasLatencyColumns(dbUrl, schema)
-    const rows = await query<ThroughputRow>(dbUrl, throughputSql(s, name !== undefined, latency), params)
+    const rows = await query<LatencyRow>(dbUrl, throughputSql(s, name !== undefined, latency), params)
     if (!latency) return rows
-    return rows.map((row) => ({
+    return rows.map(({ latencyMeasured, waitSlots, waitCounts, runSlots, runCounts, ...row }) => ({
       ...row,
-      waitBins: sumPassBins(row.waitBins),
-      runBins: sumPassBins(row.runBins),
+      waitBins: denseBins(waitSlots, waitCounts, latencyMeasured === true),
+      runBins: denseBins(runSlots, runCounts, latencyMeasured === true),
       oldestReadySeconds: row.oldestReadySeconds == null ? null : Number(row.oldestReadySeconds),
     }))
   } catch (err: unknown) {

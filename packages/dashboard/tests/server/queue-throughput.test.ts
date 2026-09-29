@@ -170,43 +170,66 @@ describe('getThroughputOverview', () => {
 // this package is developed against, so the columns are added here the way that migration adds them.
 describe('wait and run times', () => {
   const SLOTS = 48
-  const bins = (slot: number, n: number) => Array.from({ length: SLOTS }, (_, i) => (i === slot ? n : 0))
 
   async function addLatencyColumns () {
     const pool = new pg.Pool({ connectionString: ctx.connectionString })
     await pool.query(`ALTER TABLE ${ctx.schema}.queue_stats
-      ADD COLUMN wait_bins int[], ADD COLUMN run_bins int[], ADD COLUMN oldest_ready_seconds int`)
+      ADD COLUMN wait_slots smallint[], ADD COLUMN wait_counts int[],
+      ADD COLUMN run_slots smallint[], ADD COLUMN run_counts int[],
+      ADD COLUMN oldest_ready_seconds int`)
     return pool
+  }
+
+  // A pass's histograms as the monitor stores them: the slots it used and their counts.
+  async function setLatency (pool: pg.Pool, name: string, capturedOn: Date, wait: [number[], number[]], run: [number[], number[]], oldest: number) {
+    await pool.query(
+      `UPDATE ${ctx.schema}.queue_stats
+          SET wait_slots = $3, wait_counts = $4, run_slots = $5, run_counts = $6, oldest_ready_seconds = $7
+        WHERE name = $1 AND captured_on = $2`,
+      [name, capturedOn, wait[0], wait[1], run[0], run[1], oldest])
   }
 
   it('adds the histograms of every pass in a bucket, and keeps the longest oldest-ready wait', async () => {
     await createTestQueue('tp-latency')
     await insertQueueStatsHistory(ctx.schema, 'tp-latency', [
       { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 1, failedDelta: 0, deltaSeconds: 30 },
-      { capturedOn: at(130), readyCount: 1, createdDelta: 1, completedDelta: 2, failedDelta: 0, deltaSeconds: 90 },
+      { capturedOn: at(130), readyCount: 1, createdDelta: 1, completedDelta: 3, failedDelta: 0, deltaSeconds: 90 },
     ])
     const pool = await addLatencyColumns()
-    await pool.query(
-      `UPDATE ${ctx.schema}.queue_stats SET wait_bins = $2, run_bins = $3, oldest_ready_seconds = $4 WHERE name = 'tp-latency' AND captured_on = $1`,
-      [at(40), bins(10, 1), bins(4, 1), 12])
-    await pool.query(
-      `UPDATE ${ctx.schema}.queue_stats SET wait_bins = $2, run_bins = $3, oldest_ready_seconds = $4 WHERE name = 'tp-latency' AND captured_on = $1`,
-      [at(130), bins(10, 2), bins(5, 2), 30])
+    await setLatency(pool, 'tp-latency', at(40), [[10], [1]], [[4], [1]], 12)
+    await setLatency(pool, 'tp-latency', at(130), [[10, 12], [2, 1]], [[5], [3]], 30)
     await pool.end()
 
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency', window)
 
     expect(point.waitBins).toHaveLength(SLOTS)
     expect(point.waitBins?.[10]).toBe(3)
+    expect(point.waitBins?.[12]).toBe(1)
     expect(point.runBins?.[4]).toBe(1)
-    expect(point.runBins?.[5]).toBe(2)
+    expect(point.runBins?.[5]).toBe(3)
+    expect(point.waitBins?.reduce((a, b) => a + b, 0)).toBe(4)
     expect(point.oldestReadySeconds).toBe(30)
 
     const [series] = await getThroughputOverview(ctx.connectionString, ctx.schema, window)
     expect(series.points[0].waitBins?.[10]).toBe(3)
   })
 
-  it('reports no histogram for a bucket whose passes recorded none', async () => {
+  it('reports empty histograms for a bucket whose passes measured and saw nothing finish', async () => {
+    await createTestQueue('tp-latency-idle')
+    await insertQueueStatsHistory(ctx.schema, 'tp-latency-idle', [
+      { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 0, failedDelta: 0, deltaSeconds: 30 },
+    ])
+    const pool = await addLatencyColumns()
+    await setLatency(pool, 'tp-latency-idle', at(40), [[], []], [[], []], 25)
+    await pool.end()
+
+    const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-idle', window)
+    expect(point.waitBins).toEqual(new Array(SLOTS).fill(0))
+    expect(point.runBins).toEqual(new Array(SLOTS).fill(0))
+    expect(point.oldestReadySeconds).toBe(25)
+  })
+
+  it('reports no histogram for a bucket whose passes did not measure', async () => {
     await createTestQueue('tp-latency-none')
     await insertQueueStatsHistory(ctx.schema, 'tp-latency-none', [
       { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 0, failedDelta: 0, deltaSeconds: 30 },
@@ -216,6 +239,7 @@ describe('wait and run times', () => {
 
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-none', window)
     expect(point.waitBins).toBeNull()
+    expect(point.runBins).toBeNull()
     expect(point.oldestReadySeconds).toBeNull()
   })
 
