@@ -191,8 +191,10 @@ export function metricsRedirectSearch (from: URLSearchParams): string {
 export function downsampleSize (count: number, max: number): number {
   const half = count / 2
   let size = Math.max(1, Math.ceil(count / max))
-  while (Number.isInteger(half) && half % size !== 0) size++
-  return size
+  if (!Number.isInteger(half) || half < 1) return size
+  // At most one window per group: a window's own bucket count always divides it.
+  while (half % size !== 0 && size < half) size++
+  return Math.min(size, half)
 }
 
 /**
