@@ -1,4 +1,5 @@
 import { query, queryOne } from './db.server'
+import { LATENCY_SLOTS } from './stats'
 import type { JobStateFilter } from './utils'
 import {
   isBuiltinJobColumnPath,
@@ -169,6 +170,34 @@ function quoteSqlIdentifier (identifier: string): string {
 
 function quoteSqlString (value: string): string {
   return `'${value.replace(/'/g, "''")}'`
+}
+
+// Whether queue_stats has the wait and run time columns (schema v44, pg-boss 12.36), cached per
+// (db, schema). Unlike the probes below, a missing answer is only kept for five minutes: a database
+// is upgraded under a running dashboard when its application deploys, and the stats pages should
+// pick the new columns up without a restart. Present stays present.
+const latencyColumnsCache = new Map<string, { exists: boolean, checkedAt: number }>()
+const LATENCY_RECHECK_MS = 5 * 60_000
+
+// Reset the latency column capability cache (used by tests).
+export function clearLatencyColumnsCache (): void {
+  latencyColumnsCache.clear()
+}
+
+export async function hasLatencyColumns (dbUrl: string, schema: string): Promise<boolean> {
+  const key = `${dbUrl}::${schema}`
+  const cached = latencyColumnsCache.get(key)
+  if (cached && (cached.exists || Date.now() - cached.checkedAt < LATENCY_RECHECK_MS)) return cached.exists
+
+  validateIdentifier(schema)
+  const row = await queryOne<{ exists: boolean }>(dbUrl, `
+    SELECT COUNT(*)::int = 3 as "exists"
+    FROM information_schema.columns
+    WHERE table_schema = $1 AND table_name = 'queue_stats' AND column_name IN ('wait_bins', 'run_bins', 'oldest_ready_seconds')
+  `, [schema])
+  const exists = row?.exists ?? false
+  latencyColumnsCache.set(key, { exists, checkedAt: Date.now() })
+  return exists
 }
 
 // Get queues with cached stats, with optional pagination, filtering, and search
@@ -981,8 +1010,24 @@ export interface QueueThroughputOptions {
 // spaced, so a rate is sum(delta) / sum(delta_seconds), never delta / bucket width. The captured_on
 // bound on the counters keeps the index and partition pruning; its 15-minute margin covers the lag
 // with room to spare. Only buckets with data come back: the caller fills gaps.
-function throughputSql (s: string, oneQueue: boolean): string {
+//
+// With the v44 columns, each bucket also carries the wait and run histograms of its passes, as a JSON
+// array of arrays that the caller adds up (JSON rather than a sum in SQL, which would need arrays of
+// arrays CockroachDB does not have), and the longest oldest-ready wait among them.
+function throughputSql (s: string, oneQueue: boolean, latency: boolean): string {
   const byName = oneQueue ? 'AND name = $4' : ''
+  const latencyAgg = latency
+    ? `,
+        jsonb_agg(wait_bins) FILTER (WHERE wait_bins IS NOT NULL) AS wait_bins,
+        jsonb_agg(run_bins) FILTER (WHERE run_bins IS NOT NULL)   AS run_bins,
+        max(oldest_ready_seconds)    AS oldest_ready`
+    : ''
+  const latencyCols = latency
+    ? `,
+      d.wait_bins                   AS "waitBins",
+      d.run_bins                    AS "runBins",
+      d.oldest_ready                AS "oldestReadySeconds"`
+    : ''
   return `
     WITH d AS (
       SELECT
@@ -991,7 +1036,7 @@ function throughputSql (s: string, oneQueue: boolean): string {
         sum(created_delta)::float8   AS created,
         sum(completed_delta)::float8 AS completed,
         sum(failed_delta)::float8    AS failed,
-        sum(delta_seconds)::float8   AS secs
+        sum(delta_seconds)::float8   AS secs${latencyAgg}
       FROM ${s}.queue_stats
       WHERE captured_on >= $1 AND captured_on < $2::timestamptz + interval '15 minutes'
         AND delta_on >= $1 AND delta_on < $2
@@ -1015,13 +1060,24 @@ function throughputSql (s: string, oneQueue: boolean): string {
       d.created / d.secs * 60       AS "arrivedPerMin",
       d.completed / d.secs * 60     AS "completedPerMin",
       d.failed / d.secs * 60        AS "failedPerMin",
-      g.ready                       AS "readyCount"
+      g.ready                       AS "readyCount"${latencyCols}
     FROM d FULL JOIN g ON g.name = d.name AND g.t = d.t
     ORDER BY 1, 2
   `
 }
 
 type ThroughputRow = QueueThroughputPoint & { name: string }
+
+// A bucket's histograms, as the JSON array of per-pass arrays the query returns, added slot by slot.
+// CockroachDB hands the counts over as strings.
+function sumPassBins (value: unknown): number[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const sum = new Array(LATENCY_SLOTS).fill(0)
+  for (const bins of value) {
+    if (Array.isArray(bins)) bins.forEach((n, i) => { sum[i] += Number(n) })
+  }
+  return sum
+}
 
 async function queryThroughput (
   dbUrl: string,
@@ -1034,7 +1090,15 @@ async function queryThroughput (
   const params: unknown[] = [options.from, options.to, bucketSeconds]
   if (name !== undefined) params.push(name)
   try {
-    return await query<ThroughputRow>(dbUrl, throughputSql(s, name !== undefined), params)
+    const latency = await hasLatencyColumns(dbUrl, schema)
+    const rows = await query<ThroughputRow>(dbUrl, throughputSql(s, name !== undefined, latency), params)
+    if (!latency) return rows
+    return rows.map((row) => ({
+      ...row,
+      waitBins: sumPassBins(row.waitBins),
+      runBins: sumPassBins(row.runBins),
+      oldestReadySeconds: row.oldestReadySeconds == null ? null : Number(row.oldestReadySeconds),
+    }))
   } catch (err: unknown) {
     // 42P01: no queue_stats (before v35). 42703: no delta columns (before v43).
     if (err && typeof err === 'object' && 'code' in err && (err.code === '42P01' || err.code === '42703')) {

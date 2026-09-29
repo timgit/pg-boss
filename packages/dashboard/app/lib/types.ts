@@ -106,6 +106,12 @@ export interface QueueThroughputPoint {
   completedPerMin: number | null;
   failedPerMin: number | null;
   readyCount: number | null;
+  // Wait and run times of the jobs that finished in the bucket, as histograms (see LATENCY_SLOTS),
+  // null where none finished. Absent on a database before pg-boss 12.36 (schema v44).
+  waitBins?: number[] | null;
+  runBins?: number[] | null;
+  // The longest the oldest ready job had waited at any pass in the bucket.
+  oldestReadySeconds?: number | null;
 }
 
 // One queue's throughput buckets, as the /stats overview reads them for every queue at once.

@@ -165,3 +165,67 @@ describe('getThroughputOverview', () => {
     ])
   })
 })
+
+// Wait and run times arrive with pg-boss 12.36 (schema v44). The test schema is built by the pg-boss
+// this package is developed against, so the columns are added here the way that migration adds them.
+describe('wait and run times', () => {
+  const SLOTS = 48
+  const bins = (slot: number, n: number) => Array.from({ length: SLOTS }, (_, i) => (i === slot ? n : 0))
+
+  async function addLatencyColumns () {
+    const pool = new pg.Pool({ connectionString: ctx.connectionString })
+    await pool.query(`ALTER TABLE ${ctx.schema}.queue_stats
+      ADD COLUMN wait_bins int[], ADD COLUMN run_bins int[], ADD COLUMN oldest_ready_seconds int`)
+    return pool
+  }
+
+  it('adds the histograms of every pass in a bucket, and keeps the longest oldest-ready wait', async () => {
+    await createTestQueue('tp-latency')
+    await insertQueueStatsHistory(ctx.schema, 'tp-latency', [
+      { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 1, failedDelta: 0, deltaSeconds: 30 },
+      { capturedOn: at(130), readyCount: 1, createdDelta: 1, completedDelta: 2, failedDelta: 0, deltaSeconds: 90 },
+    ])
+    const pool = await addLatencyColumns()
+    await pool.query(
+      `UPDATE ${ctx.schema}.queue_stats SET wait_bins = $2, run_bins = $3, oldest_ready_seconds = $4 WHERE name = 'tp-latency' AND captured_on = $1`,
+      [at(40), bins(10, 1), bins(4, 1), 12])
+    await pool.query(
+      `UPDATE ${ctx.schema}.queue_stats SET wait_bins = $2, run_bins = $3, oldest_ready_seconds = $4 WHERE name = 'tp-latency' AND captured_on = $1`,
+      [at(130), bins(10, 2), bins(5, 2), 30])
+    await pool.end()
+
+    const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency', window)
+
+    expect(point.waitBins).toHaveLength(SLOTS)
+    expect(point.waitBins?.[10]).toBe(3)
+    expect(point.runBins?.[4]).toBe(1)
+    expect(point.runBins?.[5]).toBe(2)
+    expect(point.oldestReadySeconds).toBe(30)
+
+    const [series] = await getThroughputOverview(ctx.connectionString, ctx.schema, window)
+    expect(series.points[0].waitBins?.[10]).toBe(3)
+  })
+
+  it('reports no histogram for a bucket whose passes recorded none', async () => {
+    await createTestQueue('tp-latency-none')
+    await insertQueueStatsHistory(ctx.schema, 'tp-latency-none', [
+      { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 0, failedDelta: 0, deltaSeconds: 30 },
+    ])
+    const pool = await addLatencyColumns()
+    await pool.end()
+
+    const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-none', window)
+    expect(point.waitBins).toBeNull()
+    expect(point.oldestReadySeconds).toBeNull()
+  })
+
+  it('leaves the fields off entirely on a database before v44', async () => {
+    await createTestQueue('tp-latency-old')
+    await insertQueueStatsHistory(ctx.schema, 'tp-latency-old', [
+      { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 1, failedDelta: 0, deltaSeconds: 30 },
+    ])
+
+    const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-old', window)
+    expect(point).not.toHaveProperty('waitBins')
+  })
+})

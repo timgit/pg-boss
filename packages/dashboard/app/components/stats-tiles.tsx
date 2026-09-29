@@ -137,6 +137,7 @@ export function StatsTile ({ tile, interval, noun, assessment }: StatsTileProps)
         <Rate value={tile.finishingPerMin} color="var(--stats-finishing)" label="finishing" />
       </div>
       <TileChart points={tile.points} />
+      {assessment?.line}
       <div className="flex justify-between gap-2 whitespace-nowrap text-[11.5px] text-[var(--text-tertiary)]">
         <span className="truncate">previous {noun} | this {noun}</span>
         {share && <span className="pgb-num">{share}</span>}
