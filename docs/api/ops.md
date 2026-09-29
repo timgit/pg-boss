@@ -174,6 +174,38 @@ const { rows } = await db.executeSql('SELECT now()')
 
 > Reaching past the API and mutating pg-boss tables directly is not supported. This exists so an application can reuse the same pool for its own queries rather than opening a second one.
 
+### `getInstances()`
+
+Returns every pg-boss instance registered in this database, oldest first. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never says it stopped, so its row goes quiet instead: `live` turns false once it has missed three heartbeats. Rows whose heartbeat has not moved for 7 days are deleted during maintenance.
+
+```js
+const instances = await boss.getInstances()
+const working = instances.filter(i => i.live && i.workers.some(w => w.queue === 'emails'))
+```
+
+Only instances on pg-boss 12.36 or later register. Older ones, and any constructed with `registerInstance: false`, name their connections `pgboss` in `pg_stat_activity`, where registered ones use `pgboss:` and the start of their id.
+
+**Returns**
+
+Array of objects with the following properties:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `id` | string | Random at construction, kept across `stop()` and `start()` |
+| `name` | string \| null | The [`instanceName`](./constructor.md#instancename) option |
+| `host`, `pid` | string, number | `os.hostname()` and the process id |
+| `version`, `nodeVersion` | string | pg-boss and Node.js versions |
+| `applicationName` | string \| null | The `application_name` of its connections, for joining `pg_stat_activity` |
+| `heartbeatSeconds` | number | Its heartbeat interval |
+| `supervise`, `schedule`, `migrate`, `persistQueueStats`, `persistWarnings` | boolean | Its constructor options |
+| `poolMax`, `poolTotal`, `poolIdle`, `poolWaiting` | number \| null | Its pool at the last heartbeat; null for a `db` adapter |
+| `workers` | array | One entry per `work()` call, below |
+| `startedOn`, `heartbeatOn` | Date | When it started, and its last heartbeat |
+| `stoppedOn` | Date \| null | Set by `stop()` |
+| `live` | boolean | Not stopped, and heard from within three heartbeats |
+
+Each `workers` entry has `id` (the id `work()` returned), `queue`, `localConcurrency`, `batchSize`, `pollingIntervalSeconds`, `active` (jobs in hand at the heartbeat), and `lastFetchedOn`, `lastJobEndedOn` and `lastErrorOn` as ISO strings or null. Error messages are not stored, since they can carry job data.
+
 ### `getBamStatus()`
 
 Returns a summary of boss async migration (BAM) commands grouped by status.
@@ -245,7 +277,7 @@ Array of objects with the following properties:
 
 Compares what pg-boss installed against what the database actually has: tables, indexes, functions, columns, constraints, and the `job_state` enum. It reports anything that diverged, such as a manual schema change, a failed migration, an index left `INVALID` by an interrupted build.
 
-The scan is catalog-only, so no locks and no table scans. Presence checks cover every managed table, including `job_common` and each per-queue partition. Those are the checks on tables, indexes, column names, functions and the enum. Default, type, nullability and constraint checks are limited to the fixed tables (version, queue, schedule, subscription, bam, warning, queue_stats, job_dependency), since the job tables' `DEFERRABLE` foreign keys and interval-typed `keep_until` default would false-positive. Anything needing `pg_get_functiondef`/`pg_get_constraintdef` is skipped where a backend lacks it, and CockroachDB skips the type, default and constraint checks entirely, since its `INT8` typing and constraint rendering diverge from standard Postgres. The presence checks stay active there.
+The scan is catalog-only, so no locks and no table scans. Presence checks cover every managed table, including `job_common` and each per-queue partition. Those are the checks on tables, indexes, column names, functions and the enum. Default, type, nullability and constraint checks are limited to the fixed tables (version, queue, schedule, subscription, bam, warning, queue_stats, job_dependency, instance), since the job tables' `DEFERRABLE` foreign keys and interval-typed `keep_until` default would false-positive. Anything needing `pg_get_functiondef`/`pg_get_constraintdef` is skipped where a backend lacks it, and CockroachDB skips the type, default and constraint checks entirely, since its `INT8` typing and constraint rendering diverge from standard Postgres. The presence checks stay active there.
 
 An index altered so its definition no longer matches is flagged under `mismatched`, with the expected `definition` and the current `actualDefinition` side by side. Here `job_common_i9`'s predicate was changed from `state = 'completed'` to `state = 'active'`:
 

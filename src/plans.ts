@@ -205,6 +205,8 @@ export function create (schema: string, version: number, options?: CreateOptions
     createTableJobDependency(schema),
     createIndexJobDependencyParent(schema),
 
+    createTableInstance(schema),
+
     createQueueFunction(schema, noPartitioning),
     deleteQueueFunction(schema, noPartitioning),
 
@@ -235,6 +237,7 @@ function createInline (schema: string, version: number, options: { createSchema?
     inlineIntoCreateTable(createTableWarning(schema), [createIndexWarning(schema)]),
     inlineIntoCreateTable(createTableQueueStats(schema, true), [createIndexQueueStats(schema, options.noCovering)]),
     inlineIntoCreateTable(createTableJobDependency(schema), [createIndexJobDependencyParent(schema)]),
+    createTableInstance(schema),
 
     createQueueFunction(schema, true),
     deleteQueueFunction(schema, true),
@@ -522,9 +525,145 @@ export function createTableJobDependency (schema: string) {
   `
 }
 
+// An instance is live until it misses this many heartbeats, and its row is deleted once its heartbeat
+// has not moved for this many days.
+export const INSTANCE_QUIET_BEATS = 3
+export const INSTANCE_RETENTION_DAYS = 7
+
+// Instance registry statements. $1 is the instance id throughout. Registering replaces the row, so a
+// PgBoss object restarted after stop() reads as live again from a new started_on. A heartbeat is an
+// upsert too: a row pruned while its process was paused (a laptop asleep past the retention) comes
+// back on the next beat, keeping the started_on the instance registered with ($17).
+const INSTANCE_COLUMNS = `id, name, host, pid, version, node_version, heartbeat_seconds,
+      supervise, schedule, migrate, persist_queue_stats, persist_warnings,
+      pool_max, pool_total, pool_idle, pool_waiting, workers, application_name, started_on, heartbeat_on`
+
+const INSTANCE_VALUES = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb,
+      current_setting('application_name')`
+
+const INSTANCE_BEAT = `pool_max = EXCLUDED.pool_max,
+        pool_total = EXCLUDED.pool_total,
+        pool_idle = EXCLUDED.pool_idle,
+        pool_waiting = EXCLUDED.pool_waiting,
+        workers = EXCLUDED.workers,
+        heartbeat_on = EXCLUDED.heartbeat_on`
+
+export function registerInstance (schema: string) {
+  return `
+    INSERT INTO ${schema}.instance (${INSTANCE_COLUMNS})
+    VALUES (${INSTANCE_VALUES}, ${schema}.job_now(), ${schema}.job_now())
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      host = EXCLUDED.host,
+      pid = EXCLUDED.pid,
+      version = EXCLUDED.version,
+      node_version = EXCLUDED.node_version,
+      heartbeat_seconds = EXCLUDED.heartbeat_seconds,
+      supervise = EXCLUDED.supervise,
+      schedule = EXCLUDED.schedule,
+      migrate = EXCLUDED.migrate,
+      persist_queue_stats = EXCLUDED.persist_queue_stats,
+      persist_warnings = EXCLUDED.persist_warnings,
+      application_name = EXCLUDED.application_name,
+      started_on = EXCLUDED.started_on,
+      stopped_on = NULL,
+      ${INSTANCE_BEAT}
+    RETURNING started_on as "startedOn"
+  `
+}
+
+export function heartbeatInstance (schema: string) {
+  return `
+    INSERT INTO ${schema}.instance (${INSTANCE_COLUMNS})
+    VALUES (${INSTANCE_VALUES}, $18::timestamptz, ${schema}.job_now())
+    ON CONFLICT (id) DO UPDATE SET
+      ${INSTANCE_BEAT}
+  `
+}
+
+export function stopInstance (schema: string) {
+  return `UPDATE ${schema}.instance SET stopped_on = ${schema}.job_now() WHERE id = $1`
+}
+
+// Rows whose heartbeat has not moved for the retention, stopped or quiet alike. A live instance's
+// row never qualifies, since its heartbeat keeps moving.
+export function deleteOldInstances (schema: string, days: number) {
+  return `
+    DELETE FROM ${schema}.instance
+    WHERE heartbeat_on < ${schema}.job_now() - interval '${days} days'
+  `
+}
+
+export function getInstances (schema: string) {
+  return `
+    SELECT
+      id,
+      name,
+      host,
+      pid,
+      version,
+      node_version as "nodeVersion",
+      application_name as "applicationName",
+      heartbeat_seconds as "heartbeatSeconds",
+      supervise,
+      schedule,
+      migrate,
+      persist_queue_stats as "persistQueueStats",
+      persist_warnings as "persistWarnings",
+      pool_max as "poolMax",
+      pool_total as "poolTotal",
+      pool_idle as "poolIdle",
+      pool_waiting as "poolWaiting",
+      workers,
+      started_on as "startedOn",
+      heartbeat_on as "heartbeatOn",
+      stopped_on as "stoppedOn",
+      stopped_on IS NULL AND heartbeat_on >= ${schema}.job_now() - heartbeat_seconds * ${INSTANCE_QUIET_BEATS} * interval '1 second' as live
+    FROM ${schema}.instance
+    ORDER BY started_on, id
+  `
+}
+
 export function createIndexJobDependencyParent (schema: string) {
   return `CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`
 }
+
+/* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
+// One row per PgBoss object, written by the object itself at start() and on each heartbeat, so a
+// database can say which instances share it and what each is doing. A crashed process never sets
+// stopped_on; it goes quiet instead, when heartbeat_on stops moving, and heartbeat_seconds says how
+// long that takes for this row, since the interval is per instance. workers is one entry per work()
+// call. The pool columns are node-postgres's counts at the last heartbeat, null for a pool pg-boss
+// was handed and cannot read. application_name is the one the registering session carried, so
+// pg_stat_activity joins to the row wherever it is unique.
+export function createTableInstance (schema: string) {
+  return `
+    CREATE TABLE ${schema}.instance (
+      id uuid PRIMARY KEY,
+      name text,
+      host text NOT NULL,
+      pid int NOT NULL,
+      version text NOT NULL,
+      node_version text NOT NULL,
+      application_name text,
+      heartbeat_seconds int NOT NULL,
+      supervise bool NOT NULL,
+      schedule bool NOT NULL,
+      migrate bool NOT NULL,
+      persist_queue_stats bool NOT NULL,
+      persist_warnings bool NOT NULL,
+      pool_max int,
+      pool_total int,
+      pool_idle int,
+      pool_waiting int,
+      workers jsonb NOT NULL DEFAULT '[]'::jsonb,
+      started_on timestamptz NOT NULL DEFAULT now(),
+      heartbeat_on timestamptz NOT NULL DEFAULT now(),
+      stopped_on timestamptz
+    )
+  `
+}
+/* eslint-enable no-restricted-syntax */
 
 // Anchored so a schema name that itself contains these substrings (e.g. `job_intake`) isn't
 // mangled: `\.job\y` matches only the base table reference (`schema.job`, not `schema.job_i5` whose
@@ -4528,7 +4667,7 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
 const BASE_JOB_INDEXES = [4, 7, 9, 11, 12]
 
 // The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
-const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency']
+const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency', 'instance']
 
 // Selects the manifest section for the live architecture, and substitutes the real schema name back in
 // for the placeholder the manifest stores.

@@ -290,6 +290,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
     await this.#executeQuery(sql)
   }
 
+  // Whether or not this instance registers: the registry is the database's, not this instance's.
+  async #maintainInstances () {
+    await this.#executeQuery(plans.deleteOldInstances(this.#config.schema, plans.INSTANCE_RETENTION_DAYS))
+  }
+
   async #ensureQueueStatsPartitions () {
     const sql = plans.ensureQueueStatsPartitions(this.#config.schema)
     await this.#executeQuery(sql)
@@ -388,6 +393,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     await this.#maintainWarnings()
     await this.#maintainQueueStats()
+    await this.#maintainInstances()
 
     // Last in the pass: a rebuild is DDL that can run for seconds, so nothing time-sensitive
     // (expiry, deletion, stats) should ever queue behind it.

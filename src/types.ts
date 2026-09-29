@@ -50,6 +50,19 @@ export interface IDatabase {
    * does not implement this.
    */
   setSessionStatements?(statements: string[]): Promise<void>;
+  /**
+   * Optional capability for the instance registry: the pool's size and use, recorded on each
+   * heartbeat. The built-in pool-based Db implements it; without it the pool columns stay null.
+   */
+  poolCounts?(): PoolCounts | null;
+}
+
+/** A connection pool's size and use at one moment, as node-postgres counts them. */
+export interface PoolCounts {
+  max: number;
+  total: number;
+  idle: number;
+  waiting: number;
 }
 
 export interface ListenHandle {
@@ -513,7 +526,27 @@ export interface AttachableClock extends Clock {
   attach(target: { db: IDatabase, schema: string, idle?: () => Promise<boolean> }): Promise<AsyncDisposable>
 }
 
-export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
+export interface InstanceOptions {
+  /**
+   * Record this instance in the database's instance registry, readable with `getInstances()`.
+   * @see https://pgboss.io/api/ops#getinstances
+   * @default true
+   */
+  registerInstance?: boolean;
+  /**
+   * A name for this instance in the registry, such as `api` or `billing-worker`.
+   * @see https://pgboss.io/api/constructor#instancename
+   */
+  instanceName?: string;
+  /**
+   * How often this instance refreshes its registry row, in seconds. It reads as quiet after three
+   * missed heartbeats.
+   * @default 30
+   */
+  instanceHeartbeatSeconds?: number;
+}
+
+export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions, InstanceOptions {
   /**
    * Source of time and timers for this instance. Defaults to the system clock (`Date.now` and the
    * global timer functions).
@@ -632,6 +665,8 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
   bamIntervalSeconds: number;
   flowIntervalSeconds: number;
   reindexIntervalSeconds: number;
+  registerInstance: boolean;
+  instanceHeartbeatSeconds: number;
 }
 
 /**
@@ -1346,6 +1381,55 @@ export interface WipData {
   lastJobDuration: number | null;
   lastError: object | null;
   lastErrorOn: number | null;
+}
+
+/** One `work()` call of a registered instance, as its last heartbeat recorded it. */
+export interface InstanceWorker {
+  /** The id `work()` returned. */
+  id: string;
+  queue: string;
+  localConcurrency: number;
+  batchSize: number;
+  pollingIntervalSeconds: number | null;
+  /** Jobs in hand at the heartbeat. */
+  active: number;
+  lastFetchedOn: string | null;
+  lastJobEndedOn: string | null;
+  lastErrorOn: string | null;
+}
+
+/**
+ * A PgBoss object that registered itself in this database.
+ * @see https://pgboss.io/api/ops#getinstances
+ */
+export interface Instance {
+  id: string;
+  name: string | null;
+  host: string;
+  pid: number;
+  /** pg-boss version. */
+  version: string;
+  nodeVersion: string;
+  /** The `application_name` its connections carry, for joining `pg_stat_activity`. */
+  applicationName: string | null;
+  heartbeatSeconds: number;
+  supervise: boolean;
+  schedule: boolean;
+  migrate: boolean;
+  persistQueueStats: boolean;
+  persistWarnings: boolean;
+  /** Pool counts at the last heartbeat; null for a pool pg-boss did not create. */
+  poolMax: number | null;
+  poolTotal: number | null;
+  poolIdle: number | null;
+  poolWaiting: number | null;
+  workers: InstanceWorker[];
+  startedOn: Date;
+  heartbeatOn: Date;
+  /** Set by a graceful `stop()`; a crashed instance goes quiet instead. */
+  stoppedOn: Date | null;
+  /** Not stopped, and heard from within three heartbeats. */
+  live: boolean;
 }
 
 export interface StopOptions {
