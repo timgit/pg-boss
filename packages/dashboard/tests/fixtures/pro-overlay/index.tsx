@@ -38,8 +38,8 @@ function useDemoAssessments (queues: StatsQueueSeries[]): ReadonlyMap<string, St
   })), [queues])
 }
 
-function DemoMarkers ({ queue, chart, from, to, plot }: StatsChartMarkersProps) {
-  return <div data-testid="pro-stats-markers">{queue ?? 'all'} {chart} {from}-{to} at {plot.left}+{plot.width}</div>
+function DemoMarkers ({ queue, chart, from, to, bucketSeconds, plot }: StatsChartMarkersProps) {
+  return <div data-testid="pro-stats-markers">{queue ?? 'all'} {chart} {from}-{to} by {bucketSeconds} at {plot.left}+{plot.width}</div>
 }
 
 /** Runtime half of a fixture overlay. Resolved through the `~pro` alias. */

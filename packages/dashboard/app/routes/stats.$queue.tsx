@@ -170,6 +170,7 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
             onAggregate={changeAggregate}
             range={range}
             boundary={boundary}
+            bucketSeconds={bucketSeconds}
             noun={noun}
             syncKey={`stats:${name}`}
           />

@@ -54,13 +54,15 @@ interface DepthPanelProps {
   range: [number, number]
   /** Where the current window starts, in unix seconds. */
   boundary: number
+  /** The throughput panel's bucket width, so changes group the same way under both. */
+  bucketSeconds: number
   noun: string
   syncKey?: string
 }
 
 // The queue's gauges over the previous and current windows, ready only by default, the rest behind
 // the series picker. Shares the throughput panel's time axis and cursor.
-export function DepthPanel ({ queue, history, selected, onToggle, aggregate, onAggregate, range, boundary, noun, syncKey }: DepthPanelProps) {
+export function DepthPanel ({ queue, history, selected, onToggle, aggregate, onAggregate, range, boundary, bucketSeconds, noun, syncKey }: DepthPanelProps) {
   const [mounted, setMounted] = useState(false)
   const [frameRef, width] = useElementWidth<HTMLDivElement>(800)
   const colors = useCssColors(COLOR_VARS)
@@ -148,7 +150,7 @@ export function DepthPanel ({ queue, history, selected, onToggle, aggregate, onA
         )}
       </div>
       {plotBox && hasProSlot('statsChartMarkers') && (
-        <ProSlot name="statsChartMarkers" queue={queue} chart="depth" from={range[0]} to={range[1]} plot={plotBox} />
+        <ProSlot name="statsChartMarkers" queue={queue} chart="depth" from={range[0]} to={range[1]} bucketSeconds={bucketSeconds} plot={plotBox} />
       )}
     </section>
   )

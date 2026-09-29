@@ -28,7 +28,7 @@ const point = (bucketStart: number, rates: Partial<QueueThroughputPoint> = {}): 
 
 describe('ThroughputPanel', () => {
   it('draws the chart with its legend once something has been counted', () => {
-    render(<ThroughputPanel title="Throughput" queue="q" range={[0, 120]} noun="hour" points={[point(0, { arrivedPerMin: 3 }), point(60, { completedPerMin: 2 })]} />)
+    render(<ThroughputPanel title="Throughput" queue="q" range={[0, 120]} bucketSeconds={60} noun="hour" points={[point(0, { arrivedPerMin: 3 }), point(60, { completedPerMin: 2 })]} />)
 
     expect(screen.getByRole('region', { name: 'Throughput' })).toBeTruthy()
     expect(screen.getByText('Arrived /min')).toBeTruthy()
@@ -39,7 +39,7 @@ describe('ThroughputPanel', () => {
   })
 
   it('says so instead of drawing an empty chart', () => {
-    render(<ThroughputPanel title="Throughput" queue="q" range={[0, 120]} noun="hour" points={[point(0), point(60)]} />)
+    render(<ThroughputPanel title="Throughput" queue="q" range={[0, 120]} bucketSeconds={60} noun="hour" points={[point(0), point(60)]} />)
 
     expect(screen.queryByTestId('uplot')).toBeNull()
     expect(screen.getByText('No throughput counted in this range.')).toBeTruthy()

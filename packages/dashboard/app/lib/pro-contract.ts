@@ -119,6 +119,8 @@ export interface StatsChartMarkersProps {
   /** Unix seconds at the left and right edges of the plot. */
   from: number
   to: number
+  /** The chart's bucket width in seconds: changes inside one bucket are one point on the chart. */
+  bucketSeconds: number
   /** Where the plot sits across the chart, in CSS pixels, so a marker at time t lines up with the axis. */
   plot: { left: number, width: number }
 }
