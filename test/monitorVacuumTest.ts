@@ -301,6 +301,19 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
     expect(stored.message).toContain("this application's own connection (application_name 'pgboss'")
   })
 
+  it('counts another registered pg-boss instance as pg-boss, not another application', async function () {
+    // Registered instances name their connections pgboss:<id>, so two instances never share a name.
+    const boss = await withStagedHolder({
+      backendHolder: { pid: 4245, applicationName: 'pgboss:0f1e2d3c', userName: 'app', state: 'active', age: 900, xactSeconds: 30 },
+      selfApplicationName: 'pgboss:a1b2c3d4'
+    })
+
+    const stored = await provoke(boss)
+
+    expect(stored.data.self).toBe(true)
+    expect(stored.message).toContain("another pg-boss instance's connection (application_name 'pgboss:0f1e2d3c'")
+  })
+
   it('will not guess when the holder set no application_name', async function () {
     const boss = await withStagedHolder({
       backendHolder: { pid: 4244, applicationName: '', userName: 'app', state: null, age: 900, xactSeconds: null },
