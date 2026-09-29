@@ -4,6 +4,7 @@ import type {
   StatsChartMarkersProps,
   StatsOverviewKpiProps,
   StatsQueueKpiProps,
+  StatsQueuePanelsProps,
   StatsQueueSeries,
   StatsTileAssessment,
 } from '~/lib/pro-contract'
@@ -20,6 +21,10 @@ function DemoQueueKpi ({ queue }: StatsQueueKpiProps) {
   return <div data-testid="pro-stats-queue-kpi">{queue.name} {queue.interval} {queue.points.length} points</div>
 }
 
+function DemoPanels ({ queue, range, syncKey, noun }: StatsQueuePanelsProps) {
+  return <div data-testid="pro-stats-panels">{queue.name} {range[0]}-{range[1]} {syncKey} {noun} {queue.latency ? 'with latency' : 'no latency'}</div>
+}
+
 function DemoOverviewKpi ({ queues }: StatsOverviewKpiProps) {
   return <div data-testid="pro-stats-overview-kpi">{queues.map((q) => q.name).join(',')}</div>
 }
@@ -34,6 +39,7 @@ function useDemoAssessments (queues: StatsQueueSeries[]): ReadonlyMap<string, St
       rank,
       severity: rank === 0 ? 'critical' : rank === 1 ? 'watch' : null,
       badge: <span data-testid="pro-stats-tile-badge">{['critical', 'watch', 'ok'][rank]}</span>,
+      line: <span data-testid="pro-stats-tile-line">{queue.latency ? 'p95 wait known' : 'no wait times'}</span>,
     }]
   })), [queues])
 }
@@ -50,6 +56,7 @@ export const overlay: ProOverlay = {
   slots: {
     sidebarFooter: DemoFooter,
     statsQueueKpi: DemoQueueKpi,
+    statsQueuePanels: DemoPanels,
     statsOverviewKpi: DemoOverviewKpi,
     statsQueueTile: {
       useAssessments: useDemoAssessments,

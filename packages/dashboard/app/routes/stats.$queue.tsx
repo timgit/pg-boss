@@ -6,12 +6,14 @@ import {
   getQueueStatsHistory,
   getQueueThroughput,
   getQueueStatsCollectionStatus,
+  hasLatencyColumns,
   resolveAggregate,
 } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
 import {
   STATS_INTERVALS,
   fillBuckets,
+  latencySummary,
   parseDepthSeries,
   parseStatsInterval,
   settledPerMin,
@@ -45,7 +47,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     throw new Response('Queue not found', { status: 404 })
   }
 
-  const [points, history, collection] = await Promise.all([
+  const [points, history, collection, withLatency] = await Promise.all([
     getQueueThroughput(DB_URL, SCHEMA, params.queue, { ...span, bucketSeconds }),
     // The gauges at about the throughput panel's resolution, one point per bucket.
     getQueueStatsHistory(DB_URL, SCHEMA, params.queue, {
@@ -54,6 +56,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
       maxDataPoints: Math.round((span.to.getTime() - span.from.getTime()) / 1000 / bucketSeconds),
     }),
     getQueueStatsCollectionStatus(DB_URL, SCHEMA),
+    hasLatencyColumns(DB_URL, SCHEMA),
   ])
 
   const filled = fillBuckets(points, span, bucketSeconds)
@@ -64,6 +67,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     interval,
     statsAvailable: collection.available,
     points: filled,
+    latency: withLatency ? latencySummary(filled, { previous, current }) : null,
     range: [span.from.getTime() / 1000, span.to.getTime() / 1000] as [number, number],
     boundary: current.from.getTime() / 1000,
     bucketSeconds,
@@ -86,7 +90,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
-  const { name, interval, statsAvailable, points, range, boundary, bucketSeconds, history, aggregate, depthSeries, arrived, finishing } = loaderData
+  const { name, interval, statsAvailable, points, latency, range, boundary, bucketSeconds, history, aggregate, depthSeries, arrived, finishing } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
   const { noun } = STATS_INTERVALS[interval]
   const counted = arrived.current != null || arrived.previous != null
@@ -132,7 +136,7 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
         </p>
       )}
 
-      <section aria-label="Key figures" className={cn('grid gap-4 sm:grid-cols-2', withKpiSlot && 'lg:grid-cols-[1fr_1fr_1.6fr]')}>
+      <section aria-label="Key figures" className={cn('grid gap-4 sm:grid-cols-2', withKpiSlot && 'lg:grid-cols-[1fr_1fr_2.6fr]')}>
         <StatsRateCard
           label="Arrival rate"
           color="var(--stats-arrived)"
@@ -153,7 +157,7 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
         />
         {withKpiSlot && (
           <div className="grid sm:col-span-2 lg:col-span-1">
-            <ProSlot name="statsQueueKpi" queue={{ name, interval, bucketSeconds, points }} />
+            <ProSlot name="statsQueueKpi" queue={{ name, interval, bucketSeconds, points, latency }} />
           </div>
         )}
       </section>
@@ -174,6 +178,7 @@ export default function QueueStatsPage ({ loaderData }: Route.ComponentProps) {
             noun={noun}
             syncKey={`stats:${name}`}
           />
+          <ProSlot name="statsQueuePanels" queue={{ name, interval, bucketSeconds, points, latency }} range={range} syncKey={`stats:${name}`} noun={noun} />
         </>
       )}
     </div>

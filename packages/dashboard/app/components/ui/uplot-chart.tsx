@@ -10,6 +10,10 @@ export interface UplotSeries {
   stroke: string
   /** Draw as bars from zero instead of a line, filled with the stroke color. */
   bars?: boolean
+  /** Line width in pixels, 2 by default. */
+  width?: number
+  /** Dash pattern, as canvas setLineDash takes it. */
+  dash?: number[]
 }
 
 export interface PlotBox {
@@ -29,6 +33,8 @@ interface UplotChartProps {
   plugins?: uPlot.Plugin[]
   /** Scale y from zero to a round maximum rather than fitting the data's own range. */
   zeroBased?: boolean
+  /** A log scale for y, for durations that span orders of magnitude. Values must be above zero. */
+  yLog?: boolean
   /** Formats a y-axis tick. Pass a stable function: a new one rebuilds the plot. */
   yValue?: (value: number) => string
   /** The x extent in unix seconds, so charts over the same window line up whatever their data covers. */
@@ -58,6 +64,7 @@ export function UplotChart ({
   theme,
   plugins,
   zeroBased = false,
+  yLog = false,
   yValue,
   xRange,
   bridgeSeconds,
@@ -75,7 +82,7 @@ export function UplotChart ({
   onPlotBoxRef.current = onPlotBox
 
   // Rebuild key — only the structure, not the data/size, forces a fresh uPlot instance.
-  const seriesKey = series.map((s) => `${s.label}:${s.stroke}:${s.bars ? 'bars' : 'line'}`).join('|')
+  const seriesKey = series.map((s) => `${s.label}:${s.stroke}:${s.bars ? 'bars' : 'line'}:${s.width ?? 2}:${s.dash?.join(',') ?? ''}`).join('|')
 
   useEffect(() => {
     if (!elRef.current) return
@@ -110,9 +117,11 @@ export function UplotChart ({
         x: fixedX
           ? { time: true, range: (_u: uPlot, min: number | null, max: number | null): uPlot.Range.MinMax => xRangeRef.current ?? [min, max] }
           : { time: true },
-        ...(zeroBased
-          ? { y: { range: (_u: uPlot, _min: number | null, max: number | null): uPlot.Range.MinMax => [0, niceMax(max)] } }
-          : {}),
+        ...(yLog
+          ? { y: { distr: 3, log: 10 } }
+          : zeroBased
+            ? { y: { range: (_u: uPlot, _min: number | null, max: number | null): uPlot.Range.MinMax => [0, niceMax(max)] } }
+            : {}),
       },
       axes: [axis, yAxis],
       plugins,
@@ -135,7 +144,8 @@ export function UplotChart ({
           : {
               label: s.label,
               stroke: s.stroke,
-              width: 2,
+              width: s.width ?? 2,
+              ...(s.dash ? { dash: s.dash } : {}),
               points: { show: false },
               // Only when set: an explicit undefined replaces uPlot's default and breaks drawing.
               ...(gaps ? { gaps } : {}),
@@ -151,7 +161,7 @@ export function UplotChart ({
     }
     // Rebuild on structure/theme change only; data & size are handled by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seriesKey, theme.grid, theme.text, plugins, zeroBased, yValue, fixedX, bridgeSeconds, syncKey, legend])
+  }, [seriesKey, theme.grid, theme.text, plugins, zeroBased, yLog, yValue, fixedX, bridgeSeconds, syncKey, legend])
 
   // Update data in place (range/aggregate changes) without rebuilding.
   useEffect(() => {

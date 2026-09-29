@@ -223,6 +223,7 @@ describe('pro overlay', () => {
       finishingPerMin: arrivedPerMin,
       share: 0.1,
       points: [point, point],
+      latency: null,
     })
 
     async function renderTiles () {
@@ -243,7 +244,7 @@ describe('pro overlay', () => {
       const { ProSlot } = await import('~/components/pro-slot')
       render(
         <>
-          <ProSlot name="statsQueueKpi" queue={{ name: 'emails', interval: '6h', bucketSeconds: 300, points: [point, point] }} />
+          <ProSlot name="statsQueueKpi" queue={{ name: 'emails', interval: '6h', bucketSeconds: 300, points: [point, point], latency: null }} />
           <ProSlot name="statsOverviewKpi" queues={[tile('a', 1), tile('b', 2)]} />
         </>
       )
@@ -260,6 +261,7 @@ describe('pro overlay', () => {
 
       expect(tileNames()).toEqual(['/stats/bad-q?interval=1h', '/stats/meh-q?interval=1h', '/stats/busy?interval=1h'])
       expect(screen.getAllByTestId('pro-stats-tile-badge').map((b) => b.textContent)).toEqual(['critical', 'watch', 'ok'])
+      expect(screen.getAllByTestId('pro-stats-tile-line')).toHaveLength(3)
       const [bad, meh, busy] = screen.getAllByRole('link')
       expect(bad.className).toContain('border-[var(--error-500)]')
       expect(meh.className).toContain('border-[var(--warning-500)]')
@@ -278,6 +280,17 @@ describe('pro overlay', () => {
       expect(screen.queryByTestId('pro-stats-tile-badge')).toBeNull()
       expect(screen.queryByRole('group', { name: 'Sort queues' })).toBeNull()
       expect(screen.getByText('Busiest first')).toBeInTheDocument()
+    })
+
+    it('hands the panels slot the queue, the page\'s axis and its cursor key', async () => {
+      const { overlay } = await import('../fixtures/pro-overlay')
+      mockOverlay(overlay)
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      const latency = { previous: { waitBins: null, runBins: null }, current: { waitBins: null, runBins: null }, oldestReadySeconds: 0 }
+      render(<ProSlot name="statsQueuePanels" queue={{ name: 'emails', interval: '1h', bucketSeconds: 60, points: [point], latency }} range={[0, 7200]} syncKey="stats:emails" noun="hour" />)
+
+      expect(screen.getByTestId('pro-stats-panels')).toHaveTextContent('emails 0-7200 stats:emails hour with latency')
     })
 
     it('hands the marker row the chart, its time span and where the plot sits', async () => {

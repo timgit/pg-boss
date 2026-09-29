@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
+  LATENCY_SLOTS,
   STATS_INTERVALS,
+  addBins,
   byBusiest,
   downsample,
   fillBuckets,
+  latencySummary,
   metricsRedirectSearch,
   niceMax,
   parseDepthSeries,
@@ -221,6 +224,11 @@ describe('metricsRedirectSearch', () => {
 })
 
 describe('downsample', () => {
+  it('never merges across the windows, however few the points', () => {
+    expect(downsample([point(0), point(60)], 1)).toHaveLength(2)
+    expect(downsample([point(0), point(60), point(120), point(180)], 1)).toHaveLength(2)
+  })
+
   it('merges buckets so no point spans both windows', () => {
     const points = Array.from({ length: 120 }, (_, i) => point(i * 60, { arrivedPerMin: i < 60 ? 1 : 2 }))
     const out = downsample(points, 48)
@@ -258,5 +266,55 @@ describe('queueSummaries', () => {
     expect(tiles[0]).toMatchObject({ arrivedPerMin: 30, finishingPerMin: 25, share: 0.75 })
     expect(tiles[2]).toMatchObject({ arrivedPerMin: null, finishingPerMin: null, share: 0 })
     expect(tiles[0].points).toHaveLength(40)
+  })
+})
+
+describe('latency', () => {
+  const bins = (slot: number, n: number) => Array.from({ length: LATENCY_SLOTS }, (_, i) => (i === slot ? n : 0))
+
+  it('adds histograms slot by slot, and keeps one when the other is missing', () => {
+    expect(addBins(bins(3, 2), bins(3, 1))?.[3]).toBe(3)
+    expect(addBins(null, bins(5, 1))?.[5]).toBe(1)
+    expect(addBins(bins(5, 1), undefined)?.[5]).toBe(1)
+    expect(addBins(null, null)).toBeNull()
+  })
+
+  it('sums each window\'s histograms and keeps the newest oldest-ready wait', () => {
+    const windows = statsWindows('1h', new Date('2026-09-28T12:00:30Z'))
+    const prev = seconds(windows.previous.from)
+    const cur = seconds(windows.current.from)
+    const summary = latencySummary([
+      point(prev, { waitBins: bins(10, 1), oldestReadySeconds: 90 }),
+      point(cur, { waitBins: bins(10, 2), runBins: bins(4, 2), oldestReadySeconds: 30 }),
+      point(cur + 60, { waitBins: bins(12, 1), oldestReadySeconds: 5 }),
+    ], windows)
+
+    expect(summary.previous.waitBins?.[10]).toBe(1)
+    expect(summary.previous.runBins).toBeNull()
+    expect(summary.current.waitBins?.[10]).toBe(2)
+    expect(summary.current.waitBins?.[12]).toBe(1)
+    expect(summary.oldestReadySeconds).toBe(5)
+  })
+
+  it('adds every queue\'s histograms for the all-queues series, and keeps the worst oldest wait', () => {
+    const [summed] = sumSeries([
+      { name: 'a', points: [point(60, { waitBins: bins(1, 1), oldestReadySeconds: 20 })] },
+      { name: 'b', points: [point(60, { waitBins: bins(1, 2), oldestReadySeconds: 50 })] },
+    ])
+    expect(summed.waitBins?.[1]).toBe(3)
+    expect(summed.oldestReadySeconds).toBe(50)
+  })
+
+  it('leaves the histograms off a tile\'s points, which carry them per window instead', () => {
+    const [p] = downsample([point(0, { waitBins: bins(1, 1), oldestReadySeconds: 7 }), point(60, { oldestReadySeconds: 9 }), point(120), point(180)], 2)
+    expect(p.waitBins).toBeUndefined()
+    expect(p.oldestReadySeconds).toBe(9)
+  })
+
+  it('gives a tile its latency only when the database records it', () => {
+    const windows = statsWindows('1h', new Date('2026-09-28T12:00:30Z'))
+    const series = [{ name: 'a', points: [point(seconds(windows.current.from), { waitBins: bins(8, 4) })] }]
+    expect(queueSummaries(['a'], series, '1h', windows)[0].latency).toBeNull()
+    expect(queueSummaries(['a'], series, '1h', windows, true)[0].latency?.current.waitBins?.[8]).toBe(4)
   })
 })

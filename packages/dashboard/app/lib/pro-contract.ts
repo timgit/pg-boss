@@ -3,7 +3,7 @@ import type { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { RouterContextProvider } from 'react-router'
 import type { QueueThroughputPoint } from '~/lib/types'
-import type { StatsInterval } from '~/lib/stats'
+import type { LatencySummary, StatsInterval } from '~/lib/stats'
 
 /**
  * The contract between this package and an optional Pro overlay.
@@ -74,7 +74,10 @@ export interface StatsQueueSeries {
   interval: StatsInterval
   /** The width of each point, in seconds. */
   bucketSeconds: number
+  /** On `/stats/:queue` each point also carries its bucket's wait and run histograms; on a tile it does not. */
   points: QueueThroughputPoint[]
+  /** Wait and run times summed per window, and the oldest ready wait. Null before pg-boss 12.36. */
+  latency: LatencySummary | null
 }
 
 /** What `/stats/:queue` tells `statsQueueKpi`: the queue at the page's own resolution. */
@@ -94,6 +97,8 @@ export interface StatsTileAssessment {
   /** Lower comes first in the overlay's order; ties go busiest first. */
   rank: number
   badge?: ReactNode
+  /** A line under the tile's chart, such as a figure the free tile does not show. */
+  line?: ReactNode
 }
 
 /**
@@ -109,6 +114,17 @@ export interface StatsTileSlot {
   useAssessments: (queues: StatsQueueSeries[]) => ReadonlyMap<string, StatsTileAssessment>
   /** The name of the order `rank` gives, offered beside "Busiest first" and chosen by default. */
   sortLabel?: string
+}
+
+/** What `/stats/:queue` tells `statsQueuePanels`: the queue, and the axis and cursor its charts share. */
+export interface StatsQueuePanelsProps {
+  queue: StatsQueueSeries
+  /** Unix seconds at the left and right edges of the page's charts. */
+  range: [number, number]
+  /** Charts given this key move one cursor with the page's own. */
+  syncKey: string
+  /** "hour", "6 hours", "24 hours". */
+  noun: string
 }
 
 /** What a `/stats` chart tells `statsChartMarkers` about the axis the row sits under. */
@@ -183,10 +199,14 @@ export interface ProSlots {
   scheduleActions?: ComponentType<ScheduleSlotProps>
 
   /**
-   * A third card in the `/stats/:queue` key figures, after the two rates. Given the series the page
-   * loaded, so the common case needs no request of its own.
+   * Cards after the two rates in the `/stats/:queue` key figures, in a cell about as wide as two and
+   * a half rate cards, room for two. Given the series the page loaded, so the common case needs no
+   * request of its own.
    */
   statsQueueKpi?: ComponentType<StatsQueueKpiProps>
+
+  /** Panels under the depth chart on `/stats/:queue`, on the page's time axis and cursor. */
+  statsQueuePanels?: ComponentType<StatsQueuePanelsProps>
 
   /** A third card in the `/stats` key figures, given every queue's tile series. */
   statsOverviewKpi?: ComponentType<StatsOverviewKpiProps>

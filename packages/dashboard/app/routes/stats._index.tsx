@@ -3,6 +3,7 @@ import {
   getQueueNames,
   getQueueStatsCollectionStatus,
   getThroughputOverview,
+  hasLatencyColumns,
 } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
 import {
@@ -33,13 +34,15 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const span = { from: previous.from, to: current.to }
 
   // One query for every queue: the per-queue series and, summed, the all-queues one.
-  const [names, series, collection] = await Promise.all([
+  const [names, series, collection, withLatency] = await Promise.all([
     getQueueNames(DB_URL, SCHEMA),
     getThroughputOverview(DB_URL, SCHEMA, { ...span, bucketSeconds }),
     getQueueStatsCollectionStatus(DB_URL, SCHEMA),
+    hasLatencyColumns(DB_URL, SCHEMA),
   ])
 
-  const points = fillBuckets(sumSeries(series), span, bucketSeconds)
+  // The all-queues series carries no histograms: nothing on /stats charts them, and each tile has its own.
+  const points = fillBuckets(sumSeries(series), span, bucketSeconds).map(({ waitBins: _w, runBins: _r, ...p }) => p)
   const arrived = (p: typeof points[number]) => p.arrivedPerMin
 
   return {
@@ -51,7 +54,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     bucketSeconds,
     arrived: { current: windowAverage(points, current, arrived), previous: windowAverage(points, previous, arrived) },
     finishing: { current: windowAverage(points, current, settledPerMin), previous: windowAverage(points, previous, settledPerMin) },
-    tiles: queueSummaries(names, series, interval, windows),
+    tiles: queueSummaries(names, series, interval, windows, withLatency),
   }
 }
 

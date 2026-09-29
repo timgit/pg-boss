@@ -102,16 +102,70 @@ export function sumSeries (series: QueueThroughputSeries[]): QueueThroughputPoin
     for (const p of points) {
       const acc = byStart.get(p.bucketStart)
       if (!acc) {
-        byStart.set(p.bucketStart, { ...p })
+        byStart.set(p.bucketStart, { ...p, ...(p.waitBins ? { waitBins: [...p.waitBins] } : {}), ...(p.runBins ? { runBins: [...p.runBins] } : {}) })
         continue
       }
       acc.arrivedPerMin = add(acc.arrivedPerMin, p.arrivedPerMin)
       acc.completedPerMin = add(acc.completedPerMin, p.completedPerMin)
       acc.failedPerMin = add(acc.failedPerMin, p.failedPerMin)
       acc.readyCount = add(acc.readyCount, p.readyCount)
+      if (p.waitBins || acc.waitBins) acc.waitBins = addBins(acc.waitBins, p.waitBins)
+      if (p.runBins || acc.runBins) acc.runBins = addBins(acc.runBins, p.runBins)
+      if (p.oldestReadySeconds != null) acc.oldestReadySeconds = Math.max(acc.oldestReadySeconds ?? 0, p.oldestReadySeconds)
     }
   }
   return [...byStart.values()].sort((a, b) => a.bucketStart - b.bucketStart)
+}
+
+// Wait and run times as pg-boss 12.36 (schema v44) records them: 48 counts per histogram, slot 0
+// under 10 ms, then bins √2 wide up to about 23 hours, the last slot beyond. Histograms add slot by
+// slot, so a span or a set of queues is summed first and any percentile is read from the sum.
+export const LATENCY_SLOTS = 48
+
+/** Two histograms added slot by slot. Null only when both are. */
+export function addBins (a: number[] | null | undefined, b: number[] | null | undefined): number[] | null {
+  if (!b) return a ?? null
+  if (!a) return [...b]
+  return a.map((n, i) => n + (b[i] ?? 0))
+}
+
+export interface LatencyWindow {
+  waitBins: number[] | null;
+  runBins: number[] | null;
+}
+
+// A queue's wait and run times over the two windows a /stats page compares, and how long its oldest
+// ready job has waited at the newest pass. The page's points carry the same per bucket.
+export interface LatencySummary {
+  previous: LatencyWindow;
+  current: LatencyWindow;
+  oldestReadySeconds: number | null;
+}
+
+/** The histograms of every bucket in [from, to), added. */
+export function windowLatency (points: QueueThroughputPoint[], window: StatsWindow): LatencyWindow {
+  const from = window.from.getTime() / 1000
+  const to = window.to.getTime() / 1000
+  let waitBins: number[] | null = null
+  let runBins: number[] | null = null
+  for (const p of points) {
+    if (p.bucketStart < from || p.bucketStart >= to) continue
+    waitBins = addBins(waitBins, p.waitBins)
+    runBins = addBins(runBins, p.runBins)
+  }
+  return { waitBins, runBins }
+}
+
+export function latencySummary (points: QueueThroughputPoint[], windows: Pick<StatsWindows, 'previous' | 'current'>): LatencySummary {
+  let oldestReadySeconds: number | null = null
+  for (const p of points) {
+    if (p.oldestReadySeconds != null) oldestReadySeconds = p.oldestReadySeconds
+  }
+  return {
+    previous: windowLatency(points, windows.previous),
+    current: windowLatency(points, windows.current),
+    oldestReadySeconds,
+  }
 }
 
 /** Busiest first: highest arrival rate in the current window, queues with no rate last, then by name. */
@@ -215,12 +269,16 @@ export function downsample (points: QueueThroughputPoint[], max: number): QueueT
   for (let i = 0; i < points.length; i += size) {
     const group = points.slice(i, i + size)
     const ready = group.map((p) => p.readyCount).filter((v): v is number => v != null)
+    const oldest = group.map((p) => p.oldestReadySeconds).filter((v): v is number => v != null)
     out.push({
       bucketStart: group[0].bucketStart,
       arrivedPerMin: mean(group, (p) => p.arrivedPerMin),
       completedPerMin: mean(group, (p) => p.completedPerMin),
       failedPerMin: mean(group, (p) => p.failedPerMin),
       readyCount: ready.length ? ready[ready.length - 1] : null,
+      // Not the histograms: 96 numbers a point for every queue would make /stats heavy. A tile's
+      // `latency` carries them summed per window instead.
+      ...(oldest.length ? { oldestReadySeconds: Math.max(...oldest) } : {}),
     })
   }
   return out
@@ -239,6 +297,8 @@ export interface StatsQueueSummary {
   share: number | null;
   /** Both windows, the previous first, downsampled for the tile's chart. */
   points: QueueThroughputPoint[];
+  /** Wait and run times per window; null on a database before pg-boss 12.36. */
+  latency: LatencySummary | null;
 }
 
 export const TILE_POINTS = 48
@@ -251,7 +311,8 @@ export function queueSummaries (
   names: string[],
   series: QueueThroughputSeries[],
   interval: StatsInterval,
-  windows: StatsWindows
+  windows: StatsWindows,
+  withLatency = false
 ): StatsQueueSummary[] {
   const { previous, current, bucketSeconds } = windows
   const span = { from: previous.from, to: current.to }
@@ -268,6 +329,7 @@ export function queueSummaries (
       finishingPerMin: windowAverage(filled, current, settledPerMin),
       share: null as number | null,
       points: downsample(filled, TILE_POINTS),
+      latency: withLatency ? latencySummary(filled, windows) : null,
     }
   })
   const total = tiles.reduce((sum, t) => sum + (t.arrivedPerMin ?? 0), 0)
