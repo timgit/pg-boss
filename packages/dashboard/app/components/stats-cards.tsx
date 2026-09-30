@@ -1,8 +1,14 @@
+import type { ReactNode } from 'react'
 import type { QueueStats } from '~/lib/types'
 import { StatCard } from '~/components/ui/stat-card'
 
+/** Which card: the `QueueStats` figure it shows. */
+export type StatKey = 'totalQueued' | 'totalDeferred' | 'totalReady' | 'totalActive' | 'totalFailed' | 'totalJobs'
+
 interface StatsCardsProps {
   stats: QueueStats
+  /** A line under a card, by the figure it sits under, for an overlay's figure the stats do not have. */
+  footers?: Partial<Record<StatKey, ReactNode>>
 }
 
 const statCards = [
@@ -14,7 +20,7 @@ const statCards = [
   { name: 'Total Jobs', key: 'totalJobs' as const, hint: 'current storage across queues', accent: 'neutral' as const },
 ]
 
-export function StatsCards ({ stats }: StatsCardsProps) {
+export function StatsCards ({ stats, footers }: StatsCardsProps) {
   return (
     <>
       {statCards.map((stat) => (
@@ -24,6 +30,7 @@ export function StatsCards ({ stats }: StatsCardsProps) {
           value={stats[stat.key].toLocaleString()}
           hint={stat.hint}
           accent={stat.accent}
+          footer={footers?.[stat.key]}
         />
       ))}
     </>

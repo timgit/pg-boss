@@ -18,8 +18,37 @@ import {
   warningTypeVariant,
   warningTypeLabel,
 } from '~/lib/utils'
+import type { ComponentType, ReactNode } from 'react'
 import type { QueueResult, WarningResult } from '~/lib/types'
 import type { OverviewData } from '~/lib/overview.server'
+import type { StatKey } from '~/components/stats-cards'
+
+/** A column an overlay adds to the overview's queue table. */
+export interface OverviewQueueColumn {
+  header: string
+  align?: 'right'
+  cell: (queue: QueueResult) => ReactNode
+}
+
+/**
+ * What an overlay that replaces the overview adds to the sections it composes. Every field is
+ * optional, and without them the sections are the free overview's.
+ */
+export interface OverviewExtensions {
+  /** A line under a stat card, by the figure it sits under. */
+  statFooters?: Partial<Record<StatKey, ReactNode>>
+  queues?: {
+    title?: string
+    /** Where the table's own link goes, and what it says. */
+    more?: { to: string, text: string }
+    afterName?: OverviewQueueColumn[]
+    afterActive?: OverviewQueueColumn[]
+    /** Leave out the status column, when a column added above says more. */
+    hideStatus?: boolean
+  }
+  /** Under each recent warning. */
+  WarningFooter?: ComponentType<{ warning: WarningResult }>
+}
 
 /** The overview's title and the overlay's actions beside it, for an overlay that replaces the page. */
 export function OverviewHeader () {
@@ -37,8 +66,16 @@ export function OverviewHeader () {
  * `narrow` lays it out for a column beside something else, three stats to a row and the two cards
  * stacked. Exported so an overlay that replaces the page composes it rather than copying it.
  */
-export function OverviewSections ({ data, narrow = false }: { data: OverviewData, narrow?: boolean }) {
+export function OverviewSections ({ data, narrow = false, extensions = {} }: { data: OverviewData, narrow?: boolean, extensions?: OverviewExtensions }) {
   const { stats, warnings, topQueues, migrations } = data
+  const q = extensions.queues ?? {}
+  const { WarningFooter } = extensions
+  const headOf = (c: OverviewQueueColumn) => (
+    <TableHead key={c.header} className={c.align === 'right' ? 'text-right' : undefined}>{c.header}</TableHead>
+  )
+  const cellOf = (queue: QueueResult) => (c: OverviewQueueColumn) => (
+    <TableCell key={c.header} className={c.align === 'right' ? 'text-right pgb-num' : undefined}>{c.cell(queue)}</TableCell>
+  )
 
   return (
     <div>
@@ -47,7 +84,7 @@ export function OverviewSections ({ data, narrow = false }: { data: OverviewData
         ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 mb-4'
         : 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 mb-4'}
       >
-        <StatsCards stats={stats} />
+        <StatsCards stats={stats} footers={extensions.statFooters} />
       </div>
 
       <MigrationsBanner migrations={migrations} />
@@ -56,12 +93,12 @@ export function OverviewSections ({ data, narrow = false }: { data: OverviewData
       <div className={narrow ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4'}>
         <Card>
           <CardHeader>
-            <CardTitle>Top Queues</CardTitle>
+            <CardTitle>{q.title ?? 'Top Queues'}</CardTitle>
             <DbLink
-              to="/queues"
+              to={q.more?.to ?? '/queues'}
               className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
             >
-              View all
+              {q.more?.text ?? 'View all'}
             </DbLink>
           </CardHeader>
           {topQueues.length === 0 ? (
@@ -71,10 +108,12 @@ export function OverviewSections ({ data, narrow = false }: { data: OverviewData
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  {q.afterName?.map(headOf)}
                   <TableHead className="text-right">Queued</TableHead>
                   <TableHead className="text-right">Active</TableHead>
+                  {q.afterActive?.map(headOf)}
                   <TableHead>Trend</TableHead>
-                  <TableHead>Status</TableHead>
+                  {!q.hideStatus && <TableHead>Status</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -88,12 +127,14 @@ export function OverviewSections ({ data, narrow = false }: { data: OverviewData
                         {queue.name}
                       </DbLink>
                     </TableCell>
+                    {q.afterName?.map(cellOf(queue))}
                     <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                       {queue.queuedCount.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                       {queue.activeCount.toLocaleString()}
                     </TableCell>
+                    {q.afterActive?.map(cellOf(queue))}
                     <TableCell>
                       {queue.readyHistory && queue.readyHistory.length > 0 ? (
                         <Sparkline
@@ -109,9 +150,11 @@ export function OverviewSections ({ data, narrow = false }: { data: OverviewData
                         <span className="text-[var(--border-strong)]">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <QueueStatusBadge queue={queue} />
-                    </TableCell>
+                    {!q.hideStatus && (
+                      <TableCell>
+                        <QueueStatusBadge queue={queue} />
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -155,6 +198,7 @@ export function OverviewSections ({ data, narrow = false }: { data: OverviewData
                     <p className="text-sm text-[var(--text-secondary)] truncate">
                       {warning.message}
                     </p>
+                    {WarningFooter && <WarningFooter warning={warning} />}
                   </div>
                 </div>
               ))

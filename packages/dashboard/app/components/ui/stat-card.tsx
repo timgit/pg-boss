@@ -13,6 +13,8 @@ interface StatCardProps {
   sparkline?: ReactNode
   /** When set, the whole card becomes a (db-aware) link to this path, with a hover affordance. */
   to?: string
+  /** A line under the hint, set off by a rule, for a figure the card's own data does not have. */
+  footer?: ReactNode
   className?: string
 }
 
@@ -26,7 +28,7 @@ const accentText: Record<StatAccent, string> = {
   error: 'text-[var(--error-600)]',
 }
 
-export function StatCard ({ label, value, hint, accent = 'neutral', sparkline, to, className }: StatCardProps) {
+export function StatCard ({ label, value, hint, accent = 'neutral', sparkline, to, footer, className }: StatCardProps) {
   const card = (
     <div
       className={cn(
@@ -48,6 +50,7 @@ export function StatCard ({ label, value, hint, accent = 'neutral', sparkline, t
       </span>
       {sparkline && <div className="mt-0.5 h-6">{sparkline}</div>}
       {hint && <span className="text-xs text-[var(--text-tertiary)]">{hint}</span>}
+      {footer && <div className="border-t border-[var(--border-subtle)] pt-2 text-xs text-[var(--text-secondary)]">{footer}</div>}
     </div>
   )
 
