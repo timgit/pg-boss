@@ -2550,10 +2550,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.db.executeSql(sql, [name])
   }
 
+  // A truncate leaves nothing to count, so it zeroes the cached counts after itself. A monitor pass
+  // that read the table first holds it until done, so the truncate and then the zeroes land after
+  // that pass's write.
   async deleteAllJobs (name?: string) {
     if (!name) {
       const sql = plans.truncateTable(this.config.schema, plans.BASE_JOB_TABLE)
       await this.db.executeSql(sql)
+      await this.db.executeSql(plans.zeroQueueStats(this.config.schema))
       return
     }
 
@@ -2563,6 +2567,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (partition) {
       const sql = plans.truncateTable(this.config.schema, table)
       await this.db.executeSql(sql)
+      await this.db.executeSql(plans.zeroQueueStats(this.config.schema, true), [name])
     } else {
       const sql = plans.deleteAllJobs(this.config.schema, table)
       await this.db.executeSql(sql, [name])

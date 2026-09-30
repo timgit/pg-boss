@@ -1661,6 +1661,30 @@ export function truncateTable (schema: string, table: string) {
   return `TRUNCATE ${schema}.${table}`
 }
 
+// The cached counts of a queue whose table was just truncated, written without counting: they are
+// zero. Only the truncate paths use it. A DELETE leaves concurrent sends and the other states in
+// place, so its counts can only come from a recount, whose cost the delete cannot bound. The
+// throughput counters are the monitor's and are left alone. With `one`, $1 is the queue's name.
+export function zeroQueueStats (schema: string, one?: boolean) {
+  return `
+    UPDATE ${schema}.queue SET
+      deferred_count = 0,
+      queued_count = 0,
+      ready_count = 0,
+      active_count = 0,
+      failed_count = 0,
+      total_count = 0,
+      singletons_active = NULL,
+      monitor_on = ${schema}.job_now()
+    FROM (
+      SELECT name
+      FROM ${schema}.queue${one ? '\n      WHERE name = $1' : ''}
+      ${queueRowLock()}
+    ) q
+    WHERE queue.name = q.name
+  `
+}
+
 export function deleteAllJobs (schema: string, table: string) {
   return `DELETE from ${schema}.${table} WHERE name = $1`
 }
