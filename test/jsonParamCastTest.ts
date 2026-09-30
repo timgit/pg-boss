@@ -40,6 +40,7 @@ const textRouted: Array<[string, string]> = [
   ['insertDependencies', plans.insertDependencies(schema)],
   ['setScheduleLastJobIds', plans.setScheduleLastJobIds(schema)],
   ['setScheduleKinds', plans.setScheduleKinds(schema)],
+  ['insertWarning', plans.insertWarning(schema)],
   // Both share redriveWhere's data filter.
   ['redriveJobs', plans.redriveJobs(schema, table)],
   ['previewRedrive', plans.previewRedrive(schema, table)],

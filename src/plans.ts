@@ -1503,7 +1503,7 @@ export function getTime (schema: string) {
 export function insertWarning (schema: string) {
   return `
     INSERT INTO ${schema}.warning (type, message, data, created_on)
-    VALUES ($1, $2, $3, ${schema}.job_now())
+    VALUES ($1, $2, $3::text::jsonb, ${schema}.job_now())
   `
 }
 

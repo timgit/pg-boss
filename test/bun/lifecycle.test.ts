@@ -5,10 +5,12 @@
 // The vitest half (test/bunAdapterTest.ts) pins the adapter's rewriting against a fake client.
 // This half proves the rewriting is the right one by driving the whole of pg-boss - install,
 // workers, cron and maintenance included - through the real driver.
+import EventEmitter from 'node:events'
 import { SQL } from 'bun'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { PgBoss, fromBunSql } from '../../src/index.ts'
 import * as plans from '../../src/plans.ts'
+import { emitAndPersistWarning } from '../../src/warning.ts'
 
 const config = await Bun.file(new URL('../config.json', import.meta.url)).json()
 const host = process.env.POSTGRES_HOST || config.host
@@ -132,7 +134,7 @@ describe('pg-boss on Bun.SQL', () => {
     expect((await boss.getSchedules()).some(s => s.name === queue)).toBe(false)
   })
 
-  // The four tests below each bind a JSON.stringify'd payload in front of a json cast, which Bun
+  // The five tests below each bind a JSON.stringify'd payload into a json parameter, which Bun
   // encodes a second time unless the cast goes through text first (#880, #936).
   test('finds jobs by data', async () => {
     const queue = 'found'
@@ -203,6 +205,24 @@ describe('pg-boss on Bun.SQL', () => {
 
     expect((await boss.getSchedules(queue))[0].kind).toBe('rrule')
     await boss.unschedule(queue)
+  })
+
+  test('persists a warning whose data reads back as an object', async () => {
+    const type = 'bun_warning'
+    const emitter = new EventEmitter()
+    const errors: Error[] = []
+    emitter.on('error', err => errors.push(err))
+
+    await emitAndPersistWarning(
+      { emitter, db, schema, persistWarnings: true, warningEvent: 'warning', errorEvent: 'error' },
+      type,
+      'persisted',
+      { elapsed: 3 }
+    )
+
+    const { rows } = await db.executeSql(plans.getWarnings(schema), [type, 1, 0])
+    expect(errors.map(err => err.message)).toEqual([])
+    expect(rows[0].data).toEqual({ elapsed: 3 })
   })
 
   test('runs maintenance, whose locked scripts also need a reserved connection', async () => {
