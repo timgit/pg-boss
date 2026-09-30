@@ -38,6 +38,13 @@ const textRouted: Array<[string, string]> = [
   ['deadLetterJobsByIdWithOutputs', plans.deadLetterJobsByIdWithOutputs(schema, table)],
   ['updateJob', plans.updateJob(schema, table, 'q', 'id', 'newest')],
   ['insertDependencies', plans.insertDependencies(schema)],
+  ['setScheduleLastJobIds', plans.setScheduleLastJobIds(schema)],
+  ['setScheduleKinds', plans.setScheduleKinds(schema)],
+  // Both share redriveWhere's data filter.
+  ['redriveJobs', plans.redriveJobs(schema, table)],
+  ['previewRedrive', plans.previewRedrive(schema, table)],
+  // Left uncast, an inferring driver takes jsonb from the `@>` beside it, the same as `::jsonb`.
+  ['findJobs (by data)', plans.findJobs(schema, table, { queued: false, byKey: false, byData: true, byId: false })],
   // buildFetchParams renders the tier parameter only with groupConcurrency.tiers set, and builds it
   // by concatenation - which is why a grep for `$N::jsonb` does not turn it up.
   ['fetchNextJob (group concurrency tiers)', plans.fetchNextJob({
