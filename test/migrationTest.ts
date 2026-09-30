@@ -601,7 +601,7 @@ describe('migration', function () {
     try {
       for (const policy of ['standard', 'short', 'singleton', 'stately', 'exclusive', 'key_strict_fifo']) {
         await db.executeSql(
-          `SELECT ${config.schema}.create_queue($1, $2::jsonb)`,
+          `SELECT ${config.schema}.create_queue($1, $2::text::jsonb)`,
           [`part_${policy}`, JSON.stringify({ partition: true, policy })])
       }
     } finally {
@@ -708,7 +708,7 @@ describe('migration', function () {
     try {
       await contractor.create()
       await db.executeSql(
-        `SELECT ${schema}.create_queue($1, $2::jsonb)`,
+        `SELECT ${schema}.create_queue($1, $2::text::jsonb)`,
         ['part_q', JSON.stringify({ partition: true, policy: 'key_strict_fifo' })])
 
       for (const migration of migrations) {

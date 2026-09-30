@@ -37,7 +37,7 @@ describe('knex adapter', () => {
       const adapter = fromKnex(trx)
       const result = await adapter.executeSql(
         `INSERT INTO ${ctx.schema}.job (name, data, state)
-         VALUES ($1, $2, 'created')
+         VALUES ($1, $2::text::jsonb, 'created')
          RETURNING id`,
         [ctx.schema, '{}']
       )
@@ -57,7 +57,7 @@ describe('knex adapter', () => {
         const adapter = fromKnex(trx)
         const result = await adapter.executeSql(
           `INSERT INTO ${ctx.schema}.job (name, data, state)
-           VALUES ($1, $2, 'created')
+           VALUES ($1, $2::text::jsonb, 'created')
            RETURNING id`,
           [ctx.schema, '{}']
         )
@@ -158,7 +158,7 @@ describe('kysely adapter', () => {
       const adapter = fromKysely(trx)
       const result = await adapter.executeSql(
         `INSERT INTO ${ctx.schema}.job (name, data, state)
-         VALUES ($1, $2, 'created')
+         VALUES ($1, $2::text::jsonb, 'created')
          RETURNING id`,
         [ctx.schema, '{}']
       )
@@ -196,7 +196,7 @@ describe('kysely adapter', () => {
         const adapter = fromKysely(trx)
         const result = await adapter.executeSql(
           `INSERT INTO ${ctx.schema}.job (name, data, state)
-           VALUES ($1, $2, 'created')
+           VALUES ($1, $2::text::jsonb, 'created')
            RETURNING id`,
           [ctx.schema, '{}']
         )
@@ -247,7 +247,7 @@ describe('drizzle adapter', () => {
       const adapter = fromDrizzle(tx, drizzleSql)
       const result = await adapter.executeSql(
         `INSERT INTO ${ctx.schema}.job (name, data, state)
-         VALUES ($1, $2, 'created')
+         VALUES ($1, $2::text::jsonb, 'created')
          RETURNING id`,
         [ctx.schema, '{}']
       )
@@ -281,7 +281,7 @@ describe('drizzle adapter', () => {
         const adapter = fromDrizzle(tx, drizzleSql)
         const result = await adapter.executeSql(
           `INSERT INTO ${ctx.schema}.job (name, data, state)
-           VALUES ($1, $2, 'created')
+           VALUES ($1, $2::text::jsonb, 'created')
            RETURNING id`,
           [ctx.schema, '{}']
         )
@@ -414,7 +414,7 @@ describe('drizzle adapter (postgres-js)', () => {
       const adapter = fromDrizzle(tx, drizzleSql)
       const result = await adapter.executeSql(
         `INSERT INTO ${ctx.schema}.job (name, data, state)
-         VALUES ($1, $2, 'created')
+         VALUES ($1, $2::text::jsonb, 'created')
          RETURNING id`,
         [ctx.schema, '{}']
       )
@@ -530,7 +530,7 @@ describe('prisma adapter', () => {
       const db = fromPrisma(tx)
       const result = await db.executeSql(
         `INSERT INTO ${ctx.schema}.job (name, data, state)
-         VALUES ($1, $2, 'created')
+         VALUES ($1, $2::text::jsonb, 'created')
          RETURNING id`,
         [ctx.schema, '{}']
       )
@@ -570,7 +570,7 @@ describe('prisma adapter', () => {
         const db = fromPrisma(tx)
         const result = await db.executeSql(
           `INSERT INTO ${ctx.schema}.job (name, data, state)
-           VALUES ($1, $2, 'created')
+           VALUES ($1, $2::text::jsonb, 'created')
            RETURNING id`,
           [ctx.schema, '{}']
         )

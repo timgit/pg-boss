@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { ctx } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
+import { IGNORE_MARKER } from './bindAuditRules.ts'
 import type { IDatabase } from '../src/types.ts'
 
 // Some drivers infer a bind parameter's type from the cast in front of it, and that inference cuts
@@ -188,7 +189,7 @@ describe('json bind parameters under a type-inferring driver', function () {
     // Negative control: the statement pg-boss used to emit. This is what establishes that the
     // wrapper can break a direct cast at all - it drives executeSql itself, so it says nothing
     // about pg-boss's own path. That part is textRoutedHits() in the test above.
-    await expect(db.executeSql('SELECT * FROM json_to_recordset($1::json) AS x (id int)', [payload]))
+    await expect(db.executeSql(`${IGNORE_MARKER} SELECT * FROM json_to_recordset($1::json) AS x (id int)`, [payload]))
       .rejects.toMatchObject({ code: INVALID_PARAMETER_VALUE })
 
     const { rows } = await db.executeSql('SELECT * FROM json_to_recordset($1::text::json) AS x (id int)', [payload])
