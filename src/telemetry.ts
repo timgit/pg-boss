@@ -122,7 +122,7 @@ class Telemetry {
   #instruments: Instruments | null = null
   #observing = false
 
-  constructor (options: types.OpenTelemetryOptions = {}, queues: QueueSnapshot = () => null) {
+  constructor (options: types.OpenTelemetryOptions = {}, queues: QueueSnapshot) {
     this.enabled = options.enabled !== false
     this.#propagate = this.enabled && options.propagateContext !== false
     this.#tracer = (options.tracerProvider ?? trace.getTracerProvider()).getTracer(INSTRUMENTATION_SCOPE, packageJson.version)
