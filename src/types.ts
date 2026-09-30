@@ -793,7 +793,13 @@ export interface RedrivePreview {
   unroutable: number;
 }
 
-export type InsertOptions = ConnectionOptions & { returnId?: boolean }
+export type InsertOptions = ConnectionOptions & {
+  /**
+   * Resolve to the ids of the inserted jobs instead of `null`. Defaults to `false`.
+   * @see https://pgboss.io/api/jobs#insert-name-job-options
+   */
+  returnId?: boolean
+}
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
