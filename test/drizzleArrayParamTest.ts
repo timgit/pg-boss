@@ -10,8 +10,7 @@ import { fromDrizzle, type DrizzleSqlTagLike } from '../src/adapters/drizzle.ts'
 // tests pin that expansion at the point where the driver would see it: no bind value is ever an
 // array, and no value is ever escaped into SQL text.
 //
-// No Bun in CI: the last test models the stringifying driver with a fake encoder, the way
-// jsonParamCastTest models the double-encoding one.
+// No Bun in CI: the last test models the stringifying driver with a fake encoder.
 
 // A stand-in for drizzle's sql tag: it records what the adapter assembled instead of building a
 // query, so the assertions can read the final SQL text and the bind values separately.
