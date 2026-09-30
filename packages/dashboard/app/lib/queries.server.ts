@@ -18,6 +18,7 @@ import type {
   ScheduleResult,
   BamEntryResult,
   BamStatusSummary,
+  Instance,
 } from './types'
 
 export interface SortOptions {
@@ -1194,6 +1195,77 @@ export async function getQueueStatsCollectionStatus (
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
       return { available: false }
+    }
+    throw err
+  }
+}
+
+// The instance registry (schema v44+) as core's getInstances() reads it, with the database's clock
+// so the page judges ages against the same time the live column did. 42P01 is a schema that
+// predates the registry.
+export async function getInstanceRegistry (
+  dbUrl: string,
+  schema: string
+): Promise<{ available: boolean, instances: Instance[], checkedOn: Date }> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT
+      id,
+      name,
+      host,
+      pid,
+      version,
+      node_version as "nodeVersion",
+      application_name as "applicationName",
+      heartbeat_seconds as "heartbeatSeconds",
+      supervise,
+      schedule,
+      migrate,
+      persist_queue_stats as "persistQueueStats",
+      persist_warnings as "persistWarnings",
+      pool_max as "poolMax",
+      pool_total as "poolTotal",
+      pool_idle as "poolIdle",
+      pool_waiting as "poolWaiting",
+      workers,
+      metrics,
+      config,
+      crash_restarts as "crashRestarts",
+      crash_restarts_since as "crashRestartsSince",
+      started_on as "startedOn",
+      heartbeat_on as "heartbeatOn",
+      stopped_on as "stoppedOn",
+      stopped_on IS NULL AND heartbeat_on >= ${s}.job_now() - heartbeat_seconds * 3 * interval '1 second' as live,
+      ${s}.job_now() as "checkedOn"
+    FROM ${s}.instance
+    ORDER BY started_on, id
+  `
+  try {
+    const rows = await query<Instance & { checkedOn: Date }>(dbUrl, sql)
+    // CockroachDB returns its INT8 columns as strings, and its jsonb as text through some drivers.
+    const num = (v: unknown) => (v === null || v === undefined ? null : Number(v))
+    const json = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v)
+    const checkedOn = rows[0]?.checkedOn ?? (await queryOne<{ now: Date }>(dbUrl, `SELECT ${s}.job_now() as now`))!.now
+    return {
+      available: true,
+      checkedOn: new Date(checkedOn),
+      instances: rows.map(({ checkedOn: _c, ...row }) => ({
+        ...row,
+        pid: Number(row.pid),
+        heartbeatSeconds: Number(row.heartbeatSeconds),
+        poolMax: num(row.poolMax),
+        poolTotal: num(row.poolTotal),
+        poolIdle: num(row.poolIdle),
+        poolWaiting: num(row.poolWaiting),
+        workers: json(row.workers) ?? [],
+        metrics: json(row.metrics),
+        config: json(row.config) ?? {},
+        crashRestarts: Number(row.crashRestarts),
+      })),
+    }
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return { available: false, instances: [], checkedOn: new Date() }
     }
     throw err
   }

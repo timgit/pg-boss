@@ -47,6 +47,8 @@ export function Breadcrumbs() {
     breadcrumbs.push({ label: 'Jobs' })
   } else if (pathSegments[0] === 'warnings') {
     breadcrumbs.push({ label: 'Warnings' })
+  } else if (pathSegments[0] === 'instances') {
+    breadcrumbs.push({ label: 'Instances' })
   }
 
   // Only the Home root and no page-specific crumb (unmatched route) — show nothing.

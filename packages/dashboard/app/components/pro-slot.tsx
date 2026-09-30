@@ -1,10 +1,10 @@
 import type { ComponentProps, ComponentType } from 'react'
 import overlay from '~pro'
-import type { ProSlots, StatsTileSlot } from '~/lib/pro-contract'
+import type { InstancesListSlot, ProSlots, StatsTileSlot } from '~/lib/pro-contract'
 
 /** The slots that are a component to render, rather than an object a page reads. */
 type ComponentSlot = {
-  [K in keyof ProSlots]-?: NonNullable<ProSlots[K]> extends StatsTileSlot ? never : K
+  [K in keyof ProSlots]-?: NonNullable<ProSlots[K]> extends StatsTileSlot | InstancesListSlot ? never : K
 }[keyof ProSlots]
 
 /** A slot's name with the props its component takes. */
