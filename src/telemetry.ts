@@ -212,19 +212,20 @@ class Telemetry {
   /**
    * Runs a job-creating operation in a PRODUCER span and hands `fn` the trace context to store on
    * each job it inserts, or null when there is nothing to propagate. `attempted` is the number of
-   * jobs it creates itself, counted whether or not they land.
+   * jobs it creates itself, counted whether or not they land. A function instead counts from the
+   * result, and counts nothing when `fn` throws.
    */
   async send<T> (
     operation: string,
     destination: string | null,
-    attempted: number,
+    attempted: number | ((result: T) => number),
     fn: (carrier: TraceCarrier | null) => Promise<T>,
     idsOf: (result: T) => string[] | null = () => null
   ): Promise<T> {
     if (!this.enabled) return fn(null)
 
     const attributes = baseAttributes(operation, 'send', destination)
-    if (attempted > 1) attributes[ATTR.batchMessageCount] = attempted
+    if (typeof attempted === 'number' && attempted > 1) attributes[ATTR.batchMessageCount] = attempted
 
     const span = this.#tracer.startSpan(spanName(operation, destination), { kind: SpanKind.PRODUCER, attributes })
     const spanContext = trace.setSpan(context.active(), span)
@@ -240,17 +241,18 @@ class Telemetry {
     try {
       const result = await context.with(spanContext, () => fn(carrier))
       const ids = idsOf(result)
+      const sent = typeof attempted === 'number' ? attempted : attempted(result)
 
-      if (attempted === 1 && ids?.length === 1) {
+      if (sent === 1 && ids?.length === 1) {
         span.setAttribute(ATTR.messageId, ids[0])
       }
 
-      this.#recordSend(startedAt, attempted, metricAttributes(attributes))
+      this.#recordSend(startedAt, sent, metricAttributes(attributes))
 
       return result
     } catch (err) {
       recordError(span, err)
-      this.#recordSend(startedAt, attempted, metricAttributes(attributes, err))
+      this.#recordSend(startedAt, typeof attempted === 'number' ? attempted : 0, metricAttributes(attributes, err))
       throw err
     } finally {
       span.end()

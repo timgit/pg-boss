@@ -357,6 +357,29 @@ describe('openTelemetry', function () {
     expect(receive.links.map(link => link.context.spanId)).toEqual([idOf(insert), idOf(insert)])
   })
 
+  it('records upsert() as a send span that only an inserted job continues', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+
+    const inserted = await boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })
+    const [insertSpan] = findSpans(isSpan(`upsert ${ctx.schema}`, SpanKind.PRODUCER))
+    expect(inserted.inserted).toBe(1)
+    expect(insertSpan.attributes[ATTR.messageId]).toBe(inserted.jobs[0])
+
+    spans.reset()
+    const updated = await boss.upsert(ctx.schema, { v: 2 }, { singletonKey: 'k' })
+    const [updateSpan] = findSpans(isSpan(`upsert ${ctx.schema}`, SpanKind.PRODUCER))
+    expect(updated.updated).toBe(1)
+    expect(updateSpan.attributes[ATTR.messageId]).toBeUndefined()
+
+    const stored = await storedTraceContext(ctx.schema, inserted.jobs[0])
+    expect(stored.traceparent).toContain(idOf(insertSpan))
+
+    const { resourceMetrics } = await metricReader.collect()
+    const sent = pointsFor<number>(metric(resourceMetrics, 'messaging.client.sent.messages'), { [ATTR.destination]: ctx.schema })
+    expect(sent.map(point => point.value)).toEqual([1])
+  })
+
   it('ignores a __traceContext passed to insert()', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, openTelemetry: { enabled: false } })
 

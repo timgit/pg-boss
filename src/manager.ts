@@ -1610,10 +1610,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
   upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpsertResponse>
   async upsert (...args: any[]): Promise<types.UpsertResponse> {
     const request = Attorney.checkUpdateArgs(args, { upsert: true })
+    Attorney.assertQueueName(request.name)
+
+    // Only an insert counts as a send, and only an inserted job stores the trace context: an
+    // updated job keeps the trace of the send that created it.
+    return this.#telemetry.send('upsert', request.name, result => result.inserted, carrier => this.#upsert(request, carrier), result => result.jobs)
+  }
+
+  async #upsert (request: types.Request, traceContext: TraceCarrier | null): Promise<types.UpsertResponse> {
     const { name, data } = request
     const opts = (request.options ?? {}) as types.UpdateOptions
 
-    Attorney.assertQueueName(name)
     const db = this.assertDb(opts)
     const { table, policy, notify } = await this.getQueueCache(name)
 
@@ -1632,7 +1639,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const job = this.#toUpdatePayload(data, opts)
     const updatePayload = JSON.stringify(job)
-    const insertPayload = JSON.stringify([job])
+    const insertPayload = JSON.stringify([{ ...job, __traceContext: traceContext }])
 
     const result = await this.ensureTransaction(db, async (tx) => {
       const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])

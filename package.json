@@ -12,14 +12,17 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.1",
     "cron-parser": "^5.10.1",
     "pg": "^8.23.0",
     "rrule-temporal": "^2.2.6",
     "serialize-error": "^13.0.1"
   },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/sdk-metrics": "^2.11.0",
     "@opentelemetry/sdk-node": "^0.222.0",
     "@opentelemetry/sdk-trace": "^2.11.0",

@@ -1,6 +1,6 @@
 # OpenTelemetry
 
-pg-boss creates [OpenTelemetry](https://opentelemetry.io) spans and metrics following the [messaging semantic conventions](https://opentelemetry.io/docs/specs/semconv/messaging/). It depends only on `@opentelemetry/api`, so there is nothing to install beyond the SDK your application registers. Until one is registered, every span and instrument is a no-op.
+pg-boss creates [OpenTelemetry](https://opentelemetry.io) spans and metrics following the [messaging semantic conventions](https://opentelemetry.io/docs/specs/semconv/messaging/). It uses `@opentelemetry/api`, declared as a peer dependency so that pg-boss shares your application's copy. npm and pnpm install it automatically; with Yarn, add it to your dependencies. Until one is registered, every span and instrument is a no-op.
 
 ```js
 import { NodeSDK } from '@opentelemetry/sdk-node'
@@ -21,6 +21,7 @@ The trace context active when a job is sent is stored with the job, so the span 
 | --- | --- | --- |
 | `send {queue}` | producer | `send()`, `sendAfter()`, `sendThrottled()`, `sendDebounced()` |
 | `insert {queue}` | producer | `insert()` |
+| `upsert {queue}` | producer | `upsert()`, whether it inserts a job or updates one |
 | `flow {queue}` or `flow` | producer | `flow()`, named after the queue when every job in the flow shares one |
 | `publish {event}` | producer | `publish()`, parent of the `send` span to each subscribed queue |
 | `receive {queue}` | client | `fetch()` called by the application |
@@ -52,7 +53,7 @@ The trace context survives retries, dead lettering and `redrive()`, so each atte
 
 | Metric | Type | Unit | Description |
 | --- | --- | --- | --- |
-| `messaging.client.sent.messages` | counter | `{message}` | Jobs `send()`, `insert()`, `flow()` and `publish()` attempted to create |
+| `messaging.client.sent.messages` | counter | `{message}` | Jobs `send()`, `insert()`, `flow()` and `publish()` attempted to create, and jobs `upsert()` inserted |
 | `messaging.client.consumed.messages` | counter | `{message}` | Jobs delivered to a worker or returned by `fetch()` |
 | `messaging.client.operation.duration` | histogram | `s` | Duration of each send, receive and settle operation |
 | `messaging.process.duration` | histogram | `s` | Duration of each `process` span |
@@ -108,4 +109,4 @@ new NodeSDK({
 
 ## Storage
 
-The trace context is stored in the `trace_context` column of the job table, as the propagator's key/value pairs (for example `{"traceparent": "00-..."}`). It is written when the job is created and copied onto its retries, its dead letter copy and a redriven job. It is not part of the job object passed to handlers or returned by `fetch()` and `getJobById()`.
+The trace context is stored in the `trace_context` column of the job table, as the propagator's key/value pairs (for example `{"traceparent": "00-..."}`). It is written when the job is created and copied onto its retries, its dead letter copy and a redriven job. An `upsert()` that updates an existing job leaves its trace context unchanged. It is not part of the job object passed to handlers or returned by `fetch()` and `getJobById()`.
