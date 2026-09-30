@@ -269,8 +269,6 @@ const series = await boss.getQueueStats('email-send', {
 
 In `queue_stats` each histogram is stored as two arrays side by side, the slots that hold at least one job (`wait_slots`, ascending) and how many each holds (`wait_counts`); a slot not listed holds none, and a measured pass in which nothing finished stores two empty arrays. To add them up in SQL, unnest the two together: `SELECT u.slot, sum(u.n) FROM queue_stats s, unnest(s.wait_slots, s.wait_counts) AS u(slot, n) WHERE … GROUP BY 1`.
 
-A slot from 1 to 46 is √2 wide, so a percentile taken as the geometric middle of its slot, `0.01 * √2^(k-0.5)` seconds, is within 19% of the exact one.
-
 ### `getBlockedKeys(name)`
 
 Returns an array of `singletonKey` values that are currently blocked due to failed jobs. This is only available for queues with the `key_strict_fifo` policy.
