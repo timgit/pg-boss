@@ -8,6 +8,7 @@
 import { SQL } from 'bun'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { PgBoss, fromBunSql } from '../../src/index.ts'
+import * as plans from '../../src/plans.ts'
 
 const config = await Bun.file(new URL('../config.json', import.meta.url)).json()
 const host = process.env.POSTGRES_HOST || config.host
@@ -129,6 +130,79 @@ describe('pg-boss on Bun.SQL', () => {
 
     await boss.unschedule(queue)
     expect((await boss.getSchedules()).some(s => s.name === queue)).toBe(false)
+  })
+
+  // The four tests below each bind a JSON.stringify'd payload in front of a json cast, which Bun
+  // encodes a second time unless the cast goes through text first (#880, #936).
+  test('finds jobs by data', async () => {
+    const queue = 'found'
+    await boss.createQueue(queue)
+
+    const id = await boss.send(queue, { kind: 'a' })
+    await boss.send(queue, { kind: 'b' })
+
+    const found = await boss.findJobs(queue, { data: { kind: 'a' } })
+    expect(found.map(job => job.id)).toEqual([id!])
+  })
+
+  test('redrives and previews by data', async () => {
+    const deadLetter = 'redrive_dlq'
+    const source = 'redrive_source'
+    await boss.createQueue(deadLetter)
+    await boss.createQueue(source, { deadLetter })
+
+    for (const tenant of ['acme', 'globex']) {
+      const id = await boss.send(source, { tenant }, { retryLimit: 0 })
+      await boss.fetch(source)
+      await boss.fail(source, id!)
+    }
+
+    expect((await boss.previewRedrive(deadLetter, { data: { tenant: 'acme' } })).total).toBe(1)
+    expect(await boss.redrive(deadLetter, { data: { tenant: 'acme' } })).toBe(1)
+  })
+
+  test('records the job a schedule created', async () => {
+    const queue = 'fired'
+
+    // a second boss so the cron pass runs every second for this test only
+    const firing = new PgBoss({ db, schema, cronMonitorIntervalSeconds: 1, cronWorkerIntervalSeconds: 1 })
+    const errors: Error[] = []
+    firing.on('error', err => errors.push(err))
+    await firing.start()
+
+    try {
+      await firing.createQueue(queue)
+      await firing.schedule(queue, '* * * * *')
+
+      const deadline = Date.now() + 20_000
+      let lastJobId: string | null | undefined
+
+      while (!lastJobId && errors.length === 0 && Date.now() < deadline) {
+        await Bun.sleep(250)
+        lastJobId = (await firing.getSchedules(queue))[0]?.lastJobId
+      }
+
+      expect(errors.map(err => err.message)).toEqual([])
+      expect(lastJobId).toBeTruthy()
+    } finally {
+      await firing.unschedule(queue).catch(() => {})
+      await firing.stop({ graceful: false }).catch(() => {})
+    }
+  }, 30_000)
+
+  test('relabels the kind a schedule is stored with', async () => {
+    const queue = 'relabelled'
+    await boss.createQueue(queue)
+    await boss.schedule(queue, '0 3 * * *')
+
+    // the write the cron pass makes for a row whose stored kind disagrees with its expression
+    await db.executeSql(
+      plans.setScheduleKinds(schema),
+      [JSON.stringify([{ name: queue, key: '', kind: 'rrule', cron: '0 3 * * *' }])]
+    )
+
+    expect((await boss.getSchedules(queue))[0].kind).toBe('rrule')
+    await boss.unschedule(queue)
   })
 
   test('runs maintenance, whose locked scripts also need a reserved connection', async () => {

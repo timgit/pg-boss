@@ -1421,7 +1421,7 @@ export function setScheduleLastJobIds (schema: string) {
   return `
     UPDATE ${schema}.schedule s
     SET last_job_id = x."jobId"
-    FROM json_to_recordset($1::json) AS x (name text, key text, "jobId" uuid)
+    FROM json_to_recordset($1::text::json) AS x (name text, key text, "jobId" uuid)
     WHERE s.name = x.name
       AND COALESCE(s.key, '') = x.key
   `
@@ -1442,7 +1442,7 @@ export function setScheduleLastJobIds (schema: string) {
 export function setScheduleKinds (schema: string) {
   return `
     UPDATE ${schema}.schedule s SET kind = k.kind
-    FROM json_to_recordset($1::json) as k (name text, key text, kind text, cron text)
+    FROM json_to_recordset($1::text::json) as k (name text, key text, kind text, cron text)
     WHERE s.name = k.name
       AND COALESCE(s.key, '') = k.key
       AND s.cron = k.cron
@@ -3148,7 +3148,7 @@ function redriveWhere (schema: string, table: string): string {
             AND k.state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}')
         )
         AND ($3::text IS NULL OR j.source_name = $3)
-        AND ($4::jsonb IS NULL OR j.data @> $4::jsonb)
+        AND ($4::text::jsonb IS NULL OR j.data @> $4::text::jsonb)
         AND ($5::timestamptz IS NULL OR j.created_on < $5)
         AND ($6::uuid[] IS NULL OR j.id = ANY($6::uuid[]))`
 }
@@ -4027,7 +4027,7 @@ export function findJobs (schema: string, table: string, options: { queued: bool
 
   if (byData) {
     ++paramIndex
-    whereConditions.push(`AND data @> $${paramIndex}`)
+    whereConditions.push(`AND data @> $${paramIndex}::text::jsonb`)
   }
 
   if (queued) {
