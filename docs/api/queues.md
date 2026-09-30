@@ -226,11 +226,42 @@ and three deltas: how many jobs were created, completed, and failed in the windo
 * `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
 * `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
 
-Alongside the deltas, and recorded under the same conditions, how long jobs waited and ran. Like the deltas, they are `null` when nothing measured them (`persistQueueStats` disabled on the calling instance, or a snapshot captured before pg-boss 12.36), and a measured pass in which nothing finished has histograms of all zeros.
+The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls.
+
+Alongside the deltas, and recorded under the same conditions, how long jobs waited and ran. Like the deltas, they are `null` when nothing measured them (`persistQueueStats` disabled on the calling instance, or a snapshot captured before pg-boss 12.36), and a measured pass in which nothing finished has histograms of all zeros. A job that finishes inside a transaction longer than 10 seconds, which the deltas take in afterwards, is left out of the histograms.
 
 * `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, or a retry sitting out its backoff, is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
 * `runBins`: how long the same jobs ran, from start to finish, in the same bins.
 * `oldestReadySeconds`: how long the oldest job ready to run had waited when the snapshot was captured, leaving out deferred jobs and jobs blocked by a dependency. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
+
+Behavior depends on whether stats are being persisted:
+
+* When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
+
+  Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets:
+
+  * `bucketSeconds` (int): group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
+  * `maxDataPoints` (int): auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
+  * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
+
+  `aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `oldestReadySeconds` is the largest in it. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
+
+  `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
+* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
+
+```js
+// current queue depth (single snapshot when persistQueueStats is disabled)
+const [stats] = await boss.getQueueStats('email-send')
+console.log(`${stats.readyCount} jobs ready, ${stats.activeCount} active`)
+
+// with persistQueueStats enabled: last 24 hours, downsampled for a 300px-wide chart
+const series = await boss.getQueueStats('email-send', {
+  from: new Date(Date.now() - 24 * 60 * 60 * 1000),
+  to: new Date(),
+  maxDataPoints: 300,
+  aggregate: 'max'
+})
+```
 
 #### Latency histograms
 
@@ -261,38 +292,7 @@ function percentile (bins, p) {
 console.log(`p95 wait ${percentile(sum, 0.95)?.toFixed(1)} s`)
 ```
 
-A slot is √2 wide, so a percentile read this way is within 19% of the exact one. A job that finishes inside a transaction longer than 10 seconds is added to the deltas afterwards, as described below, but not to the histograms.
-
-The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls.
-
-Behavior depends on whether stats are being persisted:
-
-* When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
-
-  Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets:
-
-  * `bucketSeconds` (int): group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
-  * `maxDataPoints` (int): auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
-  * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
-
-  `aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `oldestReadySeconds` is the largest in it. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
-
-  `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
-* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
-
-```js
-// current queue depth (single snapshot when persistQueueStats is disabled)
-const [stats] = await boss.getQueueStats('email-send')
-console.log(`${stats.readyCount} jobs ready, ${stats.activeCount} active`)
-
-// with persistQueueStats enabled: last 24 hours, downsampled for a 300px-wide chart
-const series = await boss.getQueueStats('email-send', {
-  from: new Date(Date.now() - 24 * 60 * 60 * 1000),
-  to: new Date(),
-  maxDataPoints: 300,
-  aggregate: 'max'
-})
-```
+A slot is √2 wide, so a percentile read this way is within 19% of the exact one.
 
 ### `getBlockedKeys(name)`
 
