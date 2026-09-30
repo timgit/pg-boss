@@ -203,6 +203,12 @@ class Telemetry {
     this.#instruments?.queueJobs.removeCallback(this.#observeQueues)
   }
 
+  // Moves the queue gauge to a meter provider registered after start(), which otherwise waits for
+  // the next send, fetch or settle. Called on each queue cache refresh.
+  refreshInstruments () {
+    if (this.#observing) this.#getInstruments()
+  }
+
   /**
    * Runs a job-creating operation in a PRODUCER span and hands `fn` the trace context to store on
    * each job it inserts, or null when there is nothing to propagate. `attempted` is the number of
@@ -239,20 +245,22 @@ class Telemetry {
         span.setAttribute(ATTR.messageId, ids[0])
       }
 
-      const instruments = this.#getInstruments()
-      instruments?.operationDuration.record(seconds(startedAt), metricAttributes(attributes))
-      if (attempted > 0) instruments?.sentMessages.add(attempted, metricAttributes(attributes))
+      this.#recordSend(startedAt, attempted, metricAttributes(attributes))
 
       return result
     } catch (err) {
       recordError(span, err)
-      const instruments = this.#getInstruments()
-      instruments?.operationDuration.record(seconds(startedAt), metricAttributes(attributes, err))
-      if (attempted > 0) instruments?.sentMessages.add(attempted, metricAttributes(attributes, err))
+      this.#recordSend(startedAt, attempted, metricAttributes(attributes, err))
       throw err
     } finally {
       span.end()
     }
+  }
+
+  #recordSend (startedAt: number, attempted: number, attributes: Attributes) {
+    const instruments = this.#getInstruments()
+    instruments?.operationDuration.record(seconds(startedAt), attributes)
+    if (attempted > 0) instruments?.sentMessages.add(attempted, attributes)
   }
 
   /**
@@ -312,22 +320,25 @@ class Telemetry {
     }
 
     const attributes = baseAttributes('process', 'process', destination)
-    const links = this.#links(jobs, carrierOf)
 
     let parent: Context = ROOT_CONTEXT
+    let links: Link[] = []
     if (jobs.length === 1) {
       attributes[ATTR.messageId] = jobs[0].id
       if (jobs[0].retryCount !== undefined) attributes[ATTR.retryCount] = jobs[0].retryCount
-      if (links.length === 1) parent = trace.setSpanContext(ROOT_CONTEXT, links[0].context)
+      // The whole extracted context, so baggage sent with the job reaches the handler too.
+      const carrier = carrierOf(jobs[0])
+      if (carrier) parent = propagation.extract(ROOT_CONTEXT, carrier)
     } else {
       attributes[ATTR.batchMessageCount] = jobs.length
+      links = this.#links(jobs, carrierOf)
     }
 
     // The parent is chosen explicitly, never taken from context.active(): the worker loop inherits
     // whatever context work() was called in, and a job has nothing to do with that caller's trace.
     const span = this.#tracer.startSpan(
       spanName('process', destination),
-      { kind: SpanKind.CONSUMER, attributes, links: jobs.length === 1 ? [] : links },
+      { kind: SpanKind.CONSUMER, attributes, links },
       parent
     )
     const startedAt = performance.now()

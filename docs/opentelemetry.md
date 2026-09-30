@@ -29,7 +29,7 @@ The trace context active when a job is sent is stored with the job, so the span 
 
 A `process` span covers the handler and the completion or failure pg-boss records after it, so spans created inside the handler, and spans of instrumented database calls, are its children.
 
-When a worker processes one job at a time, the `process` span is a child of the job's `send` span. A batch (`batchSize` above 1) starts a trace of its own and links to the `send` span of every job in it. `receive` spans link the same way. The trace context `work()` was called in is never used as a parent: the worker loop runs long after the call that started it.
+When a worker processes one job at a time, the `process` span is a child of the job's `send` span, and baggage active at `send()` is active in the handler. A batch (`batchSize` above 1) starts a trace of its own and links to the `send` span of every job in it. `receive` spans link the same way. The trace context `work()` was called in is never used as a parent: the worker loop runs long after the call that started it.
 
 A worker's own polling has no span, since a span per empty poll would bury the traces that matter. A handler that throws ends its `process` span with an error status, the exception recorded as an event, and `error.type` set.
 
@@ -84,7 +84,7 @@ const boss = new PgBoss({
 
 * **propagateContext**, bool, default true
 
-  Store the trace context of `send()` on the job, using the propagator registered with the OpenTelemetry API (W3C Trace Context unless the application configures another). Without it, each `process` span starts a trace of its own.
+  Store the trace context of `send()` on the job, using the propagator registered globally with the OpenTelemetry API. An SDK registers W3C Trace Context and Baggage when it starts, unless the application configures another. With no propagator registered, as when only a `tracerProvider` is passed without registering it globally, nothing is stored. With `propagateContext: false`, each `process` span starts a trace of its own.
 
 * **tracerProvider**, `TracerProvider`
 

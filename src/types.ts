@@ -513,8 +513,9 @@ export interface OpenTelemetryOptions {
   enabled?: boolean;
   /**
    * Store the trace context active at `send()` on the job, so the span that processes it continues
-   * the producer's trace. Uses the propagator registered with the OpenTelemetry API (W3C Trace
-   * Context by default).
+   * the producer's trace. Uses the propagator registered globally with the OpenTelemetry API, which
+   * an SDK sets to W3C Trace Context and Baggage when it starts. With none registered, as when only
+   * a `tracerProvider` is passed here, nothing is stored.
    * @default true
    */
   propagateContext?: boolean;

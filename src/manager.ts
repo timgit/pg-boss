@@ -395,14 +395,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // (each output carried per-id via a JSON recordset), so batch size never drives the statement
   // count. Any batch job the handler omits (or returns with an invalid shape) is failed with a
   // descriptive error so it retries / dead-letters per queue config.
-  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<void> {
+  // Resolves with the error the whole batch was failed with, or undefined.
+  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<Error | undefined> {
     if (!Array.isArray(result)) {
       // The handler opted into perJobResults but did not return an array: a contract violation.
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
       await this.fail(name, jobs, err)
       await this.#trackJobsFailed(name, jobs, err)
-      return
+      return err
     }
 
     // Index the handler's dispositions by job id, keeping only valid entries that reference a job
@@ -436,9 +437,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const items = (entries: { job: types.Job<T>, output: unknown }[]) =>
       entries.map(({ job, output }) => ({ id: job.id, retryCount: job.retryCount, output }))
 
-    const completedIds = completed.length > 0 ? await this.#completeWithOutputs(name, items(completed)) : null
-    const failedIds = failed.length > 0 ? await this.#failWithOutputs(name, items(failed)) : null
-    const deadLetteredIds = deadLettered.length > 0 ? await this.#failWithOutputs(name, items(deadLettered), true) : null
+    const ids = (entries: { job: types.Job<T> }[]) => entries.map(({ job }) => job.id)
+
+    const completedIds = completed.length > 0
+      ? await this.#telemetry.settle('complete', name, ids(completed), () => this.#completeWithOutputs(name, items(completed)))
+      : null
+    const failedIds = failed.length > 0
+      ? await this.#telemetry.settle('fail', name, ids(failed), () => this.#failWithOutputs(name, items(failed)))
+      : null
+    const deadLetteredIds = deadLettered.length > 0
+      ? await this.#telemetry.settle('fail', name, ids(deadLettered), () => this.#failWithOutputs(name, items(deadLettered), true))
+      : null
 
     // Only the jobs each statement actually settled: the attempt fence leaves a job whose claim
     // lapsed alone, and recording it would tell a spy it settled when another attempt holds it.
@@ -655,6 +664,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     let completedAffected = 0
     let failedError: any
     let didFail = false
+    // A perJobResults batch #settlePerJob failed as a whole. Kept apart from failedError, since
+    // #settlePerJob has already failed and tracked those jobs itself.
+    let perJobError: Error | undefined
     // Only for a transactional worker, and only from the begin below until it settles. rollback()
     // is idempotent, so the catch can settle it without tracking whether the commit got there
     // first.
@@ -714,7 +726,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // #settlePerJob settles each job individually and does its own (synchronous,
         // lookup-free) spy tracking via #trackJobsSettled, so the deferred tracker below
         // is skipped for this path.
-        await this.#settlePerJob(name, jobs, result)
+        perJobError = await this.#settlePerJob(name, jobs, result)
       } else {
         // Read out before the completion below, which goes through the same complete() and would
         // otherwise record pg-boss's own settle as one the handler made.
@@ -773,7 +785,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
-    return didFail ? (failedError ?? new Error('handler rejected without a reason')) : undefined
+    return didFail ? (failedError ?? new Error('handler rejected without a reason')) : perJobError
   }
 
   /**
@@ -957,6 +969,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       assert(!this.config.__test__throw_queueCache, 'test error')
       const queues = await this.getQueues()
       this.queues = queues.reduce<Record<string, types.QueueResult>>((acc, i) => { acc[i.name] = i; return acc }, {})
+      this.#telemetry.refreshInstruments()
     } catch (error: any) {
       emit && this.emit(events.error, { ...error, message: error.message, stack: error.stack })
     }
@@ -1121,15 +1134,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
         return this.#fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority })
       }
 
-      const processBatch = (batch: types.Job<ReqData>[], worker?: Worker) =>
-        this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
+      // Counted here rather than on fetch: jobs past localGroupConcurrency are restored, not delivered.
+      const processBatch = (batch: types.Job<ReqData>[], worker?: Worker) => {
+        this.#telemetry.consumed(name, batch.length)
+        return this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
           this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds))
+      }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
         if (!jobs.length) return
         if (this.config.__test__throw_worker) throw new Error('__test__throw_worker')
 
-        this.#telemetry.consumed(name, jobs.length)
         this.emitWip(name)
         this.#trackJobsActive(name, jobs)
 
@@ -1716,10 +1731,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
         pendingDependencies,
         group,
         __singletonSlot,
-        __traceContext,
         ...rest
-      } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown, __singletonSlot?: string, __traceContext?: unknown }
+      } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown, __singletonSlot?: string }
 
+      // Overwrites any __traceContext the caller passed.
       Object.assign(rest, { __traceContext: traceContext })
 
       // Reattached only for the caller that asked for the column, so a public insert() drops the
@@ -1859,7 +1874,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
           blocked: dependencyCount > 0 || undefined,
           blocking: parentRefs.has(j.ref) || undefined,
           pendingDependencies: dependencyCount || undefined,
-          __traceContext: traceContext ?? undefined
+          __traceContext: traceContext
         }
       })
 

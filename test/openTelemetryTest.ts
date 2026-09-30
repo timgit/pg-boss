@@ -1,5 +1,5 @@
 import { expect, vi } from 'vitest'
-import { SpanKind, SpanStatusCode, trace, type Attributes } from '@opentelemetry/api'
+import { context, propagation, SpanKind, SpanStatusCode, trace, type Attributes } from '@opentelemetry/api'
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider, type ReadableSpan } from '@opentelemetry/sdk-trace'
 import { AggregationTemporality, MeterProvider, MetricReader, type DataPoint, type Histogram, type MetricData } from '@opentelemetry/sdk-metrics'
@@ -144,6 +144,35 @@ describe('openTelemetry', function () {
 
     const stored = await storedTraceContext(ctx.schema, jobId)
     expect(stored.traceparent).toBe(`00-${traceOf(send)}-${idOf(send)}-01`)
+  })
+
+  it('makes the baggage active at send() active in the handler', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+
+    const baggage = propagation.createBaggage({ tenant: { value: 'acme' } })
+    await context.with(propagation.setBaggage(context.active(), baggage), () => boss.send(ctx.schema))
+
+    let tenant: string | undefined
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+      tenant = propagation.getActiveBaggage()?.getEntry('tenant')?.value
+    })
+
+    await waitForSpans(isSpan(`process ${ctx.schema}`))
+    expect(tenant).toBe('acme')
+  })
+
+  it('records a perJobResults batch failed for a malformed result as an errored process span', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+
+    await boss.send(ctx.schema, null, { retryLimit: 0 })
+
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5, perJobResults: true }, async () => 'not an array' as any)
+
+    const [processSpan] = await waitForSpans(isSpan(`process ${ctx.schema}`))
+    expect(processSpan.status.code).toBe(SpanStatusCode.ERROR)
+    expect(processSpan.attributes[ATTR.errorType]).toBe('Error')
   })
 
   it('does not parent batches to the context work() was called in', async function () {
