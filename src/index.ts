@@ -719,6 +719,7 @@ export type {
   QueueResult,
   QueueStats,
   Instance,
+  InstanceMetrics,
   InstanceOptions,
   InstanceWorker,
   PoolCounts,
