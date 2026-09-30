@@ -2051,7 +2051,35 @@ AS $function$
       // The instance registry: which PgBoss objects share this database, written by each one on its
       // own heartbeat.
       install: [
-        plans.createTableInstance(schema),
+        /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
+        `CREATE TABLE ${schema}.instance (
+          id uuid PRIMARY KEY,
+          name text,
+          host text NOT NULL,
+          pid int NOT NULL,
+          version text NOT NULL,
+          node_version text NOT NULL,
+          application_name text,
+          heartbeat_seconds int NOT NULL,
+          supervise bool NOT NULL,
+          schedule bool NOT NULL,
+          migrate bool NOT NULL,
+          persist_queue_stats bool NOT NULL,
+          persist_warnings bool NOT NULL,
+          pool_max int,
+          pool_total int,
+          pool_idle int,
+          pool_waiting int,
+          workers jsonb NOT NULL DEFAULT '[]'::jsonb,
+          metrics jsonb,
+          config jsonb NOT NULL DEFAULT '{}'::jsonb,
+          crash_restarts int NOT NULL DEFAULT 0,
+          crash_restarts_since timestamptz,
+          started_on timestamptz NOT NULL DEFAULT now(),
+          heartbeat_on timestamptz NOT NULL DEFAULT now(),
+          stopped_on timestamptz
+        )`,
+        /* eslint-enable no-restricted-syntax */
         `ALTER TABLE ${schema}.queue
           ADD COLUMN wait_slots smallint[],
           ADD COLUMN wait_counts int[],
