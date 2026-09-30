@@ -2038,6 +2038,19 @@ AS $function$
           DROP COLUMN source_output,
           DROP COLUMN source_root_id`
       ]
+    },
+    {
+      release: '12.36.0',
+      version: 44,
+      previous: 43,
+      // The trace context of the send() that created a job, so the span processing it can join the
+      // producer's trace. Nullable with no default, so adding it rewrites no rows.
+      install: [
+        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS trace_context jsonb`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job DROP COLUMN trace_context`
+      ]
     }
   ]
 }

@@ -522,6 +522,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   applyBamConfig(config)
   applyFlowConfig(config)
   validateWarningConfig(config)
+  validateOpenTelemetryConfig(config)
 
   return config as types.ResolvedConstructorOptions
 }
@@ -545,6 +546,24 @@ function applySchemaConfig (config: types.ConstructorOptions) {
   }
 
   config.schema = config.schema || DEFAULT_SCHEMA
+}
+
+function validateOpenTelemetryConfig (config: any) {
+  const otel = config.openTelemetry
+
+  if (otel == null) return
+
+  assert(typeof otel === 'object', 'configuration assert: openTelemetry must be an object')
+
+  for (const key of ['enabled', 'propagateContext']) {
+    assert(otel[key] === undefined || typeof otel[key] === 'boolean', `configuration assert: openTelemetry.${key} must be a boolean`)
+  }
+
+  assert(otel.tracerProvider === undefined || typeof otel.tracerProvider?.getTracer === 'function',
+    'configuration assert: openTelemetry.tracerProvider must implement getTracer()')
+
+  assert(otel.meterProvider === undefined || typeof otel.meterProvider?.getMeter === 'function',
+    'configuration assert: openTelemetry.meterProvider must implement getMeter()')
 }
 
 function validateWarningConfig (config: any) {

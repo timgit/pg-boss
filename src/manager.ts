@@ -14,6 +14,7 @@ import { resolveWithinSeconds } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
 import { JobSpy, type JobSpyInterface } from './spy.ts'
+import Telemetry, { type TraceCarrier } from './telemetry.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
 
@@ -210,6 +211,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
   #localGroupMaxLimit: Map<string, number>
+  #telemetry: Telemetry
+  // The trace context each fetched job was sent with, kept off the job object handed to the handler.
+  #traceContexts: WeakMap<object, TraceCarrier>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -230,6 +234,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
     this.#localGroupMaxLimit = new Map()
+    this.#telemetry = new Telemetry(config.openTelemetry, () => this.queues)
+    this.#traceContexts = new WeakMap()
   }
 
   getSpy<T = object> (name: string): JobSpyInterface<T> {
@@ -570,6 +576,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
    * same as any other worker's. Because the claim is outside the transaction, the jobs stay
    * visibly `active` throughout, which is what keeps heartbeats, `expireInSeconds`, and another
    * instance's supervisor working on them as usual.
+   *
+   * Resolves with the error the batch was failed with, or undefined when it completed.
    */
   async #processJobs<T> (
     name: string,
@@ -580,7 +588,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     perJobResults = false,
     transactional = false,
     transactionTimeoutSeconds?: number
-  ): Promise<void> {
+  ): Promise<unknown> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
     // Minimum, not maximum: heartbeatSeconds is per-job, and failJobsByHeartbeat fails a job once
@@ -764,6 +772,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
       }
     }
+
+    return didFail ? (failedError ?? new Error('handler rejected without a reason')) : undefined
   }
 
   /**
@@ -939,6 +949,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }, 2000)
     await this.onCacheQueues()
+    this.#telemetry.observeQueues()
   }
 
   async onCacheQueues ({ emit = false } = {}) {
@@ -980,6 +991,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     this.config.clock.clearInterval(this.queueCacheInterval)
     this.config.clock.clearInterval(this.wipInterval)
+    this.#telemetry.unobserveQueues()
 
     // offWork stops every worker on a queue, so iterate queue names rather than workers - otherwise
     // a localConcurrency of N re-stops all N workers N times and registers N pending cleanups.
@@ -1106,13 +1118,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority })
+        return this.#fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority })
       }
+
+      const processBatch = (batch: types.Job<ReqData>[], worker?: Worker) =>
+        this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
+          this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds))
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
         if (!jobs.length) return
         if (this.config.__test__throw_worker) throw new Error('__test__throw_worker')
 
+        this.#telemetry.consumed(name, jobs.length)
         this.emitWip(name)
         this.#trackJobsActive(name, jobs)
 
@@ -1121,7 +1138,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
-          await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds)
+          await processBatch(jobs, worker)
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
@@ -1137,7 +1154,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
             }
 
             if (allowed.length > 0) {
-              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds)
+              await processBatch(allowed, worker)
             }
           } finally {
             this.#trackLocalGroupEnd(name, groupedJobs)
@@ -1354,6 +1371,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   publish (event: string, data?: object, options?: types.SendOptions): Promise<void>
   async publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     assert(event, 'Missing required argument')
+
+    // Counts no jobs of its own: each send() below records the job it creates.
+    await this.#telemetry.send('publish', event, 0, () => this.#publish(event, data, options))
+  }
+
+  async #publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     const sql = plans.getQueuesForEvent(this.config.schema)
     const { rows } = await this.db.executeSql(sql, [event])
 
@@ -1458,10 +1481,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   async createJob (request: types.Request): Promise<string | null> {
+    return this.#telemetry.send('send', request.name, 1, carrier => this.#createJob(request, carrier), id => id ? [id] : null)
+  }
+
+  async #createJob (request: types.Request, traceContext: TraceCarrier | null): Promise<string | null> {
     const { name, data = null, options = {} } = request
     const { db: wrapper, singletonSeconds, singletonNextSlot } = options
 
-    const job = this.#toJobPayload(name, data, options)
+    const job = { ...this.#toJobPayload(name, data, options), __traceContext: traceContext }
 
     const db = wrapper || this.db
 
@@ -1637,6 +1664,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
+    return this.#telemetry.send('insert', name, jobs.length, carrier => this.#insert(name, jobs, options, carrier))
+  }
+
+  async #insert (
+    name: string,
+    jobs: types.JobInsert[],
+    options: types.InsertOptions & { __singletonSlots?: boolean },
+    traceContext: TraceCarrier | null
+  ) {
     const slots = options.__singletonSlots === true
 
     const seenIds = new Set<string>()
@@ -1680,8 +1716,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
         pendingDependencies,
         group,
         __singletonSlot,
+        __traceContext,
         ...rest
-      } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown, __singletonSlot?: string }
+      } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown, __singletonSlot?: string, __traceContext?: unknown }
+
+      Object.assign(rest, { __traceContext: traceContext })
 
       // Reattached only for the caller that asked for the column, so a public insert() drops the
       // field rather than handing an unvalidated value to a timestamp cast.
@@ -1742,6 +1781,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async flow (jobs: types.FlowJob[], options: types.ConnectionOptions = {}): Promise<Record<string, string>> {
     Attorney.validateFlowJobs(jobs)
 
+    const queues = new Set(jobs.map(job => job.name))
+    const destination = queues.size === 1 ? jobs[0].name : null
+
+    return this.#telemetry.send('flow', destination, jobs.length, carrier => this.#flow(jobs, options, carrier), refToId => Object.values(refToId))
+  }
+
+  async #flow (jobs: types.FlowJob[], options: types.ConnectionOptions, traceContext: TraceCarrier | null): Promise<Record<string, string>> {
     // validate and normalize each job's options the same way send()/insert() do
     const flowJobs = jobs.map(job => ({
       ...job,
@@ -1812,7 +1858,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
           deadLetter: j.options?.deadLetter ?? undefined,
           blocked: dependencyCount > 0 || undefined,
           blocking: parentRefs.has(j.ref) || undefined,
-          pendingDependencies: dependencyCount || undefined
+          pendingDependencies: dependencyCount || undefined,
+          __traceContext: traceContext ?? undefined
         }
       })
 
@@ -1886,9 +1933,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
   fetch<T>(name: string): Promise<types.Job<T>[]>
   fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
   fetch<T>(name: string, options: types.FetchOptions): Promise<types.Job<T>[]>
-  async fetch (name: string, options: types.FetchOptions = {}) {
+  async fetch<T = object> (name: string, options: types.FetchOptions = {}): Promise<types.Job<T>[]> {
     Attorney.checkFetchArgs(name, options)
 
+    return this.#telemetry.receive(name, () => this.#fetch<T>(name, options), job => this.#traceContexts.get(job))
+  }
+
+  async #fetch<T> (name: string, options: types.FetchOptions): Promise<types.Job<T>[]> {
     this.#warnDeprecatedFetchOptions(options)
 
     const db = this.assertDb(options)
@@ -1902,7 +1953,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       name,
       policy,
       limit: options.batchSize || 1,
-      ignoreSingletons: singletonsActive
+      ignoreSingletons: singletonsActive,
+      includeTraceContext: this.#telemetry.enabled
     }
 
     const query = plans.fetchNextJob(fetchOptions, this.config.noSkipLocked)
@@ -1922,9 +1974,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const rows = result?.rows || []
 
+    for (const row of rows) {
+      // A db adapter may hand jsonb back unparsed.
+      const carrier = typeof row.__traceContext === 'string' ? JSON.parse(row.__traceContext) : row.__traceContext
+      delete row.__traceContext
+      if (carrier) this.#traceContexts.set(row, carrier)
+    }
+
     // Even a minimal fetch (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds and
     // heartbeatSeconds, so normalize regardless of includeMetadata.
-    return this.#numericJobFields(rows)
+    return this.#numericJobFields(rows) as types.Job<T>[]
   }
 
   // The id argument of the calls that settle or refresh a claim. Jobs passed as { id, retryCount }
@@ -1990,24 +2049,27 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const { ids, attempts: fetched } = this.mapAttemptArg(id, 'complete')
     const attempts = fetched ?? this.#handlerAttempts(options, ids)
-    const { table } = await this.getQueueCache(name)
-    const outputData = this.mapCompletionDataArg(data)
 
-    let response: types.CommandResponse
+    return this.#telemetry.settle('complete', name, ids, async () => {
+      const { table } = await this.getQueueCache(name)
+      const outputData = this.mapCompletionDataArg(data)
 
-    // noMultiMutationCte: split the dependency-unblocking into a separate statement to
-    // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
-    if (this.config.noMultiMutationCte) {
-      response = await this.completeDistributed(name, ids, outputData, table, db, options.includeQueued, attempts)
-    } else {
-      const sql = plans.completeJobs(this.config.schema, table, options.includeQueued, !!attempts)
-      const result = await db.executeSql(sql, attempts ? [name, ids, outputData, plans.attemptPairs(ids, attempts)] : [name, ids, outputData])
-      response = this.mapCommandResponse(ids, result)
-    }
+      let response: types.CommandResponse
 
-    this.#trackHandlerSettle(options, response)
+      // noMultiMutationCte: split the dependency-unblocking into a separate statement to
+      // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
+      if (this.config.noMultiMutationCte) {
+        response = await this.completeDistributed(name, ids, outputData, table, db, options.includeQueued, attempts)
+      } else {
+        const sql = plans.completeJobs(this.config.schema, table, options.includeQueued, !!attempts)
+        const result = await db.executeSql(sql, attempts ? [name, ids, outputData, plans.attemptPairs(ids, attempts)] : [name, ids, outputData])
+        response = this.mapCommandResponse(ids, result)
+      }
 
-    return response
+      this.#trackHandlerSettle(options, response)
+
+      return response
+    })
   }
 
   // Distributed complete/fail need several statements run atomically. When we own the pooled
@@ -2036,25 +2098,28 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const { ids, attempts: fetched } = this.mapAttemptArg(id, 'fail')
     const attempts = fetched ?? this.#handlerAttempts(options, ids)
-    const { table } = await this.getQueueCache(name)
-    const outputData = this.mapCompletionDataArg(data)
 
-    let response: types.CommandResponse
+    return this.#telemetry.settle('fail', name, ids, async () => {
+      const { table } = await this.getQueueCache(name)
+      const outputData = this.mapCompletionDataArg(data)
 
-    // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
-    // The delete and re-insert run in a single transaction (see ensureTransaction) so the
-    // job cannot be lost between the two statements.
-    if (this.config.noMultiMutationCte) {
-      response = await this.failDistributed(name, ids, outputData, table, db, attempts)
-    } else {
-      const sql = plans.failJobsById(this.config.schema, table, !!attempts)
-      const result = await db.executeSql(sql, attempts ? [name, ids, outputData, plans.attemptPairs(ids, attempts)] : [name, ids, outputData])
-      response = this.mapCommandResponse(ids, result)
-    }
+      let response: types.CommandResponse
 
-    this.#trackHandlerSettle(options, response)
+      // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
+      // The delete and re-insert run in a single transaction (see ensureTransaction) so the
+      // job cannot be lost between the two statements.
+      if (this.config.noMultiMutationCte) {
+        response = await this.failDistributed(name, ids, outputData, table, db, attempts)
+      } else {
+        const sql = plans.failJobsById(this.config.schema, table, !!attempts)
+        const result = await db.executeSql(sql, attempts ? [name, ids, outputData, plans.attemptPairs(ids, attempts)] : [name, ids, outputData])
+        response = this.mapCommandResponse(ids, result)
+      }
 
-    return response
+      this.#trackHandlerSettle(options, response)
+
+      return response
+    })
   }
 
   private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, attempts?: number[]): Promise<types.CommandResponse> {
@@ -2209,7 +2274,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id, job.trace_context
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2226,12 +2291,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
           jobOutput, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id, job.trace_context
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier, job.source_root_id])
+          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier, job.source_root_id, job.trace_context])
         }
       }
 
@@ -2247,15 +2312,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const { ids, attempts: fetched } = this.mapAttemptArg(id, 'deleteJob')
     const attempts = fetched ?? this.#handlerAttempts(options, ids)
-    const { table } = await this.getQueueCache(name)
 
-    const sql = plans.deleteJobsById(this.config.schema, table, !!attempts)
-    const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
-    const response = this.mapCommandResponse(ids, result)
+    return this.#telemetry.settle('delete', name, ids, async () => {
+      const { table } = await this.getQueueCache(name)
 
-    this.#trackHandlerSettle(options, response)
+      const sql = plans.deleteJobsById(this.config.schema, table, !!attempts)
+      const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
+      const response = this.mapCommandResponse(ids, result)
 
-    return response
+      this.#trackHandlerSettle(options, response)
+
+      return response
+    })
   }
 
   // The filter half of redrive and previewRedrive, validated once and in the parameter order
@@ -2366,15 +2434,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const { ids, attempts: fetched } = this.mapAttemptArg(id, 'cancel')
     const attempts = fetched ?? this.#handlerAttempts(options, ids)
-    const { table } = await this.getQueueCache(name)
 
-    const sql = plans.cancelJobs(this.config.schema, table, !!attempts)
-    const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
-    const response = this.mapCommandResponse(ids, result)
+    return this.#telemetry.settle('cancel', name, ids, async () => {
+      const { table } = await this.getQueueCache(name)
 
-    this.#trackHandlerSettle(options, response)
+      const sql = plans.cancelJobs(this.config.schema, table, !!attempts)
+      const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
+      const response = this.mapCommandResponse(ids, result)
 
-    return response
+      this.#trackHandlerSettle(options, response)
+
+      return response
+    })
   }
 
   async resume (name: string, id: string | string[], options: types.ConnectionOptions = {}) {

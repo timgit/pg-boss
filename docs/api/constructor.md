@@ -303,6 +303,12 @@ Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
 
+### `openTelemetry`
+
+Object, see [OpenTelemetry](../opentelemetry.md#options)
+
+Tracing and metrics through the OpenTelemetry API. On by default, and a no-op until the application registers an OpenTelemetry SDK. `enabled: false` turns it off.
+
 ## Testing
 
 These options exist for tests. Leave them unset in production.
