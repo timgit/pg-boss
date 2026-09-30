@@ -1,7 +1,7 @@
 // Types based on or imported from pg-boss
-import type { JobWithMetadata, QueuePolicy, QueueResult as PgBossQueueResult, ScheduleKind } from 'pg-boss'
+import type { Instance, InstanceMetrics, InstanceWorker, JobWithMetadata, QueuePolicy, QueueResult as PgBossQueueResult, ScheduleKind } from 'pg-boss'
 import type { WarningTypeValue } from './utils'
-export type { JobWithMetadata, QueuePolicy, ScheduleKind }
+export type { Instance, InstanceMetrics, InstanceWorker, JobWithMetadata, QueuePolicy, ScheduleKind }
 
 // SendOptions type from pg-boss (defined locally for compatibility)
 // Represents options for sending jobs
