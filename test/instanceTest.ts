@@ -88,7 +88,7 @@ describe('instance registry', function () {
 
     const first = await only(ctx.boss)
 
-    await ctx.boss.work(ctx.schema, { localConcurrency: 2, batchSize: 3, pollingIntervalSeconds: 0.5 }, async () => {})
+    await ctx.boss.work(ctx.schema, { localConcurrency: 2, batchSize: 3, pollingIntervalSeconds: 0.5, includeMetadata: true, maxPriority: 5 }, async () => {})
     await ctx.boss.send(ctx.schema)
 
     await helper.until(async () => {
@@ -104,6 +104,7 @@ describe('instance registry', function () {
     expect(worker.batchSize).toBe(3)
     expect(worker.pollingIntervalSeconds).toBe(0.5)
     expect(worker.active).toBe(0)
+    expect(worker.options).toEqual({ includeMetadata: true, maxPriority: 5 })
     expect(Date.parse(worker.lastFetchedOn!)).not.toBeNaN()
     expect(row.heartbeatOn.getTime()).toBeGreaterThan(first.heartbeatOn.getTime())
     expect(row.startedOn.getTime()).toBe(first.startedOn.getTime())

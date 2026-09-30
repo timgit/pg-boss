@@ -212,7 +212,7 @@ Array of objects with the following properties:
 | `stoppedOn` | Date \| null | Set by `stop()` |
 | `live` | boolean | Not stopped, and heard from within three heartbeats |
 
-Each `workers` entry has `id` (the id `work()` returned), `queue`, `localConcurrency`, `batchSize`, `pollingIntervalSeconds`, `active` (jobs in hand at the heartbeat), and `lastFetchedOn`, `lastJobEndedOn` and `lastErrorOn` as ISO strings or null. Error messages are not stored, since they can carry job data.
+Each `workers` entry has `id` (the id `work()` returned), `queue`, `localConcurrency`, `batchSize`, `pollingIntervalSeconds`, `active` (jobs in hand at the heartbeat), `lastFetchedOn`, `lastJobEndedOn` and `lastErrorOn` as ISO strings or null, and `options`, the other `work()` options the call set (`includeMetadata`, `ignoreStartAfter`, `minPriority`, `maxPriority`, `localGroupConcurrency`, `groupConcurrency`, `heartbeatRefreshSeconds`, `perJobResults`, `transactional`, `transactionTimeoutSeconds`, `notifyPollingIntervalSeconds`, `burstWhenReadyExceeds`, `burstWhenBatchFull`), leaving out any left at its default. Error messages are not stored, since they can carry job data.
 
 `metrics` is sampled on each heartbeat. Rates cover the time since the previous heartbeat, so they are null in the row written at `start()`.
 
