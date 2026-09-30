@@ -297,8 +297,6 @@ Bool, default false
 
 If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
-With it on, each monitor pass also counts how many jobs were created, completed and failed, and how long the finished ones waited and ran, from the same pass over the job table that takes the counts. Measured on a job table of 2.5 million rows, the wait and run times add about 10% to that pass (about 55 ms on 560 ms). They also make a `queue_stats` snapshot larger: about 70 to 100 bytes a histogram, two per snapshot, where jobs finished, and a few bytes where none did.
-
 ### `queueStatRetentionDays`
 
 Int, default 7
