@@ -127,13 +127,11 @@ const STATS_COUNT_FIELDS = [
   'totalCount'
 ] as const
 
-// The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
-// getQueueStats.
 // A snapshot's histogram as the row holds it, sparse: the used slots and beside them their counts,
 // from a recorded pass or added up over a bucket. Handed out whole, LATENCY_SLOTS counts. Null when
 // no pass counted it; all zeros when one did and nothing finished. CockroachDB hands integers over as
 // strings.
-function denseBins (slots: unknown, counts: unknown, measured: boolean): number[] | null {
+function expandBins (slots: unknown, counts: unknown, measured: boolean): number[] | null {
   if (!measured) return null
   const bins = new Array(plans.LATENCY_SLOTS).fill(0)
   if (Array.isArray(slots) && Array.isArray(counts)) {
@@ -142,6 +140,8 @@ function denseBins (slots: unknown, counts: unknown, measured: boolean): number[
   return bins
 }
 
+// The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
+// getQueueStats.
 const STATS_DELTA_FIELDS = [
   'completedDelta',
   'failedDelta',
@@ -2643,8 +2643,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (counted) {
         // A recorded pass counted if it holds slots at all, empty included; a bucket says so itself.
         const measured = row?.latencyMeasured != null ? Boolean(row.latencyMeasured) : row?.waitSlots != null
-        snapshot.waitBins = denseBins(row?.waitSlots, row?.waitCounts, measured)
-        snapshot.runBins = denseBins(row?.runSlots, row?.runCounts, measured)
+        snapshot.waitBins = expandBins(row?.waitSlots, row?.waitCounts, measured)
+        snapshot.runBins = expandBins(row?.runSlots, row?.runCounts, measured)
         if (row?.oldestReadySeconds != null) snapshot.oldestReadySeconds = Number(row.oldestReadySeconds)
       }
 

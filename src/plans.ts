@@ -4078,9 +4078,10 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
 // Wait and run times, as the monitor records them: a histogram per counted pass, of the jobs that
 // finished in its window. Slot 0 holds times under 10 ms, slots 1 to LATENCY_BINS bins that each
 // grow by √2 (slot k runs from 10 ms · √2^(k-1) to 10 ms · √2^k), and the last slot everything past
-// about 23 hours. Log-spaced because the times span six orders of magnitude, and a percentile read
-// from them is within one bin, 19% at most. Histograms rather than percentiles, because histograms
-// add: a reader sums them across passes, buckets or queues and reads any percentile from the sum.
+// about 23 hours. Log-spaced because the times span six orders of magnitude, and a percentile taken
+// as the geometric middle of its bin is within 19% of the exact one. Histograms rather than
+// percentiles, because histograms add: a reader sums them across passes, buckets or queues and reads
+// any percentile from the sum.
 // Stored sparse, the used slots and their counts in two arrays side by side: a pass covers one
 // queue for one interval and its times cluster, so most of the 48 slots are empty (measured at 5 to
 // 10 used, 70 to 100 bytes a histogram against 216 for all 48). getQueueStats() hands them out whole.

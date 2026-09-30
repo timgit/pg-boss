@@ -269,30 +269,7 @@ const series = await boss.getQueueStats('email-send', {
 
 In `queue_stats` each histogram is stored as two arrays side by side, the slots that hold at least one job (`wait_slots`, ascending) and how many each holds (`wait_counts`); a slot not listed holds none, and a measured pass in which nothing finished stores two empty arrays. To add them up in SQL, unnest the two together: `SELECT u.slot, sum(u.n) FROM queue_stats s, unnest(s.wait_slots, s.wait_counts) AS u(slot, n) WHERE … GROUP BY 1`.
 
-```js
-// The p95 wait over the last hour, from the snapshots in it
-const hour = await boss.getQueueStats('email-send', { from: new Date(Date.now() - 3600_000) })
-const sum = new Array(48).fill(0)
-for (const s of hour) s.waitBins?.forEach((n, i) => { sum[i] += n })
-
-function percentile (bins, p) {
-  const total = bins.reduce((a, b) => a + b, 0)
-  if (total === 0) return null
-  let seen = 0
-  for (let k = 0; k < bins.length; k++) {
-    if (seen + bins[k] >= p * total) {
-      if (k === 0) return 0.01
-      const lo = 0.01 * Math.SQRT2 ** (k - 1)
-      return lo * Math.SQRT2 ** ((p * total - seen) / bins[k]) // within the slot, on the log scale
-    }
-    seen += bins[k]
-  }
-}
-
-console.log(`p95 wait ${percentile(sum, 0.95)?.toFixed(1)} s`)
-```
-
-A slot is √2 wide, so a percentile read this way is within 19% of the exact one.
+A slot from 1 to 46 is √2 wide, so a percentile taken as the geometric middle of its slot, `0.01 * √2^(k-0.5)` seconds, is within 19% of the exact one.
 
 ### `getBlockedKeys(name)`
 
