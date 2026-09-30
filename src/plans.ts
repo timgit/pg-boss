@@ -3108,8 +3108,8 @@ export function insertRetryJob (schema: string, table: string): string {
       heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies,
       source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-      $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35
+      $1, $2, $3, $4::text::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
+      $23::text::jsonb, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34::text::jsonb, $35
     ) ON CONFLICT DO NOTHING
     RETURNING id
   `
@@ -3120,9 +3120,9 @@ export function insertDeadLetterJob (schema: string): string {
     INSERT INTO ${schema}.job (name, data, priority, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
       expire_seconds, singleton_key, group_id, group_tier, heartbeat_seconds,
       source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id)
-    SELECT $1, $2, $9, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
+    SELECT $1, $2::text::jsonb, $9, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
       q.expire_seconds, $8, $10, $11, q.heartbeat_seconds,
-      $4, $5, $6, $7, $3, COALESCE($12::uuid, $5::uuid)
+      $4, $5, $6, $7, $3::text::jsonb, COALESCE($12::uuid, $5::uuid)
     FROM ${schema}.queue q WHERE q.name = $1
   `
 }

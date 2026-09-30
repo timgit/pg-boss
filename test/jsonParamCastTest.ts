@@ -41,6 +41,9 @@ const textRouted: Array<[string, string]> = [
   ['setScheduleLastJobIds', plans.setScheduleLastJobIds(schema)],
   ['setScheduleKinds', plans.setScheduleKinds(schema)],
   ['insertWarning', plans.insertWarning(schema)],
+  // The distributed fail path, which binds json read back from the failed row.
+  ['insertRetryJob', plans.insertRetryJob(schema, table)],
+  ['insertDeadLetterJob', plans.insertDeadLetterJob(schema)],
   // Both share redriveWhere's data filter.
   ['redriveJobs', plans.redriveJobs(schema, table)],
   ['previewRedrive', plans.previewRedrive(schema, table)],
