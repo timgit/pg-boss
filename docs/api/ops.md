@@ -205,7 +205,7 @@ Array of objects with the following properties:
 | `poolMax`, `poolTotal`, `poolIdle`, `poolWaiting` | number \| null | Its pool at the last heartbeat; null for a `db` adapter |
 | `workers` | array | One entry per `work()` call, below |
 | `metrics` | object \| null | Its process's CPU, memory and event loop at the last heartbeat, below |
-| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Options left at their defaults are absent. Connection settings and credentials are never recorded |
+| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Each holds the value it resolved to, defaults included; an option with no default that was not given is absent. Connection settings and credentials are never recorded |
 | `crashRestarts` | number | Lives in a row with this name on this host that ended without `stop()` before this one started |
 | `crashRestartsSince` | Date \| null | When the first of those went quiet |
 | `startedOn`, `heartbeatOn` | Date | When it started, and its last heartbeat |
