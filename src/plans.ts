@@ -666,7 +666,7 @@ const INSTANCE_COLUMNS = `id, name, host, pid, version, node_version, heartbeat_
       supervise, schedule, migrate, persist_queue_stats, persist_warnings,
       pool_max, pool_total, pool_idle, pool_waiting, workers, metrics, config, application_name, started_on, heartbeat_on`
 
-const INSTANCE_VALUES = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19::jsonb,
+const INSTANCE_VALUES = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::text::jsonb, $18::text::jsonb, $19::text::jsonb,
       current_setting('application_name')`
 
 const INSTANCE_BEAT = `pool_max = EXCLUDED.pool_max,
