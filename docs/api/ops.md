@@ -180,7 +180,7 @@ Returns every pg-boss instance registered in this database, oldest first. Each i
 
 Every `start()` of a new `PgBoss` object is a new row, so a crash loop, or a deploy whose processes exit without calling `stop()`, leaves a quiet row per life. To keep that bounded, an instance deletes all but the 20 newest stopped or quiet rows with its name when it registers (with its host, when it has no name), and maintenance keeps the 1,000 newest stopped or quiet rows in all. Calling `stop()` on `SIGTERM` marks a row stopped rather than quiet, which tells a deploy apart from a crash. `crashRestarts` survives that pruning.
 
-A life counts toward `crashRestarts` once it is quiet, and only if its last heartbeat came before this instance started, so a sibling process with the same name on the same host (a pm2 cluster, say) is never counted. A crash moments before a restart is counted when it goes quiet, up to three heartbeats after `start()`. A process that reuses the previous one's pid, as a container restart does, is counted at once.
+A life counts toward `crashRestarts` once it is quiet, and only if its last heartbeat came before this instance started, so a sibling process with the same name on the same host (a pm2 cluster, say) is not counted while it keeps running. A sibling that crashes is counted: the count is kept per name and host, not per process, so siblings sharing a name share one count. Give each sibling its own `instanceName` (`worker-1`, `worker-2`) to count them apart. A crash moments before a restart is counted when it goes quiet, up to three heartbeats after `start()`. A process that reuses the previous one's pid, as a container restart does, is counted at once.
 
 ```js
 const instances = await boss.getInstances()

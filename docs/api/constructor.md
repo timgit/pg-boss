@@ -309,13 +309,13 @@ When `persistQueueStats` is enabled, this controls automatic cleanup of old snap
 
 Bool, default true
 
-Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`, so [`getInstances()`](./ops.md#getinstances) can list every pg-boss instance sharing the database. The heartbeat is one statement per instance every `instanceHeartbeatSeconds`, on its own timer, and nothing on the job path waits for it. Set to false to leave this instance out of the registry.
+Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`, so [`getInstances()`](./ops.md#getinstances) can list every pg-boss instance sharing the database. The heartbeat is one statement per instance every `instanceHeartbeatSeconds`, on its own timer, and nothing on the job path waits for it. Set to false to leave this instance out of the registry. Short-lived processes such as serverless functions should set it to false: registering adds a few statements to every `start()`, a `PgBoss` object created per invocation leaves a new row each time, and a frozen or recycled function never heartbeats or calls `stop()`, so its rows read as quiet or crashed.
 
 ### `instanceName`
 
 String, optional
 
-A name for this instance in the registry, such as `api` or `billing-worker`. Instances of the same deployment can share one.
+A label for this instance in the registry, such as `api` or `billing-worker`. It does not need to be unique, since each instance is recorded under its own id. Instances with the same name are grouped for pruning stopped rows and for counting crash restarts; see [`getInstances()`](./ops.md#getinstances).
 
 ### `instanceHeartbeatSeconds`
 
