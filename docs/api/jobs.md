@@ -670,6 +670,8 @@ Deletes all jobs in a queue, including active jobs.
 
 If no queue name is given, jobs are deleted from all queues.
 
+A partitioned queue, or every queue when no name is given, is emptied with `TRUNCATE`, and its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, the cached counts catch up at the next monitor pass.
+
 ```js
 // delete everything in one queue
 await boss.deleteAllJobs('email-send')
