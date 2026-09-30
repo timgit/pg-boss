@@ -30,6 +30,8 @@ async function getInstance (dbUrl: string, schema: string): Promise<PgBoss> {
     supervise: false,
     migrate: false,
     createSchema: false,
+    // Its row in the instance registry, so /instances names the dashboard rather than listing it unnamed.
+    instanceName: 'pg-boss-dashboard',
   })
 
   // Without a listener, a dropped connection throws and takes the process down.

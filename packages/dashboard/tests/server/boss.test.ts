@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { PgBoss } from 'pg-boss'
-import { ctx, createTestQueue } from './helpers'
+import { ctx, createTestQueue, getBoss } from './helpers'
 import { getJobById, stopAllInstances } from '~/lib/boss.server'
 
 // Any call that goes through a pg-boss instance starts one; this is the only one left.
@@ -9,6 +9,20 @@ const NO_JOB = '00000000-0000-4000-8000-000000000000'
 describe('boss.server', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('registers the instance it starts as pg-boss-dashboard', async () => {
+    const queue = 'dashboard-instance-name'
+    await createTestQueue(queue)
+
+    try {
+      await getJobById(ctx.connectionString, ctx.schema, queue, NO_JOB)
+      const instances = await getBoss().getInstances()
+
+      expect(instances.filter((i) => i.live).map((i) => i.name)).toContain('pg-boss-dashboard')
+    } finally {
+      await stopAllInstances()
+    }
   })
 
   describe('stopAllInstances', () => {
