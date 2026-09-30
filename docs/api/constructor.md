@@ -307,7 +307,10 @@ When `persistQueueStats` is enabled, this controls automatic cleanup of old snap
 
 Bool, default true
 
-Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`, so [`getInstances()`](./ops.md#getinstances) can list every pg-boss instance sharing the database. The heartbeat is one statement per instance every `instanceHeartbeatSeconds`, on its own timer, and nothing on the job path waits for it. Set to false to leave this instance out of the registry. Short-lived processes such as serverless functions should set it to false: registering adds a few statements to every `start()`, a `PgBoss` object created per invocation leaves a new row each time, and a frozen or recycled function never heartbeats or calls `stop()`, so its rows read as quiet or crashed.
+Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`. [`getInstances()`](./ops.md#getinstances) lists every pg-boss instance connecting to this schema. Set to false to leave this instance out of the registry. 
+
+> [!NOTE]
+> Short-lived processes such as serverless functions should set this to false, since frequent registrations would produce false positives of a frozen or crashed instance.
 
 ### `instanceName`
 
