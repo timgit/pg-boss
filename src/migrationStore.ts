@@ -2085,11 +2085,11 @@ AS $function$
         `ALTER TABLE ${schema}.queue
           ADD COLUMN wait_bins int[],
           ADD COLUMN run_bins int[],
-          ADD COLUMN oldest_ready_seconds int`,
+          ADD COLUMN ready_oldest_seconds int`,
         `ALTER TABLE ${schema}.queue_stats
           ADD COLUMN wait_bins int[],
           ADD COLUMN run_bins int[],
-          ADD COLUMN oldest_ready_seconds int`,
+          ADD COLUMN ready_oldest_seconds int`,
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS trace_context jsonb`
       ],
       uninstall: [
@@ -2097,11 +2097,11 @@ AS $function$
         `ALTER TABLE ${schema}.queue
           DROP COLUMN wait_bins,
           DROP COLUMN run_bins,
-          DROP COLUMN oldest_ready_seconds`,
+          DROP COLUMN ready_oldest_seconds`,
         `ALTER TABLE ${schema}.queue_stats
           DROP COLUMN wait_bins,
           DROP COLUMN run_bins,
-          DROP COLUMN oldest_ready_seconds`,
+          DROP COLUMN ready_oldest_seconds`,
         `ALTER TABLE ${schema}.job DROP COLUMN trace_context`
       ]
     }

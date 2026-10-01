@@ -788,7 +788,7 @@ describe('queueStats', function () {
 
         const row = await monitorPass(queue)
         expect(row.waitBins).toEqual(bins({}))
-        expect(row.oldestReadySeconds).toBe(0)
+        expect(row.readyOldestSeconds).toBe(0)
       })
 
       it('does not record wait and run times when tracking is off', async function () {
@@ -800,7 +800,7 @@ describe('queueStats', function () {
 
         const row = await monitorPass(queue, false)
         expect(row.waitBins).toBe(null)
-        expect(row.oldestReadySeconds).toBe(null)
+        expect(row.readyOldestSeconds).toBe(null)
       })
 
       /**
@@ -814,7 +814,7 @@ describe('queueStats', function () {
         const db = await helper.getDb()
         const schema = ctx.bossConfig.schema
 
-        expect((await monitorPass(queue)).oldestReadySeconds).toBe(0)
+        expect((await monitorPass(queue)).readyOldestSeconds).toBe(0)
 
         const ready = await ctx.boss.send(queue)
         await ctx.boss.send(queue, null, { startAfter: 3600 })
@@ -823,8 +823,8 @@ describe('queueStats', function () {
            WHERE name = $1 AND id = $2`, [queue, ready])
 
         const row = await monitorPass(queue)
-        expect(row.oldestReadySeconds).toBeGreaterThanOrEqual(89)
-        expect(row.oldestReadySeconds).toBeLessThan(120)
+        expect(row.readyOldestSeconds).toBeGreaterThanOrEqual(89)
+        expect(row.readyOldestSeconds).toBeLessThan(120)
       })
 
       it('adds the histograms of a bucket slot by slot, and keeps its oldest wait', async function () {
@@ -839,7 +839,7 @@ describe('queueStats', function () {
         await ensurePreviousDayPartition(db, schema)
         await db.executeSql(
           `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
-             wait_bins, run_bins, oldest_ready_seconds)
+             wait_bins, run_bins, ready_oldest_seconds)
            VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2, $4, $6, 40),
                   ($1, 3, 60, $3::timestamptz - interval '60 seconds', $3, $5, $6, 75)`,
           [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000),
@@ -850,7 +850,7 @@ describe('queueStats', function () {
         expect(newest.waitBins).toHaveLength(plans.LATENCY_SLOTS)
         expect(newest.waitBins![10]).toBe(3)
         expect(newest.waitBins![12]).toBe(1)
-        expect(newest.oldestReadySeconds).toBe(75)
+        expect(newest.readyOldestSeconds).toBe(75)
 
         // Added up in SQL: one histogram for the bucket, not one per pass.
         const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
@@ -858,7 +858,7 @@ describe('queueStats', function () {
         expect(bucket.waitBins![12]).toBe(1)
         expect(bucket.runBins![5]).toBe(4)
         expect(bucket.waitBins).toHaveLength(plans.LATENCY_SLOTS)
-        expect(bucket.oldestReadySeconds).toBe(75)
+        expect(bucket.readyOldestSeconds).toBe(75)
       })
 
       it('reports zeros, not null, for a bucket whose passes counted and saw nothing finish', async function () {
@@ -873,7 +873,7 @@ describe('queueStats', function () {
         await ensurePreviousDayPartition(db, schema)
         await db.executeSql(
           `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
-             wait_bins, run_bins, oldest_ready_seconds)
+             wait_bins, run_bins, ready_oldest_seconds)
            VALUES ($1, 0, 60, $2::timestamptz - interval '60 seconds', $2, $3, $3, 0)`,
           [queue, new Date(hour - 50 * 60_000), literal({})])
 
@@ -900,7 +900,7 @@ describe('queueStats', function () {
 
         const [row] = await ctx.boss.getQueueStats(queue, { to })
         expect(row.waitBins).toBe(null)
-        expect(row.oldestReadySeconds).toBe(null)
+        expect(row.readyOldestSeconds).toBe(null)
         const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
         expect(bucket.waitBins).toBe(null)
       })

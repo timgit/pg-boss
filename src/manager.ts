@@ -2719,7 +2719,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         deltaOn: null,
         waitBins: null,
         runBins: null,
-        oldestReadySeconds: null,
+        readyOldestSeconds: null,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
@@ -2735,7 +2735,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (counted) {
         snapshot.waitBins = toBins(row?.waitBins)
         snapshot.runBins = toBins(row?.runBins)
-        if (row?.oldestReadySeconds != null) snapshot.oldestReadySeconds = Number(row.oldestReadySeconds)
+        if (row?.readyOldestSeconds != null) snapshot.readyOldestSeconds = Number(row.readyOldestSeconds)
       }
 
       return snapshot
