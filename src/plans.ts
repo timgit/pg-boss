@@ -2683,10 +2683,16 @@ function lockedChildrenCte (schema: string): string {
     )`
 }
 
+// A child released by its last parent has its start_after moved up to the release, so its wait (in
+// the monitor's histograms and ready_oldest_seconds) counts from when it could first run rather than
+// from when the flow was sent. A start_after still in the future is kept.
 function unblockChildrenUpdate (schema: string): string {
   return `UPDATE ${schema}.job j
       SET pending_dependencies = GREATEST(j.pending_dependencies - lc.n, 0),
-          blocked = GREATEST(j.pending_dependencies - lc.n, 0) > 0
+          blocked = GREATEST(j.pending_dependencies - lc.n, 0) > 0,
+          start_after = CASE WHEN GREATEST(j.pending_dependencies - lc.n, 0) = 0
+            THEN GREATEST(j.start_after, ${schema}.job_now())
+            ELSE j.start_after END
       FROM locked_children lc
       WHERE j.name = lc.name
         AND j.id = lc.id`

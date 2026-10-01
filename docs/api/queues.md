@@ -228,7 +228,7 @@ and three deltas: how many jobs were created, completed, and failed in the windo
 
 Alongside the deltas, and recorded under the same conditions, how long jobs waited and ran. Like the deltas, they are `null` when nothing measured them (`persistQueueStats` disabled on the calling instance, or a snapshot captured before pg-boss 12.36), and a measured pass in which nothing finished has histograms of all zeros.
 
-* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, or a retry sitting out its backoff, is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
+* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, a retry sitting out its backoff, or a flow job waiting on its parents is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
 * `runBins`: how long the same jobs ran, from start to finish, in the same bins.
 * `readyOldestSeconds`: how long the oldest job ready to run had waited when the snapshot was captured, leaving out deferred jobs and jobs blocked by a dependency. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
 

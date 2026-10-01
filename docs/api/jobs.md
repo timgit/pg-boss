@@ -406,7 +406,7 @@ const loadJobId = flow.load
 
 Dependent jobs are created in a `blocked` state and won't be eligible for fetching until all parent jobs have completed. If a parent job fails or is cancelled, the child remains blocked. You can explicitly `cancel` or `fail` the blocked child if needed.
 
-When a dependent job uses `startAfter`, both conditions must be met: all dependencies completed and `startAfter` has passed.
+When a dependent job uses `startAfter`, both conditions must be met: all dependencies completed and `startAfter` has passed. When its last dependency is resolved, a dependent job's `startAfter` moves up to that moment unless it is already later, so it reads as the time the job could first run, and its wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
 
 Unblocking happens off the completion hot path: a background resolver wakes shortly after a parent completes (see [`flowIntervalSeconds`](./constructor.md#flowintervalseconds) in the constructor options) and unblocks any dependents that are now ready. This keeps completing jobs fast regardless of how many flows exist. The resolver runs when `supervise` is enabled; call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
 

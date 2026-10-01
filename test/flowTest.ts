@@ -357,6 +357,33 @@ describe('flows', function () {
     expect(fetched.length).toBe(0)
   })
 
+  it('should start a dependent job when it is unblocked, not when the flow was sent', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+    ])
+
+    const db = await helper.getDb()
+    await db.executeSql(
+      `UPDATE ${ctx.bossConfig.schema}.job SET created_on = created_on - interval '45 minutes', start_after = start_after - interval '45 minutes'
+       WHERE id = $1`, [flow.child])
+    const sent = await ctx.boss.getJobById(ctx.schema, flow.child)
+    assertTruthy(sent)
+
+    const [parent] = await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.complete(ctx.schema, parent.id)
+    const released = Date.now()
+    await ctx.boss.resolveFlow()
+
+    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    assertTruthy(child)
+    expect(child.blocked).toBe(false)
+    expect(Math.abs(child.startAfter.getTime() - released)).toBeLessThan(30_000)
+    expect(child.createdOn.getTime()).toBe(sent.createdOn.getTime())
+  })
+
   it('should honor startAfter on a dependent job', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
@@ -374,6 +401,8 @@ describe('flows', function () {
     const childJob = await ctx.boss.getJobById(ctx.schema, childId)
     assertTruthy(childJob)
     expect(childJob.blocked).toBe(false)
+    // Unblocking keeps a start_after that is still in the future.
+    expect(childJob.startAfter.getTime() - Date.now()).toBeGreaterThan(3000_000)
 
     const fetched = await ctx.boss.fetch(ctx.schema)
     expect(fetched.length).toBe(0)
