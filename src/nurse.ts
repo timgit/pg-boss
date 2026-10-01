@@ -197,7 +197,7 @@ async function memoryLimit (cg: Cgroup): Promise<Limit | null> {
 // Memory in use by the cgroup less its inactive file cache: the working set that container runtimes
 // and the kubelet compare against the limit, since inactive cache is reclaimed before anything is killed.
 async function workingSet (cg: Cgroup, dir: string): Promise<number | null> {
-  const usage = Number(await read(dir + (cg.version === 2 ? '/memory.current' : '/memory.usage_in_bytes')))
+  const usage = Number(await read(dir + (cg.version === 2 ? '/memory.current' : '/memory.usage_in_bytes')) ?? NaN)
   if (!(usage >= 0)) return null
 
   const inactive = statField(await read(dir + '/memory.stat'), cg.version === 2 ? 'inactive_file' : 'total_inactive_file') ?? 0
