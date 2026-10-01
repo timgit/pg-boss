@@ -1,5 +1,6 @@
 import { expect, vi } from 'vitest'
 import { context, propagation, SpanKind, SpanStatusCode, trace, type Attributes } from '@opentelemetry/api'
+import { W3CTraceContextPropagator } from '@opentelemetry/core'
 import { NodeSDK } from '@opentelemetry/sdk-node'
 import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider, type ReadableSpan } from '@opentelemetry/sdk-trace'
 import { AggregationTemporality, MeterProvider, MetricReader, type DataPoint, type Histogram, type MetricData } from '@opentelemetry/sdk-metrics'
@@ -38,7 +39,9 @@ const ATTR = {
   messageId: 'messaging.message.id',
   batchCount: 'messaging.batch.message_count',
   errorType: 'error.type',
-  retryCount: 'pgboss.job.retry_count'
+  retryCount: 'pgboss.job.retry_count',
+  dbNamespace: 'db.namespace',
+  schema: 'pgboss.schema'
 }
 
 beforeAll(() => sdk.start())
@@ -85,6 +88,16 @@ function metric (resourceMetrics: Awaited<ReturnType<MetricReader['collect']>>['
     .find(m => m.descriptor.name === name)
 }
 
+// Propagation is opt-in, and most of these tests follow a job's trace from its send.
+function propagating (openTelemetry = {}) {
+  return { ...ctx.bossConfig, openTelemetry: { propagateContext: true, ...openTelemetry } }
+}
+
+async function namespaceOf (boss: PgBoss) {
+  const { rows } = await boss.getDb().executeSql('SELECT current_database() AS name')
+  return { [ATTR.dbNamespace]: `${rows[0].name}|${ctx.schema}`, [ATTR.schema]: ctx.schema }
+}
+
 function pointsFor<T> (data: MetricData | undefined, attributes: Attributes): DataPoint<T>[] {
   return ((data?.dataPoints ?? []) as DataPoint<T>[])
     .filter(point => Object.entries(attributes).every(([key, value]) => point.attributes[key] === value))
@@ -92,7 +105,7 @@ function pointsFor<T> (data: MetricData | undefined, attributes: Attributes): Da
 
 describe('openTelemetry', function () {
   it('continues the trace of send() into the worker that processes the job', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
     const boss = ctx.boss
 
     const jobId = await tracer.startActiveSpan('http request', async span => {
@@ -121,7 +134,8 @@ describe('openTelemetry', function () {
       [ATTR.operation]: 'send',
       [ATTR.operationType]: 'send',
       [ATTR.destination]: ctx.schema,
-      [ATTR.messageId]: jobId
+      [ATTR.messageId]: jobId,
+      ...await namespaceOf(boss)
     })
 
     expect(processSpan.kind).toBe(SpanKind.CONSUMER)
@@ -147,7 +161,7 @@ describe('openTelemetry', function () {
   })
 
   it('makes the baggage active at send() active in the handler', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
     const boss = ctx.boss
 
     const baggage = propagation.createBaggage({ tenant: { value: 'acme' } })
@@ -176,7 +190,7 @@ describe('openTelemetry', function () {
   })
 
   it('does not parent batches to the context work() was called in', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
     const boss = ctx.boss
 
     await boss.send(ctx.schema)
@@ -204,13 +218,13 @@ describe('openTelemetry', function () {
   })
 
   it('records a failed attempt on its process span, and the retry stays in the same trace', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
 
     await testRetryTrace(ctx.boss)
   })
 
   it('keeps the trace across a retry on the distributed fail path', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+    ctx.boss = await helper.start({ ...propagating(), __test__distributed: true })
 
     await testRetryTrace(ctx.boss)
   })
@@ -247,7 +261,7 @@ describe('openTelemetry', function () {
   }
 
   it('links a dead lettered job and its redrive back to the original send', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...propagating(), noDefault: true })
     const boss = ctx.boss
     const deadLetter = `${ctx.schema}_dlq`
 
@@ -275,7 +289,7 @@ describe('openTelemetry', function () {
   })
 
   it('processes a batch in one span linked to the send of every job', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
     const boss = ctx.boss
 
     for (let i = 0; i < 3; i++) {
@@ -296,7 +310,7 @@ describe('openTelemetry', function () {
   })
 
   it('records fetch() as a receive span linked to the sends, and complete() as a settle span', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
     const boss = ctx.boss
 
     const jobId = await boss.send(ctx.schema)
@@ -342,7 +356,7 @@ describe('openTelemetry', function () {
   })
 
   it('records insert() as one send span that every inserted job continues', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
     const boss = ctx.boss
 
     await boss.insert(ctx.schema, [{ data: { a: 1 } }, { data: { a: 2 } }])
@@ -358,7 +372,7 @@ describe('openTelemetry', function () {
   })
 
   it('records upsert() as a send span that only an inserted job continues', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
     const boss = ctx.boss
 
     const inserted = await boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })
@@ -390,7 +404,7 @@ describe('openTelemetry', function () {
   })
 
   it('records flow() as one send span, continued by every job in the flow', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start(propagating())
     const boss = ctx.boss
 
     const flow = await boss.flow([
@@ -459,7 +473,8 @@ describe('openTelemetry', function () {
     const sent = pointsFor<number>(metric(resourceMetrics, 'messaging.client.sent.messages'), queue)
     expect(sent).toHaveLength(1)
     expect(sent[0].value).toBe(2)
-    expect(sent[0].attributes).toEqual({ ...queue, [ATTR.system]: 'pg-boss', [ATTR.operation]: 'send', [ATTR.operationType]: 'send' })
+    const namespace = await namespaceOf(boss)
+    expect(sent[0].attributes).toEqual({ ...queue, ...namespace, [ATTR.system]: 'pg-boss', [ATTR.operation]: 'send', [ATTR.operationType]: 'send' })
 
     const consumed = pointsFor<number>(metric(resourceMetrics, 'messaging.client.consumed.messages'), queue)
     expect(consumed.reduce((sum, point) => sum + point.value, 0)).toBe(2)
@@ -481,6 +496,7 @@ describe('openTelemetry', function () {
 
     const queueJobs = pointsFor<number>(metric(resourceMetrics, 'pgboss.queue.jobs'), queue)
     expect(queueJobs.map(point => point.attributes['pgboss.job.state']).sort()).toEqual(['active', 'deferred', 'failed', 'ready'])
+    expect(queueJobs[0].attributes).toMatchObject(namespace)
   })
 
   it('reports queue gauges through the meterProvider it is given, until it stops', async function () {
@@ -530,8 +546,8 @@ describe('openTelemetry', function () {
     expect(pointsFor(metric(resourceMetrics, 'messaging.client.sent.messages'), { [ATTR.destination]: ctx.schema })).toEqual([])
   })
 
-  it('without propagateContext, stores no trace context and the worker starts a trace of its own', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, openTelemetry: { propagateContext: false } })
+  it('by default, stores no trace context and the worker starts a trace of its own', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
     const boss = ctx.boss
 
     const jobId = await boss.send(ctx.schema)
@@ -546,6 +562,27 @@ describe('openTelemetry', function () {
 
     expect(processSpan.parentSpanContext).toBeUndefined()
     expect(traceOf(processSpan)).not.toBe(traceOf(send))
+  })
+
+  it('stores and reads the trace context with the propagator it is given', async function () {
+    ctx.boss = await helper.start(propagating({ propagator: new W3CTraceContextPropagator() }))
+    const boss = ctx.boss
+
+    const baggage = propagation.createBaggage({ tenant: { value: 'acme' } })
+    const jobId = await context.with(propagation.setBaggage(context.active(), baggage), () => boss.send(ctx.schema))
+    assertTruthy(jobId)
+
+    const [send] = findSpans(isSpan(`send ${ctx.schema}`))
+    expect(await storedTraceContext(ctx.schema, jobId)).toEqual({ traceparent: `00-${traceOf(send)}-${idOf(send)}-01` })
+
+    let tenant: string | undefined
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+      tenant = propagation.getActiveBaggage()?.getEntry('tenant')?.value
+    })
+
+    const [processSpan] = await waitForSpans(isSpan(`process ${ctx.schema}`))
+    expect(parentOf(processSpan)).toBe(idOf(send))
+    expect(tenant).toBeUndefined()
   })
 
   it('creates spans with the tracerProvider it is given instead of the global one', async function () {
@@ -566,5 +603,6 @@ describe('openTelemetry', function () {
     expect(() => new PgBoss({ ...ctx.bossConfig, openTelemetry: 'yes' as any })).toThrow('openTelemetry must be an object')
     expect(() => new PgBoss({ ...ctx.bossConfig, openTelemetry: { enabled: 'no' as any } })).toThrow('openTelemetry.enabled must be a boolean')
     expect(() => new PgBoss({ ...ctx.bossConfig, openTelemetry: { tracerProvider: {} as any } })).toThrow('tracerProvider must implement getTracer()')
+    expect(() => new PgBoss({ ...ctx.bossConfig, openTelemetry: { propagator: {} as any } })).toThrow('propagator must implement inject() and extract()')
   })
 })

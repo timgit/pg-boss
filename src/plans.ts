@@ -1305,6 +1305,10 @@ export function updateQueue (schema: string) {
   `
 }
 
+export function currentDatabase () {
+  return 'SELECT current_database() AS name'
+}
+
 export function getQueues (schema: string, names?: string[]): SqlQuery {
   const hasNames = names && names.length > 0
   return {

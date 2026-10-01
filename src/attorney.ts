@@ -564,6 +564,9 @@ function validateOpenTelemetryConfig (config: any) {
 
   assert(otel.meterProvider === undefined || typeof otel.meterProvider?.getMeter === 'function',
     'configuration assert: openTelemetry.meterProvider must implement getMeter()')
+
+  assert(otel.propagator === undefined || (typeof otel.propagator?.inject === 'function' && typeof otel.propagator?.extract === 'function'),
+    'configuration assert: openTelemetry.propagator must implement inject() and extract()')
 }
 
 function validateWarningConfig (config: any) {

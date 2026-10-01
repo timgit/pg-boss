@@ -1,4 +1,4 @@
-import type { MeterProvider, TracerProvider } from '@opentelemetry/api'
+import type { MeterProvider, TextMapPropagator, TracerProvider } from '@opentelemetry/api'
 
 export type JobStates = {
   created: 'created',
@@ -513,12 +513,18 @@ export interface OpenTelemetryOptions {
   enabled?: boolean;
   /**
    * Store the trace context active at `send()` on the job, so the span that processes it continues
-   * the producer's trace. Uses the propagator registered globally with the OpenTelemetry API, which
-   * an SDK sets to W3C Trace Context and Baggage when it starts. With none registered, as when only
-   * a `tracerProvider` is passed here, nothing is stored.
-   * @default true
+   * the producer's trace. With the SDK's default propagators this stores W3C Baggage as well as the
+   * trace id; pass `propagator` to store less.
+   * @default false
+   * @see https://pgboss.io/opentelemetry#options
    */
   propagateContext?: boolean;
+  /**
+   * Propagator that writes the trace context stored on a job and reads it back when the job is
+   * processed, for example `new W3CTraceContextPropagator()` to store trace ids only.
+   * @default the propagator registered globally with the OpenTelemetry API
+   */
+  propagator?: TextMapPropagator;
   /**
    * Tracer provider to create pg-boss spans with.
    * @default the global tracer provider

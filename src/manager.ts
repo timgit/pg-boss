@@ -239,7 +239,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
     this.#localGroupMaxLimit = new Map()
-    this.#telemetry = new Telemetry(config.openTelemetry, () => this.queues)
+    this.#telemetry = new Telemetry(config.openTelemetry, config.schema, () => this.queues)
     this.#traceContexts = new WeakMap()
   }
 
@@ -952,6 +952,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   async start () {
     this.stopped = false
+    if (this.#telemetry.enabled) {
+      const { rows } = await this.db.executeSql(plans.currentDatabase())
+      this.#telemetry.setDatabase(rows[0].name)
+    }
     this.queueCacheInterval = this.config.clock.setInterval(() => this.onCacheQueues({ emit: true }), this.config.queueCacheIntervalSeconds! * 1000)
     this.wipInterval = this.config.clock.setInterval(() => {
       const now = this.config.clock.now()
