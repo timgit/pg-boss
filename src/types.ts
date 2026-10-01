@@ -1,3 +1,5 @@
+import type { MeterProvider, TextMapPropagator, TracerProvider } from '@opentelemetry/api'
+
 export type JobStates = {
   created: 'created',
   retry: 'retry',
@@ -503,6 +505,38 @@ export interface AttachableClock extends Clock {
   attach(target: { db: IDatabase, schema: string, idle?: () => Promise<boolean> }): Promise<AsyncDisposable>
 }
 
+export interface OpenTelemetryOptions {
+  /**
+   * Set to false to emit no spans or metrics and store no trace context on jobs.
+   * @default true
+   */
+  enabled?: boolean;
+  /**
+   * Store the trace context active at `send()` on the job, so the span that processes it continues
+   * the producer's trace. With the SDK's default propagators this stores W3C Baggage as well as the
+   * trace id; pass `propagator` to store less.
+   * @default false
+   * @see https://pgboss.io/opentelemetry#options
+   */
+  propagateContext?: boolean;
+  /**
+   * Propagator that writes the trace context stored on a job and reads it back when the job is
+   * processed, for example `new W3CTraceContextPropagator()` to store trace ids only.
+   * @default the propagator registered globally with the OpenTelemetry API
+   */
+  propagator?: TextMapPropagator;
+  /**
+   * Tracer provider to create pg-boss spans with.
+   * @default the global tracer provider
+   */
+  tracerProvider?: TracerProvider;
+  /**
+   * Meter provider to create pg-boss instruments with.
+   * @default the global meter provider
+   */
+  meterProvider?: MeterProvider;
+}
+
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
   /**
    * Source of time and timers for this instance. Defaults to the system clock (`Date.now` and the
@@ -521,6 +555,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @default false
    */
   useListenNotify?: boolean;
+  /**
+   * OpenTelemetry tracing and metrics. On by default and free until an OpenTelemetry SDK is
+   * registered: without one every span and instrument is a no-op.
+   * @see https://pgboss.io/opentelemetry
+   */
+  openTelemetry?: OpenTelemetryOptions;
   /** @internal */
   __test__warn_slow_query?: boolean;
   /** @internal */
