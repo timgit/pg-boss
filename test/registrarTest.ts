@@ -44,7 +44,7 @@ function setup (handlersFor: (clock: TestClock) => Partial<Record<Statement, Han
     clock,
     registerInstance: true,
     instanceHeartbeatSeconds: HEARTBEAT_SECONDS
-  } as types.ResolvedConstructorOptions
+  } as unknown as types.ResolvedConstructorOptions
 
   const registrar = new Registrar('00000000-0000-0000-0000-000000000001', db, manager, config)
   const errors: Error[] = []
