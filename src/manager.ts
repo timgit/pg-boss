@@ -2705,10 +2705,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async getQueueStats (name: string, options: types.QueueStatsOptions = {}): Promise<types.QueueStats[]> {
     Attorney.assertQueueName(name)
 
-    const { percentiles } = options
-    assert(percentiles === undefined || (Array.isArray(percentiles) && percentiles.length > 0 &&
-      percentiles.every(p => typeof p === 'number' && p >= 0 && p <= 1)),
+    assert(options.percentiles === undefined || (Array.isArray(options.percentiles) && options.percentiles.length > 0 &&
+      options.percentiles.every(p => typeof p === 'number' && p >= 0 && p <= 1)),
     'getQueueStats: percentiles must be a non-empty array of numbers from 0 to 1')
+    // Each value once, in the order first asked for.
+    const percentiles = options.percentiles && [...new Set(options.percentiles)]
 
     const isCockroach = this.config.backend === 'cockroachdb'
 
@@ -2754,8 +2755,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       // Read from this snapshot's (or bucket's) own histograms, so they are null wherever those are.
       if (percentiles) {
-        snapshot.waitPercentiles = percentiles.map(p => percentile(snapshot.waitBins, p))
-        snapshot.runPercentiles = percentiles.map(p => percentile(snapshot.runBins, p))
+        snapshot.percentiles = percentiles.map(p => ({
+          p,
+          waitSeconds: percentile(snapshot.waitBins, p),
+          runSeconds: percentile(snapshot.runBins, p)
+        }))
       }
 
       return snapshot

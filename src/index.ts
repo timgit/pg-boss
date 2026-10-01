@@ -718,6 +718,7 @@ export type {
   QueuePolicy,
   QueueResult,
   QueueStats,
+  QueueStatsPercentile,
   Instance,
   InstanceMetrics,
   InstanceOptions,

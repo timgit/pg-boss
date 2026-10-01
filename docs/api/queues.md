@@ -252,7 +252,7 @@ Behavior depends on whether stats are being persisted:
   `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
 * When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
 
-`percentiles` (array of numbers from 0 to 1, such as `[0.5, 0.95]`) reads those percentiles from each snapshot's [latency histograms](#latency-histograms), adding `waitPercentiles` and `runPercentiles` to it in the same order. Each is the percentile of that snapshot, or of that bucket when downsampled, so averaging them across snapshots does not give the percentile over the whole range; see [`addBins()`](./utils.md#addbins-a-b) for that.
+`percentiles` (array of numbers from 0 to 1, such as `[0.5, 0.95]`) reads those percentiles from each snapshot's [latency histograms](#latency-histograms), adding a `percentiles` list to it: one entry per distinct value asked for, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled, so averaging them across snapshots does not give the percentile over the whole range; see [`addBins()`](./utils.md#addbins-a-b) for that.
 
 ```js
 // current queue depth (single snapshot when persistQueueStats is disabled)
@@ -267,6 +267,31 @@ const series = await boss.getQueueStats('email-send', {
   aggregate: 'max',
   percentiles: [0.5, 0.95] // p50 and p95 wait and run time per bucket
 })
+// [
+//   {
+//     name: 'email-send',
+//     deferredCount: 0,
+//     queuedCount: 0,
+//     readyCount: 0,
+//     activeCount: 9,
+//     failedCount: 0,
+//     totalCount: 21148,
+//     completedDelta: 179,
+//     failedDelta: 0,
+//     createdDelta: 178,
+//     deltaSeconds: 180,
+//     deltaOn: 2026-10-01T19:53:01.805Z,
+//     waitBins: [5, 1, 1, 5, 2, 9, 8, 12, 14, 20, 20, 33, 45, 4, 0, … 48 counts],
+//     runBins: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 35, 43, 40, 47, 0, … 48 counts],
+//     readyOldestSeconds: 0,
+//     capturedOn: 2026-10-01T19:50:24.000Z,
+//     percentiles: [
+//       { p: 0.5, waitSeconds: 0.281, runSeconds: 1.254 },
+//       { p: 0.95, waitSeconds: 0.616, runSeconds: 2.397 }
+//     ]
+//   },
+//   … one per bucket
+// ]
 ```
 
 ### Queue fields
@@ -299,7 +324,7 @@ A delta is not the difference between two snapshots' counts: `failedDelta` is no
 * `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, a retry sitting out its backoff, or a flow job waiting on its parents is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
 * `runBins`: how long the same jobs ran, from start to finish, in the same bins.
 * `readyOldestSeconds`: how long the oldest ready job had waited when the pass ran, leaving out deferred and blocked jobs. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
-* `waitPercentiles`, `runPercentiles`: the wait and run time at each percentile asked for with `getQueueStats()`'s `percentiles` option, in seconds and in the order asked for (`getQueueStats()` with `percentiles` only)
+* `percentiles`: one entry per percentile asked for with `getQueueStats()`'s `percentiles` option, each with `p`, and `waitSeconds` and `runSeconds` read from `waitBins` and `runBins`; both `null` where there are no histograms (`getQueueStats()` with `percentiles` only)
 
 The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls. A job that finishes inside a transaction longer than 10 seconds, which the deltas take in afterwards, is left out of the histograms.
 
@@ -311,7 +336,7 @@ To read percentiles, pass the `percentiles` option:
 
 ```js
 const series = await boss.getQueueStats('email-send', { maxDataPoints: 300, percentiles: [0.5, 0.95] })
-// each snapshot also carries waitPercentiles: [p50, p95] and runPercentiles: [p50, p95]
+// each snapshot also carries percentiles: [{ p: 0.5, waitSeconds, runSeconds }, { p: 0.95, waitSeconds, runSeconds }]
 ```
 
 Histograms add up, but percentiles don't: averaging the p95 of several snapshots does not give their p95. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up before its percentiles are read. For a single percentile over a whole window, or across several queues, add their histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p).
