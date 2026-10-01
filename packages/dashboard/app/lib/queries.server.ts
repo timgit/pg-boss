@@ -1031,7 +1031,7 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
   const latencyCtes = latency
     ? `,
     slots AS (
-      SELECT name, ${counterBucket} AS t, u.slot, sum(u.w)::bigint AS w, sum(u.r)::bigint AS r
+      SELECT name, ${counterBucket} AS t, u.slot, sum(u.w)::int AS w, sum(u.r)::int AS r
       FROM ${s}.queue_stats, unnest(wait_bins, run_bins) WITH ORDINALITY AS u(w, r, slot)
       WHERE ${counterWhere}
       GROUP BY 1, 2, 3
@@ -1096,7 +1096,7 @@ type LatencyRow = ThroughputRow & {
 }
 
 // A bucket's summed counts, one per slot: zeros where its passes measured and no job finished, null
-// where they did not measure. The sums are bigint, which arrive as strings.
+// where they did not measure. CockroachDB hands integers over as strings.
 function toBins (bins: unknown): number[] | null {
   return Array.isArray(bins) && bins.length === LATENCY_SLOTS ? bins.map(Number) : null
 }

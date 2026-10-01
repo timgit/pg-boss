@@ -131,8 +131,8 @@ const STATS_COUNT_FIELDS = [
 // The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
 // getQueueStats.
 // A snapshot's histogram as the row holds it, LATENCY_SLOTS counts from a recorded pass or added up
-// over a bucket. Null when no pass counted it; all zeros when one did and nothing finished. A bucket's
-// sums are bigint, which node-postgres and CockroachDB both hand over as strings.
+// over a bucket. Null when no pass counted it; all zeros when one did and nothing finished. CockroachDB
+// hands integers over as strings.
 function toBins (bins: unknown): number[] | null {
   return Array.isArray(bins) ? bins.map(Number) : null
 }

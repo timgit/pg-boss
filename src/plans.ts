@@ -2197,7 +2197,7 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         AND ($3::timestamptz IS NULL OR delta_on <= $3)
     ),
     slots AS (
-      SELECT p.bucket, u.slot, sum(u.w)::bigint AS w, sum(u.r)::bigint AS r
+      SELECT p.bucket, u.slot, sum(u.w)::int AS w, sum(u.r)::int AS r
       FROM (SELECT DISTINCT bucket, "counterBucket" FROM placed) p
         JOIN passes ps ON ps."counterBucket" = p."counterBucket",
         unnest(ps.wait_bins, ps.run_bins) WITH ORDINALITY AS u(w, r, slot)
