@@ -178,7 +178,7 @@ await boss.deleteQueue('email-send')
 
 ### `getQueues(names?)`
 
-Returns all queues, or only the named queues when an array of names is provided.
+Returns all queues, or only the named queues when an array of names is provided. Each queue's fields are described under [Queue fields](#queue-fields).
 
 ```js
 const queues = await boss.getQueues(['email-send'])
@@ -221,17 +221,9 @@ const queues = await boss.getQueues(['email-send'])
 // ]
 ```
 
-The settings are described under [`createQueue()`](#createqueue-name-queue), and the counts and the monitor pass fields (the deltas, `waitBins`, `runBins` and `readyOldestSeconds`) under [`getQueueStats()`](#getqueuestats-name-options). The rest:
-
-* `blockedCount`: queued jobs waiting on a [`flow()`](./jobs.md#flow-jobs-options) parent, so `queuedCount` is `deferredCount + blockedCount + readyCount`
-* `singletonsActive`: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none
-* `table`: the table the queue's jobs are stored in, `job_common` unless the queue is partitioned
-* `createdOn`: when the queue was created
-* `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed it, or when it was created if it never has
-
 ### `getQueue(name)`
 
-Returns a queue by name, or `null` if it doesn't exist.
+Returns a queue by name, with the same fields as [`getQueues()`](#getqueues-names), or `null` if it doesn't exist.
 
 ```js
 const queue = await boss.getQueue('email-send')
@@ -243,30 +235,7 @@ if (!queue) {
 
 ### `getQueueStats(name, options)`
 
-Returns an array of queue-depth snapshots, most recent first. Each snapshot has the queue `name`, a `capturedOn` timestamp, and these counts:
-
-* `queuedCount`: jobs waiting to run, **including** deferred (future-dated) jobs and jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent (counted on their own as `blockedCount` by [`getQueues()`](#getqueues-names)); this drives the queue backlog warning, so dumping a lot of deferred work still trips it
-* `deferredCount`: jobs scheduled to start in the future (`startAfter` not yet reached), leaving out jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent
-* `readyCount`: jobs ready to be processed now, neither deferred nor blocked by a flow parent; the true runnable backlog
-* `activeCount`: jobs currently being processed
-* `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
-* `totalCount`: all jobs currently stored for the queue
-
-and three deltas: how many jobs were created, completed, and failed in the window since the previous monitor pass. A delta is not the difference between two snapshots' counts: `failedDelta` is not the change in `failedCount`, which also falls as retention deletes failed jobs. Deltas are only recorded when `persistQueueStats` is enabled on the instances that run monitoring, and this method returns them as `null` when it is disabled on the calling instance, or on snapshots captured before pg-boss 12.35.
-
-* `createdDelta`: jobs created
-* `completedDelta`: jobs completed
-* `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not included)
-* `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
-* `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
-
-The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls.
-
-Alongside the deltas, and recorded under the same conditions, how long jobs waited and ran. Like the deltas, they are `null` when nothing measured them (`persistQueueStats` disabled on the calling instance, or a snapshot captured before pg-boss 12.36), and a measured pass in which nothing finished has histograms of all zeros. A job that finishes inside a transaction longer than 10 seconds, which the deltas take in afterwards, is left out of the histograms.
-
-* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, a retry sitting out its backoff, or a flow job waiting on its parents is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
-* `runBins`: how long the same jobs ran, from start to finish, in the same bins.
-* `readyOldestSeconds`: how long the oldest job ready to run had waited when the snapshot was captured, leaving out deferred jobs and jobs blocked by a dependency. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
+Returns an array of queue-depth snapshots, most recent first. Each snapshot has the queue's `name`, `capturedOn`, its [counts](#counts) and its [monitor pass fields](#monitor-pass-fields).
 
 Behavior depends on whether stats are being persisted:
 
@@ -297,11 +266,78 @@ const series = await boss.getQueueStats('email-send', {
 })
 ```
 
+### Queue fields
+
+The fields returned by [`getQueues()`](#getqueues-names), [`getQueue()`](#getqueue-name) and [`getQueueStats()`](#getqueuestats-name-options). A queue's settings (`policy`, `partition`, `deadLetter`, the retry, expiration and retention options, `heartbeatSeconds`, `warningQueueSize` and `notify`) are the options described under [`createQueue()`](#createqueue-name-queue), returned as stored.
+
+#### Counts
+
+As counted by a monitor pass, which runs every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
+
+* `queuedCount`: jobs waiting to run, **including** deferred jobs and jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
+* `deferredCount`: queued jobs scheduled to start in the future (`startAfter` not yet reached), leaving out blocked jobs
+* `blockedCount`: queued jobs waiting on a flow parent, whatever their `startAfter` (`getQueues()` and `getQueue()` only)
+* `readyCount`: queued jobs ready to be processed now, neither deferred nor blocked; the true runnable backlog
+* `activeCount`: jobs currently being processed
+* `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
+* `totalCount`: all jobs currently stored for the queue
+
+#### Monitor pass fields
+
+What a monitor pass counted for the queue: three deltas, how many jobs were created, completed and failed in the window since the previous pass, and how long the jobs that finished in that window waited and ran. They are recorded only when [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled on the instances that run monitoring. `getQueueStats()` returns them as `null` when it is disabled on the calling instance, and on snapshots captured before pg-boss 12.35 (the deltas) or 12.36 (the rest). `getQueues()` and `getQueue()` return the latest pass that counted, with the three deltas `0` and the rest `null` until one has.
+
+A delta is not the difference between two snapshots' counts: `failedDelta` is not the change in `failedCount`, which also falls as retention deletes failed jobs.
+
+* `createdDelta`: jobs created
+* `completedDelta`: jobs completed
+* `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not included)
+* `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
+* `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
+* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, a retry sitting out its backoff, or a flow job waiting on its parents is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
+* `runBins`: how long the same jobs ran, from start to finish, in the same bins.
+* `readyOldestSeconds`: how long the oldest ready job had waited when the pass ran, leaving out deferred and blocked jobs. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
+
+The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls. A job that finishes inside a transaction longer than 10 seconds, which the deltas take in afterwards, is left out of the histograms.
+
 #### Latency histograms
 
 `waitBins` and `runBins` each hold 48 counts. Slot 0 counts times under 10 ms, slot `k` from 1 to 46 counts times from `0.01 * √2^(k-1)` up to `0.01 * √2^k` seconds, and slot 47 everything longer (about 23 hours). Histograms add: to read a percentile over several snapshots, or several queues, add the counts slot by slot first, then read it from the sum. Averaging percentiles taken from smaller spans does not give a percentile. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up.
 
 In `queue_stats` each histogram is an `int[]` of the 48 slots in slot order (`wait_bins`, `run_bins`), with `NULL` in a slot no job landed in; a measured pass in which nothing finished stores 48 `NULL`s, and one that was not measured stores `NULL` for the whole array. The API returns those slots as `0`. To add histograms up in SQL, unnest with the slot number and coalesce: `SELECT u.slot, coalesce(sum(u.n), 0) FROM queue_stats s, unnest(s.wait_bins) WITH ORDINALITY AS u(n, slot) WHERE … GROUP BY 1`. `WITH ORDINALITY` numbers from 1, so slot 0 is row 1. Coalesce before adding two slots with `+`, since a `NULL` plus a count is `NULL`.
+
+```js
+// The p95 wait over the last hour, from the snapshots in it
+const hour = await boss.getQueueStats('email-send', { from: new Date(Date.now() - 3600_000) })
+const sum = new Array(48).fill(0)
+for (const s of hour) s.waitBins?.forEach((n, i) => { sum[i] += n })
+
+function percentile (bins, p) {
+  const total = bins.reduce((a, b) => a + b, 0)
+  if (total === 0) return null
+  let seen = 0
+  for (let k = 0; k < bins.length; k++) {
+    if (seen + bins[k] >= p * total) {
+      if (k === 0) return 0.01
+      const lo = 0.01 * Math.SQRT2 ** (k - 1)
+      return lo * Math.SQRT2 ** ((p * total - seen) / bins[k]) // within the slot, on the log scale
+    }
+    seen += bins[k]
+  }
+}
+
+console.log(`p95 wait ${percentile(sum, 0.95)?.toFixed(1)} s`)
+```
+
+A slot is √2 wide, so a percentile read this way is within 19% of the exact one.
+
+#### Other fields
+
+* `name`: the queue's name
+* `capturedOn`: when the snapshot was captured, or the start of its bucket when downsampled (`getQueueStats()` only)
+* `singletonsActive`: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none
+* `table`: the table the queue's jobs are stored in, `job_common` unless the queue is partitioned
+* `createdOn`: when the queue was created
+* `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed it, or when it was created if it never has
 
 ### `getBlockedKeys(name)`
 
