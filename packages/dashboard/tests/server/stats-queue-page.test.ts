@@ -82,7 +82,7 @@ describe('/stats/:queue loader', () => {
     expect(data.latency).toEqual({
       previous: { waitBins: null, runBins: null },
       current: { waitBins: null, runBins: null },
-      oldestReadySeconds: null,
+      readyOldestSeconds: null,
     })
     expect(data.range).toEqual([previous.from.getTime() / 1000, current.to.getTime() / 1000])
     expect(data.boundary).toBe(current.from.getTime() / 1000)

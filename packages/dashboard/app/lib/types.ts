@@ -113,7 +113,7 @@ export interface QueueThroughputPoint {
   waitBins?: number[] | null;
   runBins?: number[] | null;
   // The longest the oldest ready job had waited at any pass in the bucket.
-  oldestReadySeconds?: number | null;
+  readyOldestSeconds?: number | null;
 }
 
 // One queue's throughput buckets, as the /stats overview reads them for every queue at once.

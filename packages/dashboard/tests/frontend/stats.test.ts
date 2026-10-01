@@ -284,31 +284,31 @@ describe('latency', () => {
     const prev = seconds(windows.previous.from)
     const cur = seconds(windows.current.from)
     const summary = latencySummary([
-      point(prev, { waitBins: bins(10, 1), oldestReadySeconds: 90 }),
-      point(cur, { waitBins: bins(10, 2), runBins: bins(4, 2), oldestReadySeconds: 30 }),
-      point(cur + 60, { waitBins: bins(12, 1), oldestReadySeconds: 5 }),
+      point(prev, { waitBins: bins(10, 1), readyOldestSeconds: 90 }),
+      point(cur, { waitBins: bins(10, 2), runBins: bins(4, 2), readyOldestSeconds: 30 }),
+      point(cur + 60, { waitBins: bins(12, 1), readyOldestSeconds: 5 }),
     ], windows)
 
     expect(summary.previous.waitBins?.[10]).toBe(1)
     expect(summary.previous.runBins).toBeNull()
     expect(summary.current.waitBins?.[10]).toBe(2)
     expect(summary.current.waitBins?.[12]).toBe(1)
-    expect(summary.oldestReadySeconds).toBe(5)
+    expect(summary.readyOldestSeconds).toBe(5)
   })
 
   it('adds every queue\'s histograms for the all-queues series, and keeps the worst oldest wait', () => {
     const [summed] = sumSeries([
-      { name: 'a', points: [point(60, { waitBins: bins(1, 1), oldestReadySeconds: 20 })] },
-      { name: 'b', points: [point(60, { waitBins: bins(1, 2), oldestReadySeconds: 50 })] },
+      { name: 'a', points: [point(60, { waitBins: bins(1, 1), readyOldestSeconds: 20 })] },
+      { name: 'b', points: [point(60, { waitBins: bins(1, 2), readyOldestSeconds: 50 })] },
     ])
     expect(summed.waitBins?.[1]).toBe(3)
-    expect(summed.oldestReadySeconds).toBe(50)
+    expect(summed.readyOldestSeconds).toBe(50)
   })
 
   it('leaves the histograms off a tile\'s points, which carry them per window instead', () => {
-    const [p] = downsample([point(0, { waitBins: bins(1, 1), oldestReadySeconds: 7 }), point(60, { oldestReadySeconds: 9 }), point(120), point(180)], 2)
+    const [p] = downsample([point(0, { waitBins: bins(1, 1), readyOldestSeconds: 7 }), point(60, { readyOldestSeconds: 9 }), point(120), point(180)], 2)
     expect(p.waitBins).toBeUndefined()
-    expect(p.oldestReadySeconds).toBe(9)
+    expect(p.readyOldestSeconds).toBe(9)
   })
 
   it('gives a tile its latency only when the database records it', () => {

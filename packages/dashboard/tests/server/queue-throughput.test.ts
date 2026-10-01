@@ -11,7 +11,7 @@ const t0 = Math.floor((Date.now() / 1000 - 7200) / BUCKET) * BUCKET
 const at = (seconds: number) => new Date((t0 + seconds) * 1000)
 const window = { from: at(0), to: at(3600), bucketSeconds: BUCKET }
 // What a v44 point carries when its passes recorded no wait and run times.
-const UNMEASURED = { waitBins: null, runBins: null, oldestReadySeconds: null }
+const UNMEASURED = { waitBins: null, runBins: null, readyOldestSeconds: null }
 
 describe('getQueueThroughput', () => {
   it('returns [] when no stats have been recorded', async () => {
@@ -185,7 +185,7 @@ describe('wait and run times', () => {
   async function setLatency (pool: pg.Pool, name: string, capturedOn: Date, wait: Record<number, number>, run: Record<number, number>, oldest: number) {
     await pool.query(
       `UPDATE ${ctx.schema}.queue_stats
-          SET wait_bins = $3, run_bins = $4, ready_oldest = $5
+          SET wait_bins = $3, run_bins = $4, ready_oldest_seconds = $5
         WHERE name = $1 AND captured_on = $2`,
       [name, capturedOn, bins(wait), bins(run), oldest])
   }
@@ -209,7 +209,7 @@ describe('wait and run times', () => {
     expect(point.runBins?.[4]).toBe(1)
     expect(point.runBins?.[5]).toBe(3)
     expect(point.waitBins?.reduce((a, b) => a + b, 0)).toBe(4)
-    expect(point.oldestReadySeconds).toBe(30)
+    expect(point.readyOldestSeconds).toBe(30)
 
     const [series] = await getThroughputOverview(ctx.connectionString, ctx.schema, window)
     expect(series.points[0].waitBins?.[10]).toBe(3)
@@ -227,7 +227,7 @@ describe('wait and run times', () => {
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-idle', window)
     expect(point.waitBins).toEqual(new Array(SLOTS).fill(0))
     expect(point.runBins).toEqual(new Array(SLOTS).fill(0))
-    expect(point.oldestReadySeconds).toBe(25)
+    expect(point.readyOldestSeconds).toBe(25)
   })
 
   it('reports no histogram for a bucket whose passes did not measure', async () => {
@@ -241,7 +241,7 @@ describe('wait and run times', () => {
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-none', window)
     expect(point.waitBins).toBeNull()
     expect(point.runBins).toBeNull()
-    expect(point.oldestReadySeconds).toBeNull()
+    expect(point.readyOldestSeconds).toBeNull()
   })
 
   it('leaves the fields off entirely on a database before v44', async () => {
@@ -253,7 +253,7 @@ describe('wait and run times', () => {
     const pool = openPool()
     await pool.query(`ALTER TABLE ${ctx.schema}.queue_stats
       DROP COLUMN wait_bins, DROP COLUMN run_bins,
-      DROP COLUMN ready_oldest`)
+      DROP COLUMN ready_oldest_seconds`)
     await pool.end()
 
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-old', window)
