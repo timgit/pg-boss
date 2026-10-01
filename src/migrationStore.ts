@@ -2045,7 +2045,7 @@ AS $function$
       previous: 43,
       // Wait and run times beside the throughput counters, counted by the same pass over the job
       // table rather than a second one: no index, and nothing added to a job's own writes. Each
-      // histogram is one array of 48 counts, zeros included, like ready_history.
+      // histogram is one array of 48 slots, null where no job landed.
       // Nullable with no default, like the v43 deltas, so no statement rewrites a table and a
       // snapshot captured before the columns reads as not counted rather than as a queue with no waits.
       // The instance registry: which PgBoss objects share this database, written by each one on its

@@ -695,15 +695,18 @@ describe('queueStats', function () {
       /** The slot a duration lands in: slot k holds 10 ms · √2^(k-1) up to 10 ms · √2^k. */
       const slotOf = (seconds: number) => Math.floor(2 * Math.log2(seconds / plans.LATENCY_MIN_SECONDS)) + 1
 
-      /** A histogram with these counts in these slots and zeros everywhere else. */
+      /** A histogram as the API hands it out: these counts in these slots and zeros everywhere else. */
       function bins (counts: Record<number, number>): number[] {
         const all = new Array(plans.LATENCY_SLOTS).fill(0)
         for (const [slot, n] of Object.entries(counts)) all[Number(slot)] = n
         return all
       }
 
-      /** The text form of a histogram, for seeding queue_stats. */
-      const literal = (counts: Record<number, number>) => `{${bins(counts).join(',')}}`
+      /** The same histogram as a row stores it, null in every slot no job landed in. */
+      const stored = (counts: Record<number, number>) => bins(counts).map(n => (n === 0 ? null : n))
+
+      /** The text form of a stored histogram, for seeding queue_stats. */
+      const literal = (counts: Record<number, number>) => `{${stored(counts).map(n => n ?? 'NULL').join(',')}}`
 
       /**
        * Finishes one job whose wait and run are known: its stamps are set to them, relative to a
@@ -736,14 +739,14 @@ describe('queueStats', function () {
         await finishJob(queue, { wait: 0.5, run: 2 })
 
         const row = await monitorPass(queue)
-        // Stored as a count for every slot, zeros included.
-        expect(row.waitBins).toEqual(bins({ [slotOf(0.5)]: 1, [slotOf(30)]: 1 }))
-        expect(row.runBins).toEqual(bins({ [slotOf(2)]: 2 }))
+        // Stored as every slot, null where no job landed.
+        expect(row.waitBins).toEqual(stored({ [slotOf(0.5)]: 1, [slotOf(30)]: 1 }))
+        expect(row.runBins).toEqual(stored({ [slotOf(2)]: 2 }))
 
-        // getQueue() hands out the latest pass beside the deltas.
+        // getQueue() hands out the latest pass beside the deltas, the empty slots as 0.
         const live = await ctx.boss.getQueue(queue)
-        expect(live!.waitBins).toEqual(row.waitBins)
-        expect(live!.runBins).toEqual(row.runBins)
+        expect(live!.waitBins).toEqual(bins({ [slotOf(0.5)]: 1, [slotOf(30)]: 1 }))
+        expect(live!.runBins).toEqual(bins({ [slotOf(2)]: 2 }))
         expect(live!.readyOldestSeconds).toBe(row.readyOldestSeconds)
       })
 
@@ -757,7 +760,7 @@ describe('queueStats', function () {
         await finishJob(queue, { wait: 3, run: 1, deferBy: 600 })
 
         const row = await monitorPass(queue)
-        expect(row.waitBins).toEqual(bins({ [slotOf(3)]: 1 }))
+        expect(row.waitBins).toEqual(stored({ [slotOf(3)]: 1 }))
       })
 
       it('records a terminal failure beside the completions', async function () {
@@ -770,7 +773,7 @@ describe('queueStats', function () {
 
         const row = await monitorPass(queue)
         expect(row.failedDelta).toBe(1)
-        expect(row.runBins).toEqual(bins({ [slotOf(20)]: 1 }))
+        expect(row.runBins).toEqual(stored({ [slotOf(20)]: 1 }))
       })
 
       /** Like the deltas: a pass that counted says so, with all zeros rather than null. */
@@ -782,8 +785,9 @@ describe('queueStats', function () {
         await ctx.boss.send(queue)
 
         const row = await monitorPass(queue)
-        expect(row.waitBins).toEqual(bins({}))
-        expect(row.runBins).toEqual(bins({}))
+        expect(row.waitBins).toEqual(stored({}))
+        expect(row.runBins).toEqual(stored({}))
+        expect((await ctx.boss.getQueue(queue))!.waitBins).toEqual(bins({}))
       })
 
       /** A queue with no job rows has no aggregate row at all; its pass still counted. */
@@ -793,7 +797,7 @@ describe('queueStats', function () {
         await ctx.boss.createQueue(queue)
 
         const row = await monitorPass(queue)
-        expect(row.waitBins).toEqual(bins({}))
+        expect(row.waitBins).toEqual(stored({}))
         expect(row.readyOldestSeconds).toBe(0)
       })
 

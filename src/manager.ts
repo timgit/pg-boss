@@ -129,11 +129,11 @@ const STATS_COUNT_FIELDS = [
   'totalCount'
 ] as const
 
-// A snapshot's histogram as the row holds it, LATENCY_SLOTS counts from a recorded pass or added up
-// over a bucket. Null when no pass counted it; all zeros when one did and nothing finished. CockroachDB
-// hands integers over as strings.
+// A snapshot's histogram, LATENCY_SLOTS counts from a recorded pass or added up over a bucket, with
+// the slots stored as null (no job landed there) handed out as 0. Null when no pass counted it; all
+// zeros when one did and nothing finished. CockroachDB hands integers over as strings.
 function toBins (bins: unknown): number[] | null {
-  return Array.isArray(bins) ? bins.map(Number) : null
+  return Array.isArray(bins) ? bins.map(n => (n == null ? 0 : Number(n))) : null
 }
 
 // The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
@@ -2589,9 +2589,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         for (const field of NUMERIC_QUEUE_FIELDS) {
           if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
         }
-        row.waitBins = toBins(row.waitBins)
-        row.runBins = toBins(row.runBins)
       }
+    }
+
+    // Every backend: the histograms' empty slots are stored as null and handed out as 0.
+    for (const row of rows) {
+      row.waitBins = toBins(row.waitBins)
+      row.runBins = toBins(row.runBins)
     }
 
     return rows
