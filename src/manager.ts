@@ -97,6 +97,7 @@ const NUMERIC_METADATA_FIELDS = [
 
 // Queue rows (plans.getQueues) return these integer columns as strings on CockroachDB too.
 const NUMERIC_QUEUE_FIELDS = [
+  'blockedCount',
   'retryLimit',
   'retryDelay',
   'retryDelayMax',

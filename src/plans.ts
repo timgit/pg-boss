@@ -396,6 +396,7 @@ function createTableQueue (schema: string) {
       partition bool NOT NULL,
       table_name text NOT NULL,
       deferred_count int NOT NULL default 0,
+      blocked_count int NOT NULL default 0,
       queued_count int NOT NULL default 0,
       ready_count int NOT NULL default 0,
       warning_queued int NOT NULL default 0,
@@ -1612,6 +1613,7 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
       q.notify,
       q.dead_letter as "deadLetter",
       q.deferred_count as "deferredCount",
+      q.blocked_count as "blockedCount",
       q.warning_queued as "warningQueueSize",
       q.queued_count as "queuedCount",
       q.ready_count as "readyCount",
@@ -1670,6 +1672,7 @@ export function zeroQueueStats (schema: string, one?: boolean) {
   return `
     UPDATE ${schema}.queue SET
       deferred_count = 0,
+      blocked_count = 0,
       queued_count = 0,
       ready_count = 0,
       active_count = 0,
@@ -4136,6 +4139,13 @@ function latencyHistogram (packed: string, which: 'wait' | 'run'): string {
 // filtered on completed_on, would be a whole extra scan of the largest table in
 // the schema, and there is no index on that column to make it cheaper.
 export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, window: DeltaWindowOptions = {}): SqlQuery {
+  // A queued job is exactly one of blocked (waiting on a flow parent), deferred (start_after still
+  // ahead) or ready, so the three add up to queuedCount. Blocked wins over deferred: a job whose
+  // parent has not finished cannot run when its start_after comes round.
+  const queued = `j.state < '${JOB_STATES.active}'`
+  const blocked = `${queued} AND j.blocked`
+  const deferred = `${queued} AND NOT j.blocked AND j.start_after > ${schema}.job_now()`
+  const ready = `${queued} AND NOT j.blocked AND j.start_after <= ${schema}.job_now()`
   // Counted only with persistQueueStats. Otherwise the aggregate does what it did before throughput
   // existed: no join, no extra counts, no cost. The measured price is in the `persistQueueStats` docs.
   const end = deltaWindowEnd(schema, window.lag)
@@ -4161,7 +4171,7 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
             array_agg(${latencyBin(waitSeconds)} * ${LATENCY_PACK} + ${latencyBin(runSeconds)})
               FILTER (WHERE j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') AND j.started_on IS NOT NULL AND ${inWindow('completed_on')}) as "latencyBins",
             round(extract(epoch from (${schema}.job_now() - min(GREATEST(j.created_on, j.start_after))
-              FILTER (WHERE j.state < '${JOB_STATES.active}' AND NOT j.blocked AND j.start_after <= ${schema}.job_now()))))::int as "readyOldestSeconds",
+              FILTER (WHERE ${ready}))))::int as "readyOldestSeconds",
             sum(
               CASE WHEN ${settled('created_on')} THEN 1 ELSE 0 END +
               CASE WHEN ${settled('completed_on')} AND j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') THEN 1 ELSE 0 END
@@ -4181,7 +4191,8 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         name,
         "deferredCount",
         "queuedCount",
-        GREATEST("queuedCount" - "deferredCount", 0) as "readyCount",
+        "readyCount",
+        "blockedCount",
         "activeCount",
         "failedCount",
         "totalCount",${counters.select}
@@ -4189,8 +4200,10 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
       FROM (
         SELECT
             j.name,
-            (count(*) FILTER (WHERE j.start_after > ${schema}.job_now() AND j.state < '${JOB_STATES.active}'))::int as "deferredCount",
-            (count(*) FILTER (WHERE j.state < '${JOB_STATES.active}'))::int as "queuedCount",
+            (count(*) FILTER (WHERE ${deferred}))::int as "deferredCount",
+            (count(*) FILTER (WHERE ${blocked}))::int as "blockedCount",
+            (count(*) FILTER (WHERE ${ready}))::int as "readyCount",
+            (count(*) FILTER (WHERE ${queued}))::int as "queuedCount",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.active}'))::int as "activeCount",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}'))::int as "failedCount",
             count(*)::int as "totalCount",${counters.counts}
@@ -4253,6 +4266,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
     WITH ${lock.cte}stats AS (SELECT * FROM (${statsText}) agg WHERE true${lock.guard})
     UPDATE ${schema}.queue SET
       deferred_count = COALESCE(stats."deferredCount", 0),
+      blocked_count = COALESCE(stats."blockedCount", 0),
       queued_count = COALESCE(stats."queuedCount", 0),
       ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
@@ -4331,6 +4345,7 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
     WITH ${lock.cte}stats AS (SELECT * FROM (${statsText}) agg WHERE true${lock.guard})
     UPDATE ${schema}.queue SET
       deferred_count = COALESCE(stats."deferredCount", 0),
+      blocked_count = COALESCE(stats."blockedCount", 0),
       queued_count = COALESCE(stats."queuedCount", 0),
       ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),

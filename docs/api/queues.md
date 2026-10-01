@@ -188,6 +188,8 @@ for (const queue of queues) {
 }
 ```
 
+Each queue also carries `blockedCount`, its queued jobs waiting on a [`flow()`](./jobs.md#flow-jobs-options) parent, so `queuedCount` is `deferredCount + blockedCount + readyCount`. It is a live count only: `getQueueStats()` history does not keep it.
+
 Each queue also carries the latest monitor pass's `createdDelta`, `completedDelta`,
 `failedDelta`, `deltaSeconds`, `deltaOn`, `waitBins`, `runBins` and `readyOldestSeconds` (see
 [`getQueueStats()`](#getqueuestats-name-options)). They are whatever the last pass that counted
@@ -212,8 +214,8 @@ if (!queue) {
 Returns an array of queue-depth snapshots, most recent first. Each snapshot has the queue `name`, a `capturedOn` timestamp, and these counts:
 
 * `queuedCount`: jobs waiting to run, **including** deferred (future-dated) jobs; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
-* `deferredCount`: jobs scheduled to start in the future (`startAfter` not yet reached)
-* `readyCount`: jobs ready to be processed now (`queuedCount - deferredCount`); the true runnable backlog
+* `deferredCount`: jobs scheduled to start in the future (`startAfter` not yet reached), leaving out jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent
+* `readyCount`: jobs ready to be processed now, neither deferred nor blocked by a flow parent; the true runnable backlog
 * `activeCount`: jobs currently being processed
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
 * `totalCount`: all jobs currently stored for the queue

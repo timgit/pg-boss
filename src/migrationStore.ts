@@ -2048,11 +2048,14 @@ AS $function$
       // histogram is one array of 48 slots, null where no job landed.
       // Nullable with no default, like the v43 deltas, so no statement rewrites a table and a
       // snapshot captured before the columns reads as not counted rather than as a queue with no waits.
+      // blocked_count is on the queue row only, a live gauge: queue_stats keeps no history of it, so
+      // its covering index needs no rebuild.
       // The instance registry: which PgBoss objects share this database, written by each one on its
       // own heartbeat.
       install: [
         plans.createTableInstance(schema),
         `ALTER TABLE ${schema}.queue
+          ADD COLUMN blocked_count int NOT NULL DEFAULT 0,
           ADD COLUMN wait_bins int[],
           ADD COLUMN run_bins int[],
           ADD COLUMN ready_oldest_seconds int`,
@@ -2064,6 +2067,7 @@ AS $function$
       uninstall: [
         `DROP TABLE ${schema}.instance`,
         `ALTER TABLE ${schema}.queue
+          DROP COLUMN blocked_count,
           DROP COLUMN wait_bins,
           DROP COLUMN run_bins,
           DROP COLUMN ready_oldest_seconds`,
