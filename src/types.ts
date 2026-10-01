@@ -291,6 +291,14 @@ export interface QueueStats {
   runBins: number[] | null;
   /** How long the oldest job ready to run had waited when the snapshot was captured. */
   readyOldestSeconds: number | null;
+  /**
+   * With the `percentiles` option: the wait at each requested percentile, in seconds and in the
+   * order requested, read from `waitBins`. Null where `waitBins` is null or empty.
+   * @see https://pgboss.io/api/queues#latency-histograms
+   */
+  waitPercentiles?: (number | null)[];
+  /** With the `percentiles` option: the run time at each requested percentile, read from `runBins`. */
+  runPercentiles?: (number | null)[];
   capturedOn: Date;
 }
 
@@ -325,6 +333,12 @@ export interface QueueStatsOptions {
    * @default 'max'
    */
   aggregate?: 'max' | 'min' | 'avg';
+  /**
+   * Percentiles to read from each snapshot's wait and run histograms, as fractions from 0 to 1, such
+   * as `[0.5, 0.95]`. Each snapshot then carries `waitPercentiles` and `runPercentiles`.
+   * @see https://pgboss.io/api/queues#latency-histograms
+   */
+  percentiles?: number[];
   /**
    * persistQueueStats off: return a fresh reading. Recomputes the counts from the job table and
    * refreshes the queue-table cache rather than serving the regular (up to ~1h) cache, but still

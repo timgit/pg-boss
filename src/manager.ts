@@ -8,6 +8,7 @@ import type Db from './db.ts'
 import { TRANSACTION_ROLLBACK_TIMEOUT_MS } from './db.ts'
 import type Notifier from './notifier.ts'
 import * as plans from './plans.ts'
+import { percentile } from './latency.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
 import { resolveWithinSeconds } from './tools.ts'
@@ -2588,6 +2589,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async getQueueStats (name: string, options: types.QueueStatsOptions = {}): Promise<types.QueueStats[]> {
     Attorney.assertQueueName(name)
 
+    const { percentiles } = options
+    assert(percentiles === undefined || (Array.isArray(percentiles) && percentiles.length > 0 &&
+      percentiles.every(p => typeof p === 'number' && p >= 0 && p <= 1)),
+    'getQueueStats: percentiles must be a non-empty array of numbers from 0 to 1')
+
     const isCockroach = this.config.backend === 'cockroachdb'
 
     // `counted` is true for recorded snapshots. The cache path serves only gauges: the queue table's
@@ -2628,6 +2634,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
         snapshot.waitBins = toBins(row?.waitBins)
         snapshot.runBins = toBins(row?.runBins)
         if (row?.readyOldestSeconds != null) snapshot.readyOldestSeconds = Number(row.readyOldestSeconds)
+      }
+
+      // Read from this snapshot's (or bucket's) own histograms, so they are null wherever those are.
+      if (percentiles) {
+        snapshot.waitPercentiles = percentiles.map(p => percentile(snapshot.waitBins, p))
+        snapshot.runPercentiles = percentiles.map(p => percentile(snapshot.runBins, p))
       }
 
       return snapshot
