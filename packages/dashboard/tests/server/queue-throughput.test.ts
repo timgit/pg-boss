@@ -175,9 +175,9 @@ describe('wait and run times', () => {
 
   const openPool = () => new pg.Pool({ connectionString: ctx.connectionString })
 
-  // A histogram as the monitor stores it: a count for every slot, these ones set and the rest zero.
+  // A histogram as the monitor stores it: every slot, these ones set and the rest null.
   const bins = (counts: Record<number, number>) => {
-    const all = new Array(SLOTS).fill(0)
+    const all = new Array(SLOTS).fill(null)
     for (const [slot, n] of Object.entries(counts)) all[Number(slot)] = n
     return all
   }
