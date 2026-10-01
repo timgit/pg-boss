@@ -4085,10 +4085,10 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
 // Wait and run times, as the monitor records them: a histogram per counted pass, of the jobs that
 // finished in its window. Slot 0 holds times under 10 ms, slots 1 to LATENCY_BINS bins that each
 // grow by √2 (slot k runs from 10 ms · √2^(k-1) to 10 ms · √2^k), and the last slot everything past
-// about 23 hours. Log-spaced because the times span six orders of magnitude, and a percentile taken
-// as the geometric middle of its bin is within 19% of the exact one. Histograms rather than
-// percentiles, because histograms add: a reader sums them across passes, buckets or queues and reads
-// any percentile from the sum.
+// about 23 hours. Log-spaced because the times span six orders of magnitude, and a percentile read
+// from them lies in the same bin as the exact one, a factor of √2 at most. Histograms rather than
+// percentiles, because histograms add: a reader sums them across passes, buckets or queues and
+// reads any percentile from the sum.
 // Stored as 48 slots in slot order, null where no job landed: Postgres keeps a null as one bit
 // rather than four bytes, and most slots are empty. getQueueStats() hands them out with nulls as 0.
 // Readers that add slots in SQL coalesce, since a null plus a count is null.
