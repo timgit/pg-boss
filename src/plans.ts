@@ -2114,7 +2114,7 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
          FROM extent
        ),
        w AS (
-         SELECT greatest(1, ceil(extract(epoch from (hi - lo))::float8 / greatest($5, 1)::float8)::bigint)::bigint AS secs
+         SELECT greatest(1, ceil(extract(epoch from (hi - lo))::float8 / greatest($5, 1)::float8)::bigint) AS secs
          FROM bounds
        )`
     : 'WITH w AS (SELECT greatest($5, 1)::bigint AS secs)'
