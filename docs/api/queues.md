@@ -189,10 +189,10 @@ for (const queue of queues) {
 ```
 
 Each queue also carries the latest monitor pass's `createdDelta`, `completedDelta`,
-`failedDelta`, `deltaSeconds` and `deltaOn` (see [`getQueueStats()`](#getqueuestats-name-options)).
-They are whatever the last pass that counted wrote, whichever instance ran it, and they
-are not revised for late commits the way the history is. The counters are `0`, and
-`deltaSeconds` and `deltaOn` are `null`, until an instance with `persistQueueStats` on has
+`failedDelta`, `deltaSeconds`, `deltaOn`, `waitBins`, `runBins` and `readyOldestSeconds` (see
+[`getQueueStats()`](#getqueuestats-name-options)). They are whatever the last pass that counted
+wrote, whichever instance ran it, and they are not revised for late commits the way the history
+is. The counters are `0`, and the rest `null`, until an instance with `persistQueueStats` on has
 counted the queue.
 
 ### `getQueue(name)`
