@@ -236,7 +236,7 @@ Alongside the deltas, and recorded under the same conditions, how long jobs wait
 
 `waitBins` and `runBins` each hold 48 counts. Slot 0 counts times under 10 ms, slot `k` from 1 to 46 counts times from `0.01 * √2^(k-1)` up to `0.01 * √2^k` seconds, and slot 47 everything longer (about 23 hours). Histograms add: to read a percentile over several snapshots, or several queues, add the counts slot by slot first, then read it from the sum. Averaging percentiles taken from smaller spans does not give a percentile. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up.
 
-In `queue_stats` each histogram is stored as it is returned, an `int[]` of the 48 counts in slot order (`wait_bins`, `run_bins`); a measured pass in which nothing finished stores 48 zeros. To add them up in SQL, unnest with the slot number: `SELECT u.slot, sum(u.n) FROM queue_stats s, unnest(s.wait_bins) WITH ORDINALITY AS u(n, slot) WHERE … GROUP BY 1`. `WITH ORDINALITY` numbers from 1, so slot 0 is row 1.
+In `queue_stats` each histogram is an `int[]` of the 48 slots in slot order (`wait_bins`, `run_bins`), with `NULL` in a slot no job landed in; a measured pass in which nothing finished stores 48 `NULL`s, and one that was not measured stores `NULL` for the whole array. The API returns those slots as `0`. To add histograms up in SQL, unnest with the slot number and coalesce: `SELECT u.slot, coalesce(sum(u.n), 0) FROM queue_stats s, unnest(s.wait_bins) WITH ORDINALITY AS u(n, slot) WHERE … GROUP BY 1`. `WITH ORDINALITY` numbers from 1, so slot 0 is row 1. Coalesce before adding two slots with `+`, since a `NULL` plus a count is `NULL`.
 
 ```js
 // The p95 wait over the last hour, from the snapshots in it

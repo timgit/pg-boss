@@ -378,7 +378,7 @@ function createTableVersion (schema: string) {
 // are the wait and run times of the jobs that finished in that window, as histograms of LATENCY_SLOTS
 // counts (see LATENCY_BINS), and ready_oldest_seconds is how long the oldest job ready to run had
 // waited at the pass. Like the deltas, all of them are null until a pass counts, and a pass that
-// counts writes a value: all zeros when nothing finished, 0 when nothing was waiting.
+// counts writes a value: every slot null when nothing finished, 0 when nothing was waiting.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -2185,8 +2185,8 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
     ),
     -- Wait and run histograms, added up per returned bucket in SQL, so a bucket comes back as one
     -- histogram however many passes it covers. Each pass lands in the bucket its counters were placed
-    -- in above, then its counts are summed per bucket and slot. A bucket no pass measured has no row
-    -- here and comes back null.
+    -- in above, then its counts are summed per bucket and slot, a slot with no job in any pass as 0.
+    -- A bucket no pass measured has no row here and comes back null.
     passes AS (
       SELECT ${bucket('delta_on')} as "counterBucket", wait_bins, run_bins
       FROM ${schema}.queue_stats, w
@@ -2197,7 +2197,7 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         AND ($3::timestamptz IS NULL OR delta_on <= $3)
     ),
     slots AS (
-      SELECT p.bucket, u.slot, sum(u.w)::int AS w, sum(u.r)::int AS r
+      SELECT p.bucket, u.slot, coalesce(sum(u.w), 0)::int AS w, coalesce(sum(u.r), 0)::int AS r
       FROM (SELECT DISTINCT bucket, "counterBucket" FROM placed) p
         JOIN passes ps ON ps."counterBucket" = p."counterBucket",
         unnest(ps.wait_bins, ps.run_bins) WITH ORDINALITY AS u(w, r, slot)
@@ -4064,14 +4064,15 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
 // about 23 hours. Log-spaced because the times span six orders of magnitude, and a percentile read
 // from them is within one bin, 19% at most. Histograms rather than percentiles, because histograms
 // add: a reader sums them across passes, buckets or queues and reads any percentile from the sum.
-// Stored as all 48 counts in slot order, zeros included, as ready_history stores its samples.
-// getQueueStats() hands them out as stored.
+// Stored as 48 slots in slot order, null where no job landed: Postgres keeps a null as one bit
+// rather than four bytes, and most slots are empty. getQueueStats() hands them out with nulls as 0.
+// Readers that add slots in SQL coalesce, since a null plus a count is null.
 export const LATENCY_BINS = 46
 export const LATENCY_SLOTS = LATENCY_BINS + 2
 export const LATENCY_MIN_SECONDS = 0.01
 
-// A measured histogram in which no job finished.
-const EMPTY_BINS = `'{${new Array(LATENCY_SLOTS).fill(0).join(',')}}'::int[]`
+// A measured histogram in which no job finished: every slot null, not a null array.
+const EMPTY_BINS = `'{${new Array(LATENCY_SLOTS).fill('NULL').join(',')}}'::int[]`
 
 // Both bins travel packed in one integer (wait * LATENCY_PACK + run), so the aggregate needs one
 // array and one filter. Two arrays, each with its own filter evaluated on every row of the table,
@@ -4091,16 +4092,16 @@ function latencyBin (seconds: string): string {
   return `LEAST(GREATEST(${raw}, 0), ${LATENCY_SLOTS - 1})`
 }
 
-// Unpacks the aggregate's array into one histogram: a count for every slot, in slot order, zero
-// where no job landed. All zeros rather than null when nothing finished (unnest of a null array is
-// no rows), so a pass that counted says so, as its deltas do. floor() of a float division rather than
-// integer division, which CockroachDB answers in decimal.
+// Unpacks the aggregate's array into one histogram: every slot in slot order, null where no job
+// landed. A pass in which nothing finished still writes the 48 slots (unnest of a null array is no
+// rows, and the left join keeps every slot), so a pass that counted says so, as its deltas do.
+// floor() of a float division rather than integer division, which CockroachDB answers in decimal.
 function latencySlotOf (which: 'wait' | 'run'): string {
   return which === 'wait' ? `floor(p / ${LATENCY_PACK}.0)::int` : `(p % ${LATENCY_PACK})::int`
 }
 
 function latencyHistogram (packed: string, which: 'wait' | 'run'): string {
-  return `(SELECT array_agg(COALESCE(c.n, 0) ORDER BY s.slot)
+  return `(SELECT array_agg(c.n ORDER BY s.slot)
           FROM generate_series(0, ${LATENCY_SLOTS - 1}) AS s(slot)
             LEFT JOIN (SELECT ${latencySlotOf(which)} AS slot, count(*)::int AS n
                        FROM unnest(${packed}) AS u(p) GROUP BY 1) c ON c.slot = s.slot)`

@@ -1014,8 +1014,8 @@ export interface QueueThroughputOptions {
 // with room to spare. Only buckets with data come back: the caller fills gaps.
 //
 // With the v44 columns, each bucket also carries the wait and run histograms of its passes, 48
-// counts each, summed slot by slot here, so a bucket comes back as one histogram however many passes
-// it covers. A bucket whose passes counted no finished jobs comes back all zeros; one they did not
+// slots each with null where no job landed, summed slot by slot here with those nulls as 0, so a
+// bucket comes back as one histogram however many passes it covers. A bucket whose passes counted no finished jobs comes back all zeros; one they did not
 // measure at all has no row in h and comes back null.
 function throughputSql (s: string, oneQueue: boolean, latency: boolean): string {
   const byName = oneQueue ? 'AND name = $4' : ''
@@ -1031,7 +1031,7 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
   const latencyCtes = latency
     ? `,
     slots AS (
-      SELECT name, ${counterBucket} AS t, u.slot, sum(u.w)::int AS w, sum(u.r)::int AS r
+      SELECT name, ${counterBucket} AS t, u.slot, coalesce(sum(u.w), 0)::int AS w, coalesce(sum(u.r), 0)::int AS r
       FROM ${s}.queue_stats, unnest(wait_bins, run_bins) WITH ORDINALITY AS u(w, r, slot)
       WHERE ${counterWhere}
       GROUP BY 1, 2, 3
@@ -1098,7 +1098,7 @@ type LatencyRow = ThroughputRow & {
 // A bucket's summed counts, one per slot: zeros where its passes measured and no job finished, null
 // where they did not measure. CockroachDB hands integers over as strings.
 function toBins (bins: unknown): number[] | null {
-  return Array.isArray(bins) && bins.length === LATENCY_SLOTS ? bins.map(Number) : null
+  return Array.isArray(bins) && bins.length === LATENCY_SLOTS ? bins.map(n => (n == null ? 0 : Number(n))) : null
 }
 
 async function queryThroughput (
