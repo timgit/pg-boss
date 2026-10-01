@@ -143,7 +143,6 @@ class Registrar extends EventEmitter implements types.EventsMixin {
 
     this.#recount = clock.setTimeout(() => {
       this.#recount = undefined
-      if (!this.#active) return
       this.#countCrashRestarts().catch(err => this.emit(events.error, err))
     }, Math.max(1000, at - clock.now() + 1000))
   }
