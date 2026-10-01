@@ -739,6 +739,12 @@ describe('queueStats', function () {
         // Stored as a count for every slot, zeros included.
         expect(row.waitBins).toEqual(bins({ [slotOf(0.5)]: 1, [slotOf(30)]: 1 }))
         expect(row.runBins).toEqual(bins({ [slotOf(2)]: 2 }))
+
+        // getQueue() hands out the latest pass beside the deltas.
+        const live = await ctx.boss.getQueue(queue)
+        expect(live!.waitBins).toEqual(row.waitBins)
+        expect(live!.runBins).toEqual(row.runBins)
+        expect(live!.readyOldestSeconds).toBe(row.readyOldestSeconds)
       })
 
       /** A deferred job, or a retry sitting out its backoff, is not waiting until it may start. */
@@ -801,6 +807,11 @@ describe('queueStats', function () {
         const row = await monitorPass(queue, false)
         expect(row.waitBins).toBe(null)
         expect(row.readyOldestSeconds).toBe(null)
+
+        const live = await ctx.boss.getQueue(queue)
+        expect(live!.waitBins).toBe(null)
+        expect(live!.runBins).toBe(null)
+        expect(live!.readyOldestSeconds).toBe(null)
       })
 
       /**

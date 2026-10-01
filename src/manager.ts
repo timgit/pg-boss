@@ -114,7 +114,8 @@ const NUMERIC_QUEUE_FIELDS = [
   'createdDelta',
   'completedDelta',
   'failedDelta',
-  'deltaSeconds'
+  'deltaSeconds',
+  'readyOldestSeconds'
 ] as const
 
 // The gauges shared by live stats and recorded snapshots (the QueueStats shape).
@@ -2472,6 +2473,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         for (const field of NUMERIC_QUEUE_FIELDS) {
           if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
         }
+        row.waitBins = toBins(row.waitBins)
+        row.runBins = toBins(row.runBins)
       }
     }
 

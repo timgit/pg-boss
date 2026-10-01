@@ -982,6 +982,12 @@ export interface QueueResult extends Queue {
   deltaSeconds: number | null;
   /** When that interval ends, 10 seconds behind the pass. See `QueueStats.deltaOn`. Null until a pass counts. */
   deltaOn: Date | null;
+  /** Wait times of the jobs counted in the deltas, as 48 counts. See `QueueStats.waitBins`. Null until a pass counts. */
+  waitBins: number[] | null;
+  /** Run times of the same jobs, in the same bins. Null until a pass counts. */
+  runBins: number[] | null;
+  /** How long the oldest ready job had waited at the pass. See `QueueStats.readyOldestSeconds`. Null until a pass counts. */
+  readyOldestSeconds: number | null;
   table: string;
   createdOn: Date;
   updatedOn: Date;
