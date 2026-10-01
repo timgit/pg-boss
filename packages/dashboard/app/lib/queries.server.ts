@@ -195,7 +195,7 @@ export async function hasLatencyColumns (dbUrl: string, schema: string): Promise
     SELECT COUNT(*)::int = 3 as "exists"
     FROM information_schema.columns
     WHERE table_schema = $1 AND table_name = 'queue_stats'
-      AND column_name IN ('wait_bins', 'run_bins', 'ready_oldest')
+      AND column_name IN ('wait_bins', 'run_bins', 'ready_oldest_seconds')
   `, [schema])
   const exists = row?.exists ?? false
   latencyColumnsCache.set(key, { exists, checkedAt: Date.now() })
@@ -1026,7 +1026,7 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
         ${byName}`
   const latencyAgg = latency
     ? `,
-        max(ready_oldest)    AS oldest_ready`
+        max(ready_oldest_seconds) AS ready_oldest_seconds`
     : ''
   const latencyCtes = latency
     ? `,
@@ -1050,7 +1050,7 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
     ? `,
       h.wait_bins                   AS "waitBins",
       h.run_bins                    AS "runBins",
-      d.oldest_ready                AS "oldestReadySeconds"`
+      d.ready_oldest_seconds        AS "readyOldestSeconds"`
     : ''
   const latencyJoin = latency ? '\n    LEFT JOIN h ON h.name = d.name AND h.t = d.t' : ''
   return `
@@ -1119,7 +1119,7 @@ async function queryThroughput (
       ...row,
       waitBins: toBins(waitBins),
       runBins: toBins(runBins),
-      oldestReadySeconds: row.oldestReadySeconds == null ? null : Number(row.oldestReadySeconds),
+      readyOldestSeconds: row.readyOldestSeconds == null ? null : Number(row.readyOldestSeconds),
     }))
   } catch (err: unknown) {
     // 42P01: no queue_stats (before v35). 42703: no delta columns (before v43).

@@ -111,7 +111,7 @@ export function sumSeries (series: QueueThroughputSeries[]): QueueThroughputPoin
       acc.readyCount = add(acc.readyCount, p.readyCount)
       if (p.waitBins || acc.waitBins) acc.waitBins = addBins(acc.waitBins, p.waitBins)
       if (p.runBins || acc.runBins) acc.runBins = addBins(acc.runBins, p.runBins)
-      if (p.oldestReadySeconds != null) acc.oldestReadySeconds = Math.max(acc.oldestReadySeconds ?? 0, p.oldestReadySeconds)
+      if (p.readyOldestSeconds != null) acc.readyOldestSeconds = Math.max(acc.readyOldestSeconds ?? 0, p.readyOldestSeconds)
     }
   }
   return [...byStart.values()].sort((a, b) => a.bucketStart - b.bucketStart)
@@ -139,7 +139,7 @@ export interface LatencyWindow {
 export interface LatencySummary {
   previous: LatencyWindow;
   current: LatencyWindow;
-  oldestReadySeconds: number | null;
+  readyOldestSeconds: number | null;
 }
 
 /** The histograms of every bucket in [from, to), added. */
@@ -157,14 +157,14 @@ export function windowLatency (points: QueueThroughputPoint[], window: StatsWind
 }
 
 export function latencySummary (points: QueueThroughputPoint[], windows: Pick<StatsWindows, 'previous' | 'current'>): LatencySummary {
-  let oldestReadySeconds: number | null = null
+  let readyOldestSeconds: number | null = null
   for (const p of points) {
-    if (p.oldestReadySeconds != null) oldestReadySeconds = p.oldestReadySeconds
+    if (p.readyOldestSeconds != null) readyOldestSeconds = p.readyOldestSeconds
   }
   return {
     previous: windowLatency(points, windows.previous),
     current: windowLatency(points, windows.current),
-    oldestReadySeconds,
+    readyOldestSeconds,
   }
 }
 
@@ -269,7 +269,7 @@ export function downsample (points: QueueThroughputPoint[], max: number): QueueT
   for (let i = 0; i < points.length; i += size) {
     const group = points.slice(i, i + size)
     const ready = group.map((p) => p.readyCount).filter((v): v is number => v != null)
-    const oldest = group.map((p) => p.oldestReadySeconds).filter((v): v is number => v != null)
+    const oldest = group.map((p) => p.readyOldestSeconds).filter((v): v is number => v != null)
     out.push({
       bucketStart: group[0].bucketStart,
       arrivedPerMin: mean(group, (p) => p.arrivedPerMin),
@@ -278,7 +278,7 @@ export function downsample (points: QueueThroughputPoint[], max: number): QueueT
       readyCount: ready.length ? ready[ready.length - 1] : null,
       // Not the histograms: 96 numbers a point for every queue would make /stats heavy. A tile's
       // `latency` carries them summed per window instead.
-      ...(oldest.length ? { oldestReadySeconds: Math.max(...oldest) } : {}),
+      ...(oldest.length ? { readyOldestSeconds: Math.max(...oldest) } : {}),
     })
   }
   return out

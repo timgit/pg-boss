@@ -397,7 +397,7 @@ describe('pro overlay', () => {
       mockOverlay(overlay)
 
       const { ProSlot } = await import('~/components/pro-slot')
-      const latency = { previous: { waitBins: null, runBins: null }, current: { waitBins: null, runBins: null }, oldestReadySeconds: 0 }
+      const latency = { previous: { waitBins: null, runBins: null }, current: { waitBins: null, runBins: null }, readyOldestSeconds: 0 }
       render(<ProSlot name="statsQueuePanels" queue={{ name: 'emails', interval: '1h', bucketSeconds: 60, points: [point], latency }} range={[0, 7200]} syncKey="stats:emails" noun="hour" />)
 
       expect(screen.getByTestId('pro-stats-panels')).toHaveTextContent('emails 0-7200 stats:emails hour with latency')

@@ -880,7 +880,7 @@
       },
       {
         "table": "queue_stats",
-        "column": "ready_oldest",
+        "column": "ready_oldest_seconds",
         "type": "integer",
         "notNull": false,
         "default": null
@@ -1069,7 +1069,7 @@
       },
       {
         "table": "queue",
-        "column": "ready_oldest",
+        "column": "ready_oldest_seconds",
         "type": "integer",
         "notNull": false,
         "default": null
@@ -2165,7 +2165,7 @@
       },
       {
         "table": "queue_stats",
-        "column": "ready_oldest",
+        "column": "ready_oldest_seconds",
         "type": "integer",
         "notNull": false,
         "default": null
@@ -2354,7 +2354,7 @@
       },
       {
         "table": "queue",
-        "column": "ready_oldest",
+        "column": "ready_oldest_seconds",
         "type": "integer",
         "notNull": false,
         "default": null

@@ -290,7 +290,7 @@ export interface QueueStats {
   /** Run times of the same jobs, in the same bins as `waitBins`. */
   runBins: number[] | null;
   /** How long the oldest job ready to run had waited when the snapshot was captured. */
-  oldestReadySeconds: number | null;
+  readyOldestSeconds: number | null;
   capturedOn: Date;
 }
 
