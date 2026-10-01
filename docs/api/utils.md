@@ -1,6 +1,6 @@
 # Utility functions
 
-The following functions are exported from the package and are not required during normal operations, but are intended to assist in schema creation or migration if run-time privileges do not allow schema changes.
+The following functions are exported from the package and are not required during normal operations. The plan functions assist in schema creation or migration if run-time privileges do not allow schema changes, and [`percentile()`](#percentile-bins-p) and [`addBins()`](#addbins-a-b) read the wait and run [latency histograms](./queues.md#latency-histograms).
 
 ```js
 import { getConstructionPlans, getMigrationPlans, getRollbackPlans, getIndexBloatPlans } from 'pg-boss'
@@ -78,3 +78,35 @@ Each row describes one index that is holding far more pages than its live entrie
 | `owned` | Whether the connected role can `REINDEX` it |
 
 `pages` and `entries` come from `pg_class`, which only `VACUUM` and `ANALYZE` refresh, so the results go stale on a table with autovacuum disabled.
+
+### `percentile(bins, p)`
+
+**Arguments**
+- `bins`: array of 48 counts, a `waitBins` or `runBins` histogram, or several added with [`addBins()`](#addbins-a-b)
+- `p`: number from 0 to 1, such as `0.95` for the 95th percentile
+
+Returns the time in seconds below which that fraction of the histogram's jobs fall, or `null` for an empty or missing histogram. Within its slot it assumes the jobs are spread evenly on the log scale, the exponential interpolation Prometheus uses for native histograms. The exact percentile is always in the same slot, so the estimate is at most a factor of √2 off; with thousands of jobs from a smooth distribution it is typically within a few percent. A percentile in slot 0 returns `0.01`, since it is only known to be under 10 ms, and one in the last slot returns that slot's lower edge, about 23 hours.
+
+```js
+import { percentile } from 'pg-boss'
+
+const [stats] = await boss.getQueueStats('email-send')
+const p95 = percentile(stats.waitBins, 0.95)
+```
+
+### `addBins(a, b)`
+
+**Arguments**
+- `a`, `b`: arrays of 48 counts, or `null`
+
+Returns a new histogram of the two added slot by slot, or `null` when both are `null`. Add histograms before reading a percentile over several snapshots or queues: averaging percentiles taken from smaller spans does not give a percentile.
+
+```js
+import { addBins, percentile } from 'pg-boss'
+
+// the p95 wait over the last hour, from the snapshots in it
+const hour = await boss.getQueueStats('email-send', { from: new Date(Date.now() - 3600_000) })
+const waits = hour.reduce((sum, s) => addBins(sum, s.waitBins), null)
+
+console.log(`p95 wait ${percentile(waits, 0.95)?.toFixed(1)} s`)
+```

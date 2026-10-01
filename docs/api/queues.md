@@ -305,30 +305,14 @@ The deltas are eventually consistent rather than up to the second. A job lands i
 
 In `queue_stats` each histogram is an `int[]` of the 48 slots in slot order (`wait_bins`, `run_bins`), with `NULL` in a slot no job landed in; a measured pass in which nothing finished stores 48 `NULL`s, and one that was not measured stores `NULL` for the whole array. The API returns those slots as `0`. To add histograms up in SQL, unnest with the slot number and coalesce: `SELECT u.slot, coalesce(sum(u.n), 0) FROM queue_stats s, unnest(s.wait_bins) WITH ORDINALITY AS u(n, slot) WHERE … GROUP BY 1`. `WITH ORDINALITY` numbers from 1, so slot 0 is row 1. Coalesce before adding two slots with `+`, since a `NULL` plus a count is `NULL`.
 
+To read a percentile, add the histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p):
+
 ```js
-// The p95 wait over the last hour, from the snapshots in it
+import { addBins, percentile } from 'pg-boss'
+
 const hour = await boss.getQueueStats('email-send', { from: new Date(Date.now() - 3600_000) })
-const sum = new Array(48).fill(0)
-for (const s of hour) s.waitBins?.forEach((n, i) => { sum[i] += n })
-
-function percentile (bins, p) {
-  const total = bins.reduce((a, b) => a + b, 0)
-  if (total === 0) return null
-  let seen = 0
-  for (let k = 0; k < bins.length; k++) {
-    if (seen + bins[k] >= p * total) {
-      if (k === 0) return 0.01
-      const lo = 0.01 * Math.SQRT2 ** (k - 1)
-      return lo * Math.SQRT2 ** ((p * total - seen) / bins[k]) // within the slot, on the log scale
-    }
-    seen += bins[k]
-  }
-}
-
-console.log(`p95 wait ${percentile(sum, 0.95)?.toFixed(1)} s`)
+const p95 = percentile(hour.reduce((sum, s) => addBins(sum, s.waitBins), null), 0.95)
 ```
-
-A slot is √2 wide, so a percentile read this way is within 19% of the exact one.
 
 #### Other fields
 

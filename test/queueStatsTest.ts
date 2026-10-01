@@ -1,6 +1,7 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
+import { percentile } from '../src/index.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
@@ -752,6 +753,29 @@ describe('queueStats', function () {
            WHERE name = $1 AND id = $5`,
           [queue, times.wait, times.run, times.deferBy ?? 0, job.id])
       }
+
+      /**
+       * End to end: the monitor's SQL bins the waits, and percentile() reads them back within the
+       * slot the exact percentile is in, so within a factor of √2 of it.
+       */
+      it('records waits that percentile() reads back within a factor of √2 of the exact one', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+
+        const waits = [0.05, 0.3, 1, 2, 5, 9, 20, 60, 300, 1800]
+        for (const wait of waits) await finishJob(queue, { wait, run: 1 })
+        await monitorPass(queue)
+
+        const { waitBins } = (await ctx.boss.getQueue(queue))!
+        for (const p of [0.1, 0.5, 0.9, 1]) {
+          const exact = waits[Math.max(Math.ceil(p * waits.length) - 1, 0)]
+          const ratio = percentile(waitBins, p)! / exact
+          expect(ratio, `p${p * 100}`).toBeGreaterThanOrEqual(Math.SQRT1_2)
+          expect(ratio, `p${p * 100}`).toBeLessThanOrEqual(Math.SQRT2)
+        }
+      })
 
       it('records the wait and run of each job that finished, in log-spaced bins', async function () {
         ctx.boss = await helper.start(ctx.bossConfig)
