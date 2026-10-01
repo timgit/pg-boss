@@ -292,14 +292,19 @@ export interface QueueStats {
   /** How long the oldest job ready to run had waited when the snapshot was captured. */
   readyOldestSeconds: number | null;
   /**
-   * With the `percentiles` option: the wait at each requested percentile, in seconds and in the
-   * order requested, read from `waitBins`. Null where `waitBins` is null or empty.
+   * With the `percentiles` option: one entry per percentile asked for, read from `waitBins` and `runBins`.
    * @see https://pgboss.io/api/queues#latency-histograms
    */
-  waitPercentiles?: (number | null)[];
-  /** With the `percentiles` option: the run time at each requested percentile, read from `runBins`. */
-  runPercentiles?: (number | null)[];
+  percentiles?: QueueStatsPercentile[];
   capturedOn: Date;
+}
+
+/** One percentile of a snapshot's wait and run times, in seconds. Null where the snapshot has no histograms. */
+export interface QueueStatsPercentile {
+  /** The percentile asked for, from 0 to 1. */
+  p: number;
+  waitSeconds: number | null;
+  runSeconds: number | null;
 }
 
 export interface QueueStatsOptions {
@@ -335,7 +340,7 @@ export interface QueueStatsOptions {
   aggregate?: 'max' | 'min' | 'avg';
   /**
    * Percentiles to read from each snapshot's wait and run histograms, as fractions from 0 to 1, such
-   * as `[0.5, 0.95]`. Each snapshot then carries `waitPercentiles` and `runPercentiles`.
+   * as `[0.5, 0.95]`. Each snapshot then carries a `percentiles` list, one entry per distinct value.
    * @see https://pgboss.io/api/queues#latency-histograms
    */
   percentiles?: number[];

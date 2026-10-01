@@ -956,21 +956,21 @@ describe('queueStats', function () {
         const snapshots = await ctx.boss.getQueueStats(queue, { to, percentiles: ps })
         expect(snapshots).toHaveLength(2)
         for (const s of snapshots) {
-          expect(s.waitPercentiles).toEqual(ps.map(p => percentile(s.waitBins, p)))
-          expect(s.runPercentiles).toEqual(ps.map(p => percentile(s.runBins, p)))
-          expect(s.waitPercentiles!.every(v => v !== null)).toBe(true)
+          expect(s.percentiles).toEqual(ps.map(p => ({ p, waitSeconds: percentile(s.waitBins, p), runSeconds: percentile(s.runBins, p) })))
+          expect(s.percentiles!.every(e => e.waitSeconds !== null && e.runSeconds !== null)).toBe(true)
         }
 
         // A bucket's percentile is read from its added histograms, not averaged from its snapshots'.
         const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to, percentiles: ps })
         const added = addBins(snapshots[0].waitBins, snapshots[1].waitBins)
-        expect(bucket.waitPercentiles).toEqual(ps.map(p => percentile(added, p)))
-        const averaged = (snapshots[0].waitPercentiles![1]! + snapshots[1].waitPercentiles![1]!) / 2
-        expect(bucket.waitPercentiles![1]).not.toBeCloseTo(averaged, 3)
+        expect(bucket.percentiles!.map(e => e.waitSeconds)).toEqual(ps.map(p => percentile(added, p)))
+        const p95 = (s: typeof bucket) => s.percentiles!.find(e => e.p === 0.95)!.waitSeconds!
+        const averaged = (p95(snapshots[0]) + p95(snapshots[1])) / 2
+        expect(p95(bucket)).not.toBeCloseTo(averaged, 3)
 
         // Without the option, the fields are absent.
         const [plain] = await ctx.boss.getQueueStats(queue, { to })
-        expect(plain).not.toHaveProperty('waitPercentiles')
+        expect(plain).not.toHaveProperty('percentiles')
       })
 
       it('reads null percentiles where there are no histograms to read them from', async function () {
@@ -981,8 +981,19 @@ describe('queueStats', function () {
         // persistQueueStats off: a live reading, which carries no histograms
         const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [0.5, 0.95] })
         expect(stats.waitBins).toBe(null)
-        expect(stats.waitPercentiles).toEqual([null, null])
-        expect(stats.runPercentiles).toEqual([null, null])
+        expect(stats.percentiles).toEqual([
+          { p: 0.5, waitSeconds: null, runSeconds: null },
+          { p: 0.95, waitSeconds: null, runSeconds: null }
+        ])
+      })
+
+      it('reads each percentile once, in the order first asked for', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [0.95, 0.5, 0.95, 0.5, 0.99] })
+        expect(stats.percentiles!.map(e => e.p)).toEqual([0.95, 0.5, 0.99])
       })
 
       it('refuses percentiles outside 0 to 1, or none at all', async function () {
