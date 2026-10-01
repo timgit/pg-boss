@@ -196,6 +196,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
           value={queue.queuedCount.toLocaleString()}
           accent={overThreshold ? 'error' : 'neutral'}
           hint={overThreshold ? 'over threshold' : undefined}
+          footer={queue.blockedCount > 0 ? `${queue.blockedCount.toLocaleString()} blocked by a flow parent` : undefined}
           to={metricsHref('queued')}
         />
         <StatCard label="Deferred" value={queue.deferredCount.toLocaleString()} to={metricsHref('deferred')} />

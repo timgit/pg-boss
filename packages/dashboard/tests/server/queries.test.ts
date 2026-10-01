@@ -162,6 +162,17 @@ describe('Queue Queries', () => {
       expect(queue!.name).toBe('my-queue')
       expect(queue!.policy).toBe('singleton')
       expect(queue!.queuedCount).toBe(25)
+      expect(queue!.blockedCount).toBe(0)
+    })
+
+    it('returns the jobs blocked by a flow parent', async () => {
+      await createTestQueue('flow-queue')
+      const pool = new pg.Pool({ connectionString: ctx.connectionString })
+      await pool.query(`UPDATE ${ctx.schema}.queue SET blocked_count = 3 WHERE name = 'flow-queue'`)
+      await pool.end()
+
+      const queue = await getQueue(ctx.connectionString, ctx.schema, 'flow-queue')
+      expect(queue!.blockedCount).toBe(3)
     })
   })
 

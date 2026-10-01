@@ -236,6 +236,12 @@ async function readyHistoryColumn (dbUrl: string, schema: string): Promise<strin
   return (await hasReadyHistoryColumn(dbUrl, schema)) ? ', ready_history as "readyHistory"' : ''
 }
 
+// The `blockedCount` SELECT fragment: queue.blocked_count arrived in v44 with the latency columns, so
+// their probe covers it. Before v44 nothing counted blocked jobs apart, which reads as 0.
+async function blockedCountColumn (dbUrl: string, schema: string): Promise<string> {
+  return (await hasLatencyColumns(dbUrl, schema)) ? ', blocked_count as "blockedCount"' : ', 0 as "blockedCount"'
+}
+
 // Whether schedule.kind and schedule.last_job_id (both schema v41+) exist, cached per (db, schema)
 // like the ready_history probe above. One entry covers both columns because one migration added
 // them; a database without them reads as a table of cron schedules that have never recorded a job,
@@ -281,6 +287,7 @@ export async function getQueues (
 ): Promise<QueueResult[]> {
   const s = validateIdentifier(schema)
   const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
+  const blockedCol = await blockedCountColumn(dbUrl, schema)
   const { limit, offset, filter = 'all', search, sort, dir } = options
   const orderBy = buildOrderBy({ sort, dir }, QUEUE_SORT_COLUMNS, 'name', 'name')
 
@@ -308,7 +315,7 @@ export async function getQueues (
   // If no pagination, return all queues
   if (limit === undefined) {
     const sql = `
-      SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
+      SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}
       FROM ${s}.queue
       ${whereClause}
       ${orderBy}
@@ -319,7 +326,7 @@ export async function getQueues (
   // With pagination
   params.push(limit, offset ?? 0)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
+    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}
     FROM ${s}.queue
     ${whereClause}
     ${orderBy}
@@ -389,8 +396,9 @@ export async function getProblemQueues (
   limit: number = 10
 ): Promise<QueueResult[]> {
   const s = validateIdentifier(schema)
+  const blockedCol = await blockedCountColumn(dbUrl, schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}
+    SELECT ${QUEUE_COLUMNS}${blockedCol}
     FROM ${s}.queue
     WHERE warning_queued > 0 AND queued_count > warning_queued
     ORDER BY (queued_count - warning_queued) DESC
@@ -407,8 +415,9 @@ export async function getTopQueues (
 ): Promise<QueueResult[]> {
   const s = validateIdentifier(schema)
   const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
+  const blockedCol = await blockedCountColumn(dbUrl, schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
+    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}
     FROM ${s}.queue
     ORDER BY total_count DESC
     LIMIT $1
@@ -424,8 +433,9 @@ export async function getQueue (
 ): Promise<QueueResult | null> {
   const s = validateIdentifier(schema)
   const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
+  const blockedCol = await blockedCountColumn(dbUrl, schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
+    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}
     FROM ${s}.queue
     WHERE name = $1
   `

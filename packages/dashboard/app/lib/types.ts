@@ -33,11 +33,13 @@ export interface QueueResult extends PgBossQueueResult {
   maintainOn: Date | null;
   // Stats fields (declared locally so the dashboard typechecks against older
   // installed pg-boss versions whose published types predate these columns).
-  // readyCount = queue.ready_count, the count of jobs runnable now (start_after <= now),
-  // persisted by pg-boss as GREATEST(queued - deferred, 0) since schema v32 (alongside
-  // failed_count); failedCount = failed jobs still retained in the table.
+  // readyCount = queue.ready_count, the count of jobs runnable now (start_after <= now, and from
+  // v44 not blocked by a flow parent), persisted since schema v32 (alongside failed_count);
+  // failedCount = failed jobs still retained in the table; blockedCount = queue.blocked_count, jobs
+  // waiting on a flow parent, from v44 and 0 before it.
   readyCount: number;
   failedCount: number;
+  blockedCount: number;
   // Sliding window of recent ready counts (newest first) maintained by pg-boss on every monitor
   // cycle for the dashboard sparkline. Present only on schema v35+; undefined on older databases.
   readyHistory?: number[] | null;
