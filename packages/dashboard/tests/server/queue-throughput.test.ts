@@ -175,13 +175,19 @@ describe('wait and run times', () => {
 
   const openPool = () => new pg.Pool({ connectionString: ctx.connectionString })
 
-  // A pass's histograms as the monitor stores them: the slots it used and their counts.
-  async function setLatency (pool: pg.Pool, name: string, capturedOn: Date, wait: [number[], number[]], run: [number[], number[]], oldest: number) {
+  // A histogram as the monitor stores it: a count for every slot, these ones set and the rest zero.
+  const bins = (counts: Record<number, number>) => {
+    const all = new Array(SLOTS).fill(0)
+    for (const [slot, n] of Object.entries(counts)) all[Number(slot)] = n
+    return all
+  }
+
+  async function setLatency (pool: pg.Pool, name: string, capturedOn: Date, wait: Record<number, number>, run: Record<number, number>, oldest: number) {
     await pool.query(
       `UPDATE ${ctx.schema}.queue_stats
-          SET wait_slots = $3, wait_counts = $4, run_slots = $5, run_counts = $6, oldest_ready_seconds = $7
+          SET wait_bins = $3, run_bins = $4, oldest_ready_seconds = $5
         WHERE name = $1 AND captured_on = $2`,
-      [name, capturedOn, wait[0], wait[1], run[0], run[1], oldest])
+      [name, capturedOn, bins(wait), bins(run), oldest])
   }
 
   it('adds the histograms of every pass in a bucket, and keeps the longest oldest-ready wait', async () => {
@@ -191,8 +197,8 @@ describe('wait and run times', () => {
       { capturedOn: at(130), readyCount: 1, createdDelta: 1, completedDelta: 3, failedDelta: 0, deltaSeconds: 90 },
     ])
     const pool = openPool()
-    await setLatency(pool, 'tp-latency', at(40), [[10], [1]], [[4], [1]], 12)
-    await setLatency(pool, 'tp-latency', at(130), [[10, 12], [2, 1]], [[5], [3]], 30)
+    await setLatency(pool, 'tp-latency', at(40), { 10: 1 }, { 4: 1 }, 12)
+    await setLatency(pool, 'tp-latency', at(130), { 10: 2, 12: 1 }, { 5: 3 }, 30)
     await pool.end()
 
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency', window)
@@ -209,13 +215,13 @@ describe('wait and run times', () => {
     expect(series.points[0].waitBins?.[10]).toBe(3)
   })
 
-  it('reports empty histograms for a bucket whose passes measured and saw nothing finish', async () => {
+  it('reports all-zero histograms for a bucket whose passes measured and saw nothing finish', async () => {
     await createTestQueue('tp-latency-idle')
     await insertQueueStatsHistory(ctx.schema, 'tp-latency-idle', [
       { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 0, failedDelta: 0, deltaSeconds: 30 },
     ])
     const pool = openPool()
-    await setLatency(pool, 'tp-latency-idle', at(40), [[], []], [[], []], 25)
+    await setLatency(pool, 'tp-latency-idle', at(40), {}, {}, 25)
     await pool.end()
 
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-idle', window)
@@ -246,7 +252,7 @@ describe('wait and run times', () => {
     // Back to the v43 shape, as the migration's uninstall leaves it.
     const pool = openPool()
     await pool.query(`ALTER TABLE ${ctx.schema}.queue_stats
-      DROP COLUMN wait_slots, DROP COLUMN wait_counts, DROP COLUMN run_slots, DROP COLUMN run_counts,
+      DROP COLUMN wait_bins, DROP COLUMN run_bins,
       DROP COLUMN oldest_ready_seconds`)
     await pool.end()
 

@@ -374,11 +374,11 @@ function createTableVersion (schema: string) {
 // try-lock - without capturedOn claiming a freshness the counts do not have.
 // created_delta / completed_delta / failed_delta are not gauges like the counts beside them: they
 // are how many jobs went through between the previous monitor pass and the latest one. delta_on and
-// delta_seconds are the window those three cover, null until a pass counts. wait_slots/wait_counts
-// and run_slots/run_counts are the wait and run times of the jobs that finished in that window, as
-// sparse histograms (see LATENCY_BINS), and oldest_ready_seconds is how long the oldest job ready to
+// delta_seconds are the window those three cover, null until a pass counts. wait_bins
+// and run_bins are the wait and run times of the jobs that finished in that window, as histograms of
+// LATENCY_SLOTS counts (see LATENCY_BINS), and oldest_ready_seconds is how long the oldest job ready to
 // run had waited at the pass. Like the deltas, all of them are null until a pass counts, and a pass
-// that counts writes a value: empty histograms when nothing finished, 0 when nothing was waiting.
+// that counts writes a value: all zeros when nothing finished, 0 when nothing was waiting.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -407,10 +407,8 @@ function createTableQueue (schema: string) {
       failed_delta int NOT NULL default 0,
       delta_on timestamp with time zone,
       delta_seconds int,
-      wait_slots smallint[],
-      wait_counts int[],
-      run_slots smallint[],
-      run_counts int[],
+      wait_bins int[],
+      run_bins int[],
       oldest_ready_seconds int,
       ready_history int[] NOT NULL default '{}',
       heartbeat_seconds int,
@@ -1873,10 +1871,8 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       failed_delta    int,
       delta_seconds   int,
       delta_on        timestamptz,
-      wait_slots      smallint[],
-      wait_counts     int[],
-      run_slots       smallint[],
-      run_counts      int[],
+      wait_bins       int[],
+      run_bins        int[],
       oldest_ready_seconds int,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
@@ -1977,10 +1973,10 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
     INSERT INTO ${schema}.queue_stats
       (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
        created_delta, completed_delta, failed_delta, delta_seconds, delta_on,
-       wait_slots, wait_counts, run_slots, run_counts, oldest_ready_seconds, captured_on)
+       wait_bins, run_bins, oldest_ready_seconds, captured_on)
     SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
            created_delta, completed_delta, failed_delta, delta_seconds, delta_on,
-           wait_slots, wait_counts, run_slots, run_counts, oldest_ready_seconds, ${schema}.job_now()
+           wait_bins, run_bins, oldest_ready_seconds, ${schema}.job_now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -2014,10 +2010,8 @@ export function getQueueStatsCache (schema: string): string {
       failed_delta    as "failedDelta",
       delta_seconds   as "deltaSeconds",
       delta_on        as "deltaOn",
-      wait_slots      as "waitSlots",
-      wait_counts     as "waitCounts",
-      run_slots       as "runSlots",
-      run_counts      as "runCounts",
+      wait_bins       as "waitBins",
+      run_bins        as "runBins",
       oldest_ready_seconds as "oldestReadySeconds",
       table_name     as "table",
       monitor_on     as "capturedOn",
@@ -2043,10 +2037,8 @@ export function getQueueStatsHistory (schema: string): string {
       failed_delta    as "failedDelta",
       delta_seconds   as "deltaSeconds",
       delta_on        as "deltaOn",
-      wait_slots      as "waitSlots",
-      wait_counts     as "waitCounts",
-      run_slots       as "runSlots",
-      run_counts      as "runCounts",
+      wait_bins       as "waitBins",
+      run_bins        as "runBins",
       oldest_ready_seconds as "oldestReadySeconds",
       captured_on    as "capturedOn"
     FROM ${schema}.queue_stats
@@ -2158,7 +2150,6 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         sum(failed_delta)::int    as "failedDelta",
         sum(delta_seconds)::int   as "deltaSeconds",
         max(delta_on)             as "deltaOn",
-        bool_or(wait_slots IS NOT NULL) as "latencyMeasured",
         max(oldest_ready_seconds) as "oldestReadySeconds"
       FROM ${schema}.queue_stats, w
       WHERE name = $1
@@ -2184,7 +2175,6 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         c."failedDelta",
         c."deltaSeconds",
         c."deltaOn",
-        c."latencyMeasured",
         c."oldestReadySeconds",
         c.bucket as "counterBucket"
       FROM gauges g
@@ -2192,36 +2182,29 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
     ),
     -- Wait and run histograms, added up per returned bucket in SQL, so a bucket comes back as one
     -- histogram however many passes it covers. Each pass lands in the bucket its counters were placed
-    -- in above, then its (slot, count) pairs are summed per bucket and slot.
+    -- in above, then its counts are summed per bucket and slot. A bucket no pass measured has no row
+    -- here and comes back null.
     passes AS (
-      SELECT ${bucket('delta_on')} as "counterBucket", wait_slots, wait_counts, run_slots, run_counts
+      SELECT ${bucket('delta_on')} as "counterBucket", wait_bins, run_bins
       FROM ${schema}.queue_stats, w
       WHERE name = $1
         AND delta_on IS NOT NULL
-        AND wait_slots IS NOT NULL
+        AND wait_bins IS NOT NULL
         AND ($2::timestamptz IS NULL OR delta_on >= $2)
         AND ($3::timestamptz IS NULL OR delta_on <= $3)
     ),
     slots AS (
-      SELECT p.bucket, 'wait' AS kind, u.slot::int AS slot, sum(u.n)::bigint AS n
+      SELECT p.bucket, u.slot, sum(u.w)::bigint AS w, sum(u.r)::bigint AS r
       FROM (SELECT DISTINCT bucket, "counterBucket" FROM placed) p
-        JOIN passes r ON r."counterBucket" = p."counterBucket",
-        unnest(r.wait_slots, r.wait_counts) AS u(slot, n)
-      GROUP BY 1, 2, 3
-      UNION ALL
-      SELECT p.bucket, 'run' AS kind, u.slot::int AS slot, sum(u.n)::bigint AS n
-      FROM (SELECT DISTINCT bucket, "counterBucket" FROM placed) p
-        JOIN passes r ON r."counterBucket" = p."counterBucket",
-        unnest(r.run_slots, r.run_counts) AS u(slot, n)
-      GROUP BY 1, 2, 3
+        JOIN passes ps ON ps."counterBucket" = p."counterBucket",
+        unnest(ps.wait_bins, ps.run_bins) WITH ORDINALITY AS u(w, r, slot)
+      GROUP BY 1, 2
     ),
     histograms AS (
       SELECT
         bucket,
-        array_agg(slot ORDER BY slot) FILTER (WHERE kind = 'wait') as "waitSlots",
-        array_agg(n ORDER BY slot) FILTER (WHERE kind = 'wait')    as "waitCounts",
-        array_agg(slot ORDER BY slot) FILTER (WHERE kind = 'run')  as "runSlots",
-        array_agg(n ORDER BY slot) FILTER (WHERE kind = 'run')     as "runCounts"
+        array_agg(w ORDER BY slot) as "waitBins",
+        array_agg(r ORDER BY slot) as "runBins"
       FROM slots
       GROUP BY 1
     ),
@@ -2239,13 +2222,12 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
       sum("failedDelta")::int    as "failedDelta",
       sum("deltaSeconds")::int   as "deltaSeconds",
       max("deltaOn")             as "deltaOn",
-      bool_or("latencyMeasured") as "latencyMeasured",
       max("oldestReadySeconds")::int as "oldestReadySeconds"
     FROM placed
     WHERE bucket IS NOT NULL
     GROUP BY 1
     )
-    SELECT f.*, h."waitSlots", h."waitCounts", h."runSlots", h."runCounts"
+    SELECT f.*, h."waitBins", h."runBins"
     FROM folded f
       LEFT JOIN histograms h ON h.bucket = f."capturedOn"
     ORDER BY f."capturedOn" DESC
@@ -3897,10 +3879,8 @@ function throughputAssignments (end: string, resetMax?: string): string {
       failed_delta = COALESCE(stats."failedDelta", 0),
       delta_seconds = CASE WHEN ${seconds} < 0 THEN 0 ELSE ${seconds} END,
       delta_on = GREATEST(queue.delta_on, ${end}),
-      wait_slots = COALESCE(stats."waitSlots", '{}'::smallint[]),
-      wait_counts = COALESCE(stats."waitCounts", '{}'::int[]),
-      run_slots = COALESCE(stats."runSlots", '{}'::smallint[]),
-      run_counts = COALESCE(stats."runCounts", '{}'::int[]),
+      wait_bins = COALESCE(stats."waitBins", ${EMPTY_BINS}),
+      run_bins = COALESCE(stats."runBins", ${EMPTY_BINS}),
       oldest_ready_seconds = COALESCE(stats."oldestReadySeconds", 0),`
 }
 
@@ -4081,12 +4061,14 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
 // about 23 hours. Log-spaced because the times span six orders of magnitude, and a percentile read
 // from them is within one bin, 19% at most. Histograms rather than percentiles, because histograms
 // add: a reader sums them across passes, buckets or queues and reads any percentile from the sum.
-// Stored sparse, the used slots and their counts in two arrays side by side: a pass covers one
-// queue for one interval and its times cluster, so most of the 48 slots are empty (measured at 5 to
-// 10 used, 70 to 100 bytes a histogram against 216 for all 48). getQueueStats() hands them out whole.
+// Stored as all 48 counts in slot order, zeros included, as ready_history stores its samples.
+// getQueueStats() hands them out as stored.
 export const LATENCY_BINS = 46
 export const LATENCY_SLOTS = LATENCY_BINS + 2
 export const LATENCY_MIN_SECONDS = 0.01
+
+// A measured histogram in which no job finished.
+const EMPTY_BINS = `'{${new Array(LATENCY_SLOTS).fill(0).join(',')}}'::int[]`
 
 // Both bins travel packed in one integer (wait * LATENCY_PACK + run), so the aggregate needs one
 // array and one filter. Two arrays, each with its own filter evaluated on every row of the table,
@@ -4106,22 +4088,19 @@ function latencyBin (seconds: string): string {
   return `LEAST(GREATEST(${raw}, 0), ${LATENCY_SLOTS - 1})`
 }
 
-// Unpacks the aggregate's array into one sparse histogram: the slots that hold a job, ascending, and
-// beside them how many jobs each holds. A slot not listed holds none. Empty rather than null when
-// nothing finished, so a pass that counted says so, as its deltas do. floor() of a float division
-// rather than integer division, which CockroachDB answers in decimal.
+// Unpacks the aggregate's array into one histogram: a count for every slot, in slot order, zero
+// where no job landed. All zeros rather than null when nothing finished (unnest of a null array is
+// no rows), so a pass that counted says so, as its deltas do. floor() of a float division rather than
+// integer division, which CockroachDB answers in decimal.
 function latencySlotOf (which: 'wait' | 'run'): string {
   return which === 'wait' ? `floor(p / ${LATENCY_PACK}.0)::int` : `(p % ${LATENCY_PACK})::int`
 }
 
-function latencySlots (packed: string, which: 'wait' | 'run'): string {
-  return `COALESCE((SELECT array_agg(slot::smallint ORDER BY slot)
-          FROM (SELECT DISTINCT ${latencySlotOf(which)} AS slot FROM unnest(${packed}) AS u(p)) x), '{}'::smallint[])`
-}
-
-function latencyCounts (packed: string, which: 'wait' | 'run'): string {
-  return `COALESCE((SELECT array_agg(n ORDER BY slot)
-          FROM (SELECT ${latencySlotOf(which)} AS slot, count(*)::int AS n FROM unnest(${packed}) AS u(p) GROUP BY 1) x), '{}'::int[])`
+function latencyHistogram (packed: string, which: 'wait' | 'run'): string {
+  return `(SELECT array_agg(COALESCE(c.n, 0) ORDER BY s.slot)
+          FROM generate_series(0, ${LATENCY_SLOTS - 1}) AS s(slot)
+            LEFT JOIN (SELECT ${latencySlotOf(which)} AS slot, count(*)::int AS n
+                       FROM unnest(${packed}) AS u(p) GROUP BY 1) c ON c.slot = s.slot)`
 }
 
 // Every count the monitor keeps, from one pass over the queue's table.
@@ -4161,10 +4140,8 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         "createdDelta",
         "completedDelta",
         "failedDelta",
-        ${latencySlots('"latencyBins"', 'wait')} as "waitSlots",
-        ${latencyCounts('"latencyBins"', 'wait')} as "waitCounts",
-        ${latencySlots('"latencyBins"', 'run')} as "runSlots",
-        ${latencyCounts('"latencyBins"', 'run')} as "runCounts",
+        ${latencyHistogram('"latencyBins"', 'wait')} as "waitBins",
+        ${latencyHistogram('"latencyBins"', 'run')} as "runBins",
         "oldestReadySeconds",
         COALESCE("recount" > "settled", false) as "trueUp",`,
         counts: `

@@ -192,10 +192,10 @@ export async function hasLatencyColumns (dbUrl: string, schema: string): Promise
 
   validateIdentifier(schema)
   const row = await queryOne<{ exists: boolean }>(dbUrl, `
-    SELECT COUNT(*)::int = 5 as "exists"
+    SELECT COUNT(*)::int = 3 as "exists"
     FROM information_schema.columns
     WHERE table_schema = $1 AND table_name = 'queue_stats'
-      AND column_name IN ('wait_slots', 'wait_counts', 'run_slots', 'run_counts', 'oldest_ready_seconds')
+      AND column_name IN ('wait_bins', 'run_bins', 'oldest_ready_seconds')
   `, [schema])
   const exists = row?.exists ?? false
   latencyColumnsCache.set(key, { exists, checkedAt: Date.now() })
@@ -1013,10 +1013,10 @@ export interface QueueThroughputOptions {
 // bound on the counters keeps the index and partition pruning; its 15-minute margin covers the lag
 // with room to spare. Only buckets with data come back: the caller fills gaps.
 //
-// With the v44 columns, each bucket also carries the wait and run histograms of its passes, stored
-// sparse (the slots a pass used and their counts, side by side) and summed per bucket and slot here,
-// so a bucket comes back as one histogram however many passes it covers. `measured` tells a bucket
-// whose passes counted no finished jobs (empty histograms) from one they did not measure at all.
+// With the v44 columns, each bucket also carries the wait and run histograms of its passes, 48
+// counts each, summed slot by slot here, so a bucket comes back as one histogram however many passes
+// it covers. A bucket whose passes counted no finished jobs comes back all zeros; one they did not
+// measure at all has no row in h and comes back null.
 function throughputSql (s: string, oneQueue: boolean, latency: boolean): string {
   const byName = oneQueue ? 'AND name = $4' : ''
   const counterBucket = '(floor(extract(epoch from delta_on) / $3) * $3)::float8'
@@ -1026,41 +1026,30 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
         ${byName}`
   const latencyAgg = latency
     ? `,
-        bool_or(wait_slots IS NOT NULL) AS measured,
         max(oldest_ready_seconds)    AS oldest_ready`
     : ''
   const latencyCtes = latency
     ? `,
     slots AS (
-      SELECT name, ${counterBucket} AS t, 'wait' AS kind, u.slot::int AS slot, sum(u.n)::bigint AS n
-      FROM ${s}.queue_stats, unnest(wait_slots, wait_counts) AS u(slot, n)
+      SELECT name, ${counterBucket} AS t, u.slot, sum(u.w)::bigint AS w, sum(u.r)::bigint AS r
+      FROM ${s}.queue_stats, unnest(wait_bins, run_bins) WITH ORDINALITY AS u(w, r, slot)
       WHERE ${counterWhere}
-      GROUP BY 1, 2, 3, 4
-      UNION ALL
-      SELECT name, ${counterBucket} AS t, 'run' AS kind, u.slot::int AS slot, sum(u.n)::bigint AS n
-      FROM ${s}.queue_stats, unnest(run_slots, run_counts) AS u(slot, n)
-      WHERE ${counterWhere}
-      GROUP BY 1, 2, 3, 4
+      GROUP BY 1, 2, 3
     ),
     h AS (
       SELECT
         name,
         t,
-        array_agg(slot ORDER BY slot) FILTER (WHERE kind = 'wait') AS wait_slots,
-        array_agg(n ORDER BY slot) FILTER (WHERE kind = 'wait')    AS wait_counts,
-        array_agg(slot ORDER BY slot) FILTER (WHERE kind = 'run')  AS run_slots,
-        array_agg(n ORDER BY slot) FILTER (WHERE kind = 'run')     AS run_counts
+        array_agg(w ORDER BY slot) AS wait_bins,
+        array_agg(r ORDER BY slot) AS run_bins
       FROM slots
       GROUP BY 1, 2
     )`
     : ''
   const latencyCols = latency
     ? `,
-      d.measured                    AS "latencyMeasured",
-      h.wait_slots                  AS "waitSlots",
-      h.wait_counts                 AS "waitCounts",
-      h.run_slots                   AS "runSlots",
-      h.run_counts                  AS "runCounts",
+      h.wait_bins                   AS "waitBins",
+      h.run_bins                    AS "runBins",
       d.oldest_ready                AS "oldestReadySeconds"`
     : ''
   const latencyJoin = latency ? '\n    LEFT JOIN h ON h.name = d.name AND h.t = d.t' : ''
@@ -1102,25 +1091,14 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
 type ThroughputRow = QueueThroughputPoint & { name: string }
 
 type LatencyRow = ThroughputRow & {
-  latencyMeasured?: boolean | null
-  waitSlots?: unknown
-  waitCounts?: unknown
-  runSlots?: unknown
-  runCounts?: unknown
+  waitBins?: unknown
+  runBins?: unknown
 }
 
-// A bucket's summed (slot, count) pairs spread over all 48 slots: zeros where its passes measured and
-// no job finished, null where they did not measure. CockroachDB hands the numbers over as strings.
-function denseBins (slots: unknown, counts: unknown, measured: boolean): number[] | null {
-  if (!measured) return null
-  const bins = new Array(LATENCY_SLOTS).fill(0)
-  if (Array.isArray(slots) && Array.isArray(counts)) {
-    slots.forEach((slot, i) => {
-      const k = Number(slot)
-      if (k >= 0 && k < LATENCY_SLOTS) bins[k] += Number(counts[i])
-    })
-  }
-  return bins
+// A bucket's summed counts, one per slot: zeros where its passes measured and no job finished, null
+// where they did not measure. The sums are bigint, which arrive as strings.
+function toBins (bins: unknown): number[] | null {
+  return Array.isArray(bins) && bins.length === LATENCY_SLOTS ? bins.map(Number) : null
 }
 
 async function queryThroughput (
@@ -1137,10 +1115,10 @@ async function queryThroughput (
     const latency = await hasLatencyColumns(dbUrl, schema)
     const rows = await query<LatencyRow>(dbUrl, throughputSql(s, name !== undefined, latency), params)
     if (!latency) return rows
-    return rows.map(({ latencyMeasured, waitSlots, waitCounts, runSlots, runCounts, ...row }) => ({
+    return rows.map(({ waitBins, runBins, ...row }) => ({
       ...row,
-      waitBins: denseBins(waitSlots, waitCounts, latencyMeasured === true),
-      runBins: denseBins(runSlots, runCounts, latencyMeasured === true),
+      waitBins: toBins(waitBins),
+      runBins: toBins(runBins),
       oldestReadySeconds: row.oldestReadySeconds == null ? null : Number(row.oldestReadySeconds),
     }))
   } catch (err: unknown) {

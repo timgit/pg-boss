@@ -2045,7 +2045,7 @@ AS $function$
       previous: 43,
       // Wait and run times beside the throughput counters, counted by the same pass over the job
       // table rather than a second one: no index, and nothing added to a job's own writes. Each
-      // histogram is two arrays, the used slots and their counts, since most of the 48 are empty.
+      // histogram is one array of 48 counts, zeros included, like ready_history.
       // Nullable with no default, like the v43 deltas, so no statement rewrites a table and a
       // snapshot captured before the columns reads as not counted rather than as a queue with no waits.
       // The instance registry: which PgBoss objects share this database, written by each one on its
@@ -2053,31 +2053,23 @@ AS $function$
       install: [
         plans.createTableInstance(schema),
         `ALTER TABLE ${schema}.queue
-          ADD COLUMN wait_slots smallint[],
-          ADD COLUMN wait_counts int[],
-          ADD COLUMN run_slots smallint[],
-          ADD COLUMN run_counts int[],
+          ADD COLUMN wait_bins int[],
+          ADD COLUMN run_bins int[],
           ADD COLUMN oldest_ready_seconds int`,
         `ALTER TABLE ${schema}.queue_stats
-          ADD COLUMN wait_slots smallint[],
-          ADD COLUMN wait_counts int[],
-          ADD COLUMN run_slots smallint[],
-          ADD COLUMN run_counts int[],
+          ADD COLUMN wait_bins int[],
+          ADD COLUMN run_bins int[],
           ADD COLUMN oldest_ready_seconds int`
       ],
       uninstall: [
         `DROP TABLE ${schema}.instance`,
         `ALTER TABLE ${schema}.queue
-          DROP COLUMN wait_slots,
-          DROP COLUMN wait_counts,
-          DROP COLUMN run_slots,
-          DROP COLUMN run_counts,
+          DROP COLUMN wait_bins,
+          DROP COLUMN run_bins,
           DROP COLUMN oldest_ready_seconds`,
         `ALTER TABLE ${schema}.queue_stats
-          DROP COLUMN wait_slots,
-          DROP COLUMN wait_counts,
-          DROP COLUMN run_slots,
-          DROP COLUMN run_counts,
+          DROP COLUMN wait_bins,
+          DROP COLUMN run_bins,
           DROP COLUMN oldest_ready_seconds`
       ]
     }

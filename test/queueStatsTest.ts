@@ -695,13 +695,15 @@ describe('queueStats', function () {
       /** The slot a duration lands in: slot k holds 10 ms · √2^(k-1) up to 10 ms · √2^k. */
       const slotOf = (seconds: number) => Math.floor(2 * Math.log2(seconds / plans.LATENCY_MIN_SECONDS)) + 1
 
-      /** A stored histogram, the used slots and their counts, as the 48 counts getQueueStats hands out. */
-      function dense (slots: number[] | null, counts: number[] | null): number[] | null {
-        if (slots == null) return null
-        const bins = new Array(plans.LATENCY_SLOTS).fill(0)
-        slots.forEach((slot, i) => { bins[slot] += counts![i] })
-        return bins
+      /** A histogram with these counts in these slots and zeros everywhere else. */
+      function bins (counts: Record<number, number>): number[] {
+        const all = new Array(plans.LATENCY_SLOTS).fill(0)
+        for (const [slot, n] of Object.entries(counts)) all[Number(slot)] = n
+        return all
       }
+
+      /** The text form of a histogram, for seeding queue_stats. */
+      const literal = (counts: Record<number, number>) => `{${bins(counts).join(',')}}`
 
       /**
        * Finishes one job whose wait and run are known: its stamps are set to them, relative to a
@@ -734,11 +736,9 @@ describe('queueStats', function () {
         await finishJob(queue, { wait: 0.5, run: 2 })
 
         const row = await monitorPass(queue)
-        // Stored sparse: only the slots that hold a job, ascending, and beside them the counts.
-        expect(row.waitSlots).toEqual([slotOf(0.5), slotOf(30)])
-        expect(row.waitCounts).toEqual([1, 1])
-        expect(row.runSlots).toEqual([slotOf(2)])
-        expect(row.runCounts).toEqual([2])
+        // Stored as a count for every slot, zeros included.
+        expect(row.waitBins).toEqual(bins({ [slotOf(0.5)]: 1, [slotOf(30)]: 1 }))
+        expect(row.runBins).toEqual(bins({ [slotOf(2)]: 2 }))
       })
 
       /** A deferred job, or a retry sitting out its backoff, is not waiting until it may start. */
@@ -751,7 +751,7 @@ describe('queueStats', function () {
         await finishJob(queue, { wait: 3, run: 1, deferBy: 600 })
 
         const row = await monitorPass(queue)
-        expect(dense(row.waitSlots, row.waitCounts)![slotOf(3)]).toBe(1)
+        expect(row.waitBins).toEqual(bins({ [slotOf(3)]: 1 }))
       })
 
       it('records a terminal failure beside the completions', async function () {
@@ -764,11 +764,11 @@ describe('queueStats', function () {
 
         const row = await monitorPass(queue)
         expect(row.failedDelta).toBe(1)
-        expect(dense(row.runSlots, row.runCounts)![slotOf(20)]).toBe(1)
+        expect(row.runBins).toEqual(bins({ [slotOf(20)]: 1 }))
       })
 
-      /** Like the deltas: a pass that counted says so, with empty histograms rather than null. */
-      it('records empty histograms for a pass in which nothing finished', async function () {
+      /** Like the deltas: a pass that counted says so, with all zeros rather than null. */
+      it('records all-zero histograms for a pass in which nothing finished', async function () {
         ctx.boss = await helper.start(ctx.bossConfig)
         const queue = randomUUID()
         await ctx.boss.createQueue(queue)
@@ -776,19 +776,18 @@ describe('queueStats', function () {
         await ctx.boss.send(queue)
 
         const row = await monitorPass(queue)
-        expect(row.waitSlots).toEqual([])
-        expect(row.waitCounts).toEqual([])
-        expect(row.runSlots).toEqual([])
+        expect(row.waitBins).toEqual(bins({}))
+        expect(row.runBins).toEqual(bins({}))
       })
 
       /** A queue with no job rows has no aggregate row at all; its pass still counted. */
-      it('records empty histograms for a queue with no jobs', async function () {
+      it('records all-zero histograms for a queue with no jobs', async function () {
         ctx.boss = await helper.start(ctx.bossConfig)
         const queue = randomUUID()
         await ctx.boss.createQueue(queue)
 
         const row = await monitorPass(queue)
-        expect(row.waitSlots).toEqual([])
+        expect(row.waitBins).toEqual(bins({}))
         expect(row.oldestReadySeconds).toBe(0)
       })
 
@@ -800,7 +799,7 @@ describe('queueStats', function () {
         await finishJob(queue, { wait: 1, run: 1 })
 
         const row = await monitorPass(queue, false)
-        expect(row.waitSlots).toBe(null)
+        expect(row.waitBins).toBe(null)
         expect(row.oldestReadySeconds).toBe(null)
       })
 
@@ -840,10 +839,11 @@ describe('queueStats', function () {
         await ensurePreviousDayPartition(db, schema)
         await db.executeSql(
           `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
-             wait_slots, wait_counts, run_slots, run_counts, oldest_ready_seconds)
-           VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2, '{10}', '{2}', '{5}', '{2}', 40),
-                  ($1, 3, 60, $3::timestamptz - interval '60 seconds', $3, '{10,12}', '{3,1}', '{5}', '{2}', 75)`,
-          [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000)]
+             wait_bins, run_bins, oldest_ready_seconds)
+           VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2, $4, $6, 40),
+                  ($1, 3, 60, $3::timestamptz - interval '60 seconds', $3, $5, $6, 75)`,
+          [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000),
+            literal({ 10: 2 }), literal({ 10: 3, 12: 1 }), literal({ 5: 2 })]
         )
 
         const [newest] = await ctx.boss.getQueueStats(queue, { to })
@@ -873,9 +873,9 @@ describe('queueStats', function () {
         await ensurePreviousDayPartition(db, schema)
         await db.executeSql(
           `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
-             wait_slots, wait_counts, run_slots, run_counts, oldest_ready_seconds)
-           VALUES ($1, 0, 60, $2::timestamptz - interval '60 seconds', $2, '{}', '{}', '{}', '{}', 0)`,
-          [queue, new Date(hour - 50 * 60_000)])
+             wait_bins, run_bins, oldest_ready_seconds)
+           VALUES ($1, 0, 60, $2::timestamptz - interval '60 seconds', $2, $3, $3, 0)`,
+          [queue, new Date(hour - 50 * 60_000), literal({})])
 
         const [row] = await ctx.boss.getQueueStats(queue, { to })
         expect(row.waitBins).toEqual(new Array(plans.LATENCY_SLOTS).fill(0))

@@ -236,7 +236,7 @@ Alongside the deltas, and recorded under the same conditions, how long jobs wait
 
 `waitBins` and `runBins` each hold 48 counts. Slot 0 counts times under 10 ms, slot `k` from 1 to 46 counts times from `0.01 * √2^(k-1)` up to `0.01 * √2^k` seconds, and slot 47 everything longer (about 23 hours). Histograms add: to read a percentile over several snapshots, or several queues, add the counts slot by slot first, then read it from the sum. Averaging percentiles taken from smaller spans does not give a percentile. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up.
 
-In `queue_stats` each histogram is stored as two arrays side by side, the slots that hold at least one job (`wait_slots`, ascending) and how many each holds (`wait_counts`); a slot not listed holds none, and a measured pass in which nothing finished stores two empty arrays. To add them up in SQL, unnest the two together: `SELECT u.slot, sum(u.n) FROM queue_stats s, unnest(s.wait_slots, s.wait_counts) AS u(slot, n) WHERE … GROUP BY 1`.
+In `queue_stats` each histogram is stored as it is returned, an `int[]` of the 48 counts in slot order (`wait_bins`, `run_bins`); a measured pass in which nothing finished stores 48 zeros. To add them up in SQL, unnest with the slot number: `SELECT u.slot, sum(u.n) FROM queue_stats s, unnest(s.wait_bins) WITH ORDINALITY AS u(n, slot) WHERE … GROUP BY 1`. `WITH ORDINALITY` numbers from 1, so slot 0 is row 1.
 
 ```js
 // The p95 wait over the last hour, from the snapshots in it
