@@ -195,7 +195,7 @@ export async function hasLatencyColumns (dbUrl: string, schema: string): Promise
     SELECT COUNT(*)::int = 3 as "exists"
     FROM information_schema.columns
     WHERE table_schema = $1 AND table_name = 'queue_stats'
-      AND column_name IN ('wait_bins', 'run_bins', 'oldest_ready_seconds')
+      AND column_name IN ('wait_bins', 'run_bins', 'ready_oldest')
   `, [schema])
   const exists = row?.exists ?? false
   latencyColumnsCache.set(key, { exists, checkedAt: Date.now() })
@@ -1026,7 +1026,7 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
         ${byName}`
   const latencyAgg = latency
     ? `,
-        max(oldest_ready_seconds)    AS oldest_ready`
+        max(ready_oldest)    AS oldest_ready`
     : ''
   const latencyCtes = latency
     ? `,

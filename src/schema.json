@@ -866,13 +866,6 @@
       },
       {
         "table": "queue_stats",
-        "column": "oldest_ready_seconds",
-        "type": "integer",
-        "notNull": false,
-        "default": null
-      },
-      {
-        "table": "queue_stats",
         "column": "queued_count",
         "type": "integer",
         "notNull": true,
@@ -884,6 +877,13 @@
         "type": "integer",
         "notNull": true,
         "default": "0"
+      },
+      {
+        "table": "queue_stats",
+        "column": "ready_oldest",
+        "type": "integer",
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",
@@ -1034,13 +1034,6 @@
       },
       {
         "table": "queue",
-        "column": "oldest_ready_seconds",
-        "type": "integer",
-        "notNull": false,
-        "default": null
-      },
-      {
-        "table": "queue",
         "column": "partition",
         "type": "boolean",
         "notNull": true,
@@ -1073,6 +1066,13 @@
         "type": "integer[]",
         "notNull": true,
         "default": "'{}'::integer[]"
+      },
+      {
+        "table": "queue",
+        "column": "ready_oldest",
+        "type": "integer",
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue",
@@ -2151,13 +2151,6 @@
       },
       {
         "table": "queue_stats",
-        "column": "oldest_ready_seconds",
-        "type": "integer",
-        "notNull": false,
-        "default": null
-      },
-      {
-        "table": "queue_stats",
         "column": "queued_count",
         "type": "integer",
         "notNull": true,
@@ -2169,6 +2162,13 @@
         "type": "integer",
         "notNull": true,
         "default": "0"
+      },
+      {
+        "table": "queue_stats",
+        "column": "ready_oldest",
+        "type": "integer",
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue_stats",
@@ -2319,13 +2319,6 @@
       },
       {
         "table": "queue",
-        "column": "oldest_ready_seconds",
-        "type": "integer",
-        "notNull": false,
-        "default": null
-      },
-      {
-        "table": "queue",
         "column": "partition",
         "type": "boolean",
         "notNull": true,
@@ -2358,6 +2351,13 @@
         "type": "integer[]",
         "notNull": true,
         "default": "'{}'::integer[]"
+      },
+      {
+        "table": "queue",
+        "column": "ready_oldest",
+        "type": "integer",
+        "notNull": false,
+        "default": null
       },
       {
         "table": "queue",

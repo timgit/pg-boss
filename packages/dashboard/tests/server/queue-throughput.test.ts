@@ -185,7 +185,7 @@ describe('wait and run times', () => {
   async function setLatency (pool: pg.Pool, name: string, capturedOn: Date, wait: Record<number, number>, run: Record<number, number>, oldest: number) {
     await pool.query(
       `UPDATE ${ctx.schema}.queue_stats
-          SET wait_bins = $3, run_bins = $4, oldest_ready_seconds = $5
+          SET wait_bins = $3, run_bins = $4, ready_oldest = $5
         WHERE name = $1 AND captured_on = $2`,
       [name, capturedOn, bins(wait), bins(run), oldest])
   }
@@ -253,7 +253,7 @@ describe('wait and run times', () => {
     const pool = openPool()
     await pool.query(`ALTER TABLE ${ctx.schema}.queue_stats
       DROP COLUMN wait_bins, DROP COLUMN run_bins,
-      DROP COLUMN oldest_ready_seconds`)
+      DROP COLUMN ready_oldest`)
     await pool.end()
 
     const [point] = await getQueueThroughput(ctx.connectionString, ctx.schema, 'tp-latency-old', window)

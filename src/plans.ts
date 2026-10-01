@@ -374,11 +374,11 @@ function createTableVersion (schema: string) {
 // try-lock - without capturedOn claiming a freshness the counts do not have.
 // created_delta / completed_delta / failed_delta are not gauges like the counts beside them: they
 // are how many jobs went through between the previous monitor pass and the latest one. delta_on and
-// delta_seconds are the window those three cover, null until a pass counts. wait_bins
-// and run_bins are the wait and run times of the jobs that finished in that window, as histograms of
-// LATENCY_SLOTS counts (see LATENCY_BINS), and oldest_ready_seconds is how long the oldest job ready to
-// run had waited at the pass. Like the deltas, all of them are null until a pass counts, and a pass
-// that counts writes a value: all zeros when nothing finished, 0 when nothing was waiting.
+// delta_seconds are the window those three cover, null until a pass counts. wait_bins and run_bins
+// are the wait and run times of the jobs that finished in that window, as histograms of LATENCY_SLOTS
+// counts (see LATENCY_BINS), and ready_oldest is how long, in seconds, the oldest job ready to run had
+// waited at the pass. Like the deltas, all of them are null until a pass counts, and a pass that
+// counts writes a value: all zeros when nothing finished, 0 when nothing was waiting.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -409,7 +409,7 @@ function createTableQueue (schema: string) {
       delta_seconds int,
       wait_bins int[],
       run_bins int[],
-      oldest_ready_seconds int,
+      ready_oldest int,
       ready_history int[] NOT NULL default '{}',
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
@@ -1873,7 +1873,7 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       delta_on        timestamptz,
       wait_bins       int[],
       run_bins        int[],
-      oldest_ready_seconds int,
+      ready_oldest int,
       captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
@@ -1973,10 +1973,10 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
     INSERT INTO ${schema}.queue_stats
       (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
        created_delta, completed_delta, failed_delta, delta_seconds, delta_on,
-       wait_bins, run_bins, oldest_ready_seconds, captured_on)
+       wait_bins, run_bins, ready_oldest, captured_on)
     SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count,
            created_delta, completed_delta, failed_delta, delta_seconds, delta_on,
-           wait_bins, run_bins, oldest_ready_seconds, ${schema}.job_now()
+           wait_bins, run_bins, ready_oldest, ${schema}.job_now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -2012,7 +2012,7 @@ export function getQueueStatsCache (schema: string): string {
       delta_on        as "deltaOn",
       wait_bins       as "waitBins",
       run_bins        as "runBins",
-      oldest_ready_seconds as "oldestReadySeconds",
+      ready_oldest as "oldestReadySeconds",
       table_name     as "table",
       monitor_on     as "capturedOn",
       (extract(epoch from (${schema}.job_now() - monitor_on)) * 1000)::float8 as "cacheAgeMs",
@@ -2039,7 +2039,7 @@ export function getQueueStatsHistory (schema: string): string {
       delta_on        as "deltaOn",
       wait_bins       as "waitBins",
       run_bins        as "runBins",
-      oldest_ready_seconds as "oldestReadySeconds",
+      ready_oldest as "oldestReadySeconds",
       captured_on    as "capturedOn"
     FROM ${schema}.queue_stats
     WHERE name = $1
@@ -2150,7 +2150,7 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
         sum(failed_delta)::int    as "failedDelta",
         sum(delta_seconds)::int   as "deltaSeconds",
         max(delta_on)             as "deltaOn",
-        max(oldest_ready_seconds) as "oldestReadySeconds"
+        max(ready_oldest) as "oldestReadySeconds"
       FROM ${schema}.queue_stats, w
       WHERE name = $1
         AND delta_on IS NOT NULL
@@ -3881,7 +3881,7 @@ function throughputAssignments (end: string, resetMax?: string): string {
       delta_on = GREATEST(queue.delta_on, ${end}),
       wait_bins = COALESCE(stats."waitBins", ${EMPTY_BINS}),
       run_bins = COALESCE(stats."runBins", ${EMPTY_BINS}),
-      oldest_ready_seconds = COALESCE(stats."oldestReadySeconds", 0),`
+      ready_oldest = COALESCE(stats."oldestReadySeconds", 0),`
 }
 
 // The windows a true-up may still revise, per queue: every recorded snapshot whose window ends
