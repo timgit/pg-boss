@@ -8,8 +8,8 @@ function total (bins: number[]): number {
 }
 
 /**
- * Adds two wait or run histograms slot by slot, so a percentile can be read over several snapshots
- * or queues. Null when both are null.
+ * Combines two wait or run histograms into one by adding their counts bin by bin, as if all their
+ * jobs had been recorded together. A null histogram counts as empty; null only when both are.
  * @see https://pgboss.io/api/utils#addbins-a-b
  */
 export function addBins (a: Bins, b: Bins): number[] | null {
@@ -20,7 +20,7 @@ export function addBins (a: Bins, b: Bins): number[] | null {
 
 /**
  * The time in seconds below which a fraction `p` (0 to 1) of a wait or run histogram's jobs fall,
- * read within its slot on the log scale. Null for an empty histogram.
+ * estimated within its bin. Null for an empty histogram.
  * @see https://pgboss.io/api/utils#percentile-bins-p
  */
 export function percentile (bins: Bins, p: number): number | null {
