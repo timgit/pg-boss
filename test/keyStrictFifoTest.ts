@@ -445,7 +445,7 @@ describe('key_strict_fifo', function () {
 
     await expect(db.executeSql(`
       INSERT INTO ${schema}.job_common (name, data, policy)
-      VALUES ($1, $2, 'key_strict_fifo')
+      VALUES ($1, $2::text::jsonb, 'key_strict_fifo')
     `, [ctx.schema, JSON.stringify({ test: 'data' })]))
       .rejects.toThrow(/singleton_key/)
   })

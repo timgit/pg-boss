@@ -175,6 +175,11 @@ function rethrowWriteError (err: any): never {
   throw err
 }
 
+// For a json value read back from a row and bound again behind `::text::jsonb`. Null stays SQL NULL.
+function toJsonText (value: unknown): string | null {
+  return value == null ? null : JSON.stringify(value)
+}
+
 class Manager extends EventEmitter implements types.EventsMixin {
   events = events
   // Warn once per option per instance, not once per fetch.
@@ -2267,6 +2272,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // still knows where to be redriven. See failJobsBody for the single-statement path.
       const sourceCreatedOn = job.source_created_on_text ?? job.source_created_on
 
+      // The json columns go back as text. Bound as read, a job whose data is an array reaches pg as
+      // a Postgres array literal and a string as bare text, and neither parses as json.
+      const data = toJsonText(job.data)
+      const output = toJsonText(jobOutput)
+      const sourceOutput = toJsonText(job.source_output)
+      const traceContext = toJsonText(job.trace_context)
+
       // forceTerminal (perJobResults `deadletter`) skips retries so the job fails terminally and
       // routes straight to the dead letter queue below.
       const canRetry = !forceTerminal && retryCount < retryLimit
@@ -2290,13 +2302,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // pending_dependencies are preserved so flows and heartbeat detection survive a retry
         // (matches the non-distributed failJobs() CTE).
         const { rows } = await tx.executeSql(insertSql, [
-          job.id, job.name, job.priority, job.data, 'retry', job.retry_limit, job.retry_count,
+          job.id, job.name, job.priority, data, 'retry', job.retry_limit, job.retry_count,
           job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, startedOn,
           job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
-          jobOutput, job.dead_letter,
+          output, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id, job.trace_context
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, sourceOutput, job.source_root_id, traceContext
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2307,18 +2319,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       if (!retried) {
         await tx.executeSql(insertSql, [
-          job.id, job.name, job.priority, job.data, 'failed', job.retry_limit, job.retry_count,
+          job.id, job.name, job.priority, data, 'failed', job.retry_limit, job.retry_count,
           job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfterColumn, startedOn,
           job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
-          jobOutput, job.dead_letter,
+          output, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id, job.trace_context
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, sourceOutput, job.source_root_id, traceContext
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier, job.source_root_id, job.trace_context])
+          await tx.executeSql(dlqSql, [job.dead_letter, data, output, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier, job.source_root_id, traceContext])
         }
       }
 
@@ -2637,10 +2649,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.db.executeSql(sql, [name])
   }
 
+  // A truncate leaves nothing to count, so it zeroes the cached counts after itself. A monitor pass
+  // that read the table first holds it until done, so the truncate and then the zeroes land after
+  // that pass's write.
   async deleteAllJobs (name?: string) {
     if (!name) {
       const sql = plans.truncateTable(this.config.schema, plans.BASE_JOB_TABLE)
       await this.db.executeSql(sql)
+      await this.db.executeSql(plans.zeroQueueStats(this.config.schema))
       return
     }
 
@@ -2650,6 +2666,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (partition) {
       const sql = plans.truncateTable(this.config.schema, table)
       await this.db.executeSql(sql)
+      await this.db.executeSql(plans.zeroQueueStats(this.config.schema, true), [name])
     } else {
       const sql = plans.deleteAllJobs(this.config.schema, table)
       await this.db.executeSql(sql, [name])

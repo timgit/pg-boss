@@ -930,6 +930,46 @@ describe('failure', function () {
     })
   }
 
+  // The distributed path re-inserts a failed job from the row it read, so the data goes back through
+  // the driver as whatever JS value pg parsed it into. A plain object always survived that; an
+  // array reached Postgres as an array literal.
+  for (const [path, distributed] of [['one statement', false], ['statements in a transaction', true]] as const) {
+    for (const [shape, data] of [['an array', [1, 2]], ['an array of objects', [{ n: 1 }, { n: 2 }]]] as const) {
+      it(`retries and dead-letters a job whose data is ${shape} (${path})`, async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__distributed: distributed })
+        const boss = ctx.boss
+        const deadLetter = `${ctx.schema}_dlq`
+        await boss.createQueue(deadLetter)
+        await boss.createQueue(ctx.schema, { deadLetter, retryLimit: 1, retryDelay: 0 })
+
+        const id = await boss.send(ctx.schema, data)
+        assertTruthy(id)
+
+        await boss.fetch(ctx.schema)
+        await boss.fail(ctx.schema, id, { message: 'first' })
+
+        const retried = await boss.getJobById(ctx.schema, id)
+        assertTruthy(retried)
+        expect(retried.state).toBe('retry')
+        expect(retried.data).toEqual(data)
+
+        await boss.fetch(ctx.schema)
+        await boss.fail(ctx.schema, id, { message: 'last' })
+
+        const failed = await boss.getJobById(ctx.schema, id)
+        assertTruthy(failed)
+        expect(failed.state).toBe('failed')
+        expect(failed.data).toEqual(data)
+        expect(failed.output).toMatchObject({ message: 'last' })
+
+        const [copy] = await boss.findJobs(deadLetter)
+        assertTruthy(copy)
+        expect(copy.data).toEqual(data)
+        expect(copy.sourceOutput).toMatchObject({ message: 'last' })
+      })
+    }
+  }
+
   it('should fail active jobs in a worker during shutdown', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

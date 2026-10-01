@@ -170,6 +170,37 @@ describe('queueStats', function () {
     expect(queueData.totalCount).toBe(0)
   })
 
+  // getQueue reads the queue row, so these see the cached counts, never a recount.
+  it('zeroes the cached counts of every queue when all jobs are truncated', async function () {
+    ctx.boss = await init(ctx.bossConfig)
+    await ctx.boss.getQueueStats(queue1, { force: true })
+    await ctx.boss.getQueueStats(queue2, { force: true })
+    expect((await ctx.boss.getQueue(queue1))!.queuedCount).toBe(2)
+
+    await ctx.boss.deleteAllJobs()
+
+    for (const name of [queue1, queue2]) {
+      const queue = await ctx.boss.getQueue(name)
+      expect(queue).toMatchObject({ deferredCount: 0, queuedCount: 0, readyCount: 0, activeCount: 0, failedCount: 0, totalCount: 0 })
+    }
+  })
+
+  helper.itPostgresOnly('zeroes the cached counts of a truncated partitioned queue, and only that queue', async function () {
+    ctx.boss = await init(ctx.bossConfig)
+    const partitioned = `q${randomUUID().replaceAll('-', '')}`
+    await ctx.boss.createQueue(partitioned, { partition: true })
+    await ctx.boss.send(partitioned)
+    await ctx.boss.send(partitioned)
+    await ctx.boss.getQueueStats(partitioned, { force: true })
+    await ctx.boss.getQueueStats(queue1, { force: true })
+    expect((await ctx.boss.getQueue(partitioned))!.queuedCount).toBe(2)
+
+    await ctx.boss.deleteAllJobs(partitioned)
+
+    expect(await ctx.boss.getQueue(partitioned)).toMatchObject({ queuedCount: 0, totalCount: 0 })
+    expect((await ctx.boss.getQueue(queue1))!.queuedCount).toBe(2)
+  })
+
   /**
    * Throughput, which is the one thing the other counts cannot answer: five
    * hundred jobs arriving and five hundred leaving looks identical to a still
