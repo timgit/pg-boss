@@ -30,19 +30,17 @@ export function percentile (bins: Bins, p: number): number | null {
   const n = total(bins)
   if (n === 0) return null
 
+  // Walk to the slot holding the target job. A valid histogram always reaches it; the last slot
+  // stops the walk regardless, so counts that do not add up cannot run past the end.
+  const target = p * n
+  let k = 0
+  let seen = 0
+  while (k < bins.length - 1 && !(bins[k] > 0 && seen + bins[k] >= target)) seen += bins[k++]
+
   // Slot 0 has no lower edge, so a percentile in it is only known to be under 10 ms. The last slot
   // has no upper edge, so a percentile in it is only known to be past its lower edge.
-  const target = p * n
-  let seen = 0
-  for (let k = 0; k < bins.length; k++) {
-    const count = bins[k]
-    if (count > 0 && seen + count >= target) {
-      if (k === 0) return LATENCY_MIN_SECONDS
-      const lo = LATENCY_MIN_SECONDS * Math.SQRT2 ** (k - 1)
-      if (k === bins.length - 1) return lo
-      return lo * Math.SQRT2 ** ((target - seen) / count)
-    }
-    seen += count
-  }
-  return null
+  if (k === 0) return LATENCY_MIN_SECONDS
+  const lo = LATENCY_MIN_SECONDS * Math.SQRT2 ** (k - 1)
+  if (k === bins.length - 1) return lo
+  return lo * Math.SQRT2 ** ((target - seen) / bins[k])
 }
