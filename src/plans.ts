@@ -956,7 +956,8 @@ function createTableJob (schema: string, noPartitioning = false) {
       source_created_on timestamp with time zone,
       source_retry_count int,
       source_output jsonb,
-      source_root_id uuid
+      source_root_id uuid,
+      trace_context jsonb
     ) ${partitionClause}
   `
 }
@@ -1593,6 +1594,10 @@ export function updateQueue (schema: string) {
     FROM options o
     WHERE name = $1
   `
+}
+
+export function currentDatabase () {
+  return 'SELECT current_database() AS name'
 }
 
 export function getQueues (schema: string, names?: string[]): SqlQuery {
@@ -2301,6 +2306,8 @@ interface FetchJobOptions {
   policy: string | undefined
   limit: number
   includeMetadata?: boolean
+  // Returns the job's stored trace context as "__traceContext", which Manager strips off the job.
+  includeTraceContext?: boolean
   priority?: boolean
   orderByCreatedOn?: boolean
   ignoreStartAfter?: boolean
@@ -2403,7 +2410,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
  * exceeds fetch time.
  */
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
+  const { schema, table, name, policy, limit, includeMetadata, includeTraceContext = false, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
@@ -2606,7 +2613,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       WHERE name = '${name}' AND ${updateMatch}
       ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
       ${distributedStateCheck}
-      RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
+      RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}${includeTraceContext ? ', j.trace_context as "__traceContext"' : ''}
     `,
     values: params.values
   }
@@ -2876,7 +2883,8 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       heartbeat_seconds,
       blocked,
       blocking,
-      pending_dependencies
+      pending_dependencies,
+      trace_context
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
@@ -2905,7 +2913,8 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       COALESCE("heartbeatSeconds", q.heartbeat_seconds) as heartbeat_seconds,
       COALESCE(blocked, false) as blocked,
       COALESCE(blocking, false) as blocking,
-      COALESCE("pendingDependencies", 0) as pending_dependencies
+      COALESCE("pendingDependencies", 0) as pending_dependencies,
+      "__traceContext" as trace_context
     FROM (
       SELECT *,
         CASE
@@ -2934,7 +2943,8 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         "heartbeatSeconds" integer,
         blocked boolean,
         blocking boolean,
-        "pendingDependencies" integer
+        "pendingDependencies" integer,
+        "__traceContext" jsonb
       )
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'
@@ -3108,7 +3118,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_created_on,
         source_retry_count,
         source_output,
-        source_root_id
+        source_root_id,
+        trace_context
       )
       SELECT
         id,
@@ -3154,7 +3165,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_created_on,
         source_retry_count,
         source_output,
-        source_root_id
+        source_root_id,
+        trace_context
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -3195,7 +3207,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_created_on,
         source_retry_count,
         source_output,
-        source_root_id
+        source_root_id,
+        trace_context
       )
       SELECT
         id,
@@ -3232,7 +3245,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_created_on,
         source_retry_count,
         source_output,
-        source_root_id
+        source_root_id,
+        trace_context
       FROM deleted_jobs
       WHERE id NOT IN (SELECT id from retried_jobs)
       RETURNING *
@@ -3245,7 +3259,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
     dlq_jobs as (
       INSERT INTO ${schema}.job (name, priority, data, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
         expire_seconds, singleton_key, group_id, group_tier, heartbeat_seconds,
-        source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id)
+        source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id, trace_context)
       SELECT
         r.dead_letter,
         r.priority,
@@ -3267,7 +3281,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         r.created_on,
         r.retry_count,
         r.output,
-        COALESCE(r.source_root_id, r.id)
+        COALESCE(r.source_root_id, r.id),
+        r.trace_context
       FROM results r
         JOIN ${schema}.queue q ON q.name = r.dead_letter
       WHERE state = '${JOB_STATES.failed}'
@@ -3485,10 +3500,10 @@ export function insertRetryJob (schema: string, table: string): string {
       group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
       keep_until, policy, output, dead_letter,
       heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies,
-      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id
+      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id, trace_context
     ) VALUES (
       $1, $2, $3, $4::text::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-      $23::text::jsonb, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34::text::jsonb, $35
+      $23::text::jsonb, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34::text::jsonb, $35, $36::text::jsonb
     ) ON CONFLICT DO NOTHING
     RETURNING id
   `
@@ -3498,10 +3513,10 @@ export function insertDeadLetterJob (schema: string): string {
   return `
     INSERT INTO ${schema}.job (name, data, priority, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
       expire_seconds, singleton_key, group_id, group_tier, heartbeat_seconds,
-      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id)
+      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id, trace_context)
     SELECT $1, $2::text::jsonb, $9, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
       q.expire_seconds, $8, $10, $11, q.heartbeat_seconds,
-      $4, $5, $6, $7, $3::text::jsonb, COALESCE($12::uuid, $5::uuid)
+      $4, $5, $6, $7, $3::text::jsonb, COALESCE($12::uuid, $5::uuid), $13::text::jsonb
     FROM ${schema}.queue q WHERE q.name = $1
   `
 }
@@ -3542,14 +3557,14 @@ function redriveWhere (schema: string, table: string): string {
 // Job-identity columns (priority, singleton_key, group_id, group_tier) are carried over instead.
 const REDRIVE_INSERT_COLUMNS = `(id, name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
        expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
-       heartbeat_seconds, dead_letter, source_root_id)`
+       heartbeat_seconds, dead_letter, source_root_id, trace_context)`
 
 function redriveInsertValues (schema: string, newId: string, destination: string): string {
   return `${newId}, COALESCE(${destination}, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
       q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
       ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
       m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter,
-      COALESCE(m.source_root_id, m.source_id)`
+      COALESCE(m.source_root_id, m.source_id), m.trace_context`
 }
 
 // What a job that could not be re-created becomes: failed, in place, in the dead letter queue, with

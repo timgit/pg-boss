@@ -709,6 +709,7 @@ export type {
   ConstraintDrift,
   EnumDrift,
   OffWorkOptions,
+  OpenTelemetryOptions,
   PgBossEventMap,
   PreviewScheduleOptions,
   Queue,

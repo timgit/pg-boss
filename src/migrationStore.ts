@@ -2050,6 +2050,8 @@ AS $function$
       // snapshot captured before the columns reads as not counted rather than as a queue with no waits.
       // The instance registry: which PgBoss objects share this database, written by each one on its
       // own heartbeat.
+      // The trace context of the send() that created a job, so the span processing it can join the
+      // producer's trace. Nullable with no default, so adding it rewrites no rows.
       install: [
         /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
         `CREATE TABLE ${schema}.instance (
@@ -2091,7 +2093,8 @@ AS $function$
           ADD COLUMN wait_counts int[],
           ADD COLUMN run_slots smallint[],
           ADD COLUMN run_counts int[],
-          ADD COLUMN oldest_ready_seconds int`
+          ADD COLUMN oldest_ready_seconds int`,
+        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS trace_context jsonb`
       ],
       uninstall: [
         `DROP TABLE ${schema}.instance`,
@@ -2106,7 +2109,8 @@ AS $function$
           DROP COLUMN wait_counts,
           DROP COLUMN run_slots,
           DROP COLUMN run_counts,
-          DROP COLUMN oldest_ready_seconds`
+          DROP COLUMN oldest_ready_seconds`,
+        `ALTER TABLE ${schema}.job DROP COLUMN trace_context`
       ]
     }
   ]

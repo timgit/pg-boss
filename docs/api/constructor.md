@@ -324,6 +324,12 @@ Int, default 30
 
 How often this instance refreshes its registry row. It reads as quiet, rather than live, once three heartbeats are missed. Must be from 1 to 3600.
 
+### `openTelemetry`
+
+Object, see [OpenTelemetry](../opentelemetry.md#options)
+
+Tracing and metrics through the OpenTelemetry API. On by default, and a no-op until the application registers an OpenTelemetry SDK. `enabled: false` turns it off.
+
 ## Testing
 
 These options exist for tests. Leave them unset in production.

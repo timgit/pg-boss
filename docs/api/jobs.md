@@ -337,32 +337,40 @@ Create multiple jobs in one request with an array of objects.
 
 The contract and supported features are slightly different than `send()`, which is why this function is named independently. For example, debouncing is not supported, and it doesn't return job IDs unless spies are enabled or `options.returnId` is set to `true`.
 
-The following contract is a typescript defintion of the expected object. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
+Each job is an object of this shape:
 
 ```ts
 interface JobInsert<T = object> {
-  id?: string,
+  id?: string;
   data?: T;
   priority?: number;
   retryLimit?: number;
   retryDelay?: number;
   retryBackoff?: boolean;
-  startAfter?: Date | string;
+  retryDelayMax?: number;
+  startAfter?: number | string | Date;
   singletonKey?: string;
+  singletonSeconds?: number;
   expireInSeconds?: number;
-  heartbeatSeconds?: number;
   deleteAfterSeconds?: number;
+  retentionSeconds?: number;
+  heartbeatSeconds?: number;
   group?: { id: string; tier?: string };
+  deadLetter?: string;
 }
 ```
 
-A `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
+Each field works like the `send()` option of the same name, and a `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
+
+Returns a `Promise<string[] | null>`. Without `returnId: true` it always resolves to `null`. With `returnId: true` it resolves to the ids of the jobs that were inserted, or to `null` when no jobs were inserted, including when the array passed in is empty. It never resolves to an empty array. Add `?? []`, as in the example below, to always get an array back.
+
+Behind the scenes, `insert()` is a single `INSERT` statement. An error on any job, such as a value of the wrong type, rolls back the whole batch. A job that conflicts with an existing one is skipped, and the rest of the batch is still inserted. Conflicts are a duplicate `id`, a second job in the same `singletonSeconds` throttle slot, or a second queued job for the same `singletonKey` on a queue whose [policy](./queues#createqueue-name-queue) allows only one (`short`, `stately` or `exclusive`). The returned ids can then be fewer than the jobs passed in, and they are not guaranteed to line up with the input by position. If you need to align the input jobs with the output ids, you should set each job's `id` in the input array. Use [`flow()`](#flow-jobs-options) when the batch must be all or nothing, since it rolls back if any job is skipped. With a custom `db`, the insert commits or rolls back with your transaction.
 
 ```js
-const [idA, idB] = await boss.insert('etl', [
+const ids = await boss.insert('etl', [
   { data: { step: 'extract' } },
   { data: { step: 'transform' } }
-], { returnId: true })
+], { returnId: true }) ?? []
 ```
 
 ## Flows

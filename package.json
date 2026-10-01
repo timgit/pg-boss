@@ -17,8 +17,16 @@
     "rrule-temporal": "^2.2.7",
     "serialize-error": "^13.0.2"
   },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/sdk-trace": "^2.11.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@tsconfig/node-ts": "^23.6.4",
@@ -71,6 +79,7 @@
     "readme": "node ./examples/readme.js",
     "docs": "npm run docs:dev --prefix docs",
     "docs:readme": "node ./scripts/sync-readme.js",
+    "docs:anchors": "node ./scripts/check-doc-anchors.mjs",
     "docs:sponsors": "node --env-file-if-exists=.env ./scripts/sync-sponsors.js",
     "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js",
     "test:browser": "vite --config test/browser/vite.config.mjs"
