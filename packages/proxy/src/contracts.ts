@@ -249,6 +249,7 @@ export const queueResultSchema = z.object({
   heartbeatSeconds: z.number().optional(),
   notify: z.boolean().optional(),
   deferredCount: z.number(),
+  blockedCount: z.number(),
   queuedCount: z.number(),
   readyCount: z.number(),
   activeCount: z.number(),

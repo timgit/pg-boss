@@ -64,6 +64,30 @@ describe('queueStats', function () {
     expect(queueData.readyCount).toBe(1)
   })
 
+  it('should count jobs blocked by a flow parent apart from deferred and ready ones', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    await ctx.boss.flow([
+      { ref: 'parent', name: queue },
+      { ref: 'child', name: queue, dependsOn: ['parent'] },
+      // Blocked and deferred at once counts as blocked: it cannot run until the parent finishes.
+      { ref: 'later', name: queue, options: { startAfter: 3600 }, dependsOn: ['parent'] }
+    ])
+    await ctx.boss.send(queue, {}, { startAfter: 100 })
+
+    const [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.queuedCount).toBe(4)
+    expect(stats.deferredCount).toBe(1)
+    expect(stats.readyCount).toBe(1)
+
+    const live = await ctx.boss.getQueue(queue)
+    helper.assertTruthy(live)
+    expect(live.blockedCount).toBe(2)
+    expect(live.deferredCount + live.blockedCount + live.readyCount).toBe(live.queuedCount)
+  })
+
   it('should not let a cancelled deferred job deflate readyCount', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const queue = randomUUID()

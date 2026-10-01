@@ -929,6 +929,13 @@
       },
       {
         "table": "queue",
+        "column": "blocked_count",
+        "type": "integer",
+        "notNull": true,
+        "default": "0"
+      },
+      {
+        "table": "queue",
         "column": "completed_delta",
         "type": "integer",
         "notNull": true,
@@ -2215,6 +2222,13 @@
       {
         "table": "queue",
         "column": "active_count",
+        "type": "integer",
+        "notNull": true,
+        "default": "0"
+      },
+      {
+        "table": "queue",
+        "column": "blocked_count",
         "type": "integer",
         "notNull": true,
         "default": "0"

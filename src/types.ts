@@ -1000,11 +1000,14 @@ export interface Queue extends QueueOptions {
 }
 
 export interface QueueResult extends Queue {
+  /** Queued jobs whose `startAfter` is still ahead and that are not blocked. */
   deferredCount: number;
+  /** Queued jobs waiting on a flow parent, whatever their `startAfter`. */
+  blockedCount: number;
   queuedCount: number;
   /**
-   * Jobs ready to be processed now: `queuedCount - deferredCount` (clamped at 0). This is the
-   * true backlog, `queuedCount` includes deferred (future-dated) jobs that are not yet runnable.
+   * Jobs ready to be processed now: queued, not deferred and not blocked, so `queuedCount` is
+   * `deferredCount + blockedCount + readyCount`.
    */
   readyCount: number;
   activeCount: number;
