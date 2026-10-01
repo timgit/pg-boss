@@ -83,7 +83,7 @@ Each row describes one index that is holding far more pages than its live entrie
 
 **Arguments**
 - `bins`: a [latency histogram](./queues.md#latency-histograms), `waitBins` or `runBins`, or several added with [`addBins()`](#addbins-a-b)
-- `p`: number from 0 to 1, such as `0.95` for the 95th percentile
+- `p`: percent from 1 to 100, such as `95` for the 95th percentile
 
 Returns the time in seconds below which that fraction of the histogram's jobs fall, or `null` for an empty or missing histogram. It is an estimate that always falls in the same bin as the exact value, and with a few thousand jobs it is typically within a few percent of it. A percentile under 10 ms reads as `0.01`.
 
@@ -91,7 +91,7 @@ Returns the time in seconds below which that fraction of the histogram's jobs fa
 import { percentile } from 'pg-boss'
 
 const [stats] = await boss.getQueueStats('email-send')
-const p95 = percentile(stats.waitBins, 0.95)
+const p95 = percentile(stats.waitBins, 95)
 ```
 
 ### `addBins(a, b)`
@@ -114,5 +114,5 @@ import { addBins, percentile } from 'pg-boss'
 const hour = await boss.getQueueStats('email-send', { from: new Date(Date.now() - 3600_000) })
 const waits = hour.reduce((sum, s) => addBins(sum, s.waitBins), null)
 
-console.log(`p95 wait ${percentile(waits, 0.95)?.toFixed(1)} s`)
+console.log(`p95 wait ${percentile(waits, 95)?.toFixed(1)} s`)
 ```
