@@ -128,17 +128,11 @@ const STATS_COUNT_FIELDS = [
   'totalCount'
 ] as const
 
-// A snapshot's histogram as the row holds it, sparse: the used slots and beside them their counts,
-// from a recorded pass or added up over a bucket. Handed out whole, LATENCY_SLOTS counts. Null when
-// no pass counted it; all zeros when one did and nothing finished. CockroachDB hands integers over as
-// strings.
-function expandBins (slots: unknown, counts: unknown, measured: boolean): number[] | null {
-  if (!measured) return null
-  const bins = new Array(plans.LATENCY_SLOTS).fill(0)
-  if (Array.isArray(slots) && Array.isArray(counts)) {
-    slots.forEach((slot, i) => { bins[Number(slot)] += Number(counts[i]) })
-  }
-  return bins
+// A snapshot's histogram as the row holds it, LATENCY_SLOTS counts from a recorded pass or added up
+// over a bucket. Null when no pass counted it; all zeros when one did and nothing finished. A bucket's
+// sums are bigint, which node-postgres and CockroachDB both hand over as strings.
+function toBins (bins: unknown): number[] | null {
+  return Array.isArray(bins) ? bins.map(Number) : null
 }
 
 // The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
@@ -2739,10 +2733,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (counted && row?.deltaOn != null) snapshot.deltaOn = row.deltaOn
 
       if (counted) {
-        // A recorded pass counted if it holds slots at all, empty included; a bucket says so itself.
-        const measured = row?.latencyMeasured != null ? Boolean(row.latencyMeasured) : row?.waitSlots != null
-        snapshot.waitBins = expandBins(row?.waitSlots, row?.waitCounts, measured)
-        snapshot.runBins = expandBins(row?.runSlots, row?.runCounts, measured)
+        snapshot.waitBins = toBins(row?.waitBins)
+        snapshot.runBins = toBins(row?.runBins)
         if (row?.oldestReadySeconds != null) snapshot.oldestReadySeconds = Number(row.oldestReadySeconds)
       }
 
