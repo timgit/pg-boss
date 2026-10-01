@@ -1,7 +1,7 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
-import { percentile } from '../src/index.ts'
+import { addBins, percentile } from '../src/index.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
@@ -931,6 +931,68 @@ describe('queueStats', function () {
         expect(bucket.runBins![5]).toBe(4)
         expect(bucket.waitBins).toHaveLength(plans.LATENCY_SLOTS)
         expect(bucket.readyOldestSeconds).toBe(75)
+      })
+
+      it('reads the percentiles asked for from each snapshot, and from each bucket\'s added histograms', async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+        const to = new Date(hour - 1)
+        const db = await helper.getDb()
+        const schema = ctx.bossConfig.schema
+        await ensurePreviousDayPartition(db, schema)
+        await db.executeSql(
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
+             wait_bins, run_bins, ready_oldest_seconds)
+           VALUES ($1, 10, 60, $2::timestamptz - interval '60 seconds', $2, $4, $6, 40),
+                  ($1, 10, 60, $3::timestamptz - interval '60 seconds', $3, $5, $7, 75)`,
+          [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000),
+            literal({ 4: 9, 20: 1 }), literal({ 8: 5, 30: 5 }), literal({ 6: 10 }), literal({ 12: 10 })]
+        )
+        const ps = [0.5, 0.95]
+
+        const snapshots = await ctx.boss.getQueueStats(queue, { to, percentiles: ps })
+        expect(snapshots).toHaveLength(2)
+        for (const s of snapshots) {
+          expect(s.waitPercentiles).toEqual(ps.map(p => percentile(s.waitBins, p)))
+          expect(s.runPercentiles).toEqual(ps.map(p => percentile(s.runBins, p)))
+          expect(s.waitPercentiles!.every(v => v !== null)).toBe(true)
+        }
+
+        // A bucket's percentile is read from its added histograms, not averaged from its snapshots'.
+        const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to, percentiles: ps })
+        const added = addBins(snapshots[0].waitBins, snapshots[1].waitBins)
+        expect(bucket.waitPercentiles).toEqual(ps.map(p => percentile(added, p)))
+        const averaged = (snapshots[0].waitPercentiles![1]! + snapshots[1].waitPercentiles![1]!) / 2
+        expect(bucket.waitPercentiles![1]).not.toBeCloseTo(averaged, 3)
+
+        // Without the option, the fields are absent.
+        const [plain] = await ctx.boss.getQueueStats(queue, { to })
+        expect(plain).not.toHaveProperty('waitPercentiles')
+      })
+
+      it('reads null percentiles where there are no histograms to read them from', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        // persistQueueStats off: a live reading, which carries no histograms
+        const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [0.5, 0.95] })
+        expect(stats.waitBins).toBe(null)
+        expect(stats.waitPercentiles).toEqual([null, null])
+        expect(stats.runPercentiles).toEqual([null, null])
+      })
+
+      it('refuses percentiles outside 0 to 1, or none at all', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        for (const percentiles of [[95], [-0.1], [], ['0.5']] as any[]) {
+          await expect(ctx.boss.getQueueStats(queue, { percentiles })).rejects.toThrow('percentiles must be')
+        }
       })
 
       it('reports zeros, not null, for a bucket whose passes counted and saw nothing finish', async function () {

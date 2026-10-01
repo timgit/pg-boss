@@ -655,6 +655,25 @@ describe('proxy api routes', () => {
     expect(call[1].maxDataPoints).toBe(100)
   })
 
+  it('GET getQueueStats reads percentiles as a comma-separated list', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const res = await app.fetch(new Request('http://local/api/getQueueStats?name=queue&percentiles=0.5,0.95', { method: 'GET' }))
+    expect(res.status).toBe(200)
+    expect(calls.get('getQueueStats')?.[0]).toEqual(['queue', { percentiles: [0.5, 0.95] }])
+  })
+
+  it('GET getQueueStats rejects percentiles outside 0 to 1', async () => {
+    const { boss } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    for (const value of ['95', '0.5,abc', '']) {
+      const res = await app.fetch(new Request(`http://local/api/getQueueStats?name=queue&percentiles=${value}`, { method: 'GET' }))
+      expect(res.status, value).toBe(400)
+    }
+  })
+
   it('GET getQueueStats rejects invalid numeric params', async () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
