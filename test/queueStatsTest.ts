@@ -837,6 +837,15 @@ describe('queueStats', function () {
           `UPDATE ${schema}.job SET created_on = created_on - interval '90 seconds', start_after = start_after - interval '90 seconds'
            WHERE name = $1 AND id = $2`, [queue, ready])
 
+        // A job blocked by a parent is not ready however long ago it was sent.
+        const flow = await ctx.boss.flow([
+          { ref: 'parent', name: queue, options: { startAfter: 3600 } },
+          { ref: 'child', name: queue, dependsOn: ['parent'] }
+        ])
+        await db.executeSql(
+          `UPDATE ${schema}.job SET created_on = created_on - interval '2 hours', start_after = start_after - interval '2 hours'
+           WHERE name = $1 AND id = $2`, [queue, flow.child])
+
         const row = await monitorPass(queue)
         expect(row.readyOldestSeconds).toBeGreaterThanOrEqual(89)
         expect(row.readyOldestSeconds).toBeLessThan(120)
