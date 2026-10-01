@@ -307,14 +307,14 @@ The deltas are eventually consistent rather than up to the second. A job lands i
 
 `waitBins` and `runBins` are histograms: 48 bins, each counting the jobs whose time fell in its range. The bins are spaced logarithmically, each about 1.4 times as wide as the one before, so they cover everything from under 10 ms to about 23 hours with the same relative precision for fast jobs and slow ones.
 
-Histograms add up, but percentiles don't: averaging the p95 of several snapshots does not give their p95. To read a percentile over several snapshots or queues, add their histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p). With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up.
+To read percentiles, pass the `percentiles` option:
 
 ```js
-import { addBins, percentile } from 'pg-boss'
-
-const hour = await boss.getQueueStats('email-send', { from: new Date(Date.now() - 3600_000) })
-const p95 = percentile(hour.reduce((sum, s) => addBins(sum, s.waitBins), null), 0.95)
+const series = await boss.getQueueStats('email-send', { maxDataPoints: 300, percentiles: [0.5, 0.95] })
+// each snapshot also carries waitPercentiles: [p50, p95] and runPercentiles: [p50, p95]
 ```
+
+Histograms add up, but percentiles don't: averaging the p95 of several snapshots does not give their p95. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up before its percentiles are read. For a single percentile over a whole window, or across several queues, add their histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p).
 
 In `queue_stats` they are stored as the `int[]` columns `wait_bins` and `run_bins`, with `NULL` in a bin no job landed in, so coalesce them when adding them up in SQL.
 
