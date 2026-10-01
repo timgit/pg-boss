@@ -181,21 +181,53 @@ await boss.deleteQueue('email-send')
 Returns all queues, or only the named queues when an array of names is provided.
 
 ```js
-const queues = await boss.getQueues()
-
-for (const queue of queues) {
-  console.log(`${queue.name}: ${queue.queuedCount} queued, ${queue.activeCount} active`)
-}
+const queues = await boss.getQueues(['email-send'])
+// [
+//   {
+//     name: 'email-send',
+//     policy: 'standard',
+//     partition: false,
+//     deadLetter: null,
+//     retryLimit: 2,
+//     retryDelay: 0,
+//     retryBackoff: false,
+//     retryDelayMax: null,
+//     expireInSeconds: 900,
+//     retentionSeconds: 1209600,
+//     deleteAfterSeconds: 604800,
+//     heartbeatSeconds: null,
+//     warningQueueSize: 0,
+//     notify: false,
+//     queuedCount: 1550,
+//     deferredCount: 40,
+//     blockedCount: 10,
+//     readyCount: 1500,
+//     activeCount: 20,
+//     failedCount: 3,
+//     totalCount: 100103,
+//     createdDelta: 180,
+//     completedDelta: 237,
+//     failedDelta: 0,
+//     deltaSeconds: 60,
+//     deltaOn: 2026-10-01T19:54:02.041Z,
+//     waitBins: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, … 48 counts],
+//     runBins: [0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 40, 50, 56, 84, 0, … 48 counts],
+//     readyOldestSeconds: 3407,
+//     singletonsActive: null,
+//     table: 'job_common',
+//     createdOn: 2026-09-30T22:10:52.821Z,
+//     updatedOn: 2026-09-30T22:10:52.821Z
+//   }
+// ]
 ```
 
-Each queue also carries `blockedCount`, its queued jobs waiting on a [`flow()`](./jobs.md#flow-jobs-options) parent, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
+The settings are described under [`createQueue()`](#createqueue-name-queue), and the counts and the monitor pass fields (the deltas, `waitBins`, `runBins` and `readyOldestSeconds`) under [`getQueueStats()`](#getqueuestats-name-options). The rest:
 
-Each queue also carries the latest monitor pass's `createdDelta`, `completedDelta`,
-`failedDelta`, `deltaSeconds`, `deltaOn`, `waitBins`, `runBins` and `readyOldestSeconds` (see
-[`getQueueStats()`](#getqueuestats-name-options)). They are whatever the last pass that counted
-wrote, whichever instance ran it, and they are not revised for late commits the way the history
-is. The counters are `0`, and the rest `null`, until an instance with `persistQueueStats` on has
-counted the queue.
+* `blockedCount`: queued jobs waiting on a [`flow()`](./jobs.md#flow-jobs-options) parent, so `queuedCount` is `deferredCount + blockedCount + readyCount`
+* `singletonsActive`: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none
+* `table`: the table the queue's jobs are stored in, `job_common` unless the queue is partitioned
+* `createdOn`: when the queue was created
+* `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed it, or when it was created if it never has
 
 ### `getQueue(name)`
 
