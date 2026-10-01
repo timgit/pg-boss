@@ -303,7 +303,7 @@ export interface QueueStats {
 
 /** One percentile of a snapshot's wait and run times, in seconds. Null where the snapshot has no histograms. */
 export interface QueueStatsPercentile {
-  /** The percentile asked for, from 0 to 1. */
+  /** The percentile asked for, from 1 to 100. */
   p: number;
   waitSeconds: number | null;
   runSeconds: number | null;
@@ -341,8 +341,8 @@ export interface QueueStatsOptions {
    */
   aggregate?: 'max' | 'min' | 'avg';
   /**
-   * Percentiles to read from each snapshot's wait and run histograms, as fractions from 0 to 1, such
-   * as `[0.5, 0.95]`. Each snapshot then carries a `percentiles` list, one entry per distinct value.
+   * Percentiles to read from each snapshot's wait and run histograms, as percents from 1 to 100, such
+   * as `[50, 95, 99.9]`. Each snapshot then carries a `percentiles` list, one entry per distinct value.
    * @see https://pgboss.io/api/queues#latency-histograms
    */
   percentiles?: number[];

@@ -252,7 +252,7 @@ Behavior depends on whether stats are being persisted:
   `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
 * When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
 
-`percentiles` (array of numbers from 0 to 1, such as `[0.5, 0.95]`) reads those percentiles from each snapshot's [latency histograms](#latency-histograms), adding a `percentiles` list to it: one entry per distinct value asked for, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled, so averaging them across snapshots does not give the percentile over the whole range; see [`addBins()`](./utils.md#addbins-a-b) for that.
+`percentiles` (array of percents from 1 to 100, such as `[50, 95, 99.9]`) reads those percentiles from each snapshot's [latency histograms](#latency-histograms), adding a `percentiles` list to it: one entry per distinct value asked for, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled, so averaging them across snapshots does not give the percentile over the whole range; see [`addBins()`](./utils.md#addbins-a-b) for that.
 
 ```js
 // current queue depth (single snapshot when persistQueueStats is disabled)
@@ -265,7 +265,7 @@ const series = await boss.getQueueStats('email-send', {
   to: new Date(),
   maxDataPoints: 300,
   aggregate: 'max',
-  percentiles: [0.5, 0.95] // p50 and p95 wait and run time per bucket
+  percentiles: [50, 95] // p50 and p95 wait and run time per bucket
 })
 // [
 //   {
@@ -286,8 +286,8 @@ const series = await boss.getQueueStats('email-send', {
 //     readyOldestSeconds: 0,
 //     capturedOn: 2026-10-01T19:50:24.000Z,
 //     percentiles: [
-//       { p: 0.5, waitSeconds: 0.281, runSeconds: 1.254 },
-//       { p: 0.95, waitSeconds: 0.616, runSeconds: 2.397 }
+//       { p: 50, waitSeconds: 0.281, runSeconds: 1.254 },
+//       { p: 95, waitSeconds: 0.616, runSeconds: 2.397 }
 //     ]
 //   },
 //   … one per bucket
@@ -335,8 +335,8 @@ The deltas are eventually consistent rather than up to the second. A job lands i
 To read percentiles, pass the `percentiles` option:
 
 ```js
-const series = await boss.getQueueStats('email-send', { maxDataPoints: 300, percentiles: [0.5, 0.95] })
-// each snapshot also carries percentiles: [{ p: 0.5, waitSeconds, runSeconds }, { p: 0.95, waitSeconds, runSeconds }]
+const series = await boss.getQueueStats('email-send', { maxDataPoints: 300, percentiles: [50, 95] })
+// each snapshot also carries percentiles: [{ p: 50, waitSeconds, runSeconds }, { p: 95, waitSeconds, runSeconds }]
 ```
 
 Histograms add up, but percentiles don't: averaging the p95 of several snapshots does not give their p95. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up before its percentiles are read. For a single percentile over a whole window, or across several queues, add their histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p).

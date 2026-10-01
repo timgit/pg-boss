@@ -659,16 +659,16 @@ describe('proxy api routes', () => {
     const { boss, calls } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
-    const res = await app.fetch(new Request('http://local/api/getQueueStats?name=queue&percentiles=0.5,0.95', { method: 'GET' }))
+    const res = await app.fetch(new Request('http://local/api/getQueueStats?name=queue&percentiles=50,95,99.9', { method: 'GET' }))
     expect(res.status).toBe(200)
-    expect(calls.get('getQueueStats')?.[0]).toEqual(['queue', { percentiles: [0.5, 0.95] }])
+    expect(calls.get('getQueueStats')?.[0]).toEqual(['queue', { percentiles: [50, 95, 99.9] }])
   })
 
-  it('GET getQueueStats rejects percentiles outside 0 to 1', async () => {
+  it('GET getQueueStats rejects percentiles outside 1 to 100', async () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
-    for (const value of ['95', '0.5,abc', '']) {
+    for (const value of ['0.95', '101', '50,abc', '']) {
       const res = await app.fetch(new Request(`http://local/api/getQueueStats?name=queue&percentiles=${value}`, { method: 'GET' }))
       expect(res.status, value).toBe(400)
     }

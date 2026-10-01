@@ -2706,8 +2706,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     Attorney.assertQueueName(name)
 
     assert(options.percentiles === undefined || (Array.isArray(options.percentiles) && options.percentiles.length > 0 &&
-      options.percentiles.every(p => typeof p === 'number' && p >= 0 && p <= 1)),
-    'getQueueStats: percentiles must be a non-empty array of numbers from 0 to 1')
+      options.percentiles.every(p => typeof p === 'number' && p >= 1 && p <= 100)),
+    'getQueueStats: percentiles must be a non-empty array of percents from 1 to 100, such as [50, 95]')
     // Each value once, in the order first asked for.
     const percentiles = options.percentiles && [...new Set(options.percentiles)]
 

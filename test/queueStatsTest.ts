@@ -769,11 +769,11 @@ describe('queueStats', function () {
         await monitorPass(queue)
 
         const { waitBins } = (await ctx.boss.getQueue(queue))!
-        for (const p of [0.1, 0.5, 0.9, 1]) {
-          const exact = waits[Math.max(Math.ceil(p * waits.length) - 1, 0)]
+        for (const p of [10, 50, 90, 100]) {
+          const exact = waits[Math.max(Math.ceil(p / 100 * waits.length) - 1, 0)]
           const ratio = percentile(waitBins, p)! / exact
-          expect(ratio, `p${p * 100}`).toBeGreaterThanOrEqual(Math.SQRT1_2)
-          expect(ratio, `p${p * 100}`).toBeLessThanOrEqual(Math.SQRT2)
+          expect(ratio, `p${p}`).toBeGreaterThanOrEqual(Math.SQRT1_2)
+          expect(ratio, `p${p}`).toBeLessThanOrEqual(Math.SQRT2)
         }
       })
 
@@ -951,7 +951,7 @@ describe('queueStats', function () {
           [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000),
             literal({ 4: 9, 20: 1 }), literal({ 8: 5, 30: 5 }), literal({ 6: 10 }), literal({ 12: 10 })]
         )
-        const ps = [0.5, 0.95]
+        const ps = [50, 95]
 
         const snapshots = await ctx.boss.getQueueStats(queue, { to, percentiles: ps })
         expect(snapshots).toHaveLength(2)
@@ -964,7 +964,7 @@ describe('queueStats', function () {
         const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to, percentiles: ps })
         const added = addBins(snapshots[0].waitBins, snapshots[1].waitBins)
         expect(bucket.percentiles!.map(e => e.waitSeconds)).toEqual(ps.map(p => percentile(added, p)))
-        const p95 = (s: typeof bucket) => s.percentiles!.find(e => e.p === 0.95)!.waitSeconds!
+        const p95 = (s: typeof bucket) => s.percentiles!.find(e => e.p === 95)!.waitSeconds!
         const averaged = (p95(snapshots[0]) + p95(snapshots[1])) / 2
         expect(p95(bucket)).not.toBeCloseTo(averaged, 3)
 
@@ -979,11 +979,11 @@ describe('queueStats', function () {
         await ctx.boss.createQueue(queue)
 
         // persistQueueStats off: a live reading, which carries no histograms
-        const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [0.5, 0.95] })
+        const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [50, 95] })
         expect(stats.waitBins).toBe(null)
         expect(stats.percentiles).toEqual([
-          { p: 0.5, waitSeconds: null, runSeconds: null },
-          { p: 0.95, waitSeconds: null, runSeconds: null }
+          { p: 50, waitSeconds: null, runSeconds: null },
+          { p: 95, waitSeconds: null, runSeconds: null }
         ])
       })
 
@@ -992,16 +992,16 @@ describe('queueStats', function () {
         const queue = randomUUID()
         await ctx.boss.createQueue(queue)
 
-        const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [0.95, 0.5, 0.95, 0.5, 0.99] })
-        expect(stats.percentiles!.map(e => e.p)).toEqual([0.95, 0.5, 0.99])
+        const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [95, 50, 95, 50, 99.9] })
+        expect(stats.percentiles!.map(e => e.p)).toEqual([95, 50, 99.9])
       })
 
-      it('refuses percentiles outside 0 to 1, or none at all', async function () {
+      it('refuses percentiles outside 1 to 100, fractions meant as percents, or none at all', async function () {
         ctx.boss = await helper.start(ctx.bossConfig)
         const queue = randomUUID()
         await ctx.boss.createQueue(queue)
 
-        for (const percentiles of [[95], [-0.1], [], ['0.5']] as any[]) {
+        for (const percentiles of [[0.95], [101], [0], [], ['50']] as any[]) {
           await expect(ctx.boss.getQueueStats(queue, { percentiles })).rejects.toThrow('percentiles must be')
         }
       })

@@ -204,9 +204,9 @@ const queueStatsQuerySchema = z.object({
   bucketSeconds: z.coerce.number().int().positive().optional(),
   maxDataPoints: z.coerce.number().int().positive().optional(),
   aggregate: z.enum(['max', 'min', 'avg']).optional(),
-  // A comma-separated list, such as percentiles=0.5,0.95
+  // A comma-separated list of percents, such as percentiles=50,95
   percentiles: z.string().transform((v) => v.split(',').map((p) => (p.trim() === '' ? NaN : Number(p))))
-    .pipe(z.array(z.number().min(0).max(1)).min(1)).optional(),
+    .pipe(z.array(z.number().min(1).max(100)).min(1)).optional(),
   force: z.enum(['true', 'false']).transform((v) => v === 'true').optional()
 })
 

@@ -19,12 +19,12 @@ export function addBins (a: Bins, b: Bins): number[] | null {
 }
 
 /**
- * The time in seconds below which a fraction `p` (0 to 1) of a wait or run histogram's jobs fall,
- * estimated within its bin. Null for an empty histogram.
+ * The time in seconds below which `p` percent (1 to 100) of a wait or run histogram's jobs fall,
+ * estimated within its bin, so `percentile(bins, 95)` is the p95. Null for an empty histogram.
  * @see https://pgboss.io/api/utils#percentile-bins-p
  */
 export function percentile (bins: Bins, p: number): number | null {
-  assert(p >= 0 && p <= 1, 'percentile: p must be between 0 and 1')
+  assert(typeof p === 'number' && p >= 1 && p <= 100, 'percentile: p must be a percent from 1 to 100, such as 95')
   if (!bins) return null
 
   const n = total(bins)
@@ -32,7 +32,7 @@ export function percentile (bins: Bins, p: number): number | null {
 
   // Walk to the slot holding the target job. A valid histogram always reaches it; the last slot
   // stops the walk regardless, so counts that do not add up cannot run past the end.
-  const target = p * n
+  const target = p / 100 * n
   let k = 0
   let seen = 0
   while (k < bins.length - 1 && !(bins[k] > 0 && seen + bins[k] >= target)) seen += bins[k++]

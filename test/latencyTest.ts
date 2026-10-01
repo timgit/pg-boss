@@ -54,7 +54,7 @@ const DISTRIBUTIONS: Record<string, () => number> = {
 describe('latency histograms', function () {
   it('reads a percentile within its slot, on the log scale', function () {
     // 100 jobs, all in slot 10: the median is halfway through the slot on the log scale
-    const p50 = percentile(bins({ 10: 100 }), 0.5)!
+    const p50 = percentile(bins({ 10: 100 }), 50)!
     expect(p50).toBeCloseTo(edge(10) * Math.SQRT2 ** 0.5, 10)
     expect(p50).toBeGreaterThan(edge(10))
     expect(p50).toBeLessThan(edge(11))
@@ -62,34 +62,37 @@ describe('latency histograms', function () {
 
   it('finds the slot the percentile falls in', function () {
     const h = bins({ 5: 90, 20: 10 })
-    expect(percentile(h, 0.9)).toBeLessThanOrEqual(edge(6))
-    expect(percentile(h, 0.95)).toBeGreaterThan(edge(20))
-    expect(percentile(h, 0.95)).toBeLessThan(edge(21))
+    expect(percentile(h, 90)).toBeLessThanOrEqual(edge(6))
+    expect(percentile(h, 95)).toBeGreaterThan(edge(20))
+    expect(percentile(h, 95)).toBeLessThan(edge(21))
   })
 
   it('answers 10 ms for a percentile under 10 ms, and the last slot\'s lower edge past it', function () {
-    expect(percentile(bins({ 0: 5 }), 0.5)).toBe(0.01)
-    expect(percentile(bins({ [LATENCY_SLOTS - 1]: 5 }), 0.99)).toBe(edge(LATENCY_SLOTS - 1))
+    expect(percentile(bins({ 0: 5 }), 50)).toBe(0.01)
+    expect(percentile(bins({ [LATENCY_SLOTS - 1]: 5 }), 99)).toBe(edge(LATENCY_SLOTS - 1))
   })
 
-  it('skips empty slots, so p = 0 is the lower edge of the first slot used', function () {
-    expect(percentile(bins({ 12: 3 }), 0)).toBe(edge(12))
+  it('skips empty slots, so a low percentile falls in the first slot used', function () {
+    const p1 = percentile(bins({ 12: 3 }), 1)!
+    expect(p1).toBeGreaterThan(edge(12))
+    expect(p1).toBeLessThan(edge(13))
   })
 
   it('returns null for an empty or missing histogram', function () {
-    expect(percentile(bins({}), 0.95)).toBe(null)
-    expect(percentile(null, 0.95)).toBe(null)
-    expect(percentile(undefined, 0.95)).toBe(null)
+    expect(percentile(bins({}), 95)).toBe(null)
+    expect(percentile(null, 95)).toBe(null)
+    expect(percentile(undefined, 95)).toBe(null)
   })
 
-  it('refuses a p outside 0 to 1', function () {
-    expect(() => percentile(bins({ 3: 1 }), 95)).toThrow('between 0 and 1')
-    expect(() => percentile(bins({ 3: 1 }), -0.1)).toThrow('between 0 and 1')
+  it('refuses a p outside 1 to 100, including a fraction meant as one', function () {
+    for (const p of [0.95, 0, 101, -5]) {
+      expect(() => percentile(bins({ 3: 1 }), p), String(p)).toThrow('percent from 1 to 100')
+    }
   })
 
   it('reads across slots the way Prometheus reads a native histogram', function () {
     // half the jobs in slot 10, half in slot 11: p75 is halfway through slot 11 on the log scale
-    expect(percentile(bins({ 10: 50, 11: 50 }), 0.75)).toBeCloseTo(edge(11) * Math.SQRT2 ** 0.5, 10)
+    expect(percentile(bins({ 10: 50, 11: 50 }), 75)).toBeCloseTo(edge(11) * Math.SQRT2 ** 0.5, 10)
   })
 
   it('lands within a factor of √2 of the exact percentile, whatever the distribution', function () {
@@ -97,10 +100,10 @@ describe('latency histograms', function () {
       for (const n of [200, 20_000]) {
         const durations = Array.from({ length: n }, draw)
         const histogram = binsOf(durations)
-        for (const p of [0.5, 0.9, 0.95, 0.99]) {
-          const ratio = percentile(histogram, p)! / exact(durations, p)
-          expect(ratio, `${name}, ${n} jobs, p${p * 100}`).toBeGreaterThanOrEqual(Math.SQRT1_2 - 1e-9)
-          expect(ratio, `${name}, ${n} jobs, p${p * 100}`).toBeLessThanOrEqual(Math.SQRT2 + 1e-9)
+        for (const p of [50, 90, 95, 99]) {
+          const ratio = percentile(histogram, p)! / exact(durations, p / 100)
+          expect(ratio, `${name}, ${n} jobs, p${p}`).toBeGreaterThanOrEqual(Math.SQRT1_2 - 1e-9)
+          expect(ratio, `${name}, ${n} jobs, p${p}`).toBeLessThanOrEqual(Math.SQRT2 + 1e-9)
         }
       }
     }
@@ -110,9 +113,9 @@ describe('latency histograms', function () {
     for (const name of ['lognormal', 'uniform', 'pareto']) {
       const durations = Array.from({ length: 20_000 }, DISTRIBUTIONS[name])
       const histogram = binsOf(durations)
-      for (const p of [0.5, 0.9, 0.95]) {
-        const error = Math.abs(percentile(histogram, p)! / exact(durations, p) - 1)
-        expect(error, `${name}, p${p * 100}`).toBeLessThan(0.05)
+      for (const p of [50, 90, 95]) {
+        const error = Math.abs(percentile(histogram, p)! / exact(durations, p / 100) - 1)
+        expect(error, `${name}, p${p}`).toBeLessThan(0.05)
       }
     }
   })
@@ -120,7 +123,7 @@ describe('latency histograms', function () {
   it('reads the same percentile from added histograms as from all the jobs binned together', function () {
     const a = Array.from({ length: 3000 }, DISTRIBUTIONS.lognormal)
     const b = Array.from({ length: 500 }, DISTRIBUTIONS.bimodal)
-    for (const p of [0.5, 0.95, 0.99]) {
+    for (const p of [50, 95, 99]) {
       expect(percentile(addBins(binsOf(a), binsOf(b)), p)).toBe(percentile(binsOf([...a, ...b]), p))
     }
   })
