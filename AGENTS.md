@@ -1,6 +1,6 @@
 # Working on pg-boss
 
-Rules for anyone changing this repo, human or agent. `CLAUDE.md` imports this file.
+Rules for anyone changing this repo, human or agent.
 
 ## Setup and tests
 
