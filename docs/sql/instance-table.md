@@ -22,6 +22,10 @@ CREATE TABLE pgboss.instance (
   pool_idle int,
   pool_waiting int,
   workers jsonb NOT NULL DEFAULT '[]'::jsonb,
+  metrics jsonb,
+  config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  crash_restarts int NOT NULL DEFAULT 0,
+  crash_restarts_since timestamptz,
   started_on timestamptz NOT NULL DEFAULT now(),
   heartbeat_on timestamptz NOT NULL DEFAULT now(),
   stopped_on timestamptz
@@ -39,6 +43,10 @@ CREATE TABLE pgboss.instance (
 | `supervise` … `persist_warnings` | Its constructor options |
 | `pool_max` … `pool_waiting` | Its connection pool at the last heartbeat. Null for a `db` adapter |
 | `workers` | One entry per `work()` call at the last heartbeat |
+| `metrics` | Its process's CPU, memory and event loop at the last heartbeat, against its container's limits. Null until the first sample lands |
+| `config` | The options it runs with, for comparing instances. Connection settings and credentials are never recorded |
+| `crash_restarts` | Lives with this name on this host that ended without `stop()` before this one started |
+| `crash_restarts_since` | When the first of those went quiet. Null when there were none |
 | `started_on`, `heartbeat_on`, `stopped_on` | When it started, last beat, and stopped. A crashed instance never sets `stopped_on` |
 
 ## Querying
