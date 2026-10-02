@@ -61,7 +61,10 @@ Allowed policy values:
 
 * **partition**, boolean, default false
 
-  If set to true, a dedicated table will be created in the partition scheme. This would be more useful for large queues in order to keep it from being a "noisy neighbor". 
+  If set to true, a dedicated table will be created in the partition scheme. This would be more useful for large queues in order to keep it from being a "noisy neighbor": by default every queue's jobs share one table, which a queue that grows large or builds an unexpected backlog can slow down for the others.
+
+  > [!NOTE]
+  > pg-boss keeps jobs in one logical `job` table using Postgres's declarative list partitioning, and each queue created with `partition` gets a partition of its own. According to [the Postgres docs](https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), a partitioning hierarchy handles thousands of partitions well, so decide how many dedicated tables to use by your own needs. If you outgrow that, consider putting queues in separate schemas.
 
 * **deadLetter**, string
 
