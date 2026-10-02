@@ -57,6 +57,8 @@ Allowed policy values:
 >
 > To unblock a key after a permanent failure, you can either delete the failed job using `deleteJob()` or retry it using `retry()`. Use `getBlockedKeys()` to discover which keys are currently blocked due to failed jobs.
 
+**Options**
+
 * **partition**, boolean, default false
 
   If set to true, a dedicated table will be created in the partition scheme. This would be more useful for large queues in order to keep it from being a "noisy neighbor". 
@@ -239,20 +241,52 @@ Returns an array of queue-depth snapshots, most recent first. Each snapshot has 
 
 Behavior depends on whether stats are being persisted:
 
-* When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
+* When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, this returns the recorded time series, filtered and downsampled by the options below.
+* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale.
 
-  Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets:
+**Options**
 
-  * `bucketSeconds` (int): group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
-  * `maxDataPoints` (int): auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
-  * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
+* **from**, Date
 
-  `aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `readyOldestSeconds` is the largest in it. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
+  Only snapshots captured at or after this time. With `persistQueueStats` enabled.
 
-  `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
-* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
+* **to**, Date
 
-`percentiles` (array of percents from 1 to 100, such as `[50, 95, 99.9]`) reads those percentiles from each snapshot's [latency histograms](#latency-histograms), adding a `percentiles` list to it: one entry per distinct value asked for, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled, so averaging them across snapshots does not give the percentile over the whole range; see [`addBins()`](./utils.md#addbins-a-b) for that.
+  Only snapshots captured at or before this time. With `persistQueueStats` enabled.
+
+* **limit**, int, default 1000
+
+  The most snapshots to return, from 1 to 100000, or the most buckets when downsampling. With `persistQueueStats` enabled.
+
+* **force**, boolean, default false
+
+  With `persistQueueStats` disabled, re-count directly from the job table and update the values in the queue table instead of serving the cache. Even this is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
+
+**Downsampling options**
+
+Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets. With `persistQueueStats` enabled.
+
+* **bucketSeconds**, int
+
+  Group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
+
+* **maxDataPoints**, int
+
+  Auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
+
+* **aggregate**, `'max'` | `'min'` | `'avg'`, default `'max'`
+
+  How each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
+
+`aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `readyOldestSeconds` is the largest in it. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
+
+`limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
+
+**Percentile options**
+
+* **percentiles**, array of numbers
+
+  Percents from 1 to 100, such as `[50, 95, 99.9]`, to read from each snapshot's [latency histograms](#latency-histograms). Each snapshot gets a `percentiles` list: one entry per distinct value, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled, so averaging them across snapshots does not give the percentile over the whole range; see [`addBins()`](./utils.md#addbins-a-b) for that.
 
 ```js
 // current queue depth (single snapshot when persistQueueStats is disabled)
