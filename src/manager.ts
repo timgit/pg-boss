@@ -1018,6 +1018,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (this.queues) delete this.queues[name]
   }
 
+  // Replaces a queue's cache entry with its row as it stands, rather than evicting it, so a queue
+  // created again or updated stays in the cache and the queue gauge while still picking up what
+  // changed: new options, or a table that changed under it (deleted and recreated elsewhere with
+  // another partition setting).
+  async #reloadQueueCache (name: string) {
+    if (!this.queues) return
+
+    const queue = await this.getQueue(name)
+
+    if (queue) this.queues[name] = queue
+    else this.#evictQueueCache(name)
+  }
+
   async stop () {
     this.stopped = true
 
@@ -2556,7 +2569,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.createQueue(this.config.schema, name, { ...options, policy }, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
-    this.#evictQueueCache(name)
+    await this.#reloadQueueCache(name)
   }
 
   async getBlockedKeys (name: string): Promise<string[]> {
@@ -2629,7 +2642,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.updateQueue(this.config.schema)
     await this.db.executeSql(sql, [name, options])
-    this.#evictQueueCache(name)
+    await this.#reloadQueueCache(name)
   }
 
   async getQueue (name: string) {

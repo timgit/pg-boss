@@ -508,11 +508,10 @@ describe('openTelemetry', function () {
     await ctx.boss.getQueueStats(ctx.schema, { force: true })
     await ctx.boss.stop({ graceful: false })
 
-    // A new instance loads its queue cache, and so the gauge, from the counts just refreshed. No
-    // default queue: createQueue() would evict the queue from that cache.
+    // A new instance loads its queue cache, and so the gauge, from the counts just refreshed.
     const reader = new CollectingMetricReader()
     const meterProvider = new MeterProvider({ readers: [reader] })
-    ctx.boss = await helper.start({ ...ctx.bossConfig, openTelemetry: { meterProvider }, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, openTelemetry: { meterProvider } })
 
     const points = pointsFor<number>(metric((await reader.collect()).resourceMetrics, 'pgboss.queue.jobs'), { [ATTR.destination]: ctx.schema })
     const valueOf = (state: string) => points.find(point => point.attributes['pgboss.job.state'] === state)?.value
@@ -520,6 +519,28 @@ describe('openTelemetry', function () {
     expect(valueOf('blocked')).toBe(1)
     expect(valueOf('ready')).toBe(1)
     expect(valueOf('deferred')).toBe(0)
+  })
+
+  it('keeps reporting a queue that createQueue() is called on again', async function () {
+    const reader = new CollectingMetricReader()
+    const meterProvider = new MeterProvider({ readers: [reader] })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, openTelemetry: { meterProvider } })
+
+    await ctx.boss.createQueue(ctx.schema)
+
+    const points = pointsFor<number>(metric((await reader.collect()).resourceMetrics, 'pgboss.queue.jobs'), { [ATTR.destination]: ctx.schema })
+    expect(points.map(point => point.attributes['pgboss.job.state']).sort()).toEqual(['active', 'blocked', 'deferred', 'failed', 'ready'])
+  })
+
+  it('keeps reporting a queue that updateQueue() changes', async function () {
+    const reader = new CollectingMetricReader()
+    const meterProvider = new MeterProvider({ readers: [reader] })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, openTelemetry: { meterProvider } })
+
+    await ctx.boss.updateQueue(ctx.schema, { retryLimit: 5 })
+
+    const points = pointsFor<number>(metric((await reader.collect()).resourceMetrics, 'pgboss.queue.jobs'), { [ATTR.destination]: ctx.schema })
+    expect(points.map(point => point.attributes['pgboss.job.state']).sort()).toEqual(['active', 'blocked', 'deferred', 'failed', 'ready'])
   })
 
   it('reports queue gauges through the meterProvider it is given, until it stops', async function () {
