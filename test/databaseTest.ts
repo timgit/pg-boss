@@ -14,6 +14,17 @@ describe('database', function () {
     }).rejects.toThrow()
   })
 
+  // A pool pg-boss opens itself; a db adapter passed in (PGlite here) is the caller's to open.
+  helper.itPglite('refuses work before start(), naming start() in the error', async function () {
+    const boss = new PgBoss(helper.getConfig())
+    const message = 'Call start() before using pg-boss'
+
+    await expect(boss.send('queue')).rejects.toThrow(message)
+    await expect(boss.createQueue('queue')).rejects.toThrow(message)
+    await expect(boss.fetch('queue')).rejects.toThrow(message)
+    await expect(boss.getQueues()).rejects.toThrow(message)
+  })
+
   helper.itPglite('applies session statements to an open pool, and refuses when one is in use', async function () {
     const db = await helper.getDb()
     const statements = ["SET application_name = 'pgboss_session_statements_test'"]

@@ -2935,7 +2935,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     if (this.db._pgbdb) {
-      assert(this.db.opened, 'Database connection is not opened')
+      assert(this.db.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
     }
 
     return this.db
