@@ -185,6 +185,18 @@ function rethrowWriteError (err: any): never {
   throw err
 }
 
+// The foreign key a job insert broke, from the error's constraint field where the driver reports one
+// and from the message otherwise, and the key value it could not find. Bun.SQL carries the SQLSTATE
+// in errno.
+function brokenForeignKey (err: any): { constraint?: string, value?: string } | undefined {
+  if (err?.code !== plans.PG_ERROR.foreignKeyViolation && err?.errno !== plans.PG_ERROR.foreignKeyViolation) return
+
+  const constraint = err.constraint ?? err.constraint_name ?? /foreign key constraint "(\w+)"/.exec(err.message)?.[1]
+  const value = /\)=\('?(.*?)'?\) is not present/.exec(err.detail ?? err.message)?.[1]
+
+  return { constraint, value }
+}
+
 // For a json value read back from a row and bound again behind `::text::jsonb`. Null stays SQL NULL.
 function toJsonText (value: unknown): string | null {
   return value == null ? null : JSON.stringify(value)
@@ -1018,6 +1030,26 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (this.queues) delete this.queues[name]
   }
 
+  // A job insert's foreign keys are what notice a queue deleted after this instance cached it: q_fkey
+  // for the job's own queue, dlq_fkey for its dead letter queue. Both are rewritten into the error a
+  // missing queue gets up front, and a missing queue loses its cache entry so the next call fails
+  // before reaching the database. `names` are the queues the statement wrote to.
+  #rethrowInsertError (err: any, names: string[]): never {
+    const broken = brokenForeignKey(err)
+
+    if (broken?.constraint === 'q_fkey') {
+      const missing = broken.value && names.includes(broken.value) ? [broken.value] : names
+      missing.forEach(name => this.#evictQueueCache(name))
+      throw new Error(`Queue ${missing.join(', ')} does not exist`, { cause: err })
+    }
+
+    if (broken?.constraint === 'dlq_fkey') {
+      throw new Error(broken.value ? `Dead letter queue ${broken.value} does not exist` : 'Dead letter queue does not exist', { cause: err })
+    }
+
+    rethrowWriteError(err)
+  }
+
   // Replaces a queue's cache entry with its row as it stands, rather than evicting it, so a queue
   // created again or updated stays in the cache and the queue gauge while still picking up what
   // changed: new options, or a table that changed under it (deleted and recreated elsewhere with
@@ -1546,8 +1578,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: this.#notifyEnabled(notify) })
+    const insert = () => db.executeSql(sql, [JSON.stringify([job])]).catch(err => this.#rethrowInsertError(err, [name]))
 
-    const { rows: try1 } = await db.executeSql(sql, [JSON.stringify([job])])
+    const { rows: try1 } = await insert()
 
     if (try1.length === 1) {
       const jobId = try1[0].id
@@ -1565,7 +1598,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       job.startAfter = this.getDebounceStartAfter(singletonSeconds!, this.timekeeper!.clockSkew)
       job.singletonOffset = singletonSeconds
 
-      const { rows: try2 } = await db.executeSql(sql, [JSON.stringify([job])])
+      const { rows: try2 } = await insert()
 
       if (try2.length === 1) {
         const jobId = try2[0].id
@@ -1673,6 +1706,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const updatePayload = JSON.stringify(job)
     const insertPayload = JSON.stringify([{ ...job, __traceContext: traceContext }])
 
+    // The catch is outside the transaction: a deferred q_fkey reports at its COMMIT.
     const result = await this.ensureTransaction(db, async (tx) => {
       const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])
       if (updated.length) {
@@ -1691,7 +1725,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const { rows: retry } = await tx.executeSql(updateSql, [updatePayload])
       const jobs = retry.map(row => row.id)
       return { jobs, updated: jobs.length, inserted: 0 }
-    })
+    }).catch(err => this.#rethrowInsertError(err, [name]))
 
     // Track inserted (newly created) jobs for spies, matching createJob/insert. Runs after the
     // transaction commits so a rolled-back insert never leaves a phantom spy entry.
@@ -1817,7 +1851,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId, notify: this.#notifyEnabled(notify), slots })
 
-    const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
+    const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)]).catch(err => this.#rethrowInsertError(err, [name]))
 
     if (rows.length) {
       if (spy) {
@@ -1940,7 +1974,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     try {
       await db.executeSql(sql)
     } catch (err) {
-      rethrowWriteError(err)
+      this.#rethrowInsertError(err, [...byQueue.keys()])
     }
 
     return refToId

@@ -7,7 +7,7 @@
 Creates a new job and returns the job id.
 
 > [!NOTE]
-> `send()` will resolve a `null` for job id under some use cases when using unique jobs or throttling (see below).  These options are always opt-in on the send side and therefore don't result in a promise rejection.
+> `send()` will resolve a `null` for job id under some use cases when using unique jobs or throttling (see below).  These options are always opt-in on the send side and therefore don't result in a promise rejection. A queue that does not exist, including one another instance deleted, rejects with `Queue <name> does not exist` (see [`deleteQueue()`](./queues.md#deletequeue-name)).
 
 ### `send(name, data, options)`
 

@@ -18,7 +18,8 @@ export interface SqlQuery {
 }
 
 export const PG_ERROR = {
-  divisionByZero: '22012'
+  divisionByZero: '22012',
+  foreignKeyViolation: '23503'
 }
 
 export const DEFAULT_SCHEMA = 'pgboss'
@@ -2844,6 +2845,10 @@ interface InsertJobsOptions {
   slots?: boolean
 }
 
+// The queue is LEFT JOINed and every NOT NULL column it supplies falls back to the schema default, so
+// a job for a queue deleted after the caller cached it still reaches q_fkey and fails there (23503),
+// rather than producing no row, which would read the same as a singleton or throttle refusal. The
+// fallbacks never apply to a queue that exists, since its own columns are NOT NULL.
 export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false }: InsertJobsOptions) {
   // When notify is enabled we always RETURN start_after so the wrapper below can gate
   // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
@@ -2900,12 +2905,12 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         END as singleton_on,
       "groupId" as group_id,
       "groupTier" as group_tier,
-      COALESCE("expireInSeconds", q.expire_seconds) as expire_seconds,
-      COALESCE("deleteAfterSeconds", q.deletion_seconds) as deletion_seconds,
-      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds) * interval '1s') as keep_until,
-      COALESCE("retryLimit", q.retry_limit) as retry_limit,
-      COALESCE("retryDelay", q.retry_delay) as retry_delay,
-      COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
+      COALESCE("expireInSeconds", q.expire_seconds, ${QUEUE_DEFAULTS.expire_seconds}) as expire_seconds,
+      COALESCE("deleteAfterSeconds", q.deletion_seconds, ${QUEUE_DEFAULTS.deletion_seconds}) as deletion_seconds,
+      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds, ${QUEUE_DEFAULTS.retention_seconds}) * interval '1s') as keep_until,
+      COALESCE("retryLimit", q.retry_limit, ${QUEUE_DEFAULTS.retry_limit}) as retry_limit,
+      COALESCE("retryDelay", q.retry_delay, ${QUEUE_DEFAULTS.retry_delay}) as retry_delay,
+      COALESCE("retryBackoff", q.retry_backoff, ${QUEUE_DEFAULTS.retry_backoff}) as retry_backoff,
       COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
       q.policy,
       COALESCE("deadLetter", q.dead_letter) as dead_letter,
@@ -2946,7 +2951,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         "__traceContext" jsonb
       )
     ) j
-    JOIN ${schema}.queue q ON q.name = '${name}'
+    LEFT JOIN ${schema}.queue q ON q.name = '${name}'
     ON CONFLICT DO NOTHING
     ${returning}
   `

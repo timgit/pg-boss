@@ -181,6 +181,10 @@ Deletes a queue and all jobs.
 await boss.deleteQueue('email-send')
 ```
 
+Other instances find out on their next write to it: `send()`, `insert()`, `upsert()` and `flow()` reject with `Queue <name> does not exist`, as for a queue that was never created, and a job naming it as its `deadLetter` rejects with `Dead letter queue <name> does not exist`.
+
+Inside a transaction passed as `db`, with the default partitioned job table, the check runs when that transaction commits: `send()` resolves with an id, and the `COMMIT` fails with a foreign key violation (`23503`). With `noTablePartitioning` (CockroachDB and YugabyteDB) the `send()` itself rejects.
+
 ### `getQueues(names?)`
 
 Returns all queues, or only the named queues when an array of names is provided.

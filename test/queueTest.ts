@@ -45,6 +45,99 @@ describe('queues', function () {
     }
   })
 
+  /** A cached queue deleted elsewhere: the insert used to find no queue row and read as a refusal. */
+  describe('writing to a queue another instance deleted', function () {
+    async function deletedElsewhere (...names: string[]) {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      try {
+        for (const name of [ctx.schema, ...names]) await ctx.boss.createQueue(name)
+        await other.deleteQueue(ctx.schema)
+      } finally {
+        await other.stop({ graceful: false })
+      }
+      return ctx.boss
+    }
+
+    it('send throws rather than resolving null', async function () {
+      const boss = await deletedElsewhere()
+      await expect(boss.send(ctx.schema)).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+      // The stale entry is gone, so the next call fails up front as for any missing queue.
+      await expect(boss.send(ctx.schema)).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    })
+
+    it('a throttled send throws rather than resolving null', async function () {
+      const boss = await deletedElsewhere()
+      await expect(boss.send(ctx.schema, null, { singletonSeconds: 300, singletonNextSlot: true })).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    })
+
+    it('insert throws rather than resolving null, with or without returnId', async function () {
+      const boss = await deletedElsewhere()
+      await expect(boss.insert(ctx.schema, [{ data: { a: 1 } }], { returnId: true })).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+      await expect(boss.insert(ctx.schema, [{ data: { a: 1 } }])).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    })
+
+    it('upsert throws rather than reporting nothing done', async function () {
+      const boss = await deletedElsewhere()
+      await expect(boss.upsert(ctx.schema, { a: 1 }, { singletonKey: 'k' })).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    })
+
+    it('flow names the deleted queue and creates none of its jobs', async function () {
+      const kept = `${ctx.schema}_kept`
+      const boss = await deletedElsewhere(kept)
+
+      await expect(boss.flow([
+        { ref: 'a', name: kept },
+        { ref: 'b', name: ctx.schema, dependsOn: ['a'] }
+      ])).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+
+      expect(await boss.fetch(kept)).toHaveLength(0)
+    })
+
+    it('send names a dead letter queue that does not exist', async function () {
+      const deadLetter = `${ctx.schema}_dlq`
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await ctx.boss.createQueue(ctx.schema)
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.deleteQueue(deadLetter)
+
+      await expect(ctx.boss.send(ctx.schema, null, { deadLetter })).rejects.toThrow(`Dead letter queue ${deadLetter} does not exist`)
+    })
+
+    // With the partitioned layout q_fkey is deferred, so a caller's transaction hears of it at its own
+    // COMMIT; where it is not deferred (CockroachDB, YugabyteDB) send() rejects.
+    helper.itPglite('a caller transaction hears of it at send or at its COMMIT', async function () {
+      const boss = await deletedElsewhere()
+      const db = await helper.getDb()
+      const client = await (db as any).pool.connect()
+      let error: any
+
+      try {
+        await client.query('BEGIN')
+        try {
+          await boss.send(ctx.schema, null, { db: { executeSql: (sql: string, values: any[]) => client.query(sql, values) } })
+          await client.query('COMMIT')
+        } catch (err) {
+          error = err
+          await client.query('ROLLBACK')
+        }
+      } finally {
+        client.release()
+        await db.close()
+      }
+
+      expect((error?.cause ?? error)?.code).toBe('23503')
+    })
+  })
+
+  it('a send a throttle refuses still resolves null', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.createQueue(ctx.schema)
+
+    expect(await ctx.boss.send(ctx.schema, null, { singletonSeconds: 300 })).toBeTruthy()
+    expect(await ctx.boss.send(ctx.schema, null, { singletonSeconds: 300 })).toBeNull()
+  })
+
   it('deleteQueue surfaces a DELETE failure instead of resolving as success', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
