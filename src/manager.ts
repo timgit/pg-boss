@@ -22,6 +22,8 @@ const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, s
 // postgres: current transaction is aborted, commands ignored until end of transaction block
 const TRANSACTION_ABORTED = '25P02'
 
+const QUEUE_NOT_FOUND = 'PGBOSS_QUEUE_NOT_FOUND'
+
 // pg's own default when the pool size is not configured. Used to tell a transactional worker how
 // much room it actually has, since each handler in flight holds a connection of its own.
 const DEFAULT_POOL_MAX = 10
@@ -1006,7 +1008,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     queue = await this.getQueue(name)
 
     if (!queue) {
-      throw new Error(`Queue ${name} does not exist`)
+      throw Object.assign(new Error(`Queue ${name} does not exist`), { code: QUEUE_NOT_FOUND })
     }
 
     this.queues[name] = queue
@@ -1431,7 +1433,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const failures = results
       .map((result, index) => ({ result, name: rows[index].name }))
-      .filter((entry): entry is { result: PromiseRejectedResult, name: string } => entry.result.status === 'rejected')
+      // A deleted subscriber can still be in the selection, just as a cached send can insert no job.
+      .filter((entry): entry is { result: PromiseRejectedResult, name: string } =>
+        entry.result.status === 'rejected' && entry.result.reason?.code !== QUEUE_NOT_FOUND)
 
     if (failures.length > 0) {
       // Each entry names its own queue, so attribution doesn't depend on lining errors[] up with
