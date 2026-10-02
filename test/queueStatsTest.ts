@@ -1,4 +1,4 @@
-import { expect } from 'vitest'
+import { afterAll, expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
 import { addBins, percentile } from '../src/index.ts'
@@ -6,6 +6,17 @@ import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
 import pg from 'pg'
+
+// One database handle for the whole file. Each helper.getDb() is a pool of its own that is never closed,
+// and this file asks for one on every monitor pass and every finished job, which ran a CI database at
+// the default 100 connections out of them.
+let sharedDb: ReturnType<typeof helper.getDb> | undefined
+const getDb = () => (sharedDb ??= helper.getDb())
+
+afterAll(async () => {
+  // PGlite hands every caller the same in-process instance, which is not this file's to close.
+  if (sharedDb && !helper.isPglite) await (await sharedDb).close()
+})
 
 describe('queueStats', function () {
   const queue1 = `q${randomUUID().replaceAll('-', '')}`
@@ -247,7 +258,7 @@ describe('queueStats', function () {
      * stamps instead.
      */
     async function monitorPass (queue: string, throughput = true, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
@@ -474,7 +485,7 @@ describe('queueStats', function () {
       const queue = randomUUID()
       await ctx.boss.createQueue(queue)
 
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
@@ -493,7 +504,7 @@ describe('queueStats', function () {
 
     /** Moves this queue's counting window back, which is the only way to give a fast test real seconds. */
     async function windBack (queue: string, interval: string) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await db.executeSql(
         `UPDATE ${schema}.queue SET delta_on = ${schema}.job_now() - interval '${interval}' WHERE name = $1`, [queue]
@@ -502,7 +513,7 @@ describe('queueStats', function () {
 
     /** Ages this queue's jobs, so a stamp lands before a window end that trails the pass. */
     async function age (queue: string, interval: string) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await db.executeSql(
         `UPDATE ${schema}.job
@@ -554,7 +565,7 @@ describe('queueStats', function () {
       // Far enough back that nothing the running monitor writes can land in the range.
       const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
       const minute = (n: number) => new Date(hour - n * 60_000)
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
@@ -682,7 +693,7 @@ describe('queueStats', function () {
       // snapshot the running monitor writes meanwhile can't be the newest row.
       const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
       const to = new Date(hour - 1)
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
@@ -743,7 +754,7 @@ describe('queueStats', function () {
         if (fail) await ctx.boss!.fail(queue, job.id)
         else await ctx.boss!.complete(queue, job.id)
 
-        const db = await helper.getDb()
+        const db = await getDb()
         const schema = ctx.bossConfig.schema
         await db.executeSql(
           `UPDATE ${schema}.job
@@ -874,7 +885,7 @@ describe('queueStats', function () {
         ctx.boss = await helper.start(ctx.bossConfig)
         const queue = randomUUID()
         await ctx.boss.createQueue(queue)
-        const db = await helper.getDb()
+        const db = await getDb()
         const schema = ctx.bossConfig.schema
 
         expect((await monitorPass(queue)).readyOldestSeconds).toBe(0)
@@ -906,7 +917,7 @@ describe('queueStats', function () {
 
         const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
         const to = new Date(hour - 1)
-        const db = await helper.getDb()
+        const db = await getDb()
         const schema = ctx.bossConfig.schema
         await ensurePreviousDayPartition(db, schema)
         await db.executeSql(
@@ -940,7 +951,7 @@ describe('queueStats', function () {
 
         const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
         const to = new Date(hour - 1)
-        const db = await helper.getDb()
+        const db = await getDb()
         const schema = ctx.bossConfig.schema
         await ensurePreviousDayPartition(db, schema)
         await db.executeSql(
@@ -1013,7 +1024,7 @@ describe('queueStats', function () {
 
         const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
         const to = new Date(hour - 1)
-        const db = await helper.getDb()
+        const db = await getDb()
         const schema = ctx.bossConfig.schema
         await ensurePreviousDayPartition(db, schema)
         await db.executeSql(
@@ -1036,7 +1047,7 @@ describe('queueStats', function () {
 
         const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
         const to = new Date(hour - 1)
-        const db = await helper.getDb()
+        const db = await getDb()
         const schema = ctx.bossConfig.schema
         await ensurePreviousDayPartition(db, schema)
         await db.executeSql(
@@ -1056,7 +1067,7 @@ describe('queueStats', function () {
      * the snapshot, and the true-up when the aggregate flagged one. Returns whether it did.
      */
     async function recordedPass (queue: string, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
@@ -1079,7 +1090,7 @@ describe('queueStats', function () {
       ctx.boss = await helper.start(ctx.bossConfig)
       const queue = randomUUID()
       await ctx.boss.createQueue(queue)
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
@@ -1105,7 +1116,7 @@ describe('queueStats', function () {
 
     /** The recorded history's counters, oldest first. */
     async function history (queue: string) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const { rows } = await db.executeSql(
         `SELECT created_delta::int AS created, completed_delta::int AS completed, failed_delta::int AS failed
          FROM ${ctx.bossConfig.schema}.queue_stats WHERE name = $1 ORDER BY delta_on, captured_on`, [queue]
@@ -1268,7 +1279,7 @@ describe('queueStats', function () {
       const queue = randomUUID()
       await ctx.boss.createQueue(queue, { deleteAfterSeconds: 4 })
       const schema = ctx.bossConfig.schema
-      const db = await helper.getDb()
+      const db = await getDb()
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
       )
@@ -1382,7 +1393,7 @@ describe('queueStats', function () {
       await ctx.boss.send(queue)
       await age(queue, '10 minutes')
 
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       // An anchor twenty minutes back, then a window over the sends that recorded none of them.
@@ -1430,7 +1441,7 @@ describe('queueStats', function () {
 
       const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
       const minute = (n: number) => new Date(hour - n * 60_000)
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       // Captures at minutes 31 and 29; the second one's counters cover an
