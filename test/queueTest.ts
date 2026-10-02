@@ -46,12 +46,14 @@ describe('queues', function () {
   })
 
   /** A cached queue deleted elsewhere: the insert used to find no queue row and read as a refusal. */
-  describe('writing to a queue another instance deleted', function () {
+  // With partition: true the queue's own table is dropped with it, so the insert fails on the table.
+  describe.each([false, true])('writing to a queue another instance deleted (partition: %s)', function (partition) {
     async function deletedElsewhere (...names: string[]) {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
       const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
       try {
-        for (const name of [ctx.schema, ...names]) await ctx.boss.createQueue(name)
+        await ctx.boss.createQueue(ctx.schema, { partition })
+        for (const name of names) await ctx.boss.createQueue(name)
         await other.deleteQueue(ctx.schema)
       } finally {
         await other.stop({ graceful: false })
@@ -126,8 +128,33 @@ describe('queues', function () {
         await db.close()
       }
 
-      expect((error?.cause ?? error)?.code).toBe('23503')
+      // 23503 from q_fkey, or 42P01 from the dropped table of a queue with its own.
+      expect(['23503', '42P01']).toContain((error?.cause ?? error)?.code)
     })
+  })
+
+  // Partitioning is off on CockroachDB and YugabyteDB, so a queue never gets a table of its own there.
+  // The old table is gone (42P01), or is the shared table, whose partition constraint now excludes the queue (23514).
+  it.skipIf(helper.isCockroachDb || helper.isYugabyteDb).each([
+    { from: true, code: '42P01' },
+    { from: false, code: '23514' }
+  ])('takes the new table of a queue another instance deleted and created again (was partition: $from)', async function ({ from, code }) {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    try {
+      await ctx.boss.createQueue(ctx.schema, { partition: from })
+      await other.deleteQueue(ctx.schema)
+      await other.createQueue(ctx.schema, { partition: !from })
+    } finally {
+      await other.stop({ graceful: false })
+    }
+
+    // The queue exists, so the failure is not rewritten, but the cache is reloaded.
+    await expect(ctx.boss.send(ctx.schema)).rejects.toMatchObject({ code })
+    const jobId = await ctx.boss.send(ctx.schema)
+    assertTruthy(jobId)
+    expect((await ctx.boss.getJobById(ctx.schema, jobId))?.id).toBe(jobId)
   })
 
   it('a send a throttle refuses still resolves null', async function () {

@@ -19,7 +19,9 @@ export interface SqlQuery {
 
 export const PG_ERROR = {
   divisionByZero: '22012',
-  foreignKeyViolation: '23503'
+  foreignKeyViolation: '23503',
+  undefinedTable: '42P01',
+  checkViolation: '23514'
 }
 
 export const DEFAULT_SCHEMA = 'pgboss'
