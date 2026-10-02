@@ -313,6 +313,8 @@ Update-or-insert one or more **not-yet-active** jobs (state `created` or `retry`
 
 Returns a `Promise<UpsertResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the updated job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 
+Concurrent `upsert()` calls with the same `singletonKey` agree on one job: at most one of them inserts, and the others update that job, waiting for the first one's transaction to finish if they have to. This holds on every queue policy and inside a transaction passed as `db`. It applies between upserts only. A `send()` or `insert()` with the same key on a `standard` queue still adds a job of its own, and a job brought back with `resume()` queues beside a newer upserted one rather than replacing it.
+
 ```js
 // ensure exactly one queued "process this article" job carries the latest body
 await boss.upsert('article', { articleId: 42, body: '…latest…' }, { singletonKey: 'article-42' })
