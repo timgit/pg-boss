@@ -286,7 +286,7 @@ export interface QueueStats {
   /**
    * Wait times of the jobs that finished in the deltas' window, as a histogram of 48 counts in
    * log-spaced bins; sum histograms to read a percentile over any span. Null wherever the deltas are.
-   * @see https://pgboss.io/api/queues#latency-histograms
+   * @see https://pgboss.io/api/queues#getqueuestats-name-options
    */
   waitBins: number[] | null;
   /** Run times of the same jobs, in the same bins as `waitBins`. */
@@ -295,7 +295,7 @@ export interface QueueStats {
   readyOldestSeconds: number | null;
   /**
    * With the `percentiles` option: one entry per percentile asked for, read from `waitBins` and `runBins`.
-   * @see https://pgboss.io/api/queues#latency-histograms
+   * @see https://pgboss.io/api/queues#getqueuestats-name-options
    */
   percentiles?: QueueStatsPercentile[];
   capturedOn: Date;
@@ -343,7 +343,7 @@ export interface QueueStatsOptions {
   /**
    * Percentiles to read from each snapshot's wait and run histograms, as percents from 1 to 100, such
    * as `[50, 95, 99.9]`. Each snapshot then carries a `percentiles` list, one entry per distinct value.
-   * @see https://pgboss.io/api/queues#latency-histograms
+   * @see https://pgboss.io/api/queues#getqueuestats-name-options
    */
   percentiles?: number[];
   /**

@@ -284,9 +284,15 @@ Over a wide window the raw series can be far larger than `limit`, and returning 
 
 **Percentile options**
 
+`waitBins` and `runBins` are histograms: 48 bins, each counting the jobs whose time fell in its range. The bins are spaced logarithmically, each about 1.4 times as wide as the one before, so they cover everything from under 10 ms to about 23 hours with the same relative precision for fast jobs and slow ones. Percentiles are read from them.
+
 * **percentiles**, array of numbers
 
-  Percents from 1 to 100, such as `[50, 95, 99.9]`, to read from each snapshot's [latency histograms](#latency-histograms). Each snapshot gets a `percentiles` list: one entry per distinct value, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled, so averaging them across snapshots does not give the percentile over the whole range; see [`addBins()`](./utils.md#addbins-a-b) for that.
+  Percents from 1 to 100, such as `[50, 95, 99.9]`, to read from each snapshot's histograms. Each snapshot gets a `percentiles` list: one entry per distinct value, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled.
+
+Histograms add up, but percentiles don't: averaging the p95 of several snapshots does not give their p95. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up before its percentiles are read. For a single percentile over a whole window, or across several queues, add their histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p).
+
+In `queue_stats` the histograms are stored as the `int[]` columns `wait_bins` and `run_bins`, with `NULL` in a bin no job landed in, so coalesce them when adding them up in SQL.
 
 ```js
 // current queue depth (single snapshot when persistQueueStats is disabled)
@@ -355,27 +361,12 @@ A delta is not the difference between two snapshots' counts: `failedDelta` is no
 * `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not included)
 * `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
 * `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
-* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, a retry sitting out its backoff, or a flow job waiting on its parents is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
+* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram (see [Percentile options](#getqueuestats-name-options)). A deferred job, a retry sitting out its backoff, or a flow job waiting on its parents is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
 * `runBins`: how long the same jobs ran, from start to finish, in the same bins.
 * `readyOldestSeconds`: how long the oldest ready job had waited when the pass ran, leaving out deferred and blocked jobs. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
 * `percentiles`: one entry per percentile asked for with `getQueueStats()`'s `percentiles` option, each with `p`, and `waitSeconds` and `runSeconds` read from `waitBins` and `runBins`; both `null` where there are no histograms (`getQueueStats()` with `percentiles` only)
 
 The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls. A job that finishes inside a transaction longer than 10 seconds, which the deltas take in afterwards, is left out of the histograms.
-
-#### Latency histograms
-
-`waitBins` and `runBins` are histograms: 48 bins, each counting the jobs whose time fell in its range. The bins are spaced logarithmically, each about 1.4 times as wide as the one before, so they cover everything from under 10 ms to about 23 hours with the same relative precision for fast jobs and slow ones.
-
-To read percentiles, pass the `percentiles` option:
-
-```js
-const series = await boss.getQueueStats('email-send', { maxDataPoints: 300, percentiles: [50, 95] })
-// each snapshot also carries percentiles: [{ p: 50, waitSeconds, runSeconds }, { p: 95, waitSeconds, runSeconds }]
-```
-
-Histograms add up, but percentiles don't: averaging the p95 of several snapshots does not give their p95. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up before its percentiles are read. For a single percentile over a whole window, or across several queues, add their histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p).
-
-In `queue_stats` they are stored as the `int[]` columns `wait_bins` and `run_bins`, with `NULL` in a bin no job landed in, so coalesce them when adding them up in SQL.
 
 #### Other fields
 
