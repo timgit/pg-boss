@@ -298,9 +298,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   // Whether or not this instance registers: the registry is the database's, not this instance's.
+  // Best effort: a failure is emitted and the pass goes on to the reindex, since a role granted
+  // privileges table by table may have none on the instance table yet.
   async #maintainInstances () {
-    await this.#executeQuery(plans.deleteOldInstances(this.#config.schema, plans.INSTANCE_RETENTION_DAYS))
-    await this.#executeQuery(plans.trimDeadInstances(this.#config.schema, plans.INSTANCE_DEAD_KEPT))
+    try {
+      await this.#executeQuery(plans.deleteOldInstances(this.#config.schema, plans.INSTANCE_RETENTION_DAYS))
+      await this.#executeQuery(plans.trimDeadInstances(this.#config.schema, plans.INSTANCE_DEAD_KEPT))
+    } catch (err) {
+      this.emit(events.error, err)
+    }
   }
 
   async #ensureQueueStatsPartitions () {
