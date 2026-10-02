@@ -12,6 +12,39 @@ describe('queues', function () {
     await expect(ctx.boss.deleteQueue(`${ctx.schema}_missing`)).resolves.toBeUndefined()
   })
 
+  it('loads a queue another instance created on its first use', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    try {
+      // Created after this instance loaded its queue cache, so the send below misses it.
+      await other.createQueue(ctx.schema)
+
+      const jobId = await ctx.boss.send(ctx.schema)
+      assertTruthy(jobId)
+      expect((await ctx.boss.getJobById(ctx.schema, jobId))?.id).toBe(jobId)
+    } finally {
+      await other.stop({ graceful: false })
+    }
+  })
+
+  it('drops a cached queue that updateQueue finds deleted by another instance', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    try {
+      await ctx.boss.createQueue(ctx.schema)
+      await other.deleteQueue(ctx.schema)
+
+      // The update matches no row, and the stale cache entry goes with it rather than being used.
+      await ctx.boss.updateQueue(ctx.schema, { retryLimit: 5 })
+
+      await expect(ctx.boss.send(ctx.schema)).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    } finally {
+      await other.stop({ graceful: false })
+    }
+  })
+
   it('deleteQueue surfaces a DELETE failure instead of resolving as success', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

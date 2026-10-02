@@ -52,6 +52,19 @@ export interface IDatabase {
    * does not implement this.
    */
   setSessionStatements?(statements: string[]): Promise<void>;
+  /**
+   * Optional capability for the instance registry: the pool's size and use, recorded on each
+   * heartbeat. The built-in pool-based Db implements it; without it the pool columns stay null.
+   */
+  poolCounts?(): PoolCounts | null;
+}
+
+/** A connection pool's size and use at one moment, as node-postgres counts them. */
+export interface PoolCounts {
+  max: number;
+  total: number;
+  idle: number;
+  waiting: number;
 }
 
 export interface ListenHandle {
@@ -270,7 +283,30 @@ export interface QueueStats {
   deltaSeconds: number | null;
   /** When the interval the deltas cover ends, 10 seconds behind `capturedOn`. Plot the deltas at this time. */
   deltaOn: Date | null;
+  /**
+   * Wait times of the jobs that finished in the deltas' window, as a histogram of 48 counts in
+   * log-spaced bins; sum histograms to read a percentile over any span. Null wherever the deltas are.
+   * @see https://pgboss.io/api/queues#getqueues-names
+   */
+  waitBins: number[] | null;
+  /** Run times of the same jobs, in the same bins as `waitBins`. */
+  runBins: number[] | null;
+  /** How long the oldest job ready to run had waited when the snapshot was captured. */
+  readyOldestSeconds: number | null;
+  /**
+   * With the `percentiles` option: one entry per percentile asked for, read from `waitBins` and `runBins`.
+   * @see https://pgboss.io/api/queues#getqueuestats-name-options
+   */
+  percentiles?: QueueStatsPercentile[];
   capturedOn: Date;
+}
+
+/** One percentile of a snapshot's wait and run times, in seconds. Null where the snapshot has no histograms. */
+export interface QueueStatsPercentile {
+  /** The percentile asked for, from 1 to 100. */
+  p: number;
+  waitSeconds: number | null;
+  runSeconds: number | null;
 }
 
 export interface QueueStatsOptions {
@@ -304,6 +340,12 @@ export interface QueueStatsOptions {
    * @default 'max'
    */
   aggregate?: 'max' | 'min' | 'avg';
+  /**
+   * Percentiles to read from each snapshot's wait and run histograms, as percents from 1 to 100, such
+   * as `[50, 95, 99.9]`. Each snapshot then carries a `percentiles` list, one entry per distinct value.
+   * @see https://pgboss.io/api/queues#getqueuestats-name-options
+   */
+  percentiles?: number[];
   /**
    * persistQueueStats off: return a fresh reading. Recomputes the counts from the job table and
    * refreshes the queue-table cache rather than serving the regular (up to ~1h) cache, but still
@@ -505,6 +547,26 @@ export interface AttachableClock extends Clock {
   attach(target: { db: IDatabase, schema: string, idle?: () => Promise<boolean> }): Promise<AsyncDisposable>
 }
 
+export interface InstanceOptions {
+  /**
+   * Record this instance in the database's instance registry, readable with `getInstances()`.
+   * @see https://pgboss.io/api/ops#getinstances
+   * @default true
+   */
+  registerInstance?: boolean;
+  /**
+   * A name for this instance in the registry, such as `api` or `billing-worker`.
+   * @see https://pgboss.io/api/constructor#instancename
+   */
+  instanceName?: string;
+  /**
+   * How often this instance refreshes its registry row, in seconds. It reads as quiet after three
+   * missed heartbeats.
+   * @default 30
+   */
+  instanceHeartbeatSeconds?: number;
+}
+
 export interface OpenTelemetryOptions {
   /**
    * Set to false to emit no spans or metrics and store no trace context on jobs.
@@ -537,7 +599,7 @@ export interface OpenTelemetryOptions {
   meterProvider?: MeterProvider;
 }
 
-export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
+export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions, InstanceOptions {
   /**
    * Source of time and timers for this instance. Defaults to the system clock (`Date.now` and the
    * global timer functions).
@@ -662,6 +724,8 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
   bamIntervalSeconds: number;
   flowIntervalSeconds: number;
   reindexIntervalSeconds: number;
+  registerInstance: boolean;
+  instanceHeartbeatSeconds: number;
 }
 
 /**
@@ -955,11 +1019,14 @@ export interface Queue extends QueueOptions {
 }
 
 export interface QueueResult extends Queue {
+  /** Queued jobs whose `startAfter` is still ahead and that are not blocked. */
   deferredCount: number;
+  /** Queued jobs waiting on a flow parent, whatever their `startAfter`. */
+  blockedCount: number;
   queuedCount: number;
   /**
-   * Jobs ready to be processed now: `queuedCount - deferredCount` (clamped at 0). This is the
-   * true backlog, `queuedCount` includes deferred (future-dated) jobs that are not yet runnable.
+   * Jobs ready to be processed now: queued, not deferred and not blocked, so `queuedCount` is
+   * `deferredCount + blockedCount + readyCount`.
    */
   readyCount: number;
   activeCount: number;
@@ -983,6 +1050,12 @@ export interface QueueResult extends Queue {
   deltaSeconds: number | null;
   /** When that interval ends, 10 seconds behind the pass. See `QueueStats.deltaOn`. Null until a pass counts. */
   deltaOn: Date | null;
+  /** Wait times of the jobs counted in the deltas, as 48 counts. See `QueueStats.waitBins`. Null until a pass counts. */
+  waitBins: number[] | null;
+  /** Run times of the same jobs, in the same bins. Null until a pass counts. */
+  runBins: number[] | null;
+  /** How long the oldest ready job had waited at the pass. See `QueueStats.readyOldestSeconds`. Null until a pass counts. */
+  readyOldestSeconds: number | null;
   table: string;
   createdOn: Date;
   updatedOn: Date;
@@ -1382,6 +1455,97 @@ export interface WipData {
   lastJobDuration: number | null;
   lastError: object | null;
   lastErrorOn: number | null;
+}
+
+/** One `work()` call of a registered instance, as its last heartbeat recorded it. */
+export interface InstanceWorker {
+  /** The id `work()` returned. */
+  id: string;
+  queue: string;
+  localConcurrency: number;
+  batchSize: number;
+  pollingIntervalSeconds: number | null;
+  /** Jobs in hand at the heartbeat. */
+  active: number;
+  lastFetchedOn: string | null;
+  lastJobEndedOn: string | null;
+  lastErrorOn: string | null;
+  /**
+   * The other `work()` options this call set; one left at its default is absent.
+   * @see https://pgboss.io/api/ops#getinstances
+   */
+  options?: Partial<WorkOptions>;
+}
+
+/**
+ * A registered instance's process at its last heartbeat. Limits are its container's where one is set
+ * (cgroup v1 or v2), else the host's; rates cover the time since the previous heartbeat.
+ * @see https://pgboss.io/api/ops#getinstances
+ */
+export interface InstanceMetrics {
+  /** 1 or 2 when the limits were read from a cgroup, null when they are the host's. */
+  cgroup: 1 | 2 | null;
+  /** CPU cores this process used; null on the first sample. */
+  cpu: number | null;
+  /** Cores it may use: its container's CPU quota, or the CPUs it may run on. */
+  cpuLimit: number;
+  /** Share of CPU periods its container was throttled for, 0 to 1; null without a CPU quota. */
+  cpuThrottled: number | null;
+  /** Resident set size in bytes. */
+  rss: number | null;
+  heapUsed: number | null;
+  heapLimit: number | null;
+  /** Its container's working set in bytes; null without a memory limit. */
+  memoryUsed: number | null;
+  /** Its container's memory limit in bytes, or the host's total memory. */
+  memoryLimit: number;
+  /** Event loop delay, p99 and worst, in milliseconds. */
+  loopDelay: number | null;
+  loopDelayMax: number | null;
+  /** Share of the time the event loop was busy, 0 to 1. */
+  loopUtilization: number | null;
+}
+
+/**
+ * A PgBoss object that registered itself in this database.
+ * @see https://pgboss.io/api/ops#getinstances
+ */
+export interface Instance {
+  id: string;
+  name: string | null;
+  host: string;
+  pid: number;
+  /** pg-boss version. */
+  version: string;
+  nodeVersion: string;
+  /** The `application_name` its connections carry, for joining `pg_stat_activity`. */
+  applicationName: string | null;
+  heartbeatSeconds: number;
+  supervise: boolean;
+  schedule: boolean;
+  migrate: boolean;
+  persistQueueStats: boolean;
+  persistWarnings: boolean;
+  /** Pool counts at the last heartbeat; null for a pool pg-boss did not create. */
+  poolMax: number | null;
+  poolTotal: number | null;
+  poolIdle: number | null;
+  poolWaiting: number | null;
+  workers: InstanceWorker[];
+  /** Its process at the last heartbeat; null before the first sample. */
+  metrics: InstanceMetrics | null;
+  /** The options it runs with: timings, roles, retention and backend, never connection details. */
+  config: Record<string, unknown>;
+  /** Lives in a row on this name and host that ended without `stop()` before this one started. */
+  crashRestarts: number;
+  /** When the first of those crashed; null when there were none. */
+  crashRestartsSince: Date | null;
+  startedOn: Date;
+  heartbeatOn: Date;
+  /** Set by a graceful `stop()`; a crashed instance goes quiet instead. */
+  stoppedOn: Date | null;
+  /** Not stopped, and heard from within three heartbeats. */
+  live: boolean;
 }
 
 export interface StopOptions {

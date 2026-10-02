@@ -204,6 +204,9 @@ const queueStatsQuerySchema = z.object({
   bucketSeconds: z.coerce.number().int().positive().optional(),
   maxDataPoints: z.coerce.number().int().positive().optional(),
   aggregate: z.enum(['max', 'min', 'avg']).optional(),
+  // A comma-separated list of percents, such as percentiles=50,95
+  percentiles: z.string().transform((v) => v.split(',').map((p) => (p.trim() === '' ? NaN : Number(p))))
+    .pipe(z.array(z.number().min(1).max(100)).min(1)).optional(),
   force: z.enum(['true', 'false']).transform((v) => v === 'true').optional()
 })
 
@@ -283,6 +286,7 @@ export const getMethods: RouteEntry[] = [
     if (q.bucketSeconds !== undefined) options.bucketSeconds = q.bucketSeconds
     if (q.maxDataPoints !== undefined) options.maxDataPoints = q.maxDataPoints
     if (q.aggregate !== undefined) options.aggregate = q.aggregate
+    if (q.percentiles !== undefined) options.percentiles = q.percentiles
     if (q.force !== undefined) options.force = q.force
     return Object.keys(options).length > 0 ? [q.name, options] : [q.name]
   }),

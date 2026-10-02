@@ -61,7 +61,7 @@ The trace context survives retries, dead lettering and `redrive()`, so each atte
 | `messaging.client.consumed.messages` | counter | `{message}` | Jobs delivered to a worker or returned by `fetch()` |
 | `messaging.client.operation.duration` | histogram | `s` | Duration of each send, receive and settle operation |
 | `messaging.process.duration` | histogram | `s` | Duration of each `process` span |
-| `pgboss.queue.jobs` | gauge | `{job}` | Jobs per queue by `pgboss.job.state` (`deferred`, `ready`, `active`, `failed`), as of the last queue cache refresh |
+| `pgboss.queue.jobs` | gauge | `{job}` | Jobs per queue by `pgboss.job.state` (`deferred`, `ready`, `blocked`, `active`, `failed`), as of the last queue cache refresh. `blocked` is jobs waiting on a [`flow()`](./api/jobs.md#flow-jobs-options) parent |
 
 Metrics carry `messaging.system`, `messaging.operation.name`, `messaging.operation.type`, `messaging.destination.name`, `db.namespace`, `pgboss.schema` and, on failure, `error.type`. The namespace keeps apart instances in one process that share a queue name in different schemas or databases. To keep fewer series, drop the two attributes with an SDK View. Job ids and batch sizes are left out so they don't multiply the number of series.
 

@@ -8,6 +8,7 @@ import type Db from './db.ts'
 import { TRANSACTION_ROLLBACK_TIMEOUT_MS } from './db.ts'
 import type Notifier from './notifier.ts'
 import * as plans from './plans.ts'
+import { percentile } from './latency.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
 import { resolveWithinSeconds } from './tools.ts'
@@ -98,6 +99,7 @@ const NUMERIC_METADATA_FIELDS = [
 
 // Queue rows (plans.getQueues) return these integer columns as strings on CockroachDB too.
 const NUMERIC_QUEUE_FIELDS = [
+  'blockedCount',
   'retryLimit',
   'retryDelay',
   'retryDelayMax',
@@ -115,7 +117,8 @@ const NUMERIC_QUEUE_FIELDS = [
   'createdDelta',
   'completedDelta',
   'failedDelta',
-  'deltaSeconds'
+  'deltaSeconds',
+  'readyOldestSeconds'
 ] as const
 
 // The gauges shared by live stats and recorded snapshots (the QueueStats shape).
@@ -127,6 +130,13 @@ const STATS_COUNT_FIELDS = [
   'failedCount',
   'totalCount'
 ] as const
+
+// A snapshot's histogram, LATENCY_SLOTS counts from a recorded pass or added up over a bucket, with
+// the slots stored as null (no job landed there) handed out as 0. Null when no pass counted it; all
+// zeros when one did and nothing finished. CockroachDB hands integers over as strings.
+function toBins (bins: unknown): number[] | null {
+  return Array.isArray(bins) ? bins.map(n => (n == null ? 0 : Number(n))) : null
+}
 
 // The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
 // getQueueStats.
@@ -1006,6 +1016,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   #evictQueueCache (name: string) {
     if (this.queues) delete this.queues[name]
+  }
+
+  // Replaces a queue's cache entry with its row as it stands, rather than evicting it, so a queue
+  // created again or updated stays in the cache and the queue gauge while still picking up what
+  // changed: new options, or a table that changed under it (deleted and recreated elsewhere with
+  // another partition setting).
+  async #reloadQueueCache (name: string) {
+    if (!this.queues) return
+
+    const queue = await this.getQueue(name)
+
+    if (queue) this.queues[name] = queue
+    else this.#evictQueueCache(name)
   }
 
   async stop () {
@@ -2546,7 +2569,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.createQueue(this.config.schema, name, { ...options, policy }, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
-    this.#evictQueueCache(name)
+    await this.#reloadQueueCache(name)
   }
 
   async getBlockedKeys (name: string): Promise<string[]> {
@@ -2584,6 +2607,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
+    // Every backend: the histograms' empty slots are stored as null and handed out as 0.
+    for (const row of rows) {
+      row.waitBins = toBins(row.waitBins)
+      row.runBins = toBins(row.runBins)
+    }
+
     return rows
   }
 
@@ -2613,7 +2642,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.updateQueue(this.config.schema)
     await this.db.executeSql(sql, [name, options])
-    this.#evictQueueCache(name)
+    await this.#reloadQueueCache(name)
   }
 
   async getQueue (name: string) {
@@ -2689,6 +2718,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async getQueueStats (name: string, options: types.QueueStatsOptions = {}): Promise<types.QueueStats[]> {
     Attorney.assertQueueName(name)
 
+    assert(options.percentiles === undefined || (Array.isArray(options.percentiles) && options.percentiles.length > 0 &&
+      options.percentiles.every(p => typeof p === 'number' && p >= 1 && p <= 100)),
+    'getQueueStats: percentiles must be a non-empty array of percents from 1 to 100, such as [50, 95]')
+    // Each value once, in the order first asked for.
+    const percentiles = options.percentiles && [...new Set(options.percentiles)]
+
     const isCockroach = this.config.backend === 'cockroachdb'
 
     // `counted` is true for recorded snapshots. The cache path serves only gauges: the queue table's
@@ -2710,6 +2745,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
         createdDelta: null,
         deltaSeconds: null,
         deltaOn: null,
+        waitBins: null,
+        runBins: null,
+        readyOldestSeconds: null,
         capturedOn: row?.capturedOn ?? new Date(this.config.clock.now())
       }
 
@@ -2721,6 +2759,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       // The end of the interval the counters cover, handed on as the row holds it, like capturedOn.
       if (counted && row?.deltaOn != null) snapshot.deltaOn = row.deltaOn
+
+      if (counted) {
+        snapshot.waitBins = toBins(row?.waitBins)
+        snapshot.runBins = toBins(row?.runBins)
+        if (row?.readyOldestSeconds != null) snapshot.readyOldestSeconds = Number(row.readyOldestSeconds)
+      }
+
+      // Read from this snapshot's (or bucket's) own histograms, so they are null wherever those are.
+      if (percentiles) {
+        snapshot.percentiles = percentiles.map(p => ({
+          p,
+          waitSeconds: percentile(snapshot.waitBins, p),
+          runSeconds: percentile(snapshot.runBins, p)
+        }))
+      }
 
       return snapshot
     }

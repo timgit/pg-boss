@@ -47,10 +47,10 @@ export default defineConfig({
     ],
     sidebar: [
       { text: 'Introduction', link: '/introduction' },
-      { text: 'Install', link: '/install' },
       { text: 'CLI', link: '/cli' },
       { text: 'Dashboard', link: '/dashboard' },
       { text: 'Proxy', link: '/proxy' },
+      { text: 'Database Install', link: '/install' },
       { text: 'Database Backends', link: '/database-backends' },
       { text: 'OpenTelemetry', link: '/opentelemetry' },
       { text: 'Sponsors', link: '/sponsors' },
@@ -77,7 +77,8 @@ export default defineConfig({
         items: [
           { text: 'Job Table', link: '/sql/job-table' },
           { text: 'Queue Functions', link: '/sql/queue-functions' },
-          { text: 'Warning Table', link: '/sql/warning-table' }
+          { text: 'Warning Table', link: '/sql/warning-table' },
+          { text: 'Instance Table', link: '/sql/instance-table' }
         ]
       }
     ],

@@ -249,6 +249,7 @@ export const queueResultSchema = z.object({
   heartbeatSeconds: z.number().optional(),
   notify: z.boolean().optional(),
   deferredCount: z.number(),
+  blockedCount: z.number(),
   queuedCount: z.number(),
   readyCount: z.number(),
   activeCount: z.number(),
@@ -259,6 +260,9 @@ export const queueResultSchema = z.object({
   createdDelta: z.number(),
   deltaSeconds: z.number().nullable(),
   deltaOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
+  waitBins: z.array(z.number()).nullable(),
+  runBins: z.array(z.number()).nullable(),
+  readyOldestSeconds: z.number().nullable(),
   table: z.string(),
   createdOn: z.iso.datetime().transform((val) => new Date(val)),
   updatedOn: z.iso.datetime().transform((val) => new Date(val)),
@@ -659,6 +663,14 @@ export const queueStatsSchema = z.object({
   createdDelta: z.number().nullable(),
   deltaSeconds: z.number().nullable(),
   deltaOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
+  waitBins: z.array(z.number()).nullable(),
+  runBins: z.array(z.number()).nullable(),
+  readyOldestSeconds: z.number().nullable(),
+  percentiles: z.array(z.object({
+    p: z.number(),
+    waitSeconds: z.number().nullable(),
+    runSeconds: z.number().nullable()
+  })).optional(),
   capturedOn: z.iso.datetime().transform((val) => new Date(val)),
 }) satisfies z.ZodType<types.HttpQueueStats>
 

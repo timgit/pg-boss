@@ -262,7 +262,9 @@ describe('TestClock', function () {
   })
 
   helper.itPglite('a custom adapter is handed the statements its sessions need', async function () {
-    const inner = await helper.getDb()
+    // One connection, since this adapter runs the statements once: an adapter over a pool has to run
+    // them on every connection it opens, which is what Db itself does.
+    const inner = await helper.getDb({ max: 1 })
     const applied: string[] = []
     const adapter = {
       executeSql: (text: string, values?: unknown[]) => inner.executeSql(text, values),

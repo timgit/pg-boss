@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { randomUUID } from 'node:crypto'
 import EventEmitter from 'node:events'
 import * as Attorney from './attorney.ts'
 import Contractor from './contractor.ts'
@@ -8,6 +9,7 @@ import Boss from './boss.ts'
 import Bam from './bam.ts'
 import Navigator from './navigator.ts'
 import Notifier from './notifier.ts'
+import Registrar from './registrar.ts'
 import { delay } from './tools.ts'
 import { isAttachable } from './clock.ts'
 import { trackActivity } from './activity.ts'
@@ -21,6 +23,7 @@ export { QUEUE_POLICIES as policies } from './plans.ts'
 export { SCHEDULE_KINDS as scheduleKinds } from './plans.ts'
 export { SCHEDULE_MISSED_POLICIES as scheduleMissedPolicies } from './plans.ts'
 export { PREVIEW_MAX_COUNT as previewScheduleMaxCount } from './timekeeper.ts'
+export { addBins, percentile } from './latency.ts'
 
 export const events: types.Events = Object.freeze({
   error: 'error',
@@ -68,6 +71,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #bam: Bam
   #navigator: Navigator
   #notifier: Notifier
+  #registrar: Registrar
 
   constructor (connectionString: string)
   constructor (options: types.ConstructorOptions)
@@ -77,6 +81,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     const config = Attorney.getConfig(value)
     this.#config = config
+
+    // Made here rather than at start(), since the pool is configured before it opens. Naming the
+    // connections after the instance is what lets pg_stat_activity join to its registry row. Only
+    // on a pool pg-boss creates, and never over a name the caller chose.
+    const instanceId = randomUUID()
+
+    if (config.registerInstance && !config.db && !config.application_name) {
+      config.application_name = `pgboss:${instanceId.slice(0, 8)}`
+    }
 
     let db: (types.IDatabase & { _pgbdb?: false }) | DbDefault = this.getDb()
 
@@ -109,12 +122,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const notifier = new Notifier(db, manager, config)
     manager.notifier = notifier
 
+    const registrar = new Registrar(instanceId, db, manager, config)
+
     this.#promoteEvents(manager)
     this.#promoteEvents(boss)
     this.#promoteEvents(timekeeper)
     this.#promoteEvents(bam)
     this.#promoteEvents(navigator)
     this.#promoteEvents(notifier)
+    this.#promoteEvents(registrar)
 
     this.#boss = boss
     this.#contractor = contractor
@@ -123,6 +139,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#bam = bam
     this.#navigator = navigator
     this.#notifier = notifier
+    this.#registrar = registrar
   }
 
   #promoteEvents (emitter: types.EventsMixin) {
@@ -209,6 +226,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#bam.start()
     }
 
+    await this.#registrar.start()
+
     this.#started = true
 
     return this
@@ -288,6 +307,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     const shutdown = async () => {
       await this.#manager.failWip()
+
+      // After the drain, so a graceful stop reads as live until its workers have finished.
+      await this.#registrar.stop()
 
       const attachment = this.#attachedClock
       this.#attachedClock = null
@@ -515,6 +537,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.getQueueStats(name, options)
   }
 
+  getInstances (): Promise<types.Instance[]> {
+    return this.#registrar.getInstances()
+  }
+
   isMaintaining (): boolean {
     return this.#boss.maintaining
   }
@@ -692,6 +718,12 @@ export type {
   QueuePolicy,
   QueueResult,
   QueueStats,
+  QueueStatsPercentile,
+  Instance,
+  InstanceMetrics,
+  InstanceOptions,
+  InstanceWorker,
+  PoolCounts,
   QueueStatsOptions,
   RedriveFilter,
   RedriveOptions,

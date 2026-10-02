@@ -1,10 +1,22 @@
-import { expect } from 'vitest'
+import { afterAll, expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
+import { addBins, percentile } from '../src/index.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
 import pg from 'pg'
+
+// One database handle for the whole file. Each helper.getDb() is a pool of its own that is never closed,
+// and this file asks for one on every monitor pass and every finished job, which ran a CI database at
+// the default 100 connections out of them.
+let sharedDb: ReturnType<typeof helper.getDb> | undefined
+const getDb = () => (sharedDb ??= helper.getDb())
+
+afterAll(async () => {
+  // PGlite hands every caller the same in-process instance, which is not this file's to close.
+  if (sharedDb && !helper.isPglite) await (await sharedDb).close()
+})
 
 describe('queueStats', function () {
   const queue1 = `q${randomUUID().replaceAll('-', '')}`
@@ -62,6 +74,30 @@ describe('queueStats', function () {
     expect(queueData.deferredCount).toBe(1)
     // readyCount is the true backlog: queued minus the deferred (future-dated) job
     expect(queueData.readyCount).toBe(1)
+  })
+
+  it('should count jobs blocked by a flow parent apart from deferred and ready ones', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    await ctx.boss.flow([
+      { ref: 'parent', name: queue },
+      { ref: 'child', name: queue, dependsOn: ['parent'] },
+      // Blocked and deferred at once counts as blocked: it cannot run until the parent finishes.
+      { ref: 'later', name: queue, options: { startAfter: 3600 }, dependsOn: ['parent'] }
+    ])
+    await ctx.boss.send(queue, {}, { startAfter: 100 })
+
+    const [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.queuedCount).toBe(4)
+    expect(stats.deferredCount).toBe(1)
+    expect(stats.readyCount).toBe(1)
+
+    const live = await ctx.boss.getQueue(queue)
+    helper.assertTruthy(live)
+    expect(live.blockedCount).toBe(2)
+    expect(live.deferredCount + live.blockedCount + live.readyCount).toBe(live.queuedCount)
   })
 
   it('should not let a cancelled deferred job deflate readyCount', async function () {
@@ -222,7 +258,7 @@ describe('queueStats', function () {
      * stamps instead.
      */
     async function monitorPass (queue: string, throughput = true, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
@@ -235,6 +271,7 @@ describe('queueStats', function () {
       const row = rows[0]
       for (const [key, value] of Object.entries(row)) {
         if (typeof value === 'string' && /^-?\d+$/.test(value)) row[key] = Number(value)
+        if (Array.isArray(value)) row[key] = value.map(v => (typeof v === 'string' && /^-?\d+$/.test(v) ? Number(v) : v))
       }
 
       return row
@@ -448,7 +485,7 @@ describe('queueStats', function () {
       const queue = randomUUID()
       await ctx.boss.createQueue(queue)
 
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
@@ -467,7 +504,7 @@ describe('queueStats', function () {
 
     /** Moves this queue's counting window back, which is the only way to give a fast test real seconds. */
     async function windBack (queue: string, interval: string) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await db.executeSql(
         `UPDATE ${schema}.queue SET delta_on = ${schema}.job_now() - interval '${interval}' WHERE name = $1`, [queue]
@@ -476,7 +513,7 @@ describe('queueStats', function () {
 
     /** Ages this queue's jobs, so a stamp lands before a window end that trails the pass. */
     async function age (queue: string, interval: string) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await db.executeSql(
         `UPDATE ${schema}.job
@@ -528,7 +565,7 @@ describe('queueStats', function () {
       // Far enough back that nothing the running monitor writes can land in the range.
       const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
       const minute = (n: number) => new Date(hour - n * 60_000)
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
@@ -656,7 +693,7 @@ describe('queueStats', function () {
       // snapshot the running monitor writes meanwhile can't be the newest row.
       const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
       const to = new Date(hour - 1)
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       await db.executeSql(
@@ -690,12 +727,347 @@ describe('queueStats', function () {
       expect(result!.deltaSeconds).toBeGreaterThanOrEqual(30)
     })
 
+    describe('wait and run times', function () {
+      /** The slot a duration lands in: slot k holds 10 ms · √2^(k-1) up to 10 ms · √2^k. */
+      const slotOf = (seconds: number) => Math.floor(2 * Math.log2(seconds / plans.LATENCY_MIN_SECONDS)) + 1
+
+      /** A histogram as the API hands it out: these counts in these slots and zeros everywhere else. */
+      function bins (counts: Record<number, number>): number[] {
+        const all = new Array(plans.LATENCY_SLOTS).fill(0)
+        for (const [slot, n] of Object.entries(counts)) all[Number(slot)] = n
+        return all
+      }
+
+      /** The same histogram as a row stores it, null in every slot no job landed in. */
+      const stored = (counts: Record<number, number>) => bins(counts).map(n => (n === 0 ? null : n))
+
+      /** The text form of a stored histogram, for seeding queue_stats. */
+      const literal = (counts: Record<number, number>) => `{${stored(counts).map(n => n ?? 'NULL').join(',')}}`
+
+      /**
+       * Finishes one job whose wait and run are known: its stamps are set to them, relative to a
+       * completion inside the window the next pass counts.
+       */
+      async function finishJob (queue: string, times: { wait: number, run: number, deferBy?: number }, fail = false) {
+        await ctx.boss!.send(queue, null, fail ? { retryLimit: 0 } : {})
+        const [job] = await ctx.boss!.fetch(queue)
+        if (fail) await ctx.boss!.fail(queue, job.id)
+        else await ctx.boss!.complete(queue, job.id)
+
+        const db = await getDb()
+        const schema = ctx.bossConfig.schema
+        await db.executeSql(
+          `UPDATE ${schema}.job
+           SET started_on = completed_on - $3::float8 * interval '1 second',
+               start_after = completed_on - ($3::float8 + $2::float8) * interval '1 second',
+               created_on = completed_on - ($3::float8 + $2::float8 + $4::float8) * interval '1 second'
+           WHERE name = $1 AND id = $5`,
+          [queue, times.wait, times.run, times.deferBy ?? 0, job.id])
+      }
+
+      /**
+       * End to end: the monitor's SQL bins the waits, and percentile() reads them back within the
+       * slot the exact percentile is in, so within a factor of √2 of it.
+       */
+      it('records waits that percentile() reads back within a factor of √2 of the exact one', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+
+        const waits = [0.05, 0.3, 1, 2, 5, 9, 20, 60, 300, 1800]
+        for (const wait of waits) await finishJob(queue, { wait, run: 1 })
+        await monitorPass(queue)
+
+        const { waitBins } = (await ctx.boss.getQueue(queue))!
+        for (const p of [10, 50, 90, 100]) {
+          const exact = waits[Math.max(Math.ceil(p / 100 * waits.length) - 1, 0)]
+          const ratio = percentile(waitBins, p)! / exact
+          expect(ratio, `p${p}`).toBeGreaterThanOrEqual(Math.SQRT1_2)
+          expect(ratio, `p${p}`).toBeLessThanOrEqual(Math.SQRT2)
+        }
+      })
+
+      it('records the wait and run of each job that finished, in log-spaced bins', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+
+        await finishJob(queue, { wait: 30, run: 2 })
+        await finishJob(queue, { wait: 0.5, run: 2 })
+
+        const row = await monitorPass(queue)
+        // Stored as every slot, null where no job landed.
+        expect(row.waitBins).toEqual(stored({ [slotOf(0.5)]: 1, [slotOf(30)]: 1 }))
+        expect(row.runBins).toEqual(stored({ [slotOf(2)]: 2 }))
+
+        // getQueue() hands out the latest pass beside the deltas, the empty slots as 0.
+        const live = await ctx.boss.getQueue(queue)
+        expect(live!.waitBins).toEqual(bins({ [slotOf(0.5)]: 1, [slotOf(30)]: 1 }))
+        expect(live!.runBins).toEqual(bins({ [slotOf(2)]: 2 }))
+        expect(live!.readyOldestSeconds).toBe(row.readyOldestSeconds)
+      })
+
+      /** A deferred job, or a retry sitting out its backoff, is not waiting until it may start. */
+      it('counts a wait from when the job could start, not from when it was sent', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+
+        await finishJob(queue, { wait: 3, run: 1, deferBy: 600 })
+
+        const row = await monitorPass(queue)
+        expect(row.waitBins).toEqual(stored({ [slotOf(3)]: 1 }))
+      })
+
+      it('records a terminal failure beside the completions', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+
+        await finishJob(queue, { wait: 1, run: 20 }, true)
+
+        const row = await monitorPass(queue)
+        expect(row.failedDelta).toBe(1)
+        expect(row.runBins).toEqual(stored({ [slotOf(20)]: 1 }))
+      })
+
+      /** Like the deltas: a pass that counted says so, with all zeros rather than null. */
+      it('records all-zero histograms for a pass in which nothing finished', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue)
+        await ctx.boss.send(queue)
+
+        const row = await monitorPass(queue)
+        expect(row.waitBins).toEqual(stored({}))
+        expect(row.runBins).toEqual(stored({}))
+        expect((await ctx.boss.getQueue(queue))!.waitBins).toEqual(bins({}))
+      })
+
+      /** A queue with no job rows has no aggregate row at all; its pass still counted. */
+      it('records all-zero histograms for a queue with no jobs', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const row = await monitorPass(queue)
+        expect(row.waitBins).toEqual(stored({}))
+        expect(row.readyOldestSeconds).toBe(0)
+      })
+
+      it('does not record wait and run times when tracking is off', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        await monitorPass(queue, false)
+        await finishJob(queue, { wait: 1, run: 1 })
+
+        const row = await monitorPass(queue, false)
+        expect(row.waitBins).toBe(null)
+        expect(row.readyOldestSeconds).toBe(null)
+
+        const live = await ctx.boss.getQueue(queue)
+        expect(live!.waitBins).toBe(null)
+        expect(live!.runBins).toBe(null)
+        expect(live!.readyOldestSeconds).toBe(null)
+      })
+
+      /**
+       * The one figure that moves while nothing finishes: a stuck queue records no waits, because a
+       * wait is counted when its job finishes, but its oldest ready job keeps getting older.
+       */
+      it('records how long the oldest ready job has waited, leaving out deferred and blocked ones', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+        const db = await getDb()
+        const schema = ctx.bossConfig.schema
+
+        expect((await monitorPass(queue)).readyOldestSeconds).toBe(0)
+
+        const ready = await ctx.boss.send(queue)
+        await ctx.boss.send(queue, null, { startAfter: 3600 })
+        await db.executeSql(
+          `UPDATE ${schema}.job SET created_on = created_on - interval '90 seconds', start_after = start_after - interval '90 seconds'
+           WHERE name = $1 AND id = $2`, [queue, ready])
+
+        // A job blocked by a parent is not ready however long ago it was sent.
+        const flow = await ctx.boss.flow([
+          { ref: 'parent', name: queue, options: { startAfter: 3600 } },
+          { ref: 'child', name: queue, dependsOn: ['parent'] }
+        ])
+        await db.executeSql(
+          `UPDATE ${schema}.job SET created_on = created_on - interval '2 hours', start_after = start_after - interval '2 hours'
+           WHERE name = $1 AND id = $2`, [queue, flow.child])
+
+        const row = await monitorPass(queue)
+        expect(row.readyOldestSeconds).toBeGreaterThanOrEqual(89)
+        expect(row.readyOldestSeconds).toBeLessThan(120)
+      })
+
+      it('adds the histograms of a bucket slot by slot, and keeps its oldest wait', async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+        const to = new Date(hour - 1)
+        const db = await getDb()
+        const schema = ctx.bossConfig.schema
+        await ensurePreviousDayPartition(db, schema)
+        await db.executeSql(
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
+             wait_bins, run_bins, ready_oldest_seconds)
+           VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2, $4, $6, 40),
+                  ($1, 3, 60, $3::timestamptz - interval '60 seconds', $3, $5, $6, 75)`,
+          [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000),
+            literal({ 10: 2 }), literal({ 10: 3, 12: 1 }), literal({ 5: 2 })]
+        )
+
+        const [newest] = await ctx.boss.getQueueStats(queue, { to })
+        expect(newest.waitBins).toHaveLength(plans.LATENCY_SLOTS)
+        expect(newest.waitBins![10]).toBe(3)
+        expect(newest.waitBins![12]).toBe(1)
+        expect(newest.readyOldestSeconds).toBe(75)
+
+        // Added up in SQL: one histogram for the bucket, not one per pass.
+        const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
+        expect(bucket.waitBins![10]).toBe(5)
+        expect(bucket.waitBins![12]).toBe(1)
+        expect(bucket.runBins![5]).toBe(4)
+        expect(bucket.waitBins).toHaveLength(plans.LATENCY_SLOTS)
+        expect(bucket.readyOldestSeconds).toBe(75)
+      })
+
+      it('reads the percentiles asked for from each snapshot, and from each bucket\'s added histograms', async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+        const to = new Date(hour - 1)
+        const db = await getDb()
+        const schema = ctx.bossConfig.schema
+        await ensurePreviousDayPartition(db, schema)
+        await db.executeSql(
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
+             wait_bins, run_bins, ready_oldest_seconds)
+           VALUES ($1, 10, 60, $2::timestamptz - interval '60 seconds', $2, $4, $6, 40),
+                  ($1, 10, 60, $3::timestamptz - interval '60 seconds', $3, $5, $7, 75)`,
+          [queue, new Date(hour - 50 * 60_000), new Date(hour - 40 * 60_000),
+            literal({ 4: 9, 20: 1 }), literal({ 8: 5, 30: 5 }), literal({ 6: 10 }), literal({ 12: 10 })]
+        )
+        const ps = [50, 95]
+
+        const snapshots = await ctx.boss.getQueueStats(queue, { to, percentiles: ps })
+        expect(snapshots).toHaveLength(2)
+        for (const s of snapshots) {
+          expect(s.percentiles).toEqual(ps.map(p => ({ p, waitSeconds: percentile(s.waitBins, p), runSeconds: percentile(s.runBins, p) })))
+          expect(s.percentiles!.every(e => e.waitSeconds !== null && e.runSeconds !== null)).toBe(true)
+        }
+
+        // A bucket's percentile is read from its added histograms, not averaged from its snapshots'.
+        const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to, percentiles: ps })
+        const added = addBins(snapshots[0].waitBins, snapshots[1].waitBins)
+        expect(bucket.percentiles!.map(e => e.waitSeconds)).toEqual(ps.map(p => percentile(added, p)))
+        const p95 = (s: typeof bucket) => s.percentiles!.find(e => e.p === 95)!.waitSeconds!
+        const averaged = (p95(snapshots[0]) + p95(snapshots[1])) / 2
+        expect(p95(bucket)).not.toBeCloseTo(averaged, 3)
+
+        // Without the option, the fields are absent.
+        const [plain] = await ctx.boss.getQueueStats(queue, { to })
+        expect(plain).not.toHaveProperty('percentiles')
+      })
+
+      it('reads null percentiles where there are no histograms to read them from', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        // persistQueueStats off: a live reading, which carries no histograms
+        const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [50, 95] })
+        expect(stats.waitBins).toBe(null)
+        expect(stats.percentiles).toEqual([
+          { p: 50, waitSeconds: null, runSeconds: null },
+          { p: 95, waitSeconds: null, runSeconds: null }
+        ])
+      })
+
+      it('reads each percentile once, in the order first asked for', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const [stats] = await ctx.boss.getQueueStats(queue, { percentiles: [95, 50, 95, 50, 99.9] })
+        expect(stats.percentiles!.map(e => e.p)).toEqual([95, 50, 99.9])
+      })
+
+      it('refuses percentiles outside 1 to 100, fractions meant as percents, or none at all', async function () {
+        ctx.boss = await helper.start(ctx.bossConfig)
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        for (const percentiles of [[0.95], [101], [0], [], ['50']] as any[]) {
+          await expect(ctx.boss.getQueueStats(queue, { percentiles })).rejects.toThrow('percentiles must be')
+        }
+      })
+
+      it('reports zeros, not null, for a bucket whose passes counted and saw nothing finish', async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+        const to = new Date(hour - 1)
+        const db = await getDb()
+        const schema = ctx.bossConfig.schema
+        await ensurePreviousDayPartition(db, schema)
+        await db.executeSql(
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on,
+             wait_bins, run_bins, ready_oldest_seconds)
+           VALUES ($1, 0, 60, $2::timestamptz - interval '60 seconds', $2, $3, $3, 0)`,
+          [queue, new Date(hour - 50 * 60_000), literal({})])
+
+        const [row] = await ctx.boss.getQueueStats(queue, { to })
+        expect(row.waitBins).toEqual(new Array(plans.LATENCY_SLOTS).fill(0))
+        const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
+        expect(bucket.waitBins).toEqual(new Array(plans.LATENCY_SLOTS).fill(0))
+        expect(bucket.runBins).toEqual(new Array(plans.LATENCY_SLOTS).fill(0))
+      })
+
+      it('reports no histogram for a snapshot captured before they were counted', async function () {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+        const queue = randomUUID()
+        await ctx.boss.createQueue(queue)
+
+        const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
+        const to = new Date(hour - 1)
+        const db = await getDb()
+        const schema = ctx.bossConfig.schema
+        await ensurePreviousDayPartition(db, schema)
+        await db.executeSql(
+          `INSERT INTO ${schema}.queue_stats (name, completed_delta, delta_seconds, delta_on, captured_on)
+           VALUES ($1, 2, 60, $2::timestamptz - interval '60 seconds', $2)`, [queue, new Date(hour - 50 * 60_000)])
+
+        const [row] = await ctx.boss.getQueueStats(queue, { to })
+        expect(row.waitBins).toBe(null)
+        expect(row.readyOldestSeconds).toBe(null)
+        const [bucket] = await ctx.boss.getQueueStats(queue, { bucketSeconds: 3600, to })
+        expect(bucket.waitBins).toBe(null)
+      })
+    })
+
     /**
      * A monitor pass with persistQueueStats on, run the way the monitor runs it: the aggregate,
      * the snapshot, and the true-up when the aggregate flagged one. Returns whether it did.
      */
     async function recordedPass (queue: string, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
@@ -718,7 +1090,7 @@ describe('queueStats', function () {
       ctx.boss = await helper.start(ctx.bossConfig)
       const queue = randomUUID()
       await ctx.boss.createQueue(queue)
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
@@ -744,7 +1116,7 @@ describe('queueStats', function () {
 
     /** The recorded history's counters, oldest first. */
     async function history (queue: string) {
-      const db = await helper.getDb()
+      const db = await getDb()
       const { rows } = await db.executeSql(
         `SELECT created_delta::int AS created, completed_delta::int AS completed, failed_delta::int AS failed
          FROM ${ctx.bossConfig.schema}.queue_stats WHERE name = $1 ORDER BY delta_on, captured_on`, [queue]
@@ -907,7 +1279,7 @@ describe('queueStats', function () {
       const queue = randomUUID()
       await ctx.boss.createQueue(queue, { deleteAfterSeconds: 4 })
       const schema = ctx.bossConfig.schema
-      const db = await helper.getDb()
+      const db = await getDb()
       const { rows: [{ table_name: table }] } = await db.executeSql(
         `SELECT table_name FROM ${schema}.queue WHERE name = $1`, [queue]
       )
@@ -1021,7 +1393,7 @@ describe('queueStats', function () {
       await ctx.boss.send(queue)
       await age(queue, '10 minutes')
 
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       // An anchor twenty minutes back, then a window over the sends that recorded none of them.
@@ -1069,7 +1441,7 @@ describe('queueStats', function () {
 
       const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000
       const minute = (n: number) => new Date(hour - n * 60_000)
-      const db = await helper.getDb()
+      const db = await getDb()
       const schema = ctx.bossConfig.schema
       await ensurePreviousDayPartition(db, schema)
       // Captures at minutes 31 and 29; the second one's counters cover an

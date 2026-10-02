@@ -1,6 +1,6 @@
 # Utility functions
 
-The following functions are exported from the package and are not required during normal operations, but are intended to assist in schema creation or migration if run-time privileges do not allow schema changes.
+The following functions are exported from the package and are not required during normal operations. The plan functions assist in schema creation or migration if run-time privileges do not allow schema changes, and [`percentile()`](#percentile-bins-p) and [`addBins()`](#addbins-a-b) read the wait and run [latency histograms](./queues.md#getqueues-names).
 
 ```js
 import { getConstructionPlans, getMigrationPlans, getRollbackPlans, getIndexBloatPlans } from 'pg-boss'
@@ -78,3 +78,41 @@ Each row describes one index that is holding far more pages than its live entrie
 | `owned` | Whether the connected role can `REINDEX` it |
 
 `pages` and `entries` come from `pg_class`, which only `VACUUM` and `ANALYZE` refresh, so the results go stale on a table with autovacuum disabled.
+
+### `percentile(bins, p)`
+
+**Arguments**
+- `bins`: a [latency histogram](./queues.md#getqueues-names), `waitBins` or `runBins`, or several added with [`addBins()`](#addbins-a-b)
+- `p`: percent from 1 to 100, such as `95` for the 95th percentile
+
+Returns the time in seconds below which that fraction of the histogram's jobs fall, or `null` for an empty or missing histogram. It is an estimate that always falls in the same bin as the exact value, and with a few thousand jobs it is typically within a few percent of it. A percentile under 10 ms reads as `0.01`.
+
+```js
+import { percentile } from 'pg-boss'
+
+const [stats] = await boss.getQueueStats('email-send')
+const p95 = percentile(stats.waitBins, 95)
+```
+
+### `addBins(a, b)`
+
+**Arguments**
+- `a`, `b`: [latency histograms](./queues.md#getqueues-names), or `null`
+
+Combines two histograms into one by adding their counts bin by bin, as if every job in both had been recorded together. Use it to merge snapshots over a time range, or several queues, before reading a percentile with [`percentile()`](#percentile-bins-p): averaging percentiles taken from smaller spans does not give a percentile.
+
+```js
+addBins([0, 2, 5, 1, …], [1, 0, 3, 4, …]) // [1, 2, 8, 5, …]
+```
+
+It returns a new array and leaves both arguments unchanged. A `null` argument counts as an empty histogram, so `null` is a safe starting value when combining a list, and the result is `null` only when both are.
+
+```js
+import { addBins, percentile } from 'pg-boss'
+
+// the p95 wait over the last hour, from the snapshots in it
+const hour = await boss.getQueueStats('email-send', { from: new Date(Date.now() - 3600_000) })
+const waits = hour.reduce((sum, s) => addBins(sum, s.waitBins), null)
+
+console.log(`p95 wait ${percentile(waits, 95)?.toFixed(1)} s`)
+```

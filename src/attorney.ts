@@ -521,6 +521,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   applyScheduleConfig(config)
   applyBamConfig(config)
   applyFlowConfig(config)
+  applyInstanceConfig(config)
   validateWarningConfig(config)
   validateOpenTelemetryConfig(config)
 
@@ -546,6 +547,19 @@ function applySchemaConfig (config: types.ConstructorOptions) {
   }
 
   config.schema = config.schema || DEFAULT_SCHEMA
+}
+
+function applyInstanceConfig (config: any) {
+  config.registerInstance = ('registerInstance' in config) ? config.registerInstance !== false : true
+
+  assert(!('instanceName' in config) || config.instanceName === undefined || (typeof config.instanceName === 'string' && config.instanceName.length > 0),
+    'configuration assert: instanceName must be a non-empty string')
+
+  assert(!('instanceHeartbeatSeconds' in config) || config.instanceHeartbeatSeconds === undefined ||
+    (Number.isInteger(config.instanceHeartbeatSeconds) && config.instanceHeartbeatSeconds >= 1 && config.instanceHeartbeatSeconds <= 3600),
+  'configuration assert: instanceHeartbeatSeconds must be an integer from 1 to 3600')
+
+  config.instanceHeartbeatSeconds = config.instanceHeartbeatSeconds || 30
 }
 
 function validateOpenTelemetryConfig (config: any) {

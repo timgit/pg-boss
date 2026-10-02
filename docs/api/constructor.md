@@ -58,7 +58,7 @@ Maximum number of connections that will be shared by all operations in this inst
 
 ### `application_name`
 
-String, defaults to "pgboss"
+String, defaults to `pgboss:` followed by the first 8 characters of the instance's id, so each instance's connections can be told apart in `pg_stat_activity` and joined to [`getInstances()`](./ops.md#getinstances). With `registerInstance: false` the default is `"pgboss"`.
 
 ### `connectionTimeoutMillis`
 
@@ -297,11 +297,34 @@ Bool, default false
 
 If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
+Each monitor pass then also counts the jobs created and finished since the previous pass, and records the wait and run times of the finished ones, in the same read of the job table. The wait and run times cost more the more jobs finished since the previous pass, whatever the size of the table. Measured on one queue on PostgreSQL 18, they added about 0.4 s to a 2.4 s pass with 100,000 finished jobs, and about 1.1 s to a 3.7 s pass with 1,000,000, with about 9 MB of memory per million finished jobs held for the length of the pass. On CockroachDB they added about 0.7 s with 100,000.
+
 ### `queueStatRetentionDays`
 
 Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
+
+### `registerInstance`
+
+Bool, default true
+
+Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`. [`getInstances()`](./ops.md#getinstances) lists every pg-boss instance connecting to this schema. Set to false to leave this instance out of the registry. 
+
+> [!NOTE]
+> Short-lived processes such as serverless functions should set this to false, since frequent registrations would produce false positives of a frozen or crashed instance.
+
+### `instanceName`
+
+String, optional
+
+A label for this instance in the registry, such as `api` or `billing-worker`. It does not need to be unique, since each instance is recorded under its own id. Instances with the same name are grouped for pruning stopped rows and for counting crash restarts; see [`getInstances()`](./ops.md#getinstances).
+
+### `instanceHeartbeatSeconds`
+
+Int, default 30
+
+How often this instance refreshes its registry row. It reads as quiet, rather than live, once three heartbeats are missed. Must be from 1 to 3600.
 
 ### `openTelemetry`
 

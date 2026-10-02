@@ -2043,12 +2043,66 @@ AS $function$
       release: '12.36.0',
       version: 44,
       previous: 43,
-      // The trace context of the send() that created a job, so the span processing it can join the
-      // producer's trace. Nullable with no default, so adding it rewrites no rows.
+      // The instance table starts empty: each instance registers on its next start().
+      // blocked_count's constant default adds it without a table rewrite, and existing queues read 0
+      // until the next monitor pass counts them. It goes on the queue row only, not queue_stats, so
+      // the covering index on queue_stats needs no rebuild.
+      // The histogram and ready_oldest_seconds columns are nullable with no default, like the v43
+      // deltas, so no statement rewrites a table, and a snapshot captured before them reads as not
+      // counted rather than as a queue with no waits.
+      // trace_context is nullable with no default too, so adding it rewrites no rows.
       install: [
+        /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
+        `CREATE TABLE ${schema}.instance (
+          id uuid PRIMARY KEY,
+          name text,
+          host text NOT NULL,
+          pid int NOT NULL,
+          version text NOT NULL,
+          node_version text NOT NULL,
+          application_name text,
+          heartbeat_seconds int NOT NULL,
+          supervise bool NOT NULL,
+          schedule bool NOT NULL,
+          migrate bool NOT NULL,
+          persist_queue_stats bool NOT NULL,
+          persist_warnings bool NOT NULL,
+          pool_max int,
+          pool_total int,
+          pool_idle int,
+          pool_waiting int,
+          workers jsonb NOT NULL DEFAULT '[]'::jsonb,
+          metrics jsonb,
+          config jsonb NOT NULL DEFAULT '{}'::jsonb,
+          crash_restarts int NOT NULL DEFAULT 0,
+          crash_restarts_since timestamptz,
+          started_on timestamptz NOT NULL DEFAULT now(),
+          heartbeat_on timestamptz NOT NULL DEFAULT now(),
+          stopped_on timestamptz
+        )`,
+        /* eslint-enable no-restricted-syntax */
+        `ALTER TABLE ${schema}.queue
+          ADD COLUMN blocked_count int NOT NULL DEFAULT 0,
+          ADD COLUMN wait_bins int[],
+          ADD COLUMN run_bins int[],
+          ADD COLUMN ready_oldest_seconds int`,
+        `ALTER TABLE ${schema}.queue_stats
+          ADD COLUMN wait_bins int[],
+          ADD COLUMN run_bins int[],
+          ADD COLUMN ready_oldest_seconds int`,
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS trace_context jsonb`
       ],
       uninstall: [
+        `DROP TABLE ${schema}.instance`,
+        `ALTER TABLE ${schema}.queue
+          DROP COLUMN blocked_count,
+          DROP COLUMN wait_bins,
+          DROP COLUMN run_bins,
+          DROP COLUMN ready_oldest_seconds`,
+        `ALTER TABLE ${schema}.queue_stats
+          DROP COLUMN wait_bins,
+          DROP COLUMN run_bins,
+          DROP COLUMN ready_oldest_seconds`,
         `ALTER TABLE ${schema}.job DROP COLUMN trace_context`
       ]
     }

@@ -194,14 +194,14 @@ async function init (): Promise<void> {
   await tryCreateDb(database)
 }
 
-async function getDb ({ database, debug }: { database?: string; debug?: boolean } = {}): Promise<Db> {
+async function getDb ({ database, debug, max }: { database?: string; debug?: boolean; max?: number } = {}): Promise<Db> {
   if (isPglite) return getPgliteDb() as unknown as Db
 
   const config = getConfig()
 
   config.database = database || config.database
 
-  const db = new Db({ ...config, debug })
+  const db = new Db({ ...config, debug, ...(max === undefined ? {} : { max }) })
 
   await db.open()
 
