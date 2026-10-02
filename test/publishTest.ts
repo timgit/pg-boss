@@ -1,7 +1,8 @@
-import { expect } from 'vitest'
+import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import * as plans from '../src/plans.ts'
 
 describe('pubsub', function () {
   it('should fail with no arguments', async function () {
@@ -68,6 +69,255 @@ describe('pubsub', function () {
 
     expect(job1.data.message).toBe(message)
     expect(job2.data.message).toBe(message)
+  })
+
+  it.each([
+    { cache: 'cold', fail: false },
+    { cache: 'warm', fail: false },
+    { cache: 'cold', fail: true }
+  ])('should handle subscriber removal (cache: $cache, other failure: $fail)', async function ({ cache, fail }) {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.stop({ close: false })
+    const publisher = await helper.start({ ...ctx.bossConfig, migrate: false, noDefault: true })
+
+    try {
+      await publisher.stop({ close: false })
+
+      const departing = 'subqueue-departing'
+      const healthy = 'subqueue-healthy'
+      const failing = 'subqueue-failing'
+      const event = 'event'
+      const data = { message: 'hi' }
+
+      await ctx.boss.createQueue(departing)
+      await ctx.boss.createQueue(healthy)
+      await ctx.boss.subscribe(event, departing)
+      await ctx.boss.subscribe(event, healthy)
+      const queue = await ctx.boss.getQueue(departing)
+      assertTruthy(queue)
+
+      if (fail) {
+        await ctx.boss.createQueue(failing, { policy: 'key_strict_fifo' })
+        await ctx.boss.subscribe(event, failing)
+        await publisher.fetch(failing)
+      }
+
+      // Only the departing subscriber needs a metadata lookup in the cold case.
+      await publisher.fetch(healthy)
+      if (cache === 'warm') await publisher.fetch(departing)
+
+      const db = publisher.getDb()
+      const executeSql = db.executeSql.bind(db)
+      const statement = cache === 'cold'
+        ? plans.getQueues(ctx.schema, [departing]).text
+        : plans.insertJobs(ctx.schema, { table: queue.table, name: departing })
+      const { reached, release } = helper.holdStatement(db, sql => sql === statement)
+      const publication = publisher.publish(event, data).then(
+        () => undefined,
+        (error: unknown) => error
+      )
+
+      try {
+        // Both boundaries follow subscription selection, before the departing send uses SQL.
+        await reached
+        await ctx.boss.unsubscribe(event, departing)
+        await ctx.boss.deleteQueue(departing)
+        expect(await ctx.boss.getQueue(departing)).toBeNull()
+        release()
+
+        const error = await publication
+        expect((await ctx.boss.findJobs(healthy)).map(job => job.data)).toEqual([data])
+        if (fail) {
+          expect(error).toBeInstanceOf(AggregateError)
+          expect(error).toMatchObject({
+            message: "publish('event') failed for 1 of 3 subscribed queue(s)",
+            errors: [expect.stringMatching(/^subqueue-failing: .*key_strict_fifo/)]
+          })
+          expect(await ctx.boss.findJobs(failing)).toEqual([])
+        } else {
+          expect(error).toBeUndefined()
+        }
+      } finally {
+        release()
+        await publication
+        db.executeSql = executeSql
+      }
+    } finally {
+      await publisher.stop()
+    }
+  })
+
+  it('should resolve when every selected subscriber disappears', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const boss = ctx.boss
+    await boss.stop({ close: false })
+    const publisher = await helper.start({ ...ctx.bossConfig, migrate: false, noDefault: true })
+
+    try {
+      await publisher.stop({ close: false })
+      const names = ['subqueue1', 'subqueue2']
+      for (const name of names) {
+        await boss.createQueue(name)
+        await boss.subscribe('event', name)
+      }
+
+      const db = publisher.getDb()
+      const executeSql = db.executeSql.bind(db)
+      const statement = plans.getQueuesForEvent(ctx.schema)
+      const spy = vi.spyOn(db, 'executeSql').mockImplementation(async (sql, values) => {
+        const result = await executeSql(sql, values)
+        if (sql === statement) {
+          // Keep the real selection, but remove its destinations before returning it.
+          expect(result.rows.map(row => row.name).sort()).toEqual(names)
+          for (const name of names) {
+            await boss.unsubscribe('event', name)
+            await boss.deleteQueue(name)
+          }
+        }
+        return result
+      })
+
+      try {
+        await publisher.publish('event', { message: 'hi' })
+        expect(spy).toHaveBeenCalledWith(statement, ['event'])
+        for (const name of names) expect(await boss.getQueue(name)).toBeNull()
+        expect(await helper.countJobs(ctx.schema, 'job', '1 = 1')).toBe(0)
+      } finally {
+        spy.mockRestore()
+      }
+    } finally {
+      await publisher.stop()
+    }
+  })
+
+  it('should ignore a subscriber removed before publication', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue('departing')
+    await ctx.boss.createQueue('healthy')
+    await ctx.boss.subscribe('event', 'departing')
+    await ctx.boss.subscribe('event', 'healthy')
+    await ctx.boss.unsubscribe('event', 'departing')
+    await ctx.boss.deleteQueue('departing')
+
+    const data = { message: 'hi' }
+    await ctx.boss.publish('event', data)
+
+    expect(await ctx.boss.getQueue('departing')).toBeNull()
+    expect((await ctx.boss.findJobs('healthy')).map(job => job.data)).toEqual([data])
+  })
+
+  it('should still reject a direct send to a missing queue', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await expect(ctx.boss.send('missing')).rejects.toMatchObject({
+      name: 'Error',
+      message: 'Queue missing does not exist'
+    })
+  })
+
+  it.each(['matching message', 'database error'])('should preserve a %s during metadata lookup', async function (failure) {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.stop({ close: false })
+    const publisher = await helper.start({ ...ctx.bossConfig, migrate: false, noDefault: true })
+
+    try {
+      await publisher.stop({ close: false })
+
+      const healthy = 'subqueue-healthy'
+      const failing = 'subqueue-failing'
+      const data = { message: 'hi' }
+
+      await ctx.boss.createQueue(healthy)
+      await ctx.boss.createQueue(failing)
+      await ctx.boss.subscribe('event', healthy)
+      await ctx.boss.subscribe('event', failing)
+      await publisher.fetch(healthy)
+      const db = publisher.getDb()
+      const executeSql = db.executeSql.bind(db)
+      const statement = plans.getQueues(ctx.schema, [failing]).text
+      const message = failure === 'matching message'
+        ? `Queue ${failing} does not exist`
+        : 'division by zero'
+      const spy = vi.spyOn(db, 'executeSql').mockImplementation(async (sql, values) => {
+        if (sql === statement) {
+          if (failure === 'matching message') throw new Error(message)
+          // The metadata error comes from PostgreSQL, not a missing queue result.
+          await executeSql('SELECT 1 / 0')
+        }
+        return await executeSql(sql, values)
+      })
+
+      try {
+        await expect(publisher.publish('event', data)).rejects.toMatchObject({
+          message: "publish('event') failed for 1 of 2 subscribed queue(s)",
+          errors: [`${failing}: ${message}`]
+        })
+      } finally {
+        spy.mockRestore()
+      }
+
+      expect(await ctx.boss.getQueue(failing)).toBeTruthy()
+      expect(await ctx.boss.findJobs(failing)).toEqual([])
+      expect((await ctx.boss.findJobs(healthy)).map(job => job.data)).toEqual([data])
+    } finally {
+      await publisher.stop()
+    }
+  })
+
+  it('should preserve foreign-key failures from PostgreSQL', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await ctx.boss.subscribe('event', ctx.schema)
+
+    await expect(ctx.boss.publish('event', { message: 'hi' }, { deadLetter: 'missing' })).rejects.toMatchObject({
+      message: "publish('event') failed for 1 of 1 subscribed queue(s)",
+      errors: [expect.stringMatching(/dlq_fkey/)]
+    })
+    expect(await ctx.boss.findJobs(ctx.schema)).toEqual([])
+  })
+
+  // This ordering needs separate connections and a deferred queue foreign key.
+  it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('should leave a deferred queue failure to the caller-owned transaction', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await ctx.boss.subscribe('event', ctx.schema)
+
+    const db = await helper.getDb()
+    try {
+      const transaction = await db.beginTransaction()
+      try {
+        await ctx.boss.publish('event', { message: 'hi' }, { db: transaction.db })
+        await ctx.boss.unsubscribe('event', ctx.schema)
+        await ctx.boss.deleteQueue(ctx.schema)
+
+        await expect(transaction.commit()).rejects.toMatchObject({ code: '23503', constraint: 'q_fkey' })
+      } finally {
+        await transaction.rollback()
+      }
+    } finally {
+      await db.close()
+    }
+  })
+
+  it('should publish through an adapter without transaction support', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await ctx.boss.subscribe('event', ctx.schema)
+
+    const db = ctx.boss.getDb()
+    const publisher = await helper.start({
+      ...ctx.bossConfig,
+      db: { executeSql: db.executeSql.bind(db) },
+      migrate: false,
+      noDefault: true
+    })
+
+    try {
+      expect(publisher.getDb().beginTransaction).toBeUndefined()
+      const data = { message: 'hi' }
+      await publisher.publish('event', data)
+      expect((await ctx.boss.findJobs(ctx.schema)).map(job => job.data)).toEqual([data])
+    } finally {
+      await publisher.stop()
+    }
   })
 
   it('should reject when a subscribed queue fails, after sending to the rest', async function () {
