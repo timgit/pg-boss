@@ -2106,6 +2106,11 @@ const STATS_AGG = {
 // YugabyteDB, none of which can rely on it. to_timestamp / extract(epoch) / floor exist on all of
 // them (extract returns double on PG13, numeric on PG14+; floor/division handle both identically),
 // and buckets align to the Unix epoch so their boundaries are stable across calls.
+//
+// Wait and run histograms are added up per returned bucket in SQL (passes, slots, histograms), so a
+// bucket comes back as one histogram however many passes it covers. Each pass lands in the bucket
+// its counters were placed in, then its counts are summed per bucket and slot, a slot with no job in
+// any pass as 0. A bucket no pass measured has no histogram row and comes back null.
 export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' | 'min' | 'avg', mode: 'bucket' | 'auto'): string {
   const agg = STATS_AGG[aggregate]
 
@@ -2191,10 +2196,6 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
       FROM gauges g
         FULL JOIN counters c ON c.bucket = g.bucket
     ),
-    -- Wait and run histograms, added up per returned bucket in SQL, so a bucket comes back as one
-    -- histogram however many passes it covers. Each pass lands in the bucket its counters were placed
-    -- in above, then its counts are summed per bucket and slot, a slot with no job in any pass as 0.
-    -- A bucket no pass measured has no row here and comes back null.
     passes AS (
       SELECT ${bucket('delta_on')} as "counterBucket", wait_bins, run_bins
       FROM ${schema}.queue_stats, w
