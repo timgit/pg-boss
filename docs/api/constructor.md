@@ -297,6 +297,8 @@ Bool, default false
 
 If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
+Each monitor pass then also counts the jobs created and finished since the previous pass, and records the wait and run times of the finished ones, in the same read of the job table. The wait and run times cost more the more jobs finished since the previous pass, whatever the size of the table. Measured on one queue on PostgreSQL 18, they added about 0.4 s to a 2.4 s pass with 100,000 finished jobs, and about 1.1 s to a 3.7 s pass with 1,000,000, with about 9 MB of memory per million finished jobs held for the length of the pass. On CockroachDB they added about 0.7 s with 100,000.
+
 ### `queueStatRetentionDays`
 
 Int, default 7

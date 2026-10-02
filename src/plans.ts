@@ -4111,8 +4111,11 @@ const EMPTY_BINS = `'{${new Array(LATENCY_SLOTS).fill('NULL').join(',')}}'::int[
 // cost twice as much: measured on 2.5M rows, +55 ms on a ~560 ms pass packed, +80 to 120 ms apart.
 const LATENCY_PACK = 64
 
-const waitSeconds = 'extract(epoch from (j.started_on - GREATEST(j.created_on, j.start_after)))'
-const runSeconds = 'extract(epoch from (j.completed_on - j.started_on))'
+// date_part rather than extract: extract returns numeric on PostgreSQL 14 and later, and the numeric
+// arithmetic on every finished job was a large share of the histograms' cost. date_part is float8
+// on every supported backend, as the bin math needs anyway.
+const waitSeconds = "date_part('epoch', (j.started_on - GREATEST(j.created_on, j.start_after)))"
+const runSeconds = "date_part('epoch', (j.completed_on - j.started_on))"
 
 // The slot is width_bucket's, written out: CockroachDB's width_bucket takes decimals, not float8.
 // ln(t / 10 ms) over ln(√2), plus one, clamped to slot 0 below 10 ms and the last slot past the end.
@@ -4124,19 +4127,29 @@ function latencyBin (seconds: string): string {
   return `LEAST(GREATEST(${raw}, 0), ${LATENCY_SLOTS - 1})`
 }
 
-// Unpacks the aggregate's array into one histogram: every slot in slot order, null where no job
-// landed. A pass in which nothing finished still writes the 48 slots (unnest of a null array is no
-// rows, and the left join keeps every slot), so a pass that counted says so, as its deltas do.
-// floor() of a float division rather than integer division, which CockroachDB answers in decimal.
+// The aggregate's array is unnested once per queue, in a lateral join after the aggregate, and
+// counted by packed value: at most LATENCY_SLOTS² rows (ps, ns) however many jobs finished. Both
+// histograms are read from those, so the per-job array is walked once rather than once each.
+function latencyCounts (packed: string): string {
+  return `LEFT JOIN LATERAL (
+        SELECT array_agg(g.p) AS ps, array_agg(g.n) AS ns
+        FROM (SELECT p, count(*)::int AS n FROM unnest(${packed}) AS u(p) GROUP BY p) g
+      ) latency ON true`
+}
+
+// One histogram from latencyCounts: every slot in slot order, null where no job landed. A pass in
+// which nothing finished still writes the 48 slots (unnest of a null array is no rows, and the left
+// join keeps every slot), so a pass that counted says so, as its deltas do. floor() of a float
+// division rather than integer division, which CockroachDB answers in decimal.
 function latencySlotOf (which: 'wait' | 'run'): string {
   return which === 'wait' ? `floor(p / ${LATENCY_PACK}.0)::int` : `(p % ${LATENCY_PACK})::int`
 }
 
-function latencyHistogram (packed: string, which: 'wait' | 'run'): string {
+function latencyHistogram (which: 'wait' | 'run'): string {
   return `(SELECT array_agg(c.n ORDER BY s.slot)
           FROM generate_series(0, ${LATENCY_SLOTS - 1}) AS s(slot)
-            LEFT JOIN (SELECT ${latencySlotOf(which)} AS slot, count(*)::int AS n
-                       FROM unnest(${packed}) AS u(p) GROUP BY 1) c ON c.slot = s.slot)`
+            LEFT JOIN (SELECT ${latencySlotOf(which)} AS slot, sum(n)::int AS n
+                       FROM unnest(latency.ps, latency.ns) AS u(p, n) GROUP BY 1) c ON c.slot = s.slot)`
 }
 
 // Every count the monitor keeps, from one pass over the queue's table.
@@ -4183,8 +4196,8 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         "createdDelta",
         "completedDelta",
         "failedDelta",
-        ${latencyHistogram('"latencyBins"', 'wait')} as "waitBins",
-        ${latencyHistogram('"latencyBins"', 'run')} as "runBins",
+        ${latencyHistogram('wait')} as "waitBins",
+        ${latencyHistogram('run')} as "runBins",
         "readyOldestSeconds",
         COALESCE("recount" > "settled", false) as "trueUp",`,
         counts: `
@@ -4204,9 +4217,10 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
             SELECT q.name, q.delta_on, a.h, t.top, t.settled
             FROM ${schema}.queue q${trueUpSettled(schema, 'q', window.trueUpMax)}
             WHERE q.name = ANY($1::text[])
-          ) q ON q.name = j.name`
+          ) q ON q.name = j.name`,
+        lateral: latencyCounts('stats."latencyBins"')
       }
-    : { select: '', counts: '', join: '' }
+    : { select: '', counts: '', join: '', lateral: '' }
 
   return {
     text: `
@@ -4236,6 +4250,7 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
           WHERE j.name = ANY($1::text[])
           GROUP BY 1
       ) stats
+      ${counters.lateral}
   `,
     values: [queues]
   }
