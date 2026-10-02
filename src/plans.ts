@@ -4864,6 +4864,35 @@ function applyManifestSchema (text: string, schema: string): string {
   return text.split(schemaManifest.schemaToken).join(schema)
 }
 
+// The argument types in a manifest function's definition, without names or defaults, as DROP FUNCTION
+// takes them: "create_queue(queue_name text, options jsonb)" gives "text, jsonb".
+function functionArgTypes (def: string): string {
+  const args = def.slice(def.indexOf('(') + 1, def.indexOf(')'))
+  return args.split(',')
+    .map(arg => arg.trim().replace(/\s+DEFAULT\s+.*$/i, ''))
+    .filter(Boolean)
+    .map(arg => arg.split(/\s+/).slice(1).join(' '))
+    .join(', ')
+}
+
+// Removes everything create() installs, for a schema pg-boss shares with other objects; a schema of
+// its own is simply dropped. Read from the manifest, so it covers whatever this version installs.
+// Dropping job takes every queue's own table with it: a partitioned queue's table is a partition of
+// job, and without partitioning every queue's jobs are in job itself. queue_stats' daily partitions
+// go with queue_stats the same way.
+export function uninstall (schema: string, partitioned = true): string {
+  const section = manifestSection(partitioned)
+  const tables = section.tables.map(table => `${schema}.${table}`).join(', ')
+  const functions = section.functions.map(fn => `${schema}.${fn.name}(${functionArgTypes(fn.def)})`).join(', ')
+
+  // Functions first: CockroachDB records a function as depending on the tables its body names.
+  return [
+    `DROP FUNCTION IF EXISTS ${functions};`,
+    `DROP TABLE IF EXISTS ${tables};`,
+    `DROP TYPE IF EXISTS ${schema}.job_state;`
+  ].join('\n')
+}
+
 // The job_state enum values in declaration order, from the manifest (both sections carry the same enum).
 // Order is significant. The numeric base type makes created < retry < … < failed load-bearing.
 export const EXPECTED_JOB_STATES: readonly string[] = schemaManifest.partitioned.enum

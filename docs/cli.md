@@ -140,6 +140,7 @@ Prints SQL to stdout without touching the database, which is useful for review, 
 | `create` (alias `construct`) | SQL to install the schema at the latest version |
 | `migrate` (default) | SQL to migrate from version 0 to the latest, with async index builds inlined |
 | `rollback` | SQL to roll back one version from the latest |
+| `uninstall` | SQL to remove every pg-boss object, for a schema pg-boss shares with other objects |
 
 A connection is **optional**. Given one, `plans migrate` enumerates the partitioned queue tables so per-partition index builds are included; without one, it emits a `job_common`-only script and prints a note. All other subcommands need no connection.
 
@@ -152,6 +153,9 @@ pg-boss plans migrate --connection-string postgres://localhost/myapp
 
 # Output rollback SQL
 pg-boss plans rollback --schema myapp_jobs
+
+# Output SQL to remove pg-boss from a schema it shares
+pg-boss plans uninstall --schema myapp
 ```
 
 ## Connection Configuration

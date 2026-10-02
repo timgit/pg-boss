@@ -3,10 +3,10 @@
 The following functions are exported from the package and are not required during normal operations. The plan functions assist in schema creation or migration if run-time privileges do not allow schema changes, and [`percentile()`](#percentile-bins-p) and [`addBins()`](#addbins-a-b) read the wait and run [latency histograms](./queues.md#latency-histograms).
 
 ```js
-import { getConstructionPlans, getMigrationPlans, getRollbackPlans, getIndexBloatPlans } from 'pg-boss'
+import { getConstructionPlans, getMigrationPlans, getRollbackPlans, getUninstallPlans, getIndexBloatPlans } from 'pg-boss'
 ```
 
-All three plan functions take an optional `backend`, which names the engine the SQL is meant to run against. It is the same profile the [constructor](../database-backends.md) takes, and the same one [`pg-boss migrate --backend`](../cli.md#backends) takes. Without it plans are stock PostgreSQL, which a distributed engine rejects partway through: table partitioning, advisory locks, covering indexes, a column written in the transaction that added it. `postgres` is the default, and `pglite` needs nothing here since it is stock PostgreSQL.
+The plan functions take an optional `backend`, which names the engine the SQL is meant to run against. It is the same profile the [constructor](../database-backends.md) takes, and the same one [`pg-boss migrate --backend`](../cli.md#backends) takes. Without it plans are stock PostgreSQL, which a distributed engine rejects partway through: table partitioning, advisory locks, covering indexes, a column written in the transaction that added it. `postgres` is the default, and `pglite` needs nothing here since it is stock PostgreSQL.
 
 ### `getConstructionPlans(schema, options)`
 
@@ -52,6 +52,18 @@ Returns the SQL commands required to manually roll back the specified version to
 
 ```js
 const sql = getRollbackPlans('pgboss', 36)
+```
+
+### `getUninstallPlans(schema, options)`
+
+**Arguments**
+- `schema`: string, database schema name
+- `options`: object, optional. Accepts `backend`.
+
+Returns the SQL that removes every table, function and type pg-boss installs in the schema, for a schema it shares with other objects. A queue's own table goes with the job table. If pg-boss has the schema to itself, `DROP SCHEMA <name> CASCADE` does the same.
+
+```js
+const sql = getUninstallPlans('myapp')
 ```
 
 ### `getIndexBloatPlans(schema, options)`

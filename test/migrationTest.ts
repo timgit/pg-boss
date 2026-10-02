@@ -1,5 +1,5 @@
 import { expect, beforeEach } from 'vitest'
-import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
+import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans, getUninstallPlans } from '../src/index.ts'
 import { getDb, assertTruthy, getSchemaDefs, isCockroachDb, itPostgresOnly, start } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll, getAllForConfig, migrate, migrateCommands, getMinVersion, next } from '../src/migrationStore.ts'
@@ -73,6 +73,50 @@ describe('migration', function () {
 
     expect(plans).toContain(`${schema}.job`)
     expect(plans).toContain(`${schema}.version`)
+  })
+
+  it('should uninstall every pg-boss object from a shared schema, and nothing else', async function () {
+    const db = await getDb()
+    const schema = ctx.schema
+
+    // An object of the application's own in the schema pg-boss is installed into.
+    await db.executeSql(`CREATE SCHEMA IF NOT EXISTS ${schema}`)
+    await db.executeSql(`CREATE TABLE ${schema}.app_orders (id int PRIMARY KEY)`)
+
+    const boss = await start({ ...ctx.bossConfig, noDefault: true })
+    await boss.createQueue('shared')
+    await boss.send('shared')
+    if (!ctx.bossConfig.noTablePartitioning) {
+      // A queue with a table of its own, which has to go with the job table.
+      await boss.createQueue('own-table', { partition: true })
+      await boss.send('own-table')
+    }
+    await boss.stop({ graceful: false })
+    ctx.boss = undefined
+
+    await db.executeSql(getUninstallPlans(schema, { backend: ctx.bossConfig.backend }))
+
+    const { rows: tables } = await db.executeSql(
+      'SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY 1', [schema])
+    expect(tables.map((r: any) => r.table_name)).toEqual(['app_orders'])
+
+    const { rows: functions } = await db.executeSql(
+      'SELECT routine_name FROM information_schema.routines WHERE routine_schema = $1', [schema])
+    expect(functions).toEqual([])
+
+    const { rows: types } = await db.executeSql(
+      `SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+       WHERE n.nspname = $1 AND t.typname = 'job_state'`, [schema])
+    expect(types).toEqual([])
+  })
+
+  it('should cover every table and function the manifest lists in its uninstall plans', function () {
+    for (const [backend, section] of [['postgres', schemaManifest.partitioned], ['cockroachdb', schemaManifest.nonPartitioned]] as const) {
+      const sql = getUninstallPlans('custom', { backend })
+      for (const table of section.tables) expect(sql, `${backend} ${table}`).toContain(`custom.${table}`)
+      for (const fn of section.functions) expect(sql, `${backend} ${fn.name}`).toContain(`custom.${fn.name}(`)
+      expect(sql).toContain('DROP TYPE IF EXISTS custom.job_state')
+    }
   })
 
   it('should fail to export migration using current version', function () {

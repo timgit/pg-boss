@@ -104,6 +104,13 @@ describePglite('cli', function () {
       })
     })
 
+    it('should output uninstall SQL plans', async function () {
+      const result = await execCommand(`node ${cliPath} plans uninstall --schema custom_schema`)
+      expect(result.stdout).toContain('DROP TABLE IF EXISTS custom_schema.')
+      expect(result.stdout).toContain('custom_schema.job,')
+      expect(result.stdout).toContain('DROP TYPE IF EXISTS custom_schema.job_state')
+    })
+
     it('should use custom schema in plans', async function () {
       await execCommand(`node ${cliPath} plans create --schema custom_schema`, {
         expectedOutput: 'custom_schema'

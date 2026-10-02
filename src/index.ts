@@ -55,6 +55,15 @@ export function getRollbackPlans (schema?: string, version?: number, options?: t
   return Contractor.rollbackPlans(schema, version, options)
 }
 
+/**
+ * The SQL that removes every object pg-boss installs, for a schema it shares with other objects. A
+ * schema of pg-boss's own is simpler to drop whole.
+ * @see https://pgboss.io/api/utils#getuninstallplans-schema-options
+ */
+export function getUninstallPlans (schema?: string, options?: types.PlanOptions) {
+  return Contractor.uninstallPlans(schema, options)
+}
+
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #stopped: boolean
   #started: boolean | undefined
