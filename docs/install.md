@@ -8,7 +8,7 @@ That needs the database user pg-boss connects as to have the [CREATE](http://www
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
 ```
 
-Only if that privilege isn't available or wanted do you need to manage the schema yourself, as a fallback, in one of two ways:
+If that privilege isn't available or you'd prefer to manage the schema yourself, the following options can be used as a fallback.
 
 1. **CLI (recommended)** - Use the pg-boss CLI to manage schema creation and migrations. The CLI can output SQL without executing it (`--dry-run` or `plans` command), allowing DBAs to review and run the commands manually. See the [CLI documentation](./cli) for details.
 

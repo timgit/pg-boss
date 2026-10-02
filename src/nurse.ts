@@ -262,9 +262,9 @@ class Nurse {
     this.#loop = null
   }
 
-  // Rates cover the time since the previous sample. The first sample after start() only sets the
+  // Rates cover the time since the previous check. The first check after start() only sets the
   // baseline, since at registration it would cover a few microseconds, so its rates are null.
-  async sample (): Promise<types.InstanceMetrics> {
+  async check (): Promise<types.InstanceMetrics> {
     const first = this.#at === null
     const now = process.hrtime.bigint()
     const cpuNow = process.cpuUsage()
@@ -330,8 +330,8 @@ class Nurse {
     }
   }
 
-  // The share of CPU periods since the previous sample in which the cgroup that holds the quota ran
-  // out of it and was paused. Null on the first sample, or when the quota moved to another cgroup.
+  // The share of CPU periods since the previous check in which the cgroup that holds the quota ran
+  // out of it and was paused. Null on the first check, or when the quota moved to another cgroup.
   async #throttled (cg: Cgroup, dir: string): Promise<number | null> {
     const text = await read(dir + '/cpu.stat')
     const periods = statField(text, 'nr_periods')
