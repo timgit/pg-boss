@@ -710,7 +710,7 @@ await boss.cancel('email-send', [jobId1, jobId2])
 
 ### `resume(name, id, options)`
 
-Resumes a cancelled job.
+Resumes a cancelled job. Its `startAfter` moves up to the time it was resumed unless it is already later, so its wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
 
 ```js
 await boss.resume('email-send', jobId)
@@ -726,7 +726,7 @@ await boss.resume('email-send', [jobId1, jobId2])
 
 ### `retry(name, id, options)`
 
-Retries a failed job.
+Retries a failed job. Its `startAfter` moves up to the time it was retried unless it is already later, so its wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
 
 ```js
 await boss.retry('email-send', jobId)

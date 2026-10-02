@@ -2781,12 +2781,16 @@ export function cancelJobs (schema: string, table: string, fenced?: boolean) {
   `
 }
 
+// A resumed job's start_after moves up to now, as a released flow child's does, so its wait (in the
+// monitor's histograms and ready_oldest_seconds) counts from when it could run again rather than
+// from when it was first sent. A start_after still in the future is kept.
 export function resumeJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
       SET completed_on = NULL,
-        state = '${JOB_STATES.created}'
+        state = '${JOB_STATES.created}',
+        start_after = GREATEST(start_after, ${schema}.job_now())
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.cancelled}'
@@ -3735,13 +3739,15 @@ export function deletion (schema: string, table: string, queues: string[], noAdv
   return locked(schema, sql, table + 'deletion', noAdvisoryLocks)
 }
 
+// start_after moves up to now, as in resumeJobs.
 export function retryJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.job
       SET state = '${JOB_STATES.retry}',
         retry_limit = retry_limit + 1,
-        completed_on = NULL
+        completed_on = NULL,
+        start_after = GREATEST(start_after, ${schema}.job_now())
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.failed}'
