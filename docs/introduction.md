@@ -11,6 +11,8 @@ If a queue needs to be scaled out, you can create it with a `partition` option t
 
 You may use as many Node.js instances as desired to connect to the same Postgres database, even running it inside serverless functions if needed. Each instance maintains a client-side connection pool or you can substitute your own database client, limited to the maximum number of connections your database server (or server-side connection pooler) can accept. If you find yourself needing even more connections, pg-boss can easily be used behind your custom web API.
 
+Each instance records itself in the database's [instance table](./sql/instance-table) while it runs, so you can see which instances are connected, which queues each one works, and whether it is still alive, either in SQL or with [`getInstances()`](./api/ops#getinstances).
+
 ## Job states
 
 All jobs start out in the `created` state and become `active` via [`fetch(name, options)`](./api/jobs#fetch-name-options) or in a polling worker via [`work()`](./api/workers#work). 
