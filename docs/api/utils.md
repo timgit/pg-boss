@@ -1,6 +1,6 @@
 # Utility functions
 
-The following functions are exported from the package and are not required during normal operations. The plan functions assist in schema creation or migration if run-time privileges do not allow schema changes, and [`percentile()`](#percentile-bins-p) and [`addBins()`](#addbins-a-b) read the wait and run [latency histograms](./queues.md#getqueuestats-name-options).
+The following functions are exported from the package and are not required during normal operations. The plan functions assist in schema creation or migration if run-time privileges do not allow schema changes, and [`percentile()`](#percentile-bins-p) and [`addBins()`](#addbins-a-b) read the wait and run [latency histograms](./queues.md#getqueues-names).
 
 ```js
 import { getConstructionPlans, getMigrationPlans, getRollbackPlans, getIndexBloatPlans } from 'pg-boss'
@@ -82,7 +82,7 @@ Each row describes one index that is holding far more pages than its live entrie
 ### `percentile(bins, p)`
 
 **Arguments**
-- `bins`: a [latency histogram](./queues.md#getqueuestats-name-options), `waitBins` or `runBins`, or several added with [`addBins()`](#addbins-a-b)
+- `bins`: a [latency histogram](./queues.md#getqueues-names), `waitBins` or `runBins`, or several added with [`addBins()`](#addbins-a-b)
 - `p`: percent from 1 to 100, such as `95` for the 95th percentile
 
 Returns the time in seconds below which that fraction of the histogram's jobs fall, or `null` for an empty or missing histogram. It is an estimate that always falls in the same bin as the exact value, and with a few thousand jobs it is typically within a few percent of it. A percentile under 10 ms reads as `0.01`.
@@ -97,7 +97,7 @@ const p95 = percentile(stats.waitBins, 95)
 ### `addBins(a, b)`
 
 **Arguments**
-- `a`, `b`: [latency histograms](./queues.md#getqueuestats-name-options), or `null`
+- `a`, `b`: [latency histograms](./queues.md#getqueues-names), or `null`
 
 Combines two histograms into one by adding their counts bin by bin, as if every job in both had been recorded together. Use it to merge snapshots over a time range, or several queues, before reading a percentile with [`percentile()`](#percentile-bins-p): averaging percentiles taken from smaller spans does not give a percentile.
 

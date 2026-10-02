@@ -286,7 +286,7 @@ export interface QueueStats {
   /**
    * Wait times of the jobs that finished in the deltas' window, as a histogram of 48 counts in
    * log-spaced bins; sum histograms to read a percentile over any span. Null wherever the deltas are.
-   * @see https://pgboss.io/api/queues#getqueuestats-name-options
+   * @see https://pgboss.io/api/queues#getqueues-names
    */
   waitBins: number[] | null;
   /** Run times of the same jobs, in the same bins as `waitBins`. */
