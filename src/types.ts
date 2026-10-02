@@ -1471,8 +1471,7 @@ export interface InstanceWorker {
   lastJobEndedOn: string | null;
   lastErrorOn: string | null;
   /**
-   * The other `work()` options this call set; one left at its default is absent. The whole field
-   * is absent on a row an older pg-boss wrote.
+   * The other `work()` options this call set; one left at its default is absent.
    * @see https://pgboss.io/api/ops#getinstances
    */
   options?: Partial<WorkOptions>;

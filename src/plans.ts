@@ -5274,12 +5274,12 @@ export function getXminHorizon (lastVacuum: Date, sources: readonly XminHorizonS
   // query it is follows from pid, application_name and role, looked up live where the catalog's own
   // privilege rules still apply.
   //
-  // selfApplicationName is what makes "ours or theirs" answerable. Db sets application_name to
-  // 'pgboss' on the pool it owns, so a holder matching this connection's own value is pg-boss doing
-  // it to itself - the monitor's own aggregate, most likely - which has a completely different fix
-  // from an external reporting tool holding a transaction open. It is compared rather than hardcoded
-  // because an adapter-supplied pool sets whatever the host app chose, and claiming that is
-  // definitely pg-boss would be a guess.
+  // selfApplicationName is what makes "ours or theirs" answerable. pg-boss names the pool it owns
+  // 'pgboss', or 'pgboss:<id>' for a registered instance, so a holder matching this connection's own
+  // value is pg-boss doing it to itself - the monitor's own aggregate, most likely - which has a
+  // completely different fix from an external reporting tool holding a transaction open. It is
+  // compared rather than hardcoded because an adapter-supplied pool sets whatever the host app
+  // chose, and claiming that is definitely pg-boss would be a guess.
   const backendIdentity = sources.includes('backends')
     ? `,
       (SELECT to_jsonb(h) FROM (
