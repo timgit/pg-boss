@@ -203,6 +203,7 @@ class Telemetry {
       const attributes = { [ATTR.messagingSystem]: MESSAGING_SYSTEM, [ATTR.destinationName]: queue.name, ...this.#namespace }
       result.observe(queue.deferredCount ?? 0, { ...attributes, [ATTR.jobState]: 'deferred' })
       result.observe(queue.readyCount ?? 0, { ...attributes, [ATTR.jobState]: 'ready' })
+      result.observe(queue.blockedCount ?? 0, { ...attributes, [ATTR.jobState]: 'blocked' })
       result.observe(queue.activeCount ?? 0, { ...attributes, [ATTR.jobState]: 'active' })
       result.observe(queue.failedCount ?? 0, { ...attributes, [ATTR.jobState]: 'failed' })
     }
