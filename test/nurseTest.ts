@@ -16,12 +16,12 @@ async function fakeRoot (files: Record<string, string>): Promise<string> {
   return root
 }
 
-async function sampleOnce (files: Record<string, string>) {
+async function checkOnce (files: Record<string, string>) {
   const root = await fakeRoot(files)
   try {
     const m = new Nurse(root)
     m.start()
-    const s = await m.sample()
+    const s = await m.check()
     m.stop()
     return s
   } finally {
@@ -35,7 +35,7 @@ const MiB = 1024 * 1024
 
 describe('nurse', function () {
   it('reads a cgroup v2 container with its own namespace: docker run --cpus=0.5 --memory=200m', async function () {
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '0::/\n',
       '/proc/self/mountinfo': V2_MOUNT,
       '/proc/self/status': ALL_CPUS,
@@ -56,7 +56,7 @@ describe('nurse', function () {
 
   it('follows /proc/self/cgroup under a host namespace and takes the tightest limit up the tree', async function () {
     const pod = '/sys/fs/cgroup/kubepods.slice/pod1'
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '0::/kubepods.slice/pod1/ctr\n',
       '/proc/self/mountinfo': V2_MOUNT,
       '/proc/self/status': ALL_CPUS,
@@ -76,7 +76,7 @@ describe('nurse', function () {
   })
 
   it('reads cgroup v1 as docker mounts it, each controller rooted at the container', async function () {
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '12:memory:/docker/abc\n4:cpu,cpuacct:/docker/abc\n1:name=systemd:/docker/abc\n',
       '/proc/self/mountinfo': [
         '30 25 0:26 /docker/abc /sys/fs/cgroup/memory ro,nosuid - cgroup cgroup rw,memory',
@@ -98,7 +98,7 @@ describe('nurse', function () {
   })
 
   it('falls back to the host where a cgroup sets no limit', async function () {
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '12:memory:/docker/abc\n4:cpu,cpuacct:/docker/abc\n',
       '/proc/self/mountinfo': [
         '30 25 0:26 /docker/abc /sys/fs/cgroup/memory ro - cgroup cgroup rw,memory',
@@ -119,7 +119,7 @@ describe('nurse', function () {
   })
 
   it('caps a CPU quota at the CPUs the process may run on', async function () {
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '0::/\n',
       '/proc/self/mountinfo': V2_MOUNT,
       '/proc/self/status': 'Cpus_allowed_list:\t0-1\n',
@@ -130,7 +130,7 @@ describe('nurse', function () {
   })
 
   it('uses the host off Linux, where there is no /proc', async function () {
-    const s = await sampleOnce({})
+    const s = await checkOnce({})
 
     expect(s.cgroup).toBeNull()
     expect(s.cpuLimit).toBe(os.availableParallelism())
@@ -162,7 +162,7 @@ describe('nurse', function () {
   })
 
   it('assumes the usual /sys/fs/cgroup layout when mountinfo cannot be read', async function () {
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '0::/system.slice/app.scope\n',
       '/proc/self/status': ALL_CPUS,
       '/sys/fs/cgroup/system.slice/app.scope/cpu.max': '150000 100000\n',
@@ -188,9 +188,9 @@ describe('nurse', function () {
     try {
       const m = new Nurse(root)
       m.start()
-      await m.sample()
+      await m.check()
       await writeFile(root + '/sys/fs/cgroup/cpu.stat', 'nr_periods 300\nnr_throttled 60\n')
-      expect((await m.sample()).cpuThrottled).toBe(0.25)
+      expect((await m.check()).cpuThrottled).toBe(0.25)
       m.stop()
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -201,7 +201,7 @@ describe('nurse', function () {
     const m = new Nurse()
     m.start()
 
-    const first = await m.sample()
+    const first = await m.check()
     expect(first.cpu).toBeNull()
 
     // Block the loop on a later tick, so the delay monitor has a timer waiting behind it.
@@ -210,7 +210,7 @@ describe('nurse', function () {
     while (performance.now() < until);
     await new Promise(resolve => setTimeout(resolve, 50))
 
-    const s = await m.sample()
+    const s = await m.check()
     m.stop()
 
     expect(s.cpu).toBeGreaterThan(0.3)
@@ -289,7 +289,7 @@ describe('nurse', function () {
   })
 
   it('reads a v1 host that limits only one of CPU and memory', async function () {
-    const memoryOnly = await sampleOnce({
+    const memoryOnly = await checkOnce({
       '/proc/self/cgroup': '12:memory:/\n',
       '/proc/self/mountinfo': '30 25 0:26 / /sys/fs/cgroup/memory ro - cgroup cgroup rw,memory\n',
       '/proc/self/status': ALL_CPUS,
@@ -300,7 +300,7 @@ describe('nurse', function () {
     expect(memoryOnly.cpuLimit).toBe(12)
     expect(memoryOnly.memoryLimit).toBe(300 * MiB)
 
-    const cpuOnly = await sampleOnce({
+    const cpuOnly = await checkOnce({
       '/proc/self/cgroup': '4:cpu:/\n',
       '/proc/self/mountinfo': '31 25 0:27 / /sys/fs/cgroup/cpu ro - cgroup cgroup rw,cpu\n',
       '/proc/self/status': ALL_CPUS,
@@ -314,7 +314,7 @@ describe('nurse', function () {
 
   it('takes the tighter of two CPU quotas up the tree', async function () {
     const pod = '/sys/fs/cgroup/kubepods.slice/pod1'
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '0::/kubepods.slice/pod1/ctr\n',
       '/proc/self/mountinfo': V2_MOUNT,
       '/proc/self/status': ALL_CPUS,
@@ -326,7 +326,7 @@ describe('nurse', function () {
   })
 
   it('counts all of memory in use when memory.stat has no inactive file cache', async function () {
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '0::/app\n',
       '/proc/self/mountinfo': V2_MOUNT,
       '/proc/self/status': ALL_CPUS,
@@ -339,7 +339,7 @@ describe('nurse', function () {
   })
 
   it('leaves memory in use unknown when the cgroup with the limit has no usage file', async function () {
-    const s = await sampleOnce({
+    const s = await checkOnce({
       '/proc/self/cgroup': '0::/app\n',
       '/proc/self/mountinfo': V2_MOUNT,
       '/proc/self/status': ALL_CPUS,
@@ -362,8 +362,8 @@ describe('nurse', function () {
     try {
       const m = new Nurse(root)
       m.start()
-      await m.sample()
-      expect((await m.sample()).cpuThrottled).toBe(0)
+      await m.check()
+      expect((await m.check()).cpuThrottled).toBe(0)
       m.stop()
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -373,10 +373,10 @@ describe('nurse', function () {
   it('reads no event loop delay once stopped', async function () {
     const m = new Nurse()
     m.start()
-    await m.sample()
+    await m.check()
     m.stop()
 
-    const s = await m.sample()
+    const s = await m.check()
     expect(s.loopDelay).toBeNull()
     expect(s.loopDelayMax).toBeNull()
   })
@@ -387,8 +387,8 @@ describe('nurse', function () {
     try {
       const m = new Nurse()
       m.start()
-      await m.sample()
-      const s = await m.sample()
+      await m.check()
+      const s = await m.check()
       m.stop()
 
       expect(s.loopUtilization).toBeNull()
@@ -412,7 +412,7 @@ describe('nurse', function () {
       const { default: FailingNurse } = await import('../src/nurse.ts')
       const m = new FailingNurse()
       m.start()
-      const s = await m.sample()
+      const s = await m.check()
       m.stop()
 
       expect(s.cgroup).toBeNull()

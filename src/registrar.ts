@@ -185,7 +185,7 @@ class Registrar extends EventEmitter implements types.EventsMixin {
       pool?.idle ?? null,
       pool?.waiting ?? null,
       JSON.stringify(this.#workers()),
-      JSON.stringify(await this.#nurse.sample()),
+      JSON.stringify(await this.#nurse.check()),
       JSON.stringify(this.#recordedConfig())
     ]
   }

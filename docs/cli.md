@@ -1,6 +1,6 @@
 # CLI
 
-pg-boss includes a command-line interface for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
+pg-boss includes a command-line interface that can be used to manage some database operations without requiring writing custom code against the API. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
 
 ## Installation
 

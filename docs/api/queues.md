@@ -57,9 +57,14 @@ Allowed policy values:
 >
 > To unblock a key after a permanent failure, you can either delete the failed job using `deleteJob()` or retry it using `retry()`. Use `getBlockedKeys()` to discover which keys are currently blocked due to failed jobs.
 
+**Options**
+
 * **partition**, boolean, default false
 
-  If set to true, a dedicated table will be created in the partition scheme. This would be more useful for large queues in order to keep it from being a "noisy neighbor". 
+  If set to true, a dedicated table will be created in the partition scheme. This would be more useful for large queues in order to keep it from being a "noisy neighbor": by default every queue's jobs share one table, which a queue that grows large or builds an unexpected backlog can slow down for the others.
+
+  > [!NOTE]
+  > pg-boss keeps jobs in one logical `job` table using Postgres's declarative list partitioning, and each queue created with `partition` gets a partition of its own. According to [the Postgres docs](https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), a partitioning hierarchy handles thousands of partitions well, so decide how many dedicated tables to use by your own needs. If you outgrow that, consider putting queues in separate schemas.
 
 * **deadLetter**, string
 
@@ -178,48 +183,95 @@ await boss.deleteQueue('email-send')
 
 ### `getQueues(names?)`
 
-Returns all queues, or only the named queues when an array of names is provided. Each queue's fields are described under [Queue fields](#queue-fields).
+Returns all queues, or only the named queues when an array of names is provided.
 
 ```js
 const queues = await boss.getQueues(['email-send'])
-// [
-//   {
-//     name: 'email-send',
-//     policy: 'standard',
-//     partition: false,
-//     deadLetter: null,
-//     retryLimit: 2,
-//     retryDelay: 0,
-//     retryBackoff: false,
-//     retryDelayMax: null,
-//     expireInSeconds: 900,
-//     retentionSeconds: 1209600,
-//     deleteAfterSeconds: 604800,
-//     heartbeatSeconds: null,
-//     warningQueueSize: 0,
-//     notify: false,
-//     queuedCount: 1550,
-//     deferredCount: 40,
-//     blockedCount: 10,
-//     readyCount: 1500,
-//     activeCount: 20,
-//     failedCount: 3,
-//     totalCount: 100103,
-//     createdDelta: 180,
-//     completedDelta: 237,
-//     failedDelta: 0,
-//     deltaSeconds: 60,
-//     deltaOn: 2026-10-01T19:54:02.041Z,
-//     waitBins: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, … 48 counts],
-//     runBins: [0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 40, 50, 56, 84, 0, … 48 counts],
-//     readyOldestSeconds: 3407,
-//     singletonsActive: null,
-//     table: 'job_common',
-//     createdOn: 2026-09-30T22:10:52.821Z,
-//     updatedOn: 2026-09-30T22:10:52.821Z
-//   }
-// ]
 ```
+
+Each queue is a `QueueResult`:
+
+```js
+interface QueueResult {
+  name: string;
+  policy: 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | 'key_strict_fifo';
+  partition: boolean;
+  deadLetter: string | null;
+  retryLimit: number;
+  retryDelay: number;
+  retryBackoff: boolean;
+  retryDelayMax: number | null;
+  expireInSeconds: number;
+  retentionSeconds: number;
+  deleteAfterSeconds: number;
+  heartbeatSeconds: number | null;
+  warningQueueSize: number;
+  notify: boolean;
+  queuedCount: number;
+  deferredCount: number;
+  blockedCount: number;
+  readyCount: number;
+  activeCount: number;
+  failedCount: number;
+  totalCount: number;
+  createdDelta: number;
+  completedDelta: number;
+  failedDelta: number;
+  deltaSeconds: number | null;
+  deltaOn: Date | null;
+  waitBins: number[] | null;
+  runBins: number[] | null;
+  readyOldestSeconds: number | null;
+  singletonsActive: string[] | null;
+  table: string;
+  createdOn: Date;
+  updatedOn: Date;
+}
+```
+
+The settings, `policy` through `notify`, are the options described under [`createQueue()`](#createqueue-name-queue), returned as stored.
+
+**Counts**
+
+As counted by a monitor pass, which runs every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
+
+* `queuedCount`: jobs waiting to run, **including** deferred jobs and jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
+* `deferredCount`: queued jobs scheduled to start in the future (`startAfter` not yet reached), leaving out blocked jobs
+* `blockedCount`: queued jobs waiting on a flow parent, whatever their `startAfter` (`getQueues()` and `getQueue()` only)
+* `readyCount`: queued jobs ready to be processed now, neither deferred nor blocked; the true runnable backlog
+* `activeCount`: jobs currently being processed
+* `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
+* `totalCount`: all jobs currently stored for the queue
+
+**Monitor pass fields**
+
+What a monitor pass counted for the queue: three deltas, how many jobs were created, completed and failed in the window since the previous pass, and how long the jobs that finished in that window waited and ran. They are recorded only when [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled on the instances that run monitoring. `getQueueStats()` returns them as `null` when it is disabled on the calling instance, and on snapshots captured before pg-boss 12.35 (the deltas) or 12.36 (the rest). `getQueues()` and `getQueue()` return the latest pass that counted, with the three deltas `0` and the rest `null` until one has.
+
+A delta is not the difference between two snapshots' counts: `failedDelta` is not the change in `failedCount`, which also falls as retention deletes failed jobs.
+
+* `createdDelta`: jobs created
+* `completedDelta`: jobs completed
+* `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not included)
+* `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
+* `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
+* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram (see **Wait and run histograms** below). A deferred job, a retry sitting out its backoff, a flow job waiting on its parents, or a cancelled or failed job before `resume()` or `retry()` brings it back is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
+* `runBins`: how long the same jobs ran, from start to finish, in the same bins.
+* `readyOldestSeconds`: how long the oldest ready job had waited when the pass ran, leaving out deferred and blocked jobs. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
+
+The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls. A job that finishes inside a transaction longer than 10 seconds, which the deltas take in afterwards, is left out of the histograms.
+
+**Wait and run histograms**
+
+`waitBins` and `runBins` are histograms: 48 bins, each counting the jobs whose time fell in its range. The bins are spaced logarithmically, each about 1.4 times as wide as the one before, so they cover everything from under 10 ms to about 23 hours with the same relative precision for fast jobs and slow ones. To read percentiles from them, use [`getQueueStats()`](#getqueuestats-name-options)'s `percentiles` option, or [`addBins()`](./utils.md#addbins-a-b) and [`percentile()`](./utils.md#percentile-bins-p) for a single percentile over a whole window or across several queues.
+
+In `queue_stats` the histograms are stored as the `int[]` columns `wait_bins` and `run_bins`, with `NULL` in a bin no job landed in, so coalesce them when adding them up in SQL.
+
+**Other fields**
+
+* `singletonsActive`: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none
+* `table`: the table the queue's jobs are stored in, `job_common` unless the queue is partitioned
+* `createdOn`: when the queue was created
+* `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed it, or when it was created if it never has
 
 ### `getQueue(name)`
 
@@ -235,24 +287,82 @@ if (!queue) {
 
 ### `getQueueStats(name, options)`
 
-Returns an array of queue-depth snapshots, most recent first. Each snapshot has the queue's `name`, `capturedOn`, its [counts](#counts) and its [monitor pass fields](#monitor-pass-fields).
+Returns an array of queue-depth snapshots, most recent first. Each holds the queue's counts and monitor pass fields, described under [`getQueues()`](#getqueues-names), and `capturedOn`, when the snapshot was captured, or the start of its bucket when downsampled.
+
+```js
+interface QueueStats {
+  name: string;
+  queuedCount: number;
+  deferredCount: number;
+  readyCount: number;
+  activeCount: number;
+  failedCount: number;
+  totalCount: number;
+  createdDelta: number | null;
+  completedDelta: number | null;
+  failedDelta: number | null;
+  deltaSeconds: number | null;
+  deltaOn: Date | null;
+  waitBins: number[] | null;
+  runBins: number[] | null;
+  readyOldestSeconds: number | null;
+  percentiles?: { p: number, waitSeconds: number | null, runSeconds: number | null }[];
+  capturedOn: Date;
+}
+```
 
 Behavior depends on whether stats are being persisted:
 
-* When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1-100000).
+* When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, this returns the recorded time series, filtered and downsampled by the options below.
+* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale.
 
-  Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets:
+**Options**
 
-  * `bucketSeconds` (int): group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
-  * `maxDataPoints` (int): auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
-  * `aggregate` (`'max'` | `'min'` | `'avg'`, default `'max'`): how each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
+* **from**, Date
 
-  `aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `readyOldestSeconds` is the largest in it. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
+  Only snapshots captured at or after this time. With `persistQueueStats` enabled.
 
-  `limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
-* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
+* **to**, Date
 
-`percentiles` (array of percents from 1 to 100, such as `[50, 95, 99.9]`) reads those percentiles from each snapshot's [latency histograms](#latency-histograms), adding a `percentiles` list to it: one entry per distinct value asked for, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled, so averaging them across snapshots does not give the percentile over the whole range; see [`addBins()`](./utils.md#addbins-a-b) for that.
+  Only snapshots captured at or before this time. With `persistQueueStats` enabled.
+
+* **limit**, int, default 1000
+
+  The most snapshots to return, from 1 to 100000, or the most buckets when downsampling. With `persistQueueStats` enabled.
+
+* **force**, boolean, default false
+
+  With `persistQueueStats` disabled, re-count directly from the job table and update the values in the queue table instead of serving the cache. Even this is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
+
+**Downsampling options**
+
+Over a wide window the raw series can be far larger than `limit`, and returning the newest `limit` rows only shows the most recent slice. To get a representative sample spanning the whole window, downsample into time buckets. With `persistQueueStats` enabled.
+
+* **bucketSeconds**, int
+
+  Group snapshots into fixed-width buckets this many seconds wide, returning one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
+
+* **maxDataPoints**, int
+
+  Auto-downsample by deriving the bucket width so the series fits in roughly this many points (e.g. a chart's pixel width). The window spanned is `from`/`to` when supplied (an explicit x-axis range gives stable buckets even with sparse data), otherwise the data's own earliest/latest timestamps. Ignored when `bucketSeconds` is set, since explicit resolution wins.
+
+* **aggregate**, `'max'` | `'min'` | `'avg'`, default `'max'`
+
+  How each count is collapsed within a bucket, with `'max'` for peak depth (best for backlog alerting), `'min'` for the trough, `'avg'` for the rounded mean. Only applies when `bucketSeconds` or `maxDataPoints` is set.
+
+`aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `readyOldestSeconds` is the largest in it. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
+
+`limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
+
+**Percentile options**
+
+Percentiles are read from the [wait and run histograms](#getqueues-names) described under `getQueues()`.
+
+* **percentiles**, array of numbers
+
+  Percents from 1 to 100, such as `[50, 95, 99.9]`, to read from each snapshot's histograms. Each snapshot gets a `percentiles` list: one entry per distinct value, in the order asked, each with `p`, `waitSeconds` and `runSeconds`. Each is the percentile of that snapshot, or of that bucket when downsampled.
+
+Histograms add up, but percentiles don't: averaging the p95 of several snapshots does not give their p95. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up before its percentiles are read. For a single percentile over a whole window, or across several queues, add their histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p).
 
 ```js
 // current queue depth (single snapshot when persistQueueStats is disabled)
@@ -293,64 +403,6 @@ const series = await boss.getQueueStats('email-send', {
 //   … one per bucket
 // ]
 ```
-
-### Queue fields
-
-The fields returned by [`getQueues()`](#getqueues-names), [`getQueue()`](#getqueue-name) and [`getQueueStats()`](#getqueuestats-name-options). A queue's settings (`policy`, `partition`, `deadLetter`, the retry, expiration and retention options, `heartbeatSeconds`, `warningQueueSize` and `notify`) are the options described under [`createQueue()`](#createqueue-name-queue), returned as stored.
-
-#### Counts
-
-As counted by a monitor pass, which runs every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
-
-* `queuedCount`: jobs waiting to run, **including** deferred jobs and jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
-* `deferredCount`: queued jobs scheduled to start in the future (`startAfter` not yet reached), leaving out blocked jobs
-* `blockedCount`: queued jobs waiting on a flow parent, whatever their `startAfter` (`getQueues()` and `getQueue()` only)
-* `readyCount`: queued jobs ready to be processed now, neither deferred nor blocked; the true runnable backlog
-* `activeCount`: jobs currently being processed
-* `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
-* `totalCount`: all jobs currently stored for the queue
-
-#### Monitor pass fields
-
-What a monitor pass counted for the queue: three deltas, how many jobs were created, completed and failed in the window since the previous pass, and how long the jobs that finished in that window waited and ran. They are recorded only when [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled on the instances that run monitoring. `getQueueStats()` returns them as `null` when it is disabled on the calling instance, and on snapshots captured before pg-boss 12.35 (the deltas) or 12.36 (the rest). `getQueues()` and `getQueue()` return the latest pass that counted, with the three deltas `0` and the rest `null` until one has.
-
-A delta is not the difference between two snapshots' counts: `failedDelta` is not the change in `failedCount`, which also falls as retention deletes failed jobs.
-
-* `createdDelta`: jobs created
-* `completedDelta`: jobs completed
-* `failedDelta`: jobs that failed terminally (a job that will be retried has not finished, so it is not included)
-* `deltaSeconds`: how many seconds the deltas cover. Monitor passes are not evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60`, not by dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. A queue that went more than two hours (or two monitor intervals, if that is longer) without its deltas being recorded starts a fresh window rather than reporting the whole gap on one snapshot.
-* `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
-* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram. A deferred job, a retry sitting out its backoff, or a flow job waiting on its parents is not counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta`, never more.
-* `runBins`: how long the same jobs ran, from start to finish, in the same bins.
-* `readyOldestSeconds`: how long the oldest ready job had waited when the pass ran, leaving out deferred and blocked jobs. `0` when none was waiting. A wait is only counted in `waitBins` once its job finishes, so a queue whose workers have stopped records no waits at all; this is the figure that keeps rising.
-* `percentiles`: one entry per percentile asked for with `getQueueStats()`'s `percentiles` option, each with `p`, and `waitSeconds` and `runSeconds` read from `waitBins` and `runBins`; both `null` where there are no histograms (`getQueueStats()` with `percentiles` only)
-
-The deltas are eventually consistent rather than up to the second. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it, and that row only becomes visible when the transaction commits. So each window ends 10 seconds behind the pass, and a transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting, or within the queue's `deleteAfterSeconds` or `retentionSeconds` if either is shorter, so a snapshot from the last hour can still rise after it has been returned. It never falls. A job that finishes inside a transaction longer than 10 seconds, which the deltas take in afterwards, is left out of the histograms.
-
-#### Latency histograms
-
-`waitBins` and `runBins` are histograms: 48 bins, each counting the jobs whose time fell in its range. The bins are spaced logarithmically, each about 1.4 times as wide as the one before, so they cover everything from under 10 ms to about 23 hours with the same relative precision for fast jobs and slow ones.
-
-To read percentiles, pass the `percentiles` option:
-
-```js
-const series = await boss.getQueueStats('email-send', { maxDataPoints: 300, percentiles: [50, 95] })
-// each snapshot also carries percentiles: [{ p: 50, waitSeconds, runSeconds }, { p: 95, waitSeconds, runSeconds }]
-```
-
-Histograms add up, but percentiles don't: averaging the p95 of several snapshots does not give their p95. With `bucketSeconds` or `maxDataPoints`, each bucket's histograms are already added up before its percentiles are read. For a single percentile over a whole window, or across several queues, add their histograms with [`addBins()`](./utils.md#addbins-a-b) and read it with [`percentile()`](./utils.md#percentile-bins-p).
-
-In `queue_stats` they are stored as the `int[]` columns `wait_bins` and `run_bins`, with `NULL` in a bin no job landed in, so coalesce them when adding them up in SQL.
-
-#### Other fields
-
-* `name`: the queue's name
-* `capturedOn`: when the snapshot was captured, or the start of its bucket when downsampled (`getQueueStats()` only)
-* `singletonsActive`: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none
-* `table`: the table the queue's jobs are stored in, `job_common` unless the queue is partitioned
-* `createdOn`: when the queue was created
-* `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed it, or when it was created if it never has
 
 ### `getBlockedKeys(name)`
 

@@ -66,13 +66,20 @@ type XminHorizonRow = Partial<Record<plans.XminHorizonSource, number | null>> & 
   selfApplicationName?: string | null
 }
 
+// The names pg-boss gives the pools it creates: 'pgboss:<id>' for a registered instance, and
+// 'pgboss' for one that does not register or predates the registry.
+function isPgBossName (name: string | null | undefined): boolean {
+  return name === 'pgboss' || !!name?.startsWith('pgboss:')
+}
+
 // Whether a backend's application_name says it is pg-boss, as this connection is: the same name, or
-// both named for a registered instance (pgboss:<id>). Another pg-boss instance pinning the horizon
-// takes the same fix as this one doing it.
+// both one of pg-boss's own names. Either form on either side, so an instance still on 'pgboss'
+// during a rolling upgrade reads as pg-boss to an upgraded one. Another pg-boss instance pinning the
+// horizon takes the same fix as this one doing it.
 function isPgBossHolder (app: string | null, self: string | null | undefined): boolean {
   if (!app) return false
   if (app === self) return true
-  return app.startsWith('pgboss:') && !!self?.startsWith('pgboss:')
+  return isPgBossName(app) && isPgBossName(self)
 }
 
 // Name the holder as specifically as the catalog allowed. Falls back to the holder class when the
@@ -291,9 +298,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   // Whether or not this instance registers: the registry is the database's, not this instance's.
+  // Best effort: a failure is emitted and the pass goes on to the reindex, since a role granted
+  // privileges table by table may have none on the instance table yet.
   async #maintainInstances () {
-    await this.#executeQuery(plans.deleteOldInstances(this.#config.schema, plans.INSTANCE_RETENTION_DAYS))
-    await this.#executeQuery(plans.trimDeadInstances(this.#config.schema, plans.INSTANCE_DEAD_KEPT))
+    try {
+      await this.#executeQuery(plans.deleteOldInstances(this.#config.schema, plans.INSTANCE_RETENTION_DAYS))
+      await this.#executeQuery(plans.trimDeadInstances(this.#config.schema, plans.INSTANCE_DEAD_KEPT))
+    } catch (err) {
+      this.emit(events.error, err)
+    }
   }
 
   async #ensureQueueStatsPartitions () {
@@ -781,7 +794,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
         holder: describeXminHolder(holder.source, horizon.row),
         holderClass: XMIN_HOLDERS[holder.source],
         // Null unless the holder is a backend this role could read a row for. `self` says whether it
-        // is pg-boss: this connection's application_name, or another registered instance's. A pg-boss
+        // is pg-boss: this connection's application_name, or another pg-boss instance's. A pg-boss
         // instance pinning its own horizon and an external reporting tool pinning it have opposite fixes.
         holderPid: backend?.pid ?? null,
         holderApplicationName: backend?.applicationName ?? null,

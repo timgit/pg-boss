@@ -2106,6 +2106,11 @@ const STATS_AGG = {
 // YugabyteDB, none of which can rely on it. to_timestamp / extract(epoch) / floor exist on all of
 // them (extract returns double on PG13, numeric on PG14+; floor/division handle both identically),
 // and buckets align to the Unix epoch so their boundaries are stable across calls.
+//
+// Wait and run histograms are added up per returned bucket in SQL (passes, slots, histograms), so a
+// bucket comes back as one histogram however many passes it covers. Each pass lands in the bucket
+// its counters were placed in, then its counts are summed per bucket and slot, a slot with no job in
+// any pass as 0. A bucket no pass measured has no histogram row and comes back null.
 export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' | 'min' | 'avg', mode: 'bucket' | 'auto'): string {
   const agg = STATS_AGG[aggregate]
 
@@ -2191,10 +2196,6 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
       FROM gauges g
         FULL JOIN counters c ON c.bucket = g.bucket
     ),
-    -- Wait and run histograms, added up per returned bucket in SQL, so a bucket comes back as one
-    -- histogram however many passes it covers. Each pass lands in the bucket its counters were placed
-    -- in above, then its counts are summed per bucket and slot, a slot with no job in any pass as 0.
-    -- A bucket no pass measured has no row here and comes back null.
     passes AS (
       SELECT ${bucket('delta_on')} as "counterBucket", wait_bins, run_bins
       FROM ${schema}.queue_stats, w
@@ -2781,12 +2782,16 @@ export function cancelJobs (schema: string, table: string, fenced?: boolean) {
   `
 }
 
+// A resumed job's start_after moves up to now, as a released flow child's does, so its wait (in the
+// monitor's histograms and ready_oldest_seconds) counts from when it could run again rather than
+// from when it was first sent. A start_after still in the future is kept.
 export function resumeJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
       SET completed_on = NULL,
-        state = '${JOB_STATES.created}'
+        state = '${JOB_STATES.created}',
+        start_after = GREATEST(start_after, ${schema}.job_now())
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.cancelled}'
@@ -3735,13 +3740,15 @@ export function deletion (schema: string, table: string, queues: string[], noAdv
   return locked(schema, sql, table + 'deletion', noAdvisoryLocks)
 }
 
+// start_after moves up to now, as in resumeJobs.
 export function retryJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.job
       SET state = '${JOB_STATES.retry}',
         retry_limit = retry_limit + 1,
-        completed_on = NULL
+        completed_on = NULL,
+        start_after = GREATEST(start_after, ${schema}.job_now())
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.failed}'
@@ -4104,8 +4111,11 @@ const EMPTY_BINS = `'{${new Array(LATENCY_SLOTS).fill('NULL').join(',')}}'::int[
 // cost twice as much: measured on 2.5M rows, +55 ms on a ~560 ms pass packed, +80 to 120 ms apart.
 const LATENCY_PACK = 64
 
-const waitSeconds = 'extract(epoch from (j.started_on - GREATEST(j.created_on, j.start_after)))'
-const runSeconds = 'extract(epoch from (j.completed_on - j.started_on))'
+// date_part rather than extract: extract returns numeric on PostgreSQL 14 and later, and the numeric
+// arithmetic on every finished job was a large share of the histograms' cost. date_part is float8
+// on every supported backend, as the bin math needs anyway.
+const waitSeconds = "date_part('epoch', (j.started_on - GREATEST(j.created_on, j.start_after)))"
+const runSeconds = "date_part('epoch', (j.completed_on - j.started_on))"
 
 // The slot is width_bucket's, written out: CockroachDB's width_bucket takes decimals, not float8.
 // ln(t / 10 ms) over ln(√2), plus one, clamped to slot 0 below 10 ms and the last slot past the end.
@@ -4117,19 +4127,29 @@ function latencyBin (seconds: string): string {
   return `LEAST(GREATEST(${raw}, 0), ${LATENCY_SLOTS - 1})`
 }
 
-// Unpacks the aggregate's array into one histogram: every slot in slot order, null where no job
-// landed. A pass in which nothing finished still writes the 48 slots (unnest of a null array is no
-// rows, and the left join keeps every slot), so a pass that counted says so, as its deltas do.
-// floor() of a float division rather than integer division, which CockroachDB answers in decimal.
+// The aggregate's array is unnested once per queue, in a lateral join after the aggregate, and
+// counted by packed value: at most LATENCY_SLOTS² rows (ps, ns) however many jobs finished. Both
+// histograms are read from those, so the per-job array is walked once rather than once each.
+function latencyCounts (packed: string): string {
+  return `LEFT JOIN LATERAL (
+        SELECT array_agg(g.p) AS ps, array_agg(g.n) AS ns
+        FROM (SELECT p, count(*)::int AS n FROM unnest(${packed}) AS u(p) GROUP BY p) g
+      ) latency ON true`
+}
+
+// One histogram from latencyCounts: every slot in slot order, null where no job landed. A pass in
+// which nothing finished still writes the 48 slots (unnest of a null array is no rows, and the left
+// join keeps every slot), so a pass that counted says so, as its deltas do. floor() of a float
+// division rather than integer division, which CockroachDB answers in decimal.
 function latencySlotOf (which: 'wait' | 'run'): string {
   return which === 'wait' ? `floor(p / ${LATENCY_PACK}.0)::int` : `(p % ${LATENCY_PACK})::int`
 }
 
-function latencyHistogram (packed: string, which: 'wait' | 'run'): string {
+function latencyHistogram (which: 'wait' | 'run'): string {
   return `(SELECT array_agg(c.n ORDER BY s.slot)
           FROM generate_series(0, ${LATENCY_SLOTS - 1}) AS s(slot)
-            LEFT JOIN (SELECT ${latencySlotOf(which)} AS slot, count(*)::int AS n
-                       FROM unnest(${packed}) AS u(p) GROUP BY 1) c ON c.slot = s.slot)`
+            LEFT JOIN (SELECT ${latencySlotOf(which)} AS slot, sum(n)::int AS n
+                       FROM unnest(latency.ps, latency.ns) AS u(p, n) GROUP BY 1) c ON c.slot = s.slot)`
 }
 
 // Every count the monitor keeps, from one pass over the queue's table.
@@ -4176,8 +4196,8 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         "createdDelta",
         "completedDelta",
         "failedDelta",
-        ${latencyHistogram('"latencyBins"', 'wait')} as "waitBins",
-        ${latencyHistogram('"latencyBins"', 'run')} as "runBins",
+        ${latencyHistogram('wait')} as "waitBins",
+        ${latencyHistogram('run')} as "runBins",
         "readyOldestSeconds",
         COALESCE("recount" > "settled", false) as "trueUp",`,
         counts: `
@@ -4197,9 +4217,10 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
             SELECT q.name, q.delta_on, a.h, t.top, t.settled
             FROM ${schema}.queue q${trueUpSettled(schema, 'q', window.trueUpMax)}
             WHERE q.name = ANY($1::text[])
-          ) q ON q.name = j.name`
+          ) q ON q.name = j.name`,
+        lateral: latencyCounts('stats."latencyBins"')
       }
-    : { select: '', counts: '', join: '' }
+    : { select: '', counts: '', join: '', lateral: '' }
 
   return {
     text: `
@@ -4229,6 +4250,7 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
           WHERE j.name = ANY($1::text[])
           GROUP BY 1
       ) stats
+      ${counters.lateral}
   `,
     values: [queues]
   }
@@ -5296,12 +5318,12 @@ export function getXminHorizon (lastVacuum: Date, sources: readonly XminHorizonS
   // query it is follows from pid, application_name and role, looked up live where the catalog's own
   // privilege rules still apply.
   //
-  // selfApplicationName is what makes "ours or theirs" answerable. Db sets application_name to
-  // 'pgboss' on the pool it owns, so a holder matching this connection's own value is pg-boss doing
-  // it to itself - the monitor's own aggregate, most likely - which has a completely different fix
-  // from an external reporting tool holding a transaction open. It is compared rather than hardcoded
-  // because an adapter-supplied pool sets whatever the host app chose, and claiming that is
-  // definitely pg-boss would be a guess.
+  // selfApplicationName is what makes "ours or theirs" answerable. pg-boss names the pool it owns
+  // 'pgboss', or 'pgboss:<id>' for a registered instance, so a holder matching this connection's own
+  // value is pg-boss doing it to itself - the monitor's own aggregate, most likely - which has a
+  // completely different fix from an external reporting tool holding a transaction open. It is
+  // compared rather than hardcoded because an adapter-supplied pool sets whatever the host app
+  // chose, and claiming that is definitely pg-boss would be a guess.
   const backendIdentity = sources.includes('backends')
     ? `,
       (SELECT to_jsonb(h) FROM (

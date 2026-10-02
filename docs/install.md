@@ -28,4 +28,4 @@ DROP SCHEMA pgboss CASCADE
 
 Use your schema's name in place of `pgboss` if you set one.
 
-If pg-boss was installed into an existing schema that also holds other objects, dropping the schema would remove those too. Drop only pg-boss's own objects instead, with the SQL from [`pg-boss plans uninstall --schema <name>`](./cli#plans-subcommand) or [`getUninstallPlans()`](./api/utils#getuninstallplans-schema-options).
+If pg-boss was installed into an existing schema that also holds other objects, dropping the schema would remove those too. Drop only pg-boss's own objects instead, with the SQL from [`pg-boss plans uninstall --schema <name>`](./cli#plans) or [`getUninstallPlans()`](./api/utils#getuninstallplans-schema-options).

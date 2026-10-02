@@ -2043,17 +2043,14 @@ AS $function$
       release: '12.36.0',
       version: 44,
       previous: 43,
-      // Wait and run times beside the throughput counters, counted by the same pass over the job
-      // table rather than a second one: no index, and nothing added to a job's own writes. Each
-      // histogram is one array of 48 slots, null where no job landed.
-      // Nullable with no default, like the v43 deltas, so no statement rewrites a table and a
-      // snapshot captured before the columns reads as not counted rather than as a queue with no waits.
-      // blocked_count is on the queue row only, a live gauge: queue_stats keeps no history of it, so
-      // its covering index needs no rebuild.
-      // The instance registry: which PgBoss objects share this database, written by each one on its
-      // own heartbeat.
-      // The trace context of the send() that created a job, so the span processing it can join the
-      // producer's trace. Nullable with no default, so adding it rewrites no rows.
+      // The instance table starts empty: each instance registers on its next start().
+      // blocked_count's constant default adds it without a table rewrite, and existing queues read 0
+      // until the next monitor pass counts them. It goes on the queue row only, not queue_stats, so
+      // the covering index on queue_stats needs no rebuild.
+      // The histogram and ready_oldest_seconds columns are nullable with no default, like the v43
+      // deltas, so no statement rewrites a table, and a snapshot captured before them reads as not
+      // counted rather than as a queue with no waits.
+      // trace_context is nullable with no default too, so adding it rewrites no rows.
       install: [
         /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
         `CREATE TABLE ${schema}.instance (
