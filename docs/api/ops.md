@@ -20,6 +20,24 @@ Additionally, all schema operations, both first-time provisioning and migrations
 
 One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system without any special startup handling.
 
+If the database is unavailable, `start()` rejects. It is safe to call it again on the same instance until it succeeds, and workers registered with [`work()`](./workers.md#work-name-options-handler) before then take jobs once it does; until then they emit `error` on each poll.
+
+```js
+boss.on('error', console.error)
+
+for (let attempt = 1; ; attempt++) {
+  try {
+    await boss.start()
+    break
+  } catch (err) {
+    if (attempt === 10) throw err
+    await new Promise(resolve => setTimeout(resolve, 5000))
+  }
+}
+```
+
+Once started, pg-boss rides out a database that drops and comes back: workers emit `error` while it is gone and resume when it returns, with no restart needed.
+
 ### `stop(options)`
 
 Stops all background processing, such as maintenance and scheduling, as well as all polling workers started with `work()`.
