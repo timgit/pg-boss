@@ -152,6 +152,13 @@ export interface ScheduleResult extends Schedule {
   updatedOn: Date;
 }
 
+// One event from the subscription table, with every queue subscribed to it
+export interface SubscriptionResult {
+  event: string;
+  queues: string[];
+  updatedOn: Date;
+}
+
 // The subset of a database configuration that is safe to send to the browser.
 // `DatabaseConfig` in config.server.ts also carries `url`, a connection string
 // with a password in it, and that must never reach a loader payload — React

@@ -10,6 +10,7 @@ import {
   getJobCountFromQueue,
   getQueueStatsCollectionStatus,
   isDeadLetterQueue,
+  getSubscriptionEventCount,
 } from '~/lib/queries.server'
 import { Sparkline } from '~/components/ui/sparkline'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
@@ -72,10 +73,11 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
 
   // The Ready sparkline comes from the always-on queue.ready_history column (loaded with `queue`).
   // collection drives the banner that points at the interactive metrics chart (needs persistQueueStats).
-  const [jobs, collection, isDeadLetter] = await Promise.all([
+  const [jobs, collection, isDeadLetter, subscribedEvents] = await Promise.all([
     getJobs(DB_URL, SCHEMA, params.name, { state: stateFilter, limit, offset, jobColumns }),
     getQueueStatsCollectionStatus(DB_URL, SCHEMA),
     isDeadLetterQueue(DB_URL, SCHEMA, params.name),
+    getSubscriptionEventCount(DB_URL, SCHEMA, params.name),
   ])
 
   // Use cached count from queue table instead of COUNT(*) query
@@ -97,6 +99,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     hasPrevPage,
     statsAvailable: collection.available,
     isDeadLetter,
+    subscribedEvents,
   }
 }
 
@@ -124,6 +127,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     hasPrevPage,
     statsAvailable,
     isDeadLetter,
+    subscribedEvents,
   } = loaderData
 
   // ready_history is stored newest-first; reverse to chronological (oldest → newest) for the chart.
@@ -185,6 +189,13 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
         <Badge variant="primary">{queue.policy} policy</Badge>
         <Badge variant="gray">{queue.partition ? 'Partitioned' : 'Shared'} storage</Badge>
         {queue.deadLetter && <Badge variant="gray">dead letter → {queue.deadLetter}</Badge>}
+        {subscribedEvents > 0 && (
+          <DbLink to={`/subscriptions?queue=${encodeURIComponent(queue.name)}`}>
+            <Badge variant="gray">
+              subscribed to {subscribedEvents.toLocaleString()} {subscribedEvents === 1 ? 'event' : 'events'}
+            </Badge>
+          </DbLink>
+        )}
       </div>
 
       {!statsAvailable && <StatsDisabledBanner />}

@@ -7,6 +7,7 @@ A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npm
 - **Overview**: Aggregate statistics, problem queues, and recent warnings at a glance
 - **Queues**: View all queues with cached statistics
 - **Stats**: Arrival and finishing rates for each queue and all queues together, against the previous interval
+- **Subscriptions**: Each event and the queues subscribed to it
 - **Job List**: View jobs with state and queue filtering
 - **Job Details**: View full job payloads, output data, and metadata
 - **Warning History**: When `persistWarnings` is enabled, browse through previously emitted warning events
@@ -66,6 +67,10 @@ The old metrics page, `/queues/:name/metrics`, redirects here, keeping its serie
 Schedules registered with `boss.schedule()`, showing the target queue, optional key, expression, a human-readable frequency, the next occurrence and timezone. Both schedule kinds are read through pg-boss itself, so a schedule stored as an [RRULE](./api/scheduling.md#rrule-expressions) is badged as one and gets the same next occurrence the scheduling pass will use. Each schedule's detail page shows its data, options and the last job it created.
 
 ![Schedules page](./images/dashboard-schedules.png)
+
+### Subscriptions
+
+Events registered with [`boss.subscribe()`](./api/pubsub.md), one row per event with every queue subscribed to it, sortable by event, queue count or when a queue last subscribed. A queue's page shows how many events it is subscribed to and links here, filtered to those events.
 
 ### Migrations
 

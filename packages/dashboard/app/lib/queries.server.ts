@@ -16,6 +16,7 @@ import type {
   QueueThroughputPoint,
   QueueThroughputSeries,
   ScheduleResult,
+  SubscriptionResult,
   BamEntryResult,
   BamStatusSummary,
   Instance,
@@ -60,6 +61,12 @@ const SCHEDULE_SORT_COLUMNS: Record<string, string> = {
   key: 'key',
   cron: 'cron',
   timezone: 'timezone',
+}
+
+const SUBSCRIPTION_SORT_COLUMNS: Record<string, string> = {
+  event: 'event',
+  queues: 'cardinality(queues)',
+  updated: '"updatedOn"',
 }
 
 const WARNING_SORT_COLUMNS: Record<string, string> = {
@@ -1324,6 +1331,56 @@ export async function getSchedule (
   `
 
   return await queryOne<ScheduleResult>(dbUrl, sql, [name, key])
+}
+
+// One row per event. With `queue`, only the events that queue is subscribed to, each still listing
+// every queue subscribed to it.
+export async function getSubscriptions (
+  dbUrl: string,
+  schema: string,
+  options: {
+    queue?: string | null;
+    limit?: number;
+    offset?: number;
+  } & SortOptions = {}
+): Promise<SubscriptionResult[]> {
+  const s = validateIdentifier(schema)
+  const { queue, limit, offset, sort, dir } = options
+  const orderBy = buildOrderBy({ sort, dir }, SUBSCRIPTION_SORT_COLUMNS, 'event', 'event')
+
+  const params: unknown[] = []
+  const where = queue ? `WHERE event IN (SELECT event FROM ${s}.subscription WHERE name = $${params.push(queue)})` : ''
+  const page = limit !== undefined ? `LIMIT $${params.push(limit)} OFFSET $${params.push(offset ?? 0)}` : ''
+
+  const sql = `
+    SELECT * FROM (
+      SELECT
+        event,
+        array_agg(name ORDER BY name) as queues,
+        max(updated_on) as "updatedOn"
+      FROM ${s}.subscription
+      ${where}
+      GROUP BY event
+    ) events
+    ${orderBy}
+    ${page}
+  `
+
+  return await query<SubscriptionResult>(dbUrl, sql, params)
+}
+
+export async function getSubscriptionEventCount (
+  dbUrl: string,
+  schema: string,
+  queue?: string | null
+): Promise<number> {
+  const s = validateIdentifier(schema)
+  const sql = queue
+    ? `SELECT COUNT(*)::int as count FROM ${s}.subscription WHERE name = $1`
+    : `SELECT COUNT(DISTINCT event)::int as count FROM ${s}.subscription`
+
+  const result = await queryOne<{ count: number }>(dbUrl, sql, queue ? [queue] : [])
+  return result?.count ?? 0
 }
 
 // Re-exported so routes read jobs through one module
