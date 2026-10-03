@@ -26,6 +26,7 @@ import type {
   QueueThroughputPoint,
   QueueThroughputSeries,
   ScheduleResult,
+  SubscriptionResult,
   BamEntryResult,
   BamStatusSummary,
   Instance,
@@ -82,6 +83,12 @@ const SCHEDULE_SORT_COLUMNS: Record<string, SortColumn> = {
   timezone: { expr: "COALESCE(timezone, 'UTC')", type: 'text' },
 }
 
+const SUBSCRIPTION_SORT_COLUMNS: Record<string, SortColumn> = {
+  event: { expr: 'event', type: 'text' },
+  queues: { expr: 'cardinality(queues)', type: 'int' },
+  updated: { expr: '"updatedOn"', type: 'timestamptz' },
+}
+
 const WARNING_SORT_COLUMNS: Record<string, SortColumn> = {
   type: { expr: 'type', type: 'text' },
   created: { expr: 'created_on', type: 'timestamptz' },
@@ -98,6 +105,7 @@ const BAM_SORT_COLUMNS: Record<string, SortColumn> = {
 }
 
 const QUEUE_KEYS: Key[] = [{ expr: 'name', type: 'text', desc: false }]
+const SUBSCRIPTION_KEYS: Key[] = [{ expr: 'event', type: 'text', desc: false }]
 const SCHEDULE_KEYS: Key[] = [{ expr: 'name', type: 'text', desc: false }, { expr: 'key', type: 'text', desc: false }]
 const WARNING_KEYS: Key[] = [{ expr: 'created_on', type: 'timestamptz', desc: true }, { expr: 'id', type: 'uuid', desc: true }]
 const BAM_TIEBREAK: Key[] = [{ expr: 'created_on', type: 'timestamptz', desc: true }, { expr: 'id', type: 'uuid', desc: true }]
@@ -1386,6 +1394,56 @@ export async function getSchedule (
   `
 
   return await queryOne<ScheduleResult>(dbUrl, sql, [name, key])
+}
+
+// One row per event. With `queue`, only the events that queue is subscribed to, each still listing
+// every queue subscribed to it.
+export async function getSubscriptions (
+  dbUrl: string,
+  schema: string,
+  options: PageOptions & { queue?: string | null } & SortOptions
+): Promise<ListPage<SubscriptionResult>> {
+  const s = validateIdentifier(schema)
+  const { queue, limit, cursor = {}, sort, dir } = options
+  const keys = sortKeys({ sort, dir }, SUBSCRIPTION_SORT_COLUMNS, SUBSCRIPTION_KEYS, SUBSCRIPTION_KEYS)
+
+  return keysetPage<SubscriptionResult>(keys, cursor, limit, (plan) => {
+    const params: unknown[] = []
+    const where = queue ? `WHERE event IN (SELECT event FROM ${s}.subscription WHERE name = $${params.push(queue)})` : ''
+    const past = plan.values ? `WHERE ${keysetCondition(keys, params.length + 1, plan.backward)}` : ''
+    if (plan.values) params.push(...plan.values)
+    params.push(limit + 1)
+
+    const sql = `
+      SELECT *, ${cursorSelect(keys)} FROM (
+        SELECT
+          event,
+          array_agg(name ORDER BY name) as queues,
+          max(updated_on) as "updatedOn"
+        FROM ${s}.subscription
+        ${where}
+        GROUP BY event
+      ) events
+      ${past}
+      ${keysetOrderBy(keys, plan.backward)}
+      LIMIT $${params.length}
+    `
+    return query(dbUrl, sql, params)
+  })
+}
+
+export async function getSubscriptionEventCount (
+  dbUrl: string,
+  schema: string,
+  queue?: string | null
+): Promise<number> {
+  const s = validateIdentifier(schema)
+  const sql = queue
+    ? `SELECT COUNT(*)::int as count FROM ${s}.subscription WHERE name = $1`
+    : `SELECT COUNT(DISTINCT event)::int as count FROM ${s}.subscription`
+
+  const result = await queryOne<{ count: number }>(dbUrl, sql, queue ? [queue] : [])
+  return result?.count ?? 0
 }
 
 // Re-exported so routes read jobs through one module

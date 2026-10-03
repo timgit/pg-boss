@@ -39,7 +39,7 @@ export interface QueueSlotProps {
 }
 
 /** The pages whose header carries a `pageActions` slot. */
-export type ActionPage = 'overview' | 'jobs' | 'queues' | 'schedules'
+export type ActionPage = 'overview' | 'jobs' | 'queues' | 'schedules' | 'subscriptions'
 
 /** What a page header tells `pageActions` about where it is. */
 export interface PageSlotProps {
