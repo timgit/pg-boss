@@ -1,6 +1,6 @@
 import net from 'node:net'
 import { expect } from 'vitest'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 
@@ -101,6 +101,86 @@ describe('database', function () {
       await relay.up()
       await boss.stop({ graceful: false, timeout: 2000 }).catch(() => {})
       await relay.down()
+    }
+  })
+
+  // Over TCP, so not PGlite.
+  helper.itPglite('start({ attempts }) tries again until the database is reachable', async function () {
+    const relay = await databaseRelay(ctx.bossConfig.host!, Number(ctx.bossConfig.port))
+    const boss = new PgBoss({ ...ctx.bossConfig, host: '127.0.0.1', port: relay.port, connectionTimeoutMillis: 1000 })
+    const retries: any[] = []
+    boss.on('warning', warning => { if ((warning.data as any).type === 'start_retry') retries.push(warning.data) })
+
+    try {
+      const starting = boss.start({ attempts: 5 })
+      await helper.until(() => retries.length > 0, 10_000)
+      await relay.up()
+      await starting
+
+      expect(retries[0]).toMatchObject({ type: 'start_retry', attempt: 1, attempts: 5, delaySeconds: 1 })
+      expect(typeof retries[0].error).toBe('string')
+      await boss.createQueue(ctx.schema)
+      expect(await boss.getQueue(ctx.schema)).toBeTruthy()
+    } finally {
+      await relay.up()
+      await boss.stop({ graceful: false, timeout: 2000 }).catch(() => {})
+      await relay.down()
+    }
+  })
+
+  helper.itPglite('start({ attempts }) rejects with the last error once the attempts run out', async function () {
+    const relay = await databaseRelay(ctx.bossConfig.host!, Number(ctx.bossConfig.port))
+    const boss = new PgBoss({ ...ctx.bossConfig, host: '127.0.0.1', port: relay.port, connectionTimeoutMillis: 1000 })
+    const retries: any[] = []
+    boss.on('warning', warning => { if ((warning.data as any).type === 'start_retry') retries.push(warning.data) })
+
+    try {
+      await expect(boss.start({ attempts: 2 })).rejects.toThrow()
+      expect(retries.map(r => r.attempt)).toEqual([1])
+    } finally {
+      await boss.stop({ graceful: false, timeout: 2000 }).catch(() => {})
+      await relay.down()
+    }
+  })
+
+  helper.itPglite('stop() ends start({ attempts }) while it waits between tries', async function () {
+    const relay = await databaseRelay(ctx.bossConfig.host!, Number(ctx.bossConfig.port))
+    const boss = new PgBoss({ ...ctx.bossConfig, host: '127.0.0.1', port: relay.port, connectionTimeoutMillis: 1000 })
+    let retried = false
+    boss.on('warning', warning => { if ((warning.data as any).type === 'start_retry') retried = true })
+
+    try {
+      const starting = boss.start({ attempts: 10 })
+      starting.catch(() => {})
+      await helper.until(() => retried, 10_000)
+
+      // The first wait is a second long; stop() should end it rather than sit it out.
+      const stoppedAt = Date.now()
+      const stopping = boss.stop({ graceful: false, timeout: 2000 })
+      await expect(starting).rejects.toThrow()
+      expect(Date.now() - stoppedAt).toBeLessThan(800)
+      await stopping.catch(() => {})
+    } finally {
+      await relay.down()
+    }
+  })
+
+  it('start({ attempts }) throws an AssertionError at once instead of trying again', async function () {
+    // A test clock needs setSessionStatements() on the adapter, so this one is refused on every try.
+    const boss = new PgBoss({ db: { executeSql: async () => ({ rows: [] }) }, clock: new TestClock() } as any)
+    let retries = 0
+    boss.on('warning', warning => { if ((warning.data as any).type === 'start_retry') retries++ })
+
+    await expect(boss.start({ attempts: 3 })).rejects.toThrow('setSessionStatements')
+    expect(retries).toBe(0)
+    await boss.stop({ graceful: false }).catch(() => {})
+  })
+
+  it('start() refuses attempts that are not a whole number of 1 or more', async function () {
+    const boss = new PgBoss(helper.getConfig())
+
+    for (const attempts of [0, -1, 1.5, NaN]) {
+      await expect(boss.start({ attempts })).rejects.toThrow('start() attempts must be an integer of 1 or more')
     }
   })
 

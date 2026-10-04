@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import assert, { AssertionError } from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import EventEmitter from 'node:events'
 import * as Attorney from './attorney.ts'
@@ -10,7 +10,7 @@ import Bam from './bam.ts'
 import Navigator from './navigator.ts'
 import Notifier from './notifier.ts'
 import Registrar from './registrar.ts'
-import { delay } from './tools.ts'
+import { delay, type AbortablePromise } from './tools.ts'
 import { isAttachable } from './clock.ts'
 import { trackActivity } from './activity.ts'
 import type * as types from './types.ts'
@@ -64,10 +64,15 @@ export function getUninstallPlans (schema?: string, options?: types.PlanOptions)
   return Contractor.uninstallPlans(schema, options)
 }
 
+// start({ attempts }) waits 1 second after the first failure and doubles the wait up to this.
+const START_RETRY_MAX_SECONDS = 30
+
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #stopped: boolean
   #started: boolean | undefined
   #startingPromise: Promise<this> | null = null
+  // The wait between start() attempts, so stop() can end it rather than sit out every retry.
+  #startRetry: { cancelled: boolean, wait: AbortablePromise<void> | null } | null = null
   #stoppingPromise: Promise<void> | null = null
   #attachedClock: AsyncDisposable | null = null
   #idle: (() => Promise<boolean>) | undefined
@@ -157,7 +162,11 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     }
   }
 
-  async start (): Promise<this> {
+  async start (options: types.StartOptions = {}): Promise<this> {
+    const { attempts = 1 } = options
+
+    assert(Number.isInteger(attempts) && attempts >= 1, 'start() attempts must be an integer of 1 or more')
+
     // A stop() already in flight must finish (clearing any resources it's tearing down) before a
     // fresh start() begins, otherwise the two race over the same intervals/pool.
     if (this.#stoppingPromise) {
@@ -180,12 +189,50 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     // must still be reachable by stop() for cleanup, and stop() no-ops whenever #stopped is true.
     this.#stopped = false
 
-    this.#startingPromise = this.#doStart()
+    this.#startingPromise = this.#startAttempts(attempts)
 
     try {
       return await this.#startingPromise
     } finally {
       this.#startingPromise = null
+    }
+  }
+
+  // Each attempt is the same as calling start() again after a failure, which is safe on the same
+  // instance. An AssertionError is pg-boss refusing a configuration it cannot run, which fails the
+  // same way every time, so it is thrown at once. Anything else, a database not up yet or a schema
+  // another process is still migrating, gets the remaining attempts.
+  async #startAttempts (attempts: number): Promise<this> {
+    const retry: { cancelled: boolean, wait: AbortablePromise<void> | null } = { cancelled: false, wait: null }
+    this.#startRetry = retry
+
+    try {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await this.#doStart()
+        } catch (err: any) {
+          if (attempt >= attempts || retry.cancelled || err instanceof AssertionError) {
+            throw err
+          }
+
+          const delaySeconds = Math.min(2 ** (attempt - 1), START_RETRY_MAX_SECONDS)
+
+          this.emit(events.warning, {
+            message: `start() attempt ${attempt} of ${attempts} failed, trying again in ${delaySeconds}s: ${err?.message}`,
+            data: { type: 'start_retry', attempt, attempts, delaySeconds, error: err?.message }
+          })
+
+          retry.wait = delay(delaySeconds * 1000)
+          await retry.wait
+          retry.wait = null
+
+          if (retry.cancelled) {
+            throw err
+          }
+        }
+      }
+    } finally {
+      this.#startRetry = null
     }
   }
 
@@ -266,7 +313,13 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   async stop (options: types.StopOptions = {}): Promise<void> {
     // A start() already in flight must finish (or fail) before stop() evaluates state, otherwise
-    // stop() reads #stopped mid-start and silently no-ops while start() keeps running.
+    // stop() reads #stopped mid-start and silently no-ops while start() keeps running. One waiting
+    // between attempts stops trying, so it fails now with its last error.
+    if (this.#startRetry) {
+      this.#startRetry.cancelled = true
+      this.#startRetry.wait?.abort()
+    }
+
     if (this.#startingPromise) {
       await this.#startingPromise.catch(() => {})
     }

@@ -1,6 +1,6 @@
 # Operations
 
-### `start()`
+### `start(options)`
 
 Returns the same PgBoss instance used during invocation
 
@@ -20,21 +20,19 @@ Additionally, all schema operations, both first-time provisioning and migrations
 
 One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system without any special startup handling.
 
-If the database is unavailable, `start()` rejects. It is safe to call it again on the same instance until it succeeds, and workers registered with [`work()`](./workers.md#work-name-options-handler) before then take jobs once it does; until then they emit `error` on each poll.
+If the database is unavailable, `start()` rejects. Pass `attempts` to have it try again instead, for a process that can start before its database is up:
 
 ```js
-boss.on('error', console.error)
-
-for (let attempt = 1; ; attempt++) {
-  try {
-    await boss.start()
-    break
-  } catch (err) {
-    if (attempt === 10) throw err
-    await new Promise(resolve => setTimeout(resolve, 5000))
-  }
-}
+await boss.start({ attempts: 10 })
 ```
+
+It is also safe to call `start()` again yourself on the same instance until it succeeds. Workers registered with [`work()`](./workers.md#work-name-options-handler) before then take jobs once it does; until then they emit `error` on each poll.
+
+**Options**
+
+* **attempts**, int, default 1
+
+  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. Each failed try that will be retried emits a [`start_retry` warning](./events.md#warning). An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error.
 
 Once started, pg-boss rides out a database that drops and comes back: workers emit `error` while it is gone and resume when it returns, with no restart needed.
 
