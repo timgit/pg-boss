@@ -617,8 +617,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.schedule(name, cron, data, options)
   }
 
-  unschedule (name: string, key?: string): Promise<void> {
-    return this.#timekeeper.unschedule(name, key)
+  unschedule (name: string, key?: string, options?: types.ConnectionOptions): Promise<void> {
+    return this.#timekeeper.unschedule(name, key, options)
   }
 
   getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
