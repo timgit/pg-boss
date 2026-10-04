@@ -313,6 +313,8 @@ Update-or-insert one or more **not-yet-active** jobs (state `created` or `retry`
 
 Returns a `Promise<UpsertResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the updated job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 
+Concurrent `upsert()` calls for the same `singletonKey` on one queue take turns through a transaction-scoped advisory lock, so they leave one queued job under every queue policy. Backends that disable advisory locks (`noAdvisoryLocks`) skip the lock. The same goes for a caller-supplied `db` that is not inside a transaction. In those cases only the `short`, `stately` and `exclusive` policies guarantee one queued job per key.
+
 ```js
 // ensure exactly one queued "process this article" job carries the latest body
 await boss.upsert('article', { articleId: 42, body: '…latest…' }, { singletonKey: 'article-42' })

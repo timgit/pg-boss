@@ -4453,6 +4453,14 @@ function advisoryLock (schema: string, key?: string) {
   return `SELECT pg_advisory_xact_lock(${advisoryLockKey(schema, key)})`
 }
 
+// Serializes upsert() calls for one queue and singletonKey. Policies without a unique index over
+// queued jobs (standard, singleton) give the insert's ON CONFLICT nothing to fire on, so two
+// callers that both miss on the update would otherwise both insert. The key arrives as $1 because
+// it is caller input, and convert_to() reads it as text where a ::bytea cast would parse backslashes.
+export function lockUpsertKey (schema: string) {
+  return `SELECT pg_advisory_xact_lock(('x' || encode(sha224(convert_to(current_database() || '.pgboss.${normalizeSchemaName(schema)}.upsert.' || $1, 'UTF8')), 'hex'))::bit(64)::bigint)`
+}
+
 // The stats aggregate takes its lock with try, not wait, and abandons the pass if another instance
 // already holds it.
 //

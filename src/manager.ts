@@ -1678,6 +1678,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const insertPayload = JSON.stringify([{ ...job, __traceContext: traceContext }])
 
     const result = await this.ensureTransaction(db, async (tx) => {
+      // Without this, two concurrent upserts for one key can both miss on the update and both
+      // insert on policies with no unique index over queued jobs. Backends without advisory locks
+      // keep the old behavior. An id target needs no lock: the primary key makes the insert conflict.
+      if (by === 'singletonKey' && !this.config.noAdvisoryLocks) {
+        await tx.executeSql(plans.lockUpsertKey(this.config.schema), [JSON.stringify([name, opts.singletonKey])])
+      }
+
       const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])
       if (updated.length) {
         const jobs = updated.map(row => row.id)

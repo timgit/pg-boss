@@ -158,6 +158,38 @@ describe('upsert', function () {
     expect(jobs[0].data).toEqual({ body: 'v2' })
   })
 
+  // Issue #942: standard and singleton have no unique index over queued jobs, so the insert's
+  // ON CONFLICT never fired and two concurrent upserts for one key could both insert. Needs a pool:
+  // PGlite runs as a caller-supplied db, where upsert() runs inline without its own transaction.
+  for (const policy of ['standard', 'singleton'] as const) {
+    helper.itPglite(`leaves one queued job per key under concurrent upserts (${policy} policy, issue #942)`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await ctx.boss.createQueue(ctx.schema, { policy })
+
+      const keys = Array.from({ length: 30 }, (_, i) => `article-${i}`)
+      for (const singletonKey of keys) {
+        await Promise.all([
+          ctx.boss.upsert(ctx.schema, { body: 'A' }, { singletonKey }),
+          ctx.boss.upsert(ctx.schema, { body: 'B' }, { singletonKey })
+        ])
+      }
+
+      const jobs = await ctx.boss.findJobs(ctx.schema, { queued: true })
+      expect(jobs).toHaveLength(keys.length)
+      expect(new Set(jobs.map(job => job.singletonKey)).size).toBe(keys.length)
+    })
+  }
+
+  it('locks on a singletonKey containing backslashes and quotes', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const singletonKey = 'a\\x\'"\\\\'
+    const first = await ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey })
+    const second = await ctx.boss.upsert(ctx.schema, { v: 2 }, { singletonKey })
+    expect(first.inserted).toBe(1)
+    expect(second).toEqual({ jobs: first.jobs, updated: 1, inserted: 0 })
+  })
+
   describe('object API', function () {
     it('should insert then update a job passed as a single object argument', async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
