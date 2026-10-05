@@ -960,7 +960,8 @@ function createTableJob (schema: string, noPartitioning = false) {
       source_retry_count int,
       source_output jsonb,
       source_root_id uuid,
-      trace_context jsonb
+      trace_context jsonb,
+      upsert_by_key bool
     ) ${partitionClause}
   `
 }
@@ -1018,6 +1019,7 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobBlocking(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobSourceRoot(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobUpsert(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -1040,6 +1042,7 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobGroupConcurrency(schema)};
     ${createIndexJobBlocking(schema)};
     ${createIndexJobSourceRoot(schema)};
+    ${createIndexJobUpsert(schema)};
   `
 }
 
@@ -1165,6 +1168,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobBlocking(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobSourceRoot(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobUpsert(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -1388,6 +1392,15 @@ function createIndexJobBlocking (schema: string) {
 // been through a dead letter queue are in it and a queue that never dead-letters carries it empty.
 function createIndexJobSourceRoot (schema: string) {
   return `CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
+}
+
+// At most one waiting job per key among the jobs upsert() inserted by singletonKey, which is what makes
+// concurrent upserts of one key agree: the second insert waits on the first's index entry, conflicts,
+// and edits that job instead. upsert_by_key is set only on those inserts, so send() keeps its own policy's
+// rules and a queue that never upserts carries the index empty. Only created, not retry, so a failing
+// job never collides with a newer upsert on its way back to retry.
+function createIndexJobUpsert (schema: string) {
+  return `CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = '${JOB_STATES.created}' AND upsert_by_key`
 }
 
 // The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only
@@ -2813,13 +2826,16 @@ export function cancelJobs (schema: string, table: string, fenced?: boolean) {
 
 // A resumed job's start_after moves up to now, as a released flow child's does, so its wait (in the
 // monitor's histograms and ready_oldest_seconds) counts from when it could run again rather than
-// from when it was first sent. A start_after still in the future is kept.
+// from when it was first sent. A start_after still in the future is kept. It also loses upsert_by_key,
+// here and in restoreJobs, so it never collides in job_i13 with a newer job upserted by the same key,
+// and queues beside it.
 export function resumeJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
       SET completed_on = NULL,
         state = '${JOB_STATES.created}',
+        upsert_by_key = NULL,
         start_after = GREATEST(start_after, ${schema}.job_now())
       WHERE name = $1
         AND id = ANY($2::uuid[])
@@ -2835,7 +2851,8 @@ export function restoreJobs (schema: string, table: string) {
     UPDATE ${schema}.${table}
     SET state = '${JOB_STATES.created}',
         started_on = NULL,
-        heartbeat_on = NULL
+        heartbeat_on = NULL,
+        upsert_by_key = NULL
     WHERE name = $1
       AND id = ANY($2::uuid[])
   `
@@ -2871,13 +2888,16 @@ interface InsertJobsOptions {
   // statement a public insert() builds does not declare the column and a caller naming it sets
   // nothing.
   slots?: boolean
+  // Marks the jobs as inserted by upsert() by singletonKey, for job_i13. Set by the statement, never
+  // read from the recordset, so insert() cannot mark a job.
+  upsertByKey?: boolean
 }
 
 // The queue is LEFT JOINed and every NOT NULL column it supplies falls back to the schema default, so
 // a job for a queue deleted after the caller cached it still reaches q_fkey and fails there (23503),
 // rather than producing no row, which would read the same as a singleton or throttle refusal. The
 // fallbacks never apply to a queue that exists, since its own columns are NOT NULL.
-export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false }: InsertJobsOptions) {
+export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false, upsertByKey = false }: InsertJobsOptions) {
   // When notify is enabled we always RETURN start_after so the wrapper below can gate
   // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
   const returning = notify ? 'RETURNING id, start_after' : returnId ? 'RETURNING id' : ''
@@ -2916,7 +2936,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       blocked,
       blocking,
       pending_dependencies,
-      trace_context
+      trace_context${upsertByKey ? ', upsert_by_key' : ''}
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
@@ -2946,7 +2966,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       COALESCE(blocked, false) as blocked,
       COALESCE(blocking, false) as blocking,
       COALESCE("pendingDependencies", 0) as pending_dependencies,
-      "__traceContext" as trace_context
+      "__traceContext" as trace_context${upsertByKey ? ', true as upsert_by_key' : ''}
     FROM (
       SELECT *,
         CASE

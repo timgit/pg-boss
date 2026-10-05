@@ -22,6 +22,10 @@ const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, s
 // postgres: current transaction is aborted, commands ignored until end of transaction block
 const TRANSACTION_ABORTED = '25P02'
 
+// serialization_failure, which CockroachDB raises for a transaction it has to restart.
+const SERIALIZATION_FAILURE = '40001'
+const UPSERT_ATTEMPTS = 3
+
 const QUEUE_NOT_FOUND = 'PGBOSS_QUEUE_NOT_FOUND'
 
 // How long deleteQueue() keeps trying for the locks a queue with its own table needs: 25 ms doubling
@@ -1746,14 +1750,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const notifyEnabled = this.#notifyEnabled(notify)
     const updateSql = plans.updateJob(this.config.schema, table, name, by, match, notifyEnabled)
-    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled })
+    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled, upsertByKey: by === 'singletonKey' })
 
     const job = this.#toUpdatePayload(data, opts)
     const updatePayload = JSON.stringify(job)
     const insertPayload = JSON.stringify([{ ...job, __traceContext: traceContext }])
 
     // The catch is outside the transaction: a deferred q_fkey reports at its COMMIT.
-    const result = await this.ensureTransaction(db, async (tx) => {
+    const attempt = () => this.ensureTransaction(db, async (tx) => {
       const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])
       if (updated.length) {
         const jobs = updated.map(row => row.id)
@@ -1772,6 +1776,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const jobs = retry.map(row => row.id)
       return { jobs, updated: jobs.length, inserted: 0 }
     }).catch(err => this.#rethrowInsertError(err, [name], !opts.db))
+
+    // Where every transaction is serializable (CockroachDB), two upserts of one key that both miss
+    // conflict and one fails with 40001, rather than waiting on job_i13 as under READ COMMITTED. The
+    // transaction is pg-boss's own unless the caller passed a db, so the upsert runs again and finds
+    // the other's job. A caller's transaction is theirs to retry.
+    let result: types.UpsertResponse
+    for (let attempts = 1; ; attempts++) {
+      try {
+        result = await attempt()
+        break
+      } catch (err: any) {
+        if (opts.db || err?.code !== SERIALIZATION_FAILURE || attempts === UPSERT_ATTEMPTS) throw err
+      }
+    }
 
     // Track inserted (newly created) jobs for spies, matching createJob/insert. Runs after the
     // transaction commits so a rolled-back insert never leaves a phantom spy entry.
