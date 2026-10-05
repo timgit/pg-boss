@@ -28,7 +28,7 @@ describe('schedule with a database adapter', function () {
     const db = {
       async executeSql (sql: string, values: any[]) {
         called = true
-        return (_db as any).pool.query(sql, values)
+        return _db.executeSql(sql, values)
       }
     }
 
