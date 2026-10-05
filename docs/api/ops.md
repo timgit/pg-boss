@@ -1,6 +1,6 @@
 # Operations
 
-### `start()`
+### `start(options)`
 
 Returns the same PgBoss instance used during invocation
 
@@ -20,11 +20,29 @@ Additionally, all schema operations, both first-time provisioning and migrations
 
 One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system without any special startup handling.
 
+If the database is unavailable, `start()` rejects. Pass `attempts` to have it try again instead, for a process that can start before its database is up:
+
+```js
+await boss.start({ attempts: 10 })
+```
+
+It is also safe to call `start()` again yourself on the same instance until it succeeds. Workers registered with [`work()`](./workers.md#work-name-options-handler) before then take jobs once it does; until then they emit `error` on each poll.
+
+**Options**
+
+* **attempts**, int, default 1
+
+  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error. An instance that started on a later try records it as `config.startAttempt` in [`getInstances()`](#getinstances).
+
+Once started, pg-boss rides out a database that drops and comes back: workers emit `error` while it is gone and resume when it returns, with no restart needed.
+
 ### `stop(options)`
 
 Stops all background processing, such as maintenance and scheduling, as well as all polling workers started with `work()`.
 
 By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. Emits a `stopped` event if needed.
+
+A job a worker is still claiming when `stop()` is called gets its handler if it is ready to start within the timeout, like any active job; for a [`transactional`](./workers.md#work-name-options-handler) worker that includes opening its transaction. One that is not ready by the time the timeout runs out is failed without starting its handler, which spends an attempt like any failure (with retries left it goes to `retry`), and `stop()` waits for that to settle, which can extend shutdown beyond the timeout. With `graceful: false` such a job is failed at once.
 
 **Arguments**
 
@@ -32,7 +50,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
   * `graceful`, bool
 
-    Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
+    Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period workers stop fetching, while active jobs, and any still being claimed, are allowed to finish.
 
   * `close`, bool
     Default: `true`. If the database connection is managed by pg-boss, it will close the connection pool. Use `false` if needed to continue allowing operations such as `send()` and `fetch()`. Calling `stop()` again later closes the pool, and from then on those operations reject with `Database not opened`.
@@ -41,7 +59,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
   * `timeout`, int
 
-    Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the PgBoss instance.
+    Default: 30000. Maximum time (in milliseconds) to allow active handlers to finish before failing and aborting their jobs. Pending claims and database cleanup are still awaited before shutdown completes.
 
     > [!WARNING]
     > This option is ignored when `graceful` is set to `false`.
@@ -56,7 +74,7 @@ await boss.stop({ close: false })
 // ...and close the pool once the rest of the process is done with it
 await boss.stop()
 
-// shut down immediately without waiting for active jobs
+// abort active jobs without a grace period, then await database cleanup
 await boss.stop({ graceful: false })
 ```
 
@@ -205,7 +223,7 @@ Array of objects with the following properties:
 | `poolMax`, `poolTotal`, `poolIdle`, `poolWaiting` | number \| null | Its pool at the last heartbeat; null for a `db` adapter |
 | `workers` | array | One entry per `work()` call, below |
 | `metrics` | object \| null | Its process's CPU, memory and event loop at the last heartbeat, below |
-| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Each holds the value it resolved to, defaults included; an option with no default that was not given is absent. Connection settings and credentials are never recorded |
+| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Each holds the value it resolved to, defaults included; an option with no default that was not given is absent. Connection settings and credentials are never recorded. Also `startAttempt`, the [`start({ attempts })`](#start-options) try it registered on, when that was not the first |
 | `crashRestarts` | number | Lives in a row with this name on this host that ended without `stop()` before this one started |
 | `crashRestartsSince` | Date \| null | When the first of those went quiet |
 | `startedOn`, `heartbeatOn` | Date | When it started, and its last heartbeat |

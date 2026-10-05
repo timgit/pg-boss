@@ -18,7 +18,11 @@ export interface SqlQuery {
 }
 
 export const PG_ERROR = {
-  divisionByZero: '22012'
+  divisionByZero: '22012',
+  lockNotAvailable: '55P03',
+  foreignKeyViolation: '23503',
+  undefinedTable: '42P01',
+  checkViolation: '23514'
 }
 
 export const DEFAULT_SCHEMA = 'pgboss'
@@ -1254,8 +1258,33 @@ export function notifyQueue (schema: string, name: string): string {
   return `SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')`
 }
 
-export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean) {
-  const sql = `SELECT ${schema}.delete_queue('${name}')`
+// Dropping a queue's own table (partition: true) needs ACCESS EXCLUSIVE on it, on job and on job_common,
+// and an insert into job_common or a query through job takes those in other orders. So the locks are
+// taken first, all with NOWAIT: the transaction never waits holding one, so it can never be part of a
+// deadlock, and the caller tries again when one is busy. The table is read in the same transaction, so
+// a stale cache cannot name the wrong one, and a queue already gone is left alone.
+export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean, partitioned = false) {
+  const sql = partitioned
+    ? `
+      DO $$
+      DECLARE
+        v_table text;
+        v_partition bool;
+      BEGIN
+        SELECT table_name, partition FROM ${schema}.queue WHERE name = '${name}' INTO v_table, v_partition;
+        IF NOT FOUND THEN
+          RETURN;
+        END IF;
+
+        IF v_partition AND to_regclass(format('${schema}.%I', v_table)) IS NOT NULL THEN
+          EXECUTE format('LOCK TABLE ${schema}.${COMMON_JOB_TABLE}, ${schema}.%I, ${schema}.${BASE_JOB_TABLE} IN ACCESS EXCLUSIVE MODE NOWAIT', v_table);
+        END IF;
+
+        PERFORM ${schema}.delete_queue('${name}');
+      END $$
+    `
+    : `SELECT ${schema}.delete_queue('${name}')`
+
   return locked(schema, sql, 'delete-queue', noAdvisoryLocks)
 }
 
@@ -2864,6 +2893,10 @@ interface InsertJobsOptions {
   upserted?: boolean
 }
 
+// The queue is LEFT JOINed and every NOT NULL column it supplies falls back to the schema default, so
+// a job for a queue deleted after the caller cached it still reaches q_fkey and fails there (23503),
+// rather than producing no row, which would read the same as a singleton or throttle refusal. The
+// fallbacks never apply to a queue that exists, since its own columns are NOT NULL.
 export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false, upserted = false }: InsertJobsOptions) {
   // When notify is enabled we always RETURN start_after so the wrapper below can gate
   // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
@@ -2920,12 +2953,12 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         END as singleton_on,
       "groupId" as group_id,
       "groupTier" as group_tier,
-      COALESCE("expireInSeconds", q.expire_seconds) as expire_seconds,
-      COALESCE("deleteAfterSeconds", q.deletion_seconds) as deletion_seconds,
-      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds) * interval '1s') as keep_until,
-      COALESCE("retryLimit", q.retry_limit) as retry_limit,
-      COALESCE("retryDelay", q.retry_delay) as retry_delay,
-      COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
+      COALESCE("expireInSeconds", q.expire_seconds, ${QUEUE_DEFAULTS.expire_seconds}) as expire_seconds,
+      COALESCE("deleteAfterSeconds", q.deletion_seconds, ${QUEUE_DEFAULTS.deletion_seconds}) as deletion_seconds,
+      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds, ${QUEUE_DEFAULTS.retention_seconds}) * interval '1s') as keep_until,
+      COALESCE("retryLimit", q.retry_limit, ${QUEUE_DEFAULTS.retry_limit}) as retry_limit,
+      COALESCE("retryDelay", q.retry_delay, ${QUEUE_DEFAULTS.retry_delay}) as retry_delay,
+      COALESCE("retryBackoff", q.retry_backoff, ${QUEUE_DEFAULTS.retry_backoff}) as retry_backoff,
       COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
       q.policy,
       COALESCE("deadLetter", q.dead_letter) as dead_letter,
@@ -2966,7 +2999,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         "__traceContext" jsonb
       )
     ) j
-    JOIN ${schema}.queue q ON q.name = '${name}'
+    LEFT JOIN ${schema}.queue q ON q.name = '${name}'
     ON CONFLICT DO NOTHING
     ${returning}
   `
@@ -4904,6 +4937,35 @@ function manifestSection (partitioned: boolean) {
 
 function applyManifestSchema (text: string, schema: string): string {
   return text.split(schemaManifest.schemaToken).join(schema)
+}
+
+// The argument types in a manifest function's definition, without names or defaults, as DROP FUNCTION
+// takes them: "create_queue(queue_name text, options jsonb)" gives "text, jsonb".
+function functionArgTypes (def: string): string {
+  const args = def.slice(def.indexOf('(') + 1, def.indexOf(')'))
+  return args.split(',')
+    .map(arg => arg.trim().replace(/\s+DEFAULT\s+.*$/i, ''))
+    .filter(Boolean)
+    .map(arg => arg.split(/\s+/).slice(1).join(' '))
+    .join(', ')
+}
+
+// Removes everything create() installs, for a schema pg-boss shares with other objects; a schema of
+// its own is simply dropped. Read from the manifest, so it covers whatever this version installs.
+// Dropping job takes every queue's own table with it: a partitioned queue's table is a partition of
+// job, and without partitioning every queue's jobs are in job itself. queue_stats' daily partitions
+// go with queue_stats the same way.
+export function uninstall (schema: string, partitioned = true): string {
+  const section = manifestSection(partitioned)
+  const tables = section.tables.map(table => `${schema}.${table}`).join(', ')
+  const functions = section.functions.map(fn => `${schema}.${fn.name}(${functionArgTypes(fn.def)})`).join(', ')
+
+  // Functions first: CockroachDB records a function as depending on the tables its body names.
+  return [
+    `DROP FUNCTION IF EXISTS ${functions};`,
+    `DROP TABLE IF EXISTS ${tables};`,
+    `DROP TYPE IF EXISTS ${schema}.job_state;`
+  ].join('\n')
 }
 
 // The job_state enum values in declaration order, from the manifest (both sections carry the same enum).

@@ -72,10 +72,11 @@ describe('pubsub', function () {
   })
 
   it.each([
-    { cache: 'cold', fail: false },
-    { cache: 'warm', fail: false },
-    { cache: 'cold', fail: true }
-  ])('should handle subscriber removal (cache: $cache, other failure: $fail)', async function ({ cache, fail }) {
+    { cache: 'cold', fail: false, partition: false },
+    { cache: 'warm', fail: false, partition: false },
+    { cache: 'warm', fail: false, partition: true },
+    { cache: 'cold', fail: true, partition: false }
+  ])('should handle subscriber removal (cache: $cache, other failure: $fail, partition: $partition)', async function ({ cache, fail, partition }) {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     await ctx.boss.stop({ close: false })
     const publisher = await helper.start({ ...ctx.bossConfig, migrate: false, noDefault: true })
@@ -89,7 +90,7 @@ describe('pubsub', function () {
       const event = 'event'
       const data = { message: 'hi' }
 
-      await ctx.boss.createQueue(departing)
+      await ctx.boss.createQueue(departing, { partition })
       await ctx.boss.createQueue(healthy)
       await ctx.boss.subscribe(event, departing)
       await ctx.boss.subscribe(event, healthy)
@@ -265,13 +266,39 @@ describe('pubsub', function () {
     }
   })
 
+  // The send ran on the caller's connection, where a failed statement may have aborted their transaction.
+  it('should report a deleted subscriber when publishing with a db', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    try {
+      await ctx.boss.createQueue(ctx.schema)
+      await ctx.boss.subscribe('event', ctx.schema)
+
+      // The subscription goes with the queue, so the deletion lands after publish() selected it.
+      const db = ctx.boss.getDb()
+      const caller = {
+        async executeSql (sql: string, values?: unknown[]) {
+          await other.deleteQueue(ctx.schema)
+          return db.executeSql(sql, values)
+        }
+      }
+
+      await expect(ctx.boss.publish('event', {}, { db: caller })).rejects.toMatchObject({
+        errors: [`${ctx.schema}: Queue ${ctx.schema} does not exist`]
+      })
+    } finally {
+      await other.stop({ graceful: false })
+    }
+  })
+
   it('should preserve foreign-key failures from PostgreSQL', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await ctx.boss.subscribe('event', ctx.schema)
 
     await expect(ctx.boss.publish('event', { message: 'hi' }, { deadLetter: 'missing' })).rejects.toMatchObject({
       message: "publish('event') failed for 1 of 1 subscribed queue(s)",
-      errors: [expect.stringMatching(/dlq_fkey/)]
+      errors: [expect.stringMatching(/Dead letter queue missing does not exist/)]
     })
     expect(await ctx.boss.findJobs(ctx.schema)).toEqual([])
   })

@@ -48,6 +48,7 @@ class Registrar extends EventEmitter implements types.EventsMixin {
   #nurse = new Nurse()
   #recount: types.ClockTimer | undefined
   #active = false
+  #startAttempt = 1
 
   events = events
 
@@ -60,8 +61,11 @@ class Registrar extends EventEmitter implements types.EventsMixin {
     this.#config = config
   }
 
-  async start () {
+  // startAttempt is the start() try this registration comes from, recorded in config when past the first.
+  async start (startAttempt = 1) {
     if (!this.#config.registerInstance || this.#timer) return
+
+    this.#startAttempt = startAttempt
 
     this.#active = true
     this.#nurse.start()
@@ -198,6 +202,8 @@ class Registrar extends EventEmitter implements types.EventsMixin {
       const value = this.#config[key]
       if (value !== undefined) config[key] = value
     }
+
+    if (this.#startAttempt > 1) config.startAttempt = this.#startAttempt
 
     return config
   }

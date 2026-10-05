@@ -59,6 +59,12 @@ class Contractor {
     return migrationStore.migrate(schema, version, migrationStore.getAllForConfig(config), config.noAdvisoryLocks, { inlineAsync: true, partitionTables: options.partitionTables })
   }
 
+  static uninstallPlans (schema = plans.DEFAULT_SCHEMA, options: types.PlanOptions = {}) {
+    const config = planConfig(schema, options.backend)
+
+    return plans.uninstall(schema, !config.noTablePartitioning)
+  }
+
   static rollbackPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion, options: types.PlanOptions = {}) {
     const config = planConfig(schema, options.backend)
 

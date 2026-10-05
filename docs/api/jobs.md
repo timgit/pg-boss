@@ -7,7 +7,7 @@
 Creates a new job and returns the job id.
 
 > [!NOTE]
-> `send()` will resolve a `null` for job id under some use cases when using unique jobs or throttling (see below).  These options are always opt-in on the send side and therefore don't result in a promise rejection.
+> `send()` may resolve a `null` instead of a job id when opting into features such as unique jobs,  throttling, or when using non-standard queue policies.
 
 ### `send(name, data, options)`
 

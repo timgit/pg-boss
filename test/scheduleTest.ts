@@ -845,6 +845,17 @@ describe('timekeeper clock domain', function () {
     await expect(tk.schedule('q', '* * * * *', null, { tz: 'America/New_Yrok' })).rejects.toThrow(/time zone/i)
   })
 
+  it('schedule() rejects an empty, blank or missing cron expression rather than read it as every minute', async function () {
+    const tk = makeTk(0)
+
+    for (const expression of ['', ' ', '   ', '\t', undefined, null, 5, ['FREQ=DAILY']] as any[]) {
+      await expect(tk.schedule('q', expression)).rejects.toThrow('cron expression must be a non-empty string')
+    }
+
+    // and an ordinary expression is still stored
+    await expect(tk.schedule('q', '* * * * *')).resolves.toBeUndefined()
+  })
+
   it('schedule() reports a bad cron expression as a cron error even when the time zone is also bad', async function () {
     const tk = makeTk(0)
 

@@ -1,14 +1,12 @@
 # Database install
 
-The first time [`start()`](./api/ops#start) runs, pg-boss creates its own schema (`pgboss` by default) in the target database, so there is no separate install step. When you upgrade pg-boss, `start()` migrates the schema the same way.
-
-That needs the database user pg-boss connects as to have the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege on the database:
+pg-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege.
 
 ```sql
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
 ```
 
-If that privilege isn't available or you'd prefer to manage the schema yourself, the following options can be used as a fallback.
+If the CREATE privilege is not available or desired, you have two options:
 
 1. **CLI (recommended)** - Use the pg-boss CLI to manage schema creation and migrations. The CLI can output SQL without executing it (`--dry-run` or `plans` command), allowing DBAs to review and run the commands manually. See the [CLI documentation](./cli) for details.
 
@@ -30,4 +28,4 @@ DROP SCHEMA pgboss CASCADE
 
 Use your schema's name in place of `pgboss` if you set one.
 
-If pg-boss was installed into an existing schema that also holds other objects, dropping the schema would remove those too. Drop pg-boss's own objects instead: the output of `pg-boss plans create --schema <name>` (see the [CLI](./cli#plans)) lists everything it installs.
+If pg-boss was installed into an existing schema that also holds other objects, dropping the schema would remove those too. Drop only pg-boss's own objects instead, with the SQL from [`pg-boss plans uninstall --schema <name>`](./cli#plans) or [`getUninstallPlans()`](./api/utils#getuninstallplans-schema-options).

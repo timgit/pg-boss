@@ -13,7 +13,7 @@
 import pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { afterAll } from 'vitest'
-import configJson from './config.json' with { type: 'json' }
+import { getConfig } from './testHelper.ts'
 import { checkBinds, kindOf } from './bindAuditRules.ts'
 
 interface Statement {
@@ -30,20 +30,32 @@ const query = pg.Client.prototype.query as (...args: any[]) => any
 let side: pg.Client | undefined
 let sideReady: Promise<unknown> | undefined
 let describing: Promise<unknown> = Promise.resolve()
+// Set when the side connection cannot be made. The audit then checks nothing, so afterAll fails the
+// file with this rather than passing it.
+let sideError: Error | undefined
 
 // The per-test schema and generated table suffixes differ between runs of the same statement.
 const normalize = (text: string) => text.replace(/pgboss[0-9a-f]{40}/g, '{schema}').replace(/[0-9a-f]{16,}/g, '{hex}').replace(/\s+/g, ' ').trim()
 
 async function describeParameters (text: string): Promise<string[] | undefined> {
   if (!sideReady) {
-    side = new pg.Client({ ...configJson, host: process.env.POSTGRES_HOST || configJson.host })
+    const { host, port, user, password, database } = getConfig()
+    side = new pg.Client({ host, port, user, password, database })
     // Never wait long on a lock a test's open transaction holds; the statement is described on a
     // later sighting instead.
     sideReady = side.connect().then(() => query.call(side, "SET lock_timeout = '300ms'"))
+    // Read in run() below; marked handled here in case it fails before anything awaits it.
+    sideReady.catch(() => {})
   }
 
   const run = async () => {
-    await sideReady
+    try {
+      await sideReady
+    } catch (err: any) {
+      sideError ??= err
+      return undefined
+    }
+
     const name = 'bind_audit_' + randomUUID().replace(/-/g, '')
 
     try {
@@ -116,6 +128,13 @@ if (enabled) {
     await side?.end().catch(() => {})
     side = undefined
     sideReady = undefined
+
+    if (sideError) {
+      const error = sideError
+      sideError = undefined
+      statements.clear()
+      throw new Error(`bind audit could not connect, so it checked nothing: ${error.message}`, { cause: error })
+    }
 
     const report = new Set<string>()
 
