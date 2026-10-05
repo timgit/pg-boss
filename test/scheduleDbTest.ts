@@ -33,9 +33,8 @@ describe('schedule with a database adapter', function () {
     }
 
     await ctx.boss.schedule(ctx.schema, '* * * * *', null, { db, tz: 'UTC', key: 'a' })
-    await _db.close()
-
     const [schedule] = await ctx.boss.getSchedules(ctx.schema, 'a')
+    await _db.close()
 
     expect(called).toBe(true)
     expect(schedule.options).toEqual({ tz: 'UTC', key: 'a' })
@@ -64,6 +63,35 @@ describe('schedule with a database adapter', function () {
     const [job] = await ctx.boss.fetch(ctx.schema)
 
     expect(job).toBeTruthy()
+  })
+
+  // Rows written before db was kept out of the stored options carry it as {}; the cron pass must not
+  // hand that to send() as an adapter.
+  it('should send the scheduled job from a row stored with a db option', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      clock: new TestClock(),
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    ctx.boss = await helper.start(config)
+    const errors: Error[] = []
+    ctx.boss.on('error', error => errors.push(error))
+
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
+    const db = await helper.getDb()
+    await db.executeSql(`UPDATE ${ctx.schema}.schedule SET options = '{"db":{}}'::jsonb`)
+    await db.close()
+
+    for (let i = 0; i < 20; i++) {
+      await config.clock.tick(1000)
+      if ((await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])) >= 1) break
+    }
+
+    expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])).toBe(1)
+    expect(errors).toEqual([])
   })
 
   helper.itPglite('should not create a schedule when its transaction is rolled back', async function () {

@@ -810,7 +810,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       // key and slot are the pass's own bookkeeping, read below rather than sent: send() takes the
       // request the schedule row described and nothing else.
       const { key, slot, ...request } = data
-      return await this.manager.send(request)
+      // A row written before 12.36.1 may still carry `db` from schedule(); it is never a send option here.
+      const { db, ...options } = request.options ?? {}
+      return await this.manager.send({ ...request, options })
     }))
 
     // Keyed on (name, key) so a batch holding more than one occurrence of the same schedule
