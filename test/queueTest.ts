@@ -1,7 +1,8 @@
 import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
-import { states } from '../src/index.ts'
+import { PgBoss, states } from '../src/index.ts'
+import * as plans from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 describe('queues', function () {
@@ -179,6 +180,21 @@ describe('queues', function () {
 
     spy.mockRestore()
   })
+  // Without table partitioning a queue never has its own table to detach. The YugabyteDB profile turns
+  // partitioning off and otherwise runs on Postgres, which is how this reaches that path here.
+  it.skipIf(helper.isPglite || helper.isCockroachDb)('deleteQueue removes a queue and its jobs without table partitioning', async function () {
+    ctx.boss = new PgBoss({ ...ctx.bossConfig, backend: 'yugabytedb' })
+    await ctx.boss.start()
+    await ctx.boss.createQueue(ctx.schema)
+    const id = await ctx.boss.send(ctx.schema)
+    assertTruthy(id)
+
+    await ctx.boss.deleteQueue(ctx.schema)
+
+    expect(await ctx.boss.getQueue(ctx.schema)).toBeNull()
+    expect(await helper.countJobs(ctx.schema, 'job', 'id = $1', [id])).toBe(0)
+  })
+
   // A queue with its own table is detached with NOWAIT locks, tried again while they are busy, then
   // dropped. PGlite has one connection to hold a lock with, and these backends have no partitions.
   describe.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('deleteQueue with partition: true', function () {
@@ -262,6 +278,32 @@ describe('queues', function () {
       await ctx.boss!.deleteQueue(ctx.schema)
 
       expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
+    })
+
+    it('a send to a deleted queue keeps its own error when the queue cannot be read again', async function () {
+      await partitioned()
+      await ctx.boss!.fetch(ctx.schema)
+      const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      try {
+        await other.deleteQueue(ctx.schema)
+
+        // The send fails on the dropped table, and the read that would tell a gone queue from a recreated
+        // one fails too, so the original error is what the caller gets.
+        const db = ctx.boss!.getDb()
+        const executeSql = db.executeSql.bind(db)
+        const reread = plans.getQueues(ctx.schema, [ctx.schema]).text
+        const spy = vi.spyOn(db, 'executeSql').mockImplementation((sql: string, values?: unknown[]) =>
+          sql === reread ? Promise.reject(new Error('read boom')) : executeSql(sql, values))
+
+        try {
+          await expect(ctx.boss!.send(ctx.schema)).rejects.toThrow(/relation .* does not exist/)
+        } finally {
+          spy.mockRestore()
+        }
+      } finally {
+        await other.stop({ graceful: false })
+      }
     })
 
     it('does nothing for a queue another instance already deleted', async function () {
