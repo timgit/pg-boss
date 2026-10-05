@@ -1,7 +1,8 @@
 import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
-import { states } from '../src/index.ts'
+import { PgBoss, states } from '../src/index.ts'
+import * as plans from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 describe('queues', function () {
@@ -45,6 +46,126 @@ describe('queues', function () {
     }
   })
 
+  /** A cached queue deleted elsewhere: the insert used to find no queue row and read as a refusal. */
+  // With partition: true the queue's own table is dropped with it, so the insert fails on the table.
+  describe.each([false, true])('writing to a queue another instance deleted (partition: %s)', function (partition) {
+    async function deletedElsewhere (...names: string[]) {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      try {
+        await ctx.boss.createQueue(ctx.schema, { partition })
+        for (const name of names) await ctx.boss.createQueue(name)
+        await other.deleteQueue(ctx.schema)
+      } finally {
+        await other.stop({ graceful: false })
+      }
+      return ctx.boss
+    }
+
+    it('send throws rather than resolving null', async function () {
+      const boss = await deletedElsewhere()
+      await expect(boss.send(ctx.schema)).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+      // The stale entry is gone, so the next call fails up front as for any missing queue.
+      await expect(boss.send(ctx.schema)).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    })
+
+    it('a throttled send throws rather than resolving null', async function () {
+      const boss = await deletedElsewhere()
+      await expect(boss.send(ctx.schema, null, { singletonSeconds: 300, singletonNextSlot: true })).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    })
+
+    it('insert throws rather than resolving null, with or without returnId', async function () {
+      const boss = await deletedElsewhere()
+      await expect(boss.insert(ctx.schema, [{ data: { a: 1 } }], { returnId: true })).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+      await expect(boss.insert(ctx.schema, [{ data: { a: 1 } }])).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    })
+
+    it('upsert throws rather than reporting nothing done', async function () {
+      const boss = await deletedElsewhere()
+      await expect(boss.upsert(ctx.schema, { a: 1 }, { singletonKey: 'k' })).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+    })
+
+    it('flow names the deleted queue and creates none of its jobs', async function () {
+      const kept = `${ctx.schema}_kept`
+      const boss = await deletedElsewhere(kept)
+
+      await expect(boss.flow([
+        { ref: 'a', name: kept },
+        { ref: 'b', name: ctx.schema, dependsOn: ['a'] }
+      ])).rejects.toThrow(`Queue ${ctx.schema} does not exist`)
+
+      expect(await boss.fetch(kept)).toHaveLength(0)
+    })
+
+    it('send names a dead letter queue that does not exist', async function () {
+      const deadLetter = `${ctx.schema}_dlq`
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await ctx.boss.createQueue(ctx.schema)
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.deleteQueue(deadLetter)
+
+      await expect(ctx.boss.send(ctx.schema, null, { deadLetter })).rejects.toThrow(`Dead letter queue ${deadLetter} does not exist`)
+    })
+
+    // With the partitioned layout q_fkey is deferred, so a caller's transaction hears of it at its own
+    // COMMIT; where it is not deferred (CockroachDB, YugabyteDB) send() rejects.
+    helper.itPglite('a caller transaction hears of it at send or at its COMMIT', async function () {
+      const boss = await deletedElsewhere()
+      const db = await helper.getDb()
+      const client = await (db as any).pool.connect()
+      let error: any
+
+      try {
+        await client.query('BEGIN')
+        try {
+          await boss.send(ctx.schema, null, { db: { executeSql: (sql: string, values: any[]) => client.query(sql, values) } })
+          await client.query('COMMIT')
+        } catch (err) {
+          error = err
+          await client.query('ROLLBACK')
+        }
+      } finally {
+        client.release()
+        await db.close()
+      }
+
+      // 23503 from q_fkey, or 42P01 from the dropped table of a queue with its own.
+      expect(['23503', '42P01']).toContain((error?.cause ?? error)?.code)
+    })
+  })
+
+  // Partitioning is off on CockroachDB and YugabyteDB, so a queue never gets a table of its own there.
+  // The old table is gone (42P01), or is the shared table, whose partition constraint now excludes the queue (23514).
+  it.skipIf(helper.isCockroachDb || helper.isYugabyteDb).each([
+    { from: true, code: '42P01' },
+    { from: false, code: '23514' }
+  ])('takes the new table of a queue another instance deleted and created again (was partition: $from)', async function ({ from, code }) {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    try {
+      await ctx.boss.createQueue(ctx.schema, { partition: from })
+      await other.deleteQueue(ctx.schema)
+      await other.createQueue(ctx.schema, { partition: !from })
+    } finally {
+      await other.stop({ graceful: false })
+    }
+
+    // The queue exists, so the failure is not rewritten, but the cache is reloaded.
+    await expect(ctx.boss.send(ctx.schema)).rejects.toMatchObject({ code })
+    const jobId = await ctx.boss.send(ctx.schema)
+    assertTruthy(jobId)
+    expect((await ctx.boss.getJobById(ctx.schema, jobId))?.id).toBe(jobId)
+  })
+
+  it('a send a throttle refuses still resolves null', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.createQueue(ctx.schema)
+
+    expect(await ctx.boss.send(ctx.schema, null, { singletonSeconds: 300 })).toBeTruthy()
+    expect(await ctx.boss.send(ctx.schema, null, { singletonSeconds: 300 })).toBeNull()
+  })
+
   it('deleteQueue surfaces a DELETE failure instead of resolving as success', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
@@ -59,6 +180,127 @@ describe('queues', function () {
 
     spy.mockRestore()
   })
+  // Without table partitioning a queue never has its own table to drop. The YugabyteDB profile turns
+  // partitioning off and otherwise runs on Postgres, which is how this reaches that path here.
+  it.skipIf(helper.isPglite || helper.isCockroachDb)('deleteQueue removes a queue and its jobs without table partitioning', async function () {
+    ctx.boss = new PgBoss({ ...ctx.bossConfig, backend: 'yugabytedb' })
+    await ctx.boss.start()
+    await ctx.boss.createQueue(ctx.schema)
+    const id = await ctx.boss.send(ctx.schema)
+    assertTruthy(id)
+
+    await ctx.boss.deleteQueue(ctx.schema)
+
+    expect(await ctx.boss.getQueue(ctx.schema)).toBeNull()
+    expect(await helper.countJobs(ctx.schema, 'job', 'id = $1', [id])).toBe(0)
+  })
+
+  // A queue with its own table is dropped after taking its locks with NOWAIT, tried again while they
+  // are busy. PGlite has one connection to hold a lock with, and these backends have no partitions.
+  describe.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('deleteQueue with partition: true', function () {
+    async function holdLock (sql: string) {
+      const db = await helper.getDb()
+      const tx = await db.beginTransaction()
+      await tx.db.executeSql(sql)
+      return async () => {
+        await tx.commit()
+        await db.close()
+      }
+    }
+
+    async function run (sql: string) {
+      const db = await helper.getDb()
+      try {
+        return (await db.executeSql(sql)).rows
+      } finally {
+        await db.close()
+      }
+    }
+
+    const tableExists = async (table: string) => (await run(`SELECT to_regclass('${ctx.schema}.${table}') IS NOT NULL as "exists"`))[0].exists
+
+    async function partitioned () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await ctx.boss.createQueue(ctx.schema, { partition: true })
+      const queue = await ctx.boss.getQueue(ctx.schema)
+      assertTruthy(queue)
+      return queue.table
+    }
+
+    it('waits out a send holding job_common instead of deadlocking with it', async function () {
+      const table = await partitioned()
+      // What an insert into a shared queue holds while it runs.
+      const release = await holdLock(`LOCK TABLE ${ctx.schema}.job_common IN ROW EXCLUSIVE MODE`)
+
+      let settled = false
+      const deleting = ctx.boss!.deleteQueue(ctx.schema).finally(() => { settled = true })
+      await new Promise(resolve => setTimeout(resolve, 300))
+      expect(settled).toBe(false)
+      expect(await ctx.boss!.getQueue(ctx.schema)).toBeTruthy()
+
+      await release()
+      await deleting
+
+      expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
+      expect(await tableExists(table)).toBe(false)
+    })
+
+    it('gives up when its tables stay locked, and leaves the queue in place', async function () {
+      const table = await partitioned()
+      const release = await holdLock(`LOCK TABLE ${ctx.schema}.job_common IN ROW EXCLUSIVE MODE`)
+
+      try {
+        await expect(ctx.boss!.deleteQueue(ctx.schema)).rejects.toThrow(`Queue ${ctx.schema} was not deleted: its tables stayed locked through 12 tries`)
+        expect(await ctx.boss!.getQueue(ctx.schema)).toBeTruthy()
+        expect(await tableExists(table)).toBe(true)
+      } finally {
+        await release()
+      }
+
+      await ctx.boss!.deleteQueue(ctx.schema)
+      expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
+    })
+
+    it('a send to a deleted queue keeps its own error when the queue cannot be read again', async function () {
+      await partitioned()
+      await ctx.boss!.fetch(ctx.schema)
+      const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      try {
+        await other.deleteQueue(ctx.schema)
+
+        // The send fails on the dropped table, and the read that would tell a gone queue from a recreated
+        // one fails too, so the original error is what the caller gets.
+        const db = ctx.boss!.getDb()
+        const executeSql = db.executeSql.bind(db)
+        const reread = plans.getQueues(ctx.schema, [ctx.schema]).text
+        const spy = vi.spyOn(db, 'executeSql').mockImplementation((sql: string, values?: unknown[]) =>
+          sql === reread ? Promise.reject(new Error('read boom')) : executeSql(sql, values))
+
+        try {
+          await expect(ctx.boss!.send(ctx.schema)).rejects.toThrow(/relation .* does not exist/)
+        } finally {
+          spy.mockRestore()
+        }
+      } finally {
+        await other.stop({ graceful: false })
+      }
+    })
+
+    it('does nothing for a queue another instance already deleted', async function () {
+      await partitioned()
+      await ctx.boss!.fetch(ctx.schema)
+      const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      try {
+        await other.deleteQueue(ctx.schema)
+        await expect(ctx.boss!.deleteQueue(ctx.schema)).resolves.toBeUndefined()
+      } finally {
+        await other.stop({ graceful: false })
+      }
+    })
+  })
+
   it('should create a queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

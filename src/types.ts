@@ -1548,6 +1548,15 @@ export interface Instance {
   live: boolean;
 }
 
+export interface StartOptions {
+  /**
+   * How many times to try before rejecting with the last error, waiting 1 second after the first
+   * failure and doubling up to 30 seconds between tries. Default 1.
+   * @see https://pgboss.io/api/ops#start-options
+   */
+  attempts?: number;
+}
+
 export interface StopOptions {
   close?: boolean;
   graceful?: boolean;
@@ -1584,7 +1593,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry'
 
 export interface PersistedWarning {
   id: number;

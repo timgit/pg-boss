@@ -117,7 +117,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   }
 
   async executeSql (text: string, values?: unknown[]) {
-    assert(this.opened, 'Database not opened. Call open() before executing SQL.')
+    assert(this.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
 
     // if (this.config.debug === true) {
     //   console.log(`${new Date().toISOString()}: DEBUG SQL`)
@@ -142,7 +142,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     onNotification: (payload: string) => void,
     onReconnect: () => void
   ): Promise<types.ListenHandle> {
-    assert(this.opened, 'Database not opened. Call open() before listening.')
+    assert(this.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
 
     let closed = false
     let client: pg.Client | null = null
@@ -297,7 +297,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   // to the next caller mid-transaction: a failed COMMIT, a connection that errors while checked
   // out, and a ROLLBACK that cannot get through.
   async beginTransaction (): Promise<types.TransactionHandle> {
-    assert(this.opened, 'Database not opened. Call open() before executing SQL.')
+    assert(this.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
 
     const client = await this.pool.connect()
 
