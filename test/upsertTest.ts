@@ -224,6 +224,84 @@ describe('upsert', function () {
     expect(await ctx.boss.findJobs(ctx.schema, { key: 'k', queued: true })).toHaveLength(2)
   })
 
+  // Postgres runs these at READ COMMITTED, where an upsert never fails with 40001, so a db that fails
+  // the upsert's update on cue stands in for CockroachDB restarting the transaction.
+  describe('serialization failure', function () {
+    const isUpsertUpdate = (text: string) => text.includes("job.singleton_key = o.data->>'singletonKey'")
+
+    async function flakyDb (failures: number, code = '40001') {
+      const db = await helper.getDb()
+      let calls = 0
+
+      return {
+        get calls () { return calls },
+        executeSql: async (text: string, values?: unknown[]) => {
+          if (isUpsertUpdate(text) && ++calls <= failures) {
+            throw Object.assign(new Error('restart transaction'), { code })
+          }
+          return db.executeSql(text, values)
+        },
+        close: () => helper.isPglite ? Promise.resolve() : db.close()
+      }
+    }
+
+    it('runs the upsert again after a serialization failure', async function () {
+      const db = await flakyDb(1)
+
+      try {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, db })
+        const result = await ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })
+
+        expect(result.inserted).toBe(1)
+        expect(db.calls).toBe(2)
+      } finally {
+        await ctx.boss?.stop({ graceful: false })
+        await db.close()
+      }
+    })
+
+    it('gives up after three serialization failures', async function () {
+      const db = await flakyDb(Infinity)
+
+      try {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, db })
+
+        await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })).rejects.toMatchObject({ code: '40001' })
+        expect(db.calls).toBe(3)
+      } finally {
+        await ctx.boss?.stop({ graceful: false })
+        await db.close()
+      }
+    })
+
+    it('does not run the upsert again for any other error', async function () {
+      const db = await flakyDb(Infinity, '23505')
+
+      try {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, db })
+
+        await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })).rejects.toMatchObject({ code: '23505' })
+        expect(db.calls).toBe(1)
+      } finally {
+        await ctx.boss?.stop({ graceful: false })
+        await db.close()
+      }
+    })
+
+    it('leaves a serialization failure in a db passed to upsert() to the caller', async function () {
+      const db = await flakyDb(Infinity)
+
+      try {
+        ctx.boss = await helper.start(ctx.bossConfig)
+
+        await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k', db })).rejects.toMatchObject({ code: '40001' })
+        expect(db.calls).toBe(1)
+      } finally {
+        await db.close()
+      }
+    })
+  })
+
   describe('object API', function () {
     it('should insert then update a job passed as a single object argument', async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
