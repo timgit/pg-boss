@@ -230,4 +230,88 @@ helper.describeMultiConnectionOnly('stopping during a PostgreSQL claim', functio
       await Promise.all([borrowed.close(), blocker.end(), observer.close()])
     }
   })
+
+  // failWip() fails each busy worker's jobs in turn. A claim landing on a later worker while an
+  // earlier one's fail is still in flight is past the grace too, and must be refused like the rest.
+  it('refuses a claim that lands while stop() is still failing an earlier worker\'s jobs', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+    boss.on('error', () => {})
+    const first = ctx.schema
+    const second = `${ctx.schema}_second`
+    await boss.createQueue(second)
+
+    const gate = new pg.Client(helper.getConfig())
+    await gate.connect()
+    const rowLock = new pg.Client(helper.getConfig())
+    await rowLock.connect()
+    const observer = await helper.getDb()
+    const gateKey = 962
+    let gateHeld = false
+    let rowLocked = false
+    let stopping = Promise.resolve()
+
+    try {
+      // The first worker is busy until it is aborted.
+      const busyId = await boss.send(first, null, { retryLimit: 0 })
+      helper.assertTruthy(busyId)
+      let busy = false
+      await boss.work(first, async ([job]) => {
+        busy = true
+        await new Promise(resolve => job.signal.addEventListener('abort', resolve))
+      })
+      await helper.until(() => busy)
+
+      // The second worker's claim is held until released below.
+      await observer.executeSql(`CREATE FUNCTION ${ctx.schema}.hold_claim() RETURNS trigger
+        LANGUAGE plpgsql AS $$ BEGIN
+          IF NEW.name = '${second}' AND OLD.state = 'created' AND NEW.state = 'active' THEN
+            PERFORM pg_advisory_xact_lock(${gateKey});
+          END IF;
+          RETURN NEW;
+        END $$`)
+      await observer.executeSql(`CREATE TRIGGER hold_claim BEFORE UPDATE OF state ON ${ctx.schema}.job
+        FOR EACH ROW EXECUTE FUNCTION ${ctx.schema}.hold_claim()`)
+      await gate.query('SELECT pg_advisory_lock($1)', [gateKey])
+      gateHeld = true
+
+      const heldId = await boss.send(second, null, { retryLimit: 0 })
+      helper.assertTruthy(heldId)
+      let ran = false
+      await boss.work(second, async () => { ran = true })
+      await helper.until(async () => {
+        const { rows } = await observer.executeSql(`SELECT pid FROM pg_stat_activity
+          WHERE wait_event = 'advisory' AND query LIKE $1`, [`%${ctx.schema}.%`])
+        return rows.length > 0
+      })
+
+      // A row lock on the busy job holds stop()'s fail of it after the grace.
+      await rowLock.query('BEGIN')
+      await rowLock.query(`SELECT id FROM ${ctx.schema}.job WHERE id = $1 FOR UPDATE`, [busyId])
+      rowLocked = true
+
+      stopping = boss.stop({ close: false, timeout: 1000 })
+      await helper.until(async () => {
+        const { rows } = await observer.executeSql(`SELECT pid FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND wait_event <> 'advisory' AND query LIKE $1`, [`%${ctx.schema}.%`])
+        return rows.length > 0
+      })
+
+      // The second claim lands now, while that fail is still waiting.
+      await gate.query('SELECT pg_advisory_unlock($1)', [gateKey])
+      gateHeld = false
+      await delay(500)
+      await rowLock.query('COMMIT')
+      rowLocked = false
+      await stopping
+
+      expect(ran).toBe(false)
+      expect((await boss.getJobById(second, heldId))?.state).toBe('failed')
+    } finally {
+      if (gateHeld) await gate.query('SELECT pg_advisory_unlock($1)', [gateKey])
+      if (rowLocked) await rowLock.query('ROLLBACK')
+      await stopping
+      await Promise.all([gate.end(), rowLock.end(), observer.close()])
+    }
+  }, 30_000)
 })

@@ -1123,8 +1123,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // `stopped` all wait on this, so every worker has to be reached even when one of them cannot be
   // failed.
   async failWip () {
+    // Every worker is marked before any fail below is awaited, so a claim landing on a later worker
+    // while an earlier one's fail is in flight is refused too.
     for (const worker of this.workers.values()) {
       worker.graceExpired = true
+    }
+
+    for (const worker of this.workers.values()) {
       const jobIds = worker.jobs.map(j => j.id)
 
       if (jobIds.length) {
