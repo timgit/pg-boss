@@ -1750,7 +1750,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const notifyEnabled = this.#notifyEnabled(notify)
     const updateSql = plans.updateJob(this.config.schema, table, name, by, match, notifyEnabled)
-    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled, upserted: by === 'singletonKey' })
+    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled, upsertByKey: by === 'singletonKey' })
 
     const job = this.#toUpdatePayload(data, opts)
     const updatePayload = JSON.stringify(job)

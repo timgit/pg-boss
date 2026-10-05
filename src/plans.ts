@@ -961,7 +961,7 @@ function createTableJob (schema: string, noPartitioning = false) {
       source_output jsonb,
       source_root_id uuid,
       trace_context jsonb,
-      upserted bool
+      upsert_by_key bool
     ) ${partitionClause}
   `
 }
@@ -1396,11 +1396,11 @@ function createIndexJobSourceRoot (schema: string) {
 
 // At most one waiting job per key among the jobs upsert() inserted by singletonKey, which is what makes
 // concurrent upserts of one key agree: the second insert waits on the first's index entry, conflicts,
-// and edits that job instead. upserted is set only on those inserts, so send() keeps its own policy's
+// and edits that job instead. upsert_by_key is set only on those inserts, so send() keeps its own policy's
 // rules and a queue that never upserts carries the index empty. Only created, not retry, so a failing
 // job never collides with a newer upsert on its way back to retry.
 function createIndexJobUpsert (schema: string) {
-  return `CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = '${JOB_STATES.created}' AND upserted`
+  return `CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = '${JOB_STATES.created}' AND upsert_by_key`
 }
 
 // The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only
@@ -2826,16 +2826,16 @@ export function cancelJobs (schema: string, table: string, fenced?: boolean) {
 
 // A resumed job's start_after moves up to now, as a released flow child's does, so its wait (in the
 // monitor's histograms and ready_oldest_seconds) counts from when it could run again rather than
-// from when it was first sent. A start_after still in the future is kept. It also stops counting as
-// upserted, here and in restoreJobs, so it never collides in job_i13 with a newer upserted job
-// waiting on the same key, and queues beside it.
+// from when it was first sent. A start_after still in the future is kept. It also loses upsert_by_key,
+// here and in restoreJobs, so it never collides in job_i13 with a newer job upserted by the same key,
+// and queues beside it.
 export function resumeJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
       SET completed_on = NULL,
         state = '${JOB_STATES.created}',
-        upserted = NULL,
+        upsert_by_key = NULL,
         start_after = GREATEST(start_after, ${schema}.job_now())
       WHERE name = $1
         AND id = ANY($2::uuid[])
@@ -2852,7 +2852,7 @@ export function restoreJobs (schema: string, table: string) {
     SET state = '${JOB_STATES.created}',
         started_on = NULL,
         heartbeat_on = NULL,
-        upserted = NULL
+        upsert_by_key = NULL
     WHERE name = $1
       AND id = ANY($2::uuid[])
   `
@@ -2890,14 +2890,14 @@ interface InsertJobsOptions {
   slots?: boolean
   // Marks the jobs as inserted by upsert() by singletonKey, for job_i13. Set by the statement, never
   // read from the recordset, so insert() cannot mark a job.
-  upserted?: boolean
+  upsertByKey?: boolean
 }
 
 // The queue is LEFT JOINed and every NOT NULL column it supplies falls back to the schema default, so
 // a job for a queue deleted after the caller cached it still reaches q_fkey and fails there (23503),
 // rather than producing no row, which would read the same as a singleton or throttle refusal. The
 // fallbacks never apply to a queue that exists, since its own columns are NOT NULL.
-export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false, upserted = false }: InsertJobsOptions) {
+export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false, upsertByKey = false }: InsertJobsOptions) {
   // When notify is enabled we always RETURN start_after so the wrapper below can gate
   // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
   const returning = notify ? 'RETURNING id, start_after' : returnId ? 'RETURNING id' : ''
@@ -2936,7 +2936,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       blocked,
       blocking,
       pending_dependencies,
-      trace_context${upserted ? ', upserted' : ''}
+      trace_context${upsertByKey ? ', upsert_by_key' : ''}
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
@@ -2966,7 +2966,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       COALESCE(blocked, false) as blocked,
       COALESCE(blocking, false) as blocking,
       COALESCE("pendingDependencies", 0) as pending_dependencies,
-      "__traceContext" as trace_context${upserted ? ', true as upserted' : ''}
+      "__traceContext" as trace_context${upsertByKey ? ', true as upsert_by_key' : ''}
     FROM (
       SELECT *,
         CASE

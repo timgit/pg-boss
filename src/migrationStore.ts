@@ -1231,7 +1231,7 @@ const createQueueFn: Record<number, (schema: string) => string> = {
     EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL$cmd$, tablename);
     EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = 'completed'$cmd$, tablename);
     EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL$cmd$, tablename);
-    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = 'created' AND upserted$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = 'created' AND upsert_by_key$cmd$, tablename);
 
     IF options->>'policy' = 'short' THEN
     EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'created' AND policy = 'short'$cmd$, tablename);
@@ -2203,14 +2203,14 @@ AS $function$
       release: '12.37.0',
       version: 45,
       previous: 44,
-      // upserted is nullable with no default, so adding it rewrites no rows, and every existing job
-      // reads as not upserted. job_i13 therefore starts empty and cannot fail on existing duplicates.
+      // upsert_by_key is nullable with no default, so adding it rewrites no rows, and no existing job
+      // carries it. job_i13 therefore starts empty and cannot fail on existing duplicates.
       // It is built the way v43 built job_i12: inline without partitioning, otherwise through
       // create_queue for new partitions and BAM, concurrently, for the tables that already exist.
       install: [
-        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS upserted bool`,
+        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS upsert_by_key bool`,
         noPartitioning
-          ? `CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = 'created' AND upserted`
+          ? `CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = 'created' AND upsert_by_key`
           : createQueueFn[45](schema)
       ],
       async: noPartitioning
@@ -2218,7 +2218,7 @@ AS $function$
         : [
             {
               name: 'upsert_index_build',
-              command: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS job_i13 ON ${schema}.job (name, singleton_key) WHERE state = 'created' AND upserted`
+              command: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS job_i13 ON ${schema}.job (name, singleton_key) WHERE state = 'created' AND upsert_by_key`
             }
           ],
       // The index goes before its column, and create_queue is restored first, as in v43. CASCADE because
@@ -2230,7 +2230,7 @@ AS $function$
               createQueueFn[43](schema),
               `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i13$cmd$)`
             ]),
-        `ALTER TABLE ${schema}.job DROP COLUMN upserted`
+        `ALTER TABLE ${schema}.job DROP COLUMN upsert_by_key`
       ]
     }
   ]

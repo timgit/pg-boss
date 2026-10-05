@@ -190,8 +190,8 @@ describe('upsert', function () {
 
     await ctx.boss.send(ctx.schema, null, { singletonKey: 'k' })
     await ctx.boss.send(ctx.schema, null, { singletonKey: 'k' })
-    // insert() cannot mark its jobs as upserted either.
-    await ctx.boss.insert(ctx.schema, [{ singletonKey: 'k' }, { singletonKey: 'k', upserted: true } as any])
+    // insert() cannot set upsert_by_key either, under either spelling.
+    await ctx.boss.insert(ctx.schema, [{ singletonKey: 'k' }, { singletonKey: 'k', upsertByKey: true, upsert_by_key: true } as any])
 
     expect(await ctx.boss.findJobs(ctx.schema, { key: 'k', queued: true })).toHaveLength(4)
   })
