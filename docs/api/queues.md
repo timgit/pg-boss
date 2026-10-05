@@ -181,7 +181,7 @@ Deletes a queue and all jobs.
 await boss.deleteQueue('email-send')
 ```
 
-A queue created with `partition: true` has its table detached from the job table and then dropped. The detach needs brief exclusive locks on the job tables, which `deleteQueue()` takes without waiting so it never deadlocks with work in flight: while they are busy it tries again, for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue in place. A deletion that stopped after the detach is finished by the next call.
+A queue created with `partition: true` has its own table, and dropping it needs brief exclusive locks on the job tables. `deleteQueue()` takes them without waiting, so it never deadlocks with work in flight: while they are busy it tries again, for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue as it was.
 
 Other instances find out on their next write to it: `send()`, `insert()`, `upsert()` and `flow()` reject with `Queue <name> does not exist`, as for a queue that was never created, and a job naming it as its `deadLetter` rejects with `Dead letter queue <name> does not exist`.
 

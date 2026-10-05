@@ -1254,41 +1254,34 @@ export function notifyQueue (schema: string, name: string): string {
   return `SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')`
 }
 
-// A queue with its own table (partition: true) is removed in two transactions. Detaching the table
-// from job locks job, job_common and the table, and an insert into job_common or a query through job
-// takes those in other orders, so the detach takes every lock up front with NOWAIT: it never waits
-// holding one, so it can never be part of a deadlock, and the caller tries again when one is busy.
-// The detached table is then dropped by deleteQueue(), which no longer needs job or job_common.
-export function detachQueueTable (schema: string, table: string, noAdvisoryLocks?: boolean) {
-  return locked(schema, [
-    `LOCK TABLE ${schema}.${COMMON_JOB_TABLE}, ${schema}.${table}, ${schema}.${BASE_JOB_TABLE} IN ACCESS EXCLUSIVE MODE NOWAIT`,
-    `LOCK TABLE ${schema}.queue IN SHARE ROW EXCLUSIVE MODE NOWAIT`,
-    `ALTER TABLE ${schema}.${BASE_JOB_TABLE} DETACH PARTITION ${schema}.${table}`
-  ], 'delete-queue', noAdvisoryLocks)
-}
+// Dropping a queue's own table (partition: true) needs ACCESS EXCLUSIVE on it, on job and on job_common,
+// and an insert into job_common or a query through job takes those in other orders. So the locks are
+// taken first, all with NOWAIT: the transaction never waits holding one, so it can never be part of a
+// deadlock, and the caller tries again when one is busy. The table is read in the same transaction, so
+// a stale cache cannot name the wrong one, and a queue already gone is left alone.
+export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean, partitioned = false) {
+  const sql = partitioned
+    ? `
+      DO $$
+      DECLARE
+        v_table text;
+        v_partition bool;
+      BEGIN
+        SELECT table_name, partition FROM ${schema}.queue WHERE name = '${name}' INTO v_table, v_partition;
+        IF NOT FOUND THEN
+          RETURN;
+        END IF;
 
-// `table` is a detached table to drop: dropping it removes its foreign key's triggers from queue,
-// which locks queue, so both are taken up front with NOWAIT for the same reason as the detach.
-export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean, table?: string) {
-  const sql = `SELECT ${schema}.delete_queue('${name}')`
-  const statements = table ? [`LOCK TABLE ${schema}.${table}, ${schema}.queue IN ACCESS EXCLUSIVE MODE NOWAIT`, sql] : [sql]
-  return locked(schema, statements, 'delete-queue', noAdvisoryLocks)
-}
+        IF v_partition AND to_regclass(format('${schema}.%I', v_table)) IS NOT NULL THEN
+          EXECUTE format('LOCK TABLE ${schema}.${COMMON_JOB_TABLE}, ${schema}.%I, ${schema}.${BASE_JOB_TABLE} IN ACCESS EXCLUSIVE MODE NOWAIT', v_table);
+        END IF;
 
-// Where a queue's own table stands, read fresh rather than from the cache: an earlier deleteQueue()
-// may have detached it and stopped before the drop.
-export function getQueueTableState (schema: string) {
-  return `
-    SELECT q.table_name as "table", q.partition,
-      to_regclass(format('${schema}.%I', q.table_name)) IS NOT NULL as "exists",
-      EXISTS (
-        SELECT 1 FROM pg_inherits i
-        WHERE i.inhrelid = to_regclass(format('${schema}.%I', q.table_name))
-          AND i.inhparent = '${schema}.${BASE_JOB_TABLE}'::regclass
-      ) as attached
-    FROM ${schema}.queue q
-    WHERE q.name = $1
-  `
+        PERFORM ${schema}.delete_queue('${name}');
+      END $$
+    `
+    : `SELECT ${schema}.delete_queue('${name}')`
+
+  return locked(schema, sql, 'delete-queue', noAdvisoryLocks)
 }
 
 function createPrimaryKeyJob (schema: string) {

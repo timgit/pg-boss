@@ -2727,37 +2727,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    if (this.config.noTablePartitioning) {
-      await this.db.executeSql(plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks))
-    } else {
-      await this.#deleteQueueTables(name)
-    }
+    const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks, !this.config.noTablePartitioning)
 
-    this.#evictQueueCache(name)
-  }
-
-  // Each try reads the queue's table afresh, so one that detached and then failed to get the drop's
-  // locks resumes at the drop. Only a lock that was busy is tried again.
-  async #deleteQueueTables (name: string) {
-    const { schema, noAdvisoryLocks } = this.config
-
+    // Only a queue with its own table takes locks that can be busy, and only those are tried again.
     for (let attempt = 1; ; attempt++) {
       try {
-        const { rows: [state] } = await this.db.executeSql(plans.getQueueTableState(schema), [name])
-        if (!state) return
-
-        if (state.partition && state.attached) {
-          await this.db.executeSql(plans.detachQueueTable(schema, state.table, noAdvisoryLocks))
-        }
-
-        await this.db.executeSql(plans.deleteQueue(schema, name, noAdvisoryLocks, state.partition && state.exists ? state.table : undefined))
-        return
+        await this.db.executeSql(sql)
+        break
       } catch (err: any) {
         if (err?.code !== plans.PG_ERROR.lockNotAvailable) throw err
         if (attempt === DELETE_QUEUE_ATTEMPTS) throw new Error(`Queue ${name} was not deleted: its tables stayed locked through ${attempt} tries`, { cause: err })
         await delay(Math.min(25 * 2 ** (attempt - 1), DELETE_QUEUE_MAX_DELAY_MS) * (0.5 + Math.random() / 2))
       }
     }
+
+    this.#evictQueueCache(name)
   }
 
   async deleteQueuedJobs (name: string) {

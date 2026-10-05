@@ -180,7 +180,7 @@ describe('queues', function () {
 
     spy.mockRestore()
   })
-  // Without table partitioning a queue never has its own table to detach. The YugabyteDB profile turns
+  // Without table partitioning a queue never has its own table to drop. The YugabyteDB profile turns
   // partitioning off and otherwise runs on Postgres, which is how this reaches that path here.
   it.skipIf(helper.isPglite || helper.isCockroachDb)('deleteQueue removes a queue and its jobs without table partitioning', async function () {
     ctx.boss = new PgBoss({ ...ctx.bossConfig, backend: 'yugabytedb' })
@@ -195,8 +195,8 @@ describe('queues', function () {
     expect(await helper.countJobs(ctx.schema, 'job', 'id = $1', [id])).toBe(0)
   })
 
-  // A queue with its own table is detached with NOWAIT locks, tried again while they are busy, then
-  // dropped. PGlite has one connection to hold a lock with, and these backends have no partitions.
+  // A queue with its own table is dropped after taking its locks with NOWAIT, tried again while they
+  // are busy. PGlite has one connection to hold a lock with, and these backends have no partitions.
   describe.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('deleteQueue with partition: true', function () {
     async function holdLock (sql: string) {
       const db = await helper.getDb()
@@ -246,37 +246,18 @@ describe('queues', function () {
     })
 
     it('gives up when its tables stay locked, and leaves the queue in place', async function () {
-      await partitioned()
+      const table = await partitioned()
       const release = await holdLock(`LOCK TABLE ${ctx.schema}.job_common IN ROW EXCLUSIVE MODE`)
 
       try {
         await expect(ctx.boss!.deleteQueue(ctx.schema)).rejects.toThrow(`Queue ${ctx.schema} was not deleted: its tables stayed locked through 12 tries`)
         expect(await ctx.boss!.getQueue(ctx.schema)).toBeTruthy()
+        expect(await tableExists(table)).toBe(true)
       } finally {
         await release()
       }
 
       await ctx.boss!.deleteQueue(ctx.schema)
-      expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
-    })
-
-    it('finishes a deletion that stopped after the detach', async function () {
-      const table = await partitioned()
-      await run(`ALTER TABLE ${ctx.schema}.job DETACH PARTITION ${ctx.schema}.${table}`)
-
-      await ctx.boss!.deleteQueue(ctx.schema)
-
-      expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
-      expect(await tableExists(table)).toBe(false)
-    })
-
-    it('deletes the queue when its detached table is already gone', async function () {
-      const table = await partitioned()
-      await run(`ALTER TABLE ${ctx.schema}.job DETACH PARTITION ${ctx.schema}.${table}`)
-      await run(`DROP TABLE ${ctx.schema}.${table}`)
-
-      await ctx.boss!.deleteQueue(ctx.schema)
-
       expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
     })
 
