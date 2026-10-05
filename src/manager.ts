@@ -1193,6 +1193,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       await this.#assertTransactionalHeartbeatSupported(name)
 
+      // A stop() during that await has already looked for workers, and would not see this one.
+      if (this.stopped) {
+        throw new Error('Workers are disabled. pg-boss is stopped')
+      }
+
       this.#warnOnTransactionalPoolHeadroom(localConcurrency)
     }
 

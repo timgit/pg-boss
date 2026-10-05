@@ -314,4 +314,37 @@ helper.describeMultiConnectionOnly('stopping during a PostgreSQL claim', functio
       await Promise.all([gate.end(), rowLock.end(), observer.close()])
     }
   }, 30_000)
+
+  // On a backend without transactional heartbeats, work() reads the queue before it registers a
+  // transactional worker. A stop() in that gap would not see the worker, which would then outlive it.
+  it('does not leave a worker behind when work() races stop()', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noTransactionalHeartbeat: true })
+    const boss = ctx.boss
+    boss.on('error', () => {})
+
+    // A busy worker keeps the grace open while the racing work() finishes.
+    const busyQueue = `${ctx.schema}_busy`
+    await boss.createQueue(busyQueue)
+    await boss.send(busyQueue, null, { retryLimit: 0 })
+    let busy = false
+    await boss.work(busyQueue, async ([job]) => {
+      busy = true
+      await new Promise(resolve => job.signal.addEventListener('abort', resolve))
+    })
+    await helper.until(() => busy)
+
+    let ran = 0
+    const working = boss.work(ctx.schema, { transactional: true, pollingIntervalSeconds: 0.5 }, async () => { ran++ })
+    const stopping = boss.stop({ close: false, timeout: 1000 })
+    await working.catch(() => {})
+    await stopping
+
+    // Nothing is left to claim a job sent after the stop.
+    const id = await boss.send(ctx.schema, null, { retryLimit: 0 })
+    helper.assertTruthy(id)
+    await delay(2000)
+
+    expect(ran).toBe(0)
+    expect((await boss.getJobById(ctx.schema, id))?.state).toBe('created')
+  }, 30_000)
 })
