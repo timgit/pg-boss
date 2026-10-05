@@ -123,7 +123,7 @@ describe('pubsub', function () {
         // send lands first: dropping a queue's own table while an insert into job_common is in flight
         // can deadlock the two, which is not what this test is about.
         await reached
-        await helper.until(async () => (await ctx.boss.findJobs(healthy)).length > 0)
+        await helper.until(async () => (await ctx.boss!.findJobs(healthy)).length > 0)
         await ctx.boss.unsubscribe(event, departing)
         await ctx.boss.deleteQueue(departing)
         expect(await ctx.boss.getQueue(departing)).toBeNull()
