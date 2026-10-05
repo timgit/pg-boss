@@ -217,10 +217,13 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
           const delaySeconds = Math.min(2 ** (attempt - 1), START_RETRY_MAX_SECONDS)
 
-          this.emit(events.warning, {
-            message: `start() attempt ${attempt} of ${attempts} failed, trying again in ${delaySeconds}s: ${err?.message}`,
-            data: { type: 'start_retry', attempt, attempts, delaySeconds, error: err?.message }
-          })
+          // Once per start(), on the first failure: an outage would otherwise repeat it every try.
+          if (attempt === 1) {
+            this.emit(events.warning, {
+              message: `start() failed and will try again, up to ${attempts - 1} more times: ${err?.message}`,
+              data: { type: 'start_retry', attempts, error: err?.message }
+            })
+          }
 
           retry.wait = delay(delaySeconds * 1000)
           await retry.wait

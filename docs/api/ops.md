@@ -32,7 +32,7 @@ It is also safe to call `start()` again yourself on the same instance until it s
 
 * **attempts**, int, default 1
 
-  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. Each failed try that will be retried emits a [`start_retry` warning](./events.md#warning). An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error.
+  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error.
 
 Once started, pg-boss rides out a database that drops and comes back: workers emit `error` while it is gone and resume when it returns, with no restart needed.
 

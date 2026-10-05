@@ -117,7 +117,8 @@ describe('database', function () {
       await relay.up()
       await starting
 
-      expect(retries[0]).toMatchObject({ type: 'start_retry', attempt: 1, attempts: 5, delaySeconds: 1 })
+      expect(retries).toHaveLength(1)
+      expect(retries[0]).toMatchObject({ type: 'start_retry', attempts: 5 })
       expect(typeof retries[0].error).toBe('string')
       await boss.createQueue(ctx.schema)
       expect(await boss.getQueue(ctx.schema)).toBeTruthy()
@@ -128,15 +129,15 @@ describe('database', function () {
     }
   })
 
-  helper.itPglite('start({ attempts }) rejects with the last error once the attempts run out', async function () {
+  helper.itPglite('start({ attempts }) rejects with the last error once the attempts run out, warning once', async function () {
     const relay = await databaseRelay(ctx.bossConfig.host!, Number(ctx.bossConfig.port))
     const boss = new PgBoss({ ...ctx.bossConfig, host: '127.0.0.1', port: relay.port, connectionTimeoutMillis: 1000 })
     const retries: any[] = []
     boss.on('warning', warning => { if ((warning.data as any).type === 'start_retry') retries.push(warning.data) })
 
     try {
-      await expect(boss.start({ attempts: 2 })).rejects.toThrow()
-      expect(retries.map(r => r.attempt)).toEqual([1])
+      await expect(boss.start({ attempts: 3 })).rejects.toThrow()
+      expect(retries).toHaveLength(1)
     } finally {
       await boss.stop({ graceful: false, timeout: 2000 }).catch(() => {})
       await relay.down()
