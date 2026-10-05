@@ -432,6 +432,10 @@ deployment to a new pg-boss schema version does not work. The blocker is in Yuga
 distributed backend, use CockroachDB or Citus. If you run pg-boss on YugabyteDB, please report your
 findings.
 
+`backend: 'yugabytedb'` is deprecated and will be rejected in the next major. Setting it emits a Node
+`DeprecationWarning` (code `PGBOSS_DEP_YUGABYTEDB`). Run with `--trace-deprecation` to find where it
+is set.
+
 **Use `backend: 'yugabytedb'`.** It enables `noAdvisoryLocks` + `noTablePartitioning` and keeps the
 standard fetch mode. YugabyteDB does **not** need `noSkipLocked` or `noMultiMutationCte` (it has
 neither CockroachDB's `SKIP LOCKED` issues nor the multi-mutation CTE restriction). When the suite was

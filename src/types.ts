@@ -141,13 +141,12 @@ export interface SchedulingOptions {
  * Backends fall into three kinds, standard, distributed, and embedded:
  * - `postgres` (default): standard PostgreSQL, all flags off.
  * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, `noListenNotify`, and all four `no*` schema gates.
- * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`. Supports cluster-wide
- *   LISTEN/NOTIFY (early access, off by default, enable the `ysql_yb_enable_listen_notify` flag).
+ * - `yugabytedb`: deprecated and removed in the next major, since YugabyteDB is not supported.
  * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local); LISTEN/NOTIFY works on the coordinator.
  * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
  *
- * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
- * supported. @see https://pgboss.io/database-backends
+ * YugabyteDB, Spanner, Aurora DSQL, and other targets are not supported.
+ * @see https://pgboss.io/database-backends
  */
 export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite'
 

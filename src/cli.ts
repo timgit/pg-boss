@@ -51,7 +51,7 @@ Options:
   --password, -p <pass>   Database password
   --connection-string     Full connection string (overrides other connection options)
   --ssl                   Enable SSL connection
-  --backend <profile>     Database backend: postgres (default), cockroachdb, yugabytedb, citus.
+  --backend <profile>     Database backend: postgres (default), cockroachdb, citus.
                           Non-postgres backends need this to emit schema they accept.
   --dry-run               Output SQL without executing (for plans and reindex commands)
   --force                 Rebuild every job index, not just the bloated ones (reindex)

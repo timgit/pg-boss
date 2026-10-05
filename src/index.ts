@@ -304,7 +304,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       if (/yugabyte|-yb-/i.test(version)) {
         if (!this.#config.noTablePartitioning || !this.#config.noAdvisoryLocks) {
           this.emit(events.warning, {
-            message: "YugabyteDB detected: set backend: 'yugabytedb' for compatibility. Partitioned queues (partition: true) are not supported on YugabyteDB.",
+            message: "YugabyteDB detected. YugabyteDB is not supported. Until the next major, backend: 'yugabytedb' avoids the table partitioning and advisory locks that fail there.",
             data: { backend: 'yugabytedb' }
           })
         }
