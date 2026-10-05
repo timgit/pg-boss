@@ -42,7 +42,7 @@ Stops all background processing, such as maintenance and scheduling, as well as 
 
 By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. Emits a `stopped` event if needed.
 
-Claims already in flight are settled without starting another handler before `stop()` resolves. Waiting for those database operations can extend shutdown beyond the active-handler timeout.
+A job a worker is still claiming when `stop()` is called gets its handler if the claim lands within the timeout, like any active job. One still in flight when the timeout runs out is failed without starting its handler, and `stop()` waits for that to settle, which can extend shutdown beyond the timeout.
 
 **Arguments**
 

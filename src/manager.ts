@@ -739,7 +739,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       // A fetch or transaction begin can finish after stop() has exhausted its active-handler grace.
-      if (worker?.stopping) {
+      if (worker?.graceExpired) {
         throw new Error('pg-boss shut down before the handler started')
       }
 
@@ -1124,6 +1124,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // failed.
   async failWip () {
     for (const worker of this.workers.values()) {
+      worker.graceExpired = true
       const jobIds = worker.jobs.map(j => j.id)
 
       if (jobIds.length) {

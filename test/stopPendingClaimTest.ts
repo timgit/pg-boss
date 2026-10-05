@@ -10,7 +10,7 @@ helper.describeMultiConnectionOnly('stopping during a PostgreSQL claim', functio
     { name: 'metadata-enabled batch', options: { includeMetadata: true } },
     { name: 'metadata-free grouped batch', options: { includeMetadata: false, localGroupConcurrency: 1 } }
   ]) {
-    it(`settles a pending ${configuration.name} after the default grace without starting its handler`, async function () {
+    it(`settles a pending ${configuration.name} after the grace without starting its handler`, async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
       const boss = ctx.boss
       const blocker = new pg.Client(helper.getConfig())
@@ -56,16 +56,15 @@ helper.describeMultiConnectionOnly('stopping during a PostgreSQL claim', functio
           return rows.length > 0
         })
 
-        const started = performance.now()
-        stopping = boss.stop({ close: false }).then(async () => {
+        stopping = boss.stop({ close: false, timeout: 1000 }).then(async () => {
           stopResolved = true
           const stoppedJob = await boss.getJobById(ctx.schema, jobId)
           helper.assertTruthy(stoppedJob)
           stateAtStop = stoppedJob.state
         })
-        secondStopping = boss.stop({ close: false }).then(() => { secondStopResolved = true })
-        // Independent release lets truthful stop await the claim beyond active-handler grace.
-        releaseGate = delay(31_000).then(async () => {
+        secondStopping = boss.stop({ close: false, timeout: 1000 }).then(() => { secondStopResolved = true })
+        // Released after the 1s grace, so stop() has to wait for the claim beyond it.
+        releaseGate = delay(2000).then(async () => {
           resolvedBeforeUnlock = stopResolved
           secondResolvedBeforeUnlock = secondStopResolved
           await blocker.query('SELECT pg_advisory_unlock($1)', [gateKey])
@@ -80,15 +79,6 @@ helper.describeMultiConnectionOnly('stopping during a PostgreSQL claim', functio
         })
         const { rows } = await observer.executeSql(`SELECT after_stop, signal_aborted FROM ${ctx.schema}.callback_receipts`)
         const job = await boss.getJobById(ctx.schema, jobId)
-        console.log('pending-claim-stop', {
-          elapsedMs: performance.now() - started,
-          resolvedBeforeUnlock,
-          secondResolvedBeforeUnlock,
-          stateAtStop,
-          receipts: rows,
-          nativeState: job?.state
-        })
-
         expect(rows).toEqual([])
         expect(resolvedBeforeUnlock).toBe(false)
         expect(secondResolvedBeforeUnlock).toBe(false)
@@ -104,7 +94,59 @@ helper.describeMultiConnectionOnly('stopping during a PostgreSQL claim', functio
         await helper.until(() => boss.getWipData().length === 0)
         await Promise.all([blocker.end(), observer.close()])
       }
-    }, 90_000)
+    }, 30_000)
+  }
+
+  // A claim landing while the grace is still running gets its handler, as on any graceful stop.
+  for (const retryLimit of [0, 2]) {
+    it(`runs a claim that lands inside the grace (retryLimit ${retryLimit})`, async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      const boss = ctx.boss
+      const blocker = new pg.Client(helper.getConfig())
+      await blocker.connect()
+      const observer = await helper.getDb()
+      const gateKey = 961
+      let gateHeld = false
+
+      try {
+        await observer.executeSql(`CREATE FUNCTION ${ctx.schema}.hold_claim() RETURNS trigger
+        LANGUAGE plpgsql AS $$ BEGIN
+          IF OLD.state = 'created' AND NEW.state = 'active' THEN
+            PERFORM pg_advisory_xact_lock(${gateKey});
+          END IF;
+          RETURN NEW;
+        END $$`)
+        await observer.executeSql(`CREATE TRIGGER hold_claim BEFORE UPDATE OF state ON ${ctx.schema}.job
+        FOR EACH ROW EXECUTE FUNCTION ${ctx.schema}.hold_claim()`)
+        await blocker.query('SELECT pg_advisory_lock($1)', [gateKey])
+        gateHeld = true
+
+        const jobId = await boss.send(ctx.schema, null, { retryLimit, retryDelay: 0 })
+        helper.assertTruthy(jobId)
+        let ran = false
+        await boss.work(ctx.schema, async () => { ran = true })
+        await helper.until(async () => {
+          const { rows } = await observer.executeSql(`SELECT pid FROM pg_stat_activity
+          WHERE wait_event = 'advisory' AND query LIKE $1`, [`%${ctx.schema}.%`])
+          return rows.length > 0
+        })
+
+        // Held for 1s of a 10s grace.
+        const stopping = boss.stop({ close: false, timeout: 10_000 })
+        await delay(1000)
+        await blocker.query('SELECT pg_advisory_unlock($1)', [gateKey])
+        gateHeld = false
+        await stopping
+
+        const job = await boss.getJobById(ctx.schema, jobId)
+        expect(ran).toBe(true)
+        expect(job?.state).toBe('completed')
+        expect(job?.retryCount).toBe(0)
+      } finally {
+        if (gateHeld) await blocker.query('SELECT pg_advisory_unlock($1)', [gateKey])
+        await Promise.all([blocker.end(), observer.close()])
+      }
+    }, 30_000)
   }
 
   it('refuses a handler after transactional preparation and preserves a newer metadata-free claim', async function () {
@@ -129,7 +171,8 @@ helper.describeMultiConnectionOnly('stopping during a PostgreSQL claim', functio
         }
       }
     })
-    boss.on('error', failure => { console.log('transactional-stop-error', { message: failure.message }) })
+    // Errors are expected while the stop refuses the claim; the assertions below are what matter.
+    boss.on('error', () => {})
     let stopping = Promise.resolve()
     let releaseGate = Promise.resolve()
     let callbackEntered = false
@@ -172,8 +215,6 @@ helper.describeMultiConnectionOnly('stopping during a PostgreSQL claim', functio
       await callbackCompletion
       const { rows } = await observer.executeSql(`SELECT job_id FROM ${ctx.schema}.callback_receipts`)
       const job = await owner.getJobById(ctx.schema, jobId)
-      console.log('transactional-stop', { callbackEntered, receipts: rows, nativeState: job?.state, retryCount: job?.retryCount })
-
       expect(callbackEntered).toBe(false)
       expect(rows).toEqual([])
       expect(job?.state).toBe('active')
