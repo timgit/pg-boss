@@ -42,7 +42,7 @@ Stops all background processing, such as maintenance and scheduling, as well as 
 
 By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. Emits a `stopped` event if needed.
 
-A job a worker is still claiming when `stop()` is called gets its handler if the claim lands within the timeout, like any active job. One still in flight when the timeout runs out is failed without starting its handler, and `stop()` waits for that to settle, which can extend shutdown beyond the timeout.
+A job a worker is still claiming when `stop()` is called gets its handler if it is ready to start within the timeout, like any active job; for a [`transactional`](./workers.md#work-name-options-handler) worker that includes opening its transaction. One that is not ready by the time the timeout runs out is failed without starting its handler, which spends an attempt like any failure (with retries left it goes to `retry`), and `stop()` waits for that to settle, which can extend shutdown beyond the timeout. With `graceful: false` such a job is failed at once.
 
 **Arguments**
 
@@ -50,7 +50,7 @@ A job a worker is still claiming when `stop()` is called gets its handler if the
 
   * `graceful`, bool
 
-    Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
+    Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period workers stop fetching, while active jobs, and any still being claimed, are allowed to finish.
 
   * `close`, bool
     Default: `true`. If the database connection is managed by pg-boss, it will close the connection pool. Use `false` if needed to continue allowing operations such as `send()` and `fetch()`. Calling `stop()` again later closes the pool, and from then on those operations reject with `Database not opened`.
