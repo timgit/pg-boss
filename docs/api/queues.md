@@ -185,7 +185,7 @@ A queue created with `partition: true` has its own table, and dropping it needs 
 
 Other instances find out on their next write to it: `send()`, `insert()`, `upsert()` and `flow()` reject with `Queue <name> does not exist`, as for a queue that was never created, and a job naming it as its `deadLetter` rejects with `Dead letter queue <name> does not exist`.
 
-Inside a transaction passed as `db`, a queue in the shared job table is checked when that transaction commits, with the default partitioned layout: `send()` resolves with an id, and the `COMMIT` fails with a foreign key violation (`23503`). A queue created with `partition: true`, or any queue under `noTablePartitioning` (CockroachDB and YugabyteDB), makes the `send()` itself reject.
+Inside a transaction passed as `db`, a queue in the shared job table is checked when that transaction commits, with the default partitioned layout: `send()` resolves with an id, and the `COMMIT` fails with a foreign key violation (`23503`). A queue created with `partition: true`, or any queue under `noTablePartitioning` (CockroachDB), makes the `send()` itself reject.
 
 A queue deleted and created again elsewhere with a different `partition` setting fails the first write from an instance that cached it, with `relation ... does not exist` or a partition constraint violation, and that instance writes to the new table from the next call.
 

@@ -72,7 +72,7 @@ const sql = getUninstallPlans('myapp')
 - `schema`: string, database schema name
 - `options`: object, optional. Accepts `minPages` (default 128), `maxEntriesPerPage` (default 5) and `minSizeRatio` (default 4).
 
-Returns the catalog query pg-boss uses to find bloated job indexes, as SQL text. PostgreSQL only, since CockroachDB and YugabyteDB do not answer it. Unlike [`getReindexCommands()`](./ops.md#getreindexcommands-options) this needs no instance and no connection from this process. It is meant to be pasted into psql or handed to a monitoring tool.
+Returns the catalog query pg-boss uses to find bloated job indexes, as SQL text. PostgreSQL only, since CockroachDB does not answer it. Unlike [`getReindexCommands()`](./ops.md#getreindexcommands-options) this needs no instance and no connection from this process. It is meant to be pasted into psql or handed to a monitoring tool.
 
 ```js
 const sql = getIndexBloatPlans('pgboss')
