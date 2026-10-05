@@ -226,6 +226,10 @@ function assertMissedPolicy (missed: unknown): void {
  * The returned interval is the one the caller wants anyway, so the walk costs a single parse.
  */
 function parseRecurrence (cron: string, tz: string, currentDate: Date) {
+  // cron-parser reads an empty expression as `* * * * *`, and an empty string is nearly always a
+  // missing value, not a request to run every minute.
+  assert(typeof cron === 'string' && cron.trim() !== '', 'cron expression must not be empty')
+
   CronExpressionParser.parse(cron, { tz: 'UTC', strict: false })
 
   assertTimezone(tz)

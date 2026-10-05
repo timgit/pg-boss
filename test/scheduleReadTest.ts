@@ -140,6 +140,14 @@ describe('previewSchedule', function () {
     expect(() => tk.previewSchedule('bogus')).toThrow()
   })
 
+  it('should reject an empty or blank expression rather than read it as every minute', function () {
+    const tk = makeTk()
+
+    for (const expression of ['', ' ', '   ', '\t']) {
+      expect(() => tk.previewSchedule(expression)).toThrow(/must not be empty/)
+    }
+  })
+
   it('should report the expression rather than the count when both are wrong', function () {
     const tk = makeTk()
 

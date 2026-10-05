@@ -42,6 +42,8 @@ Stops all background processing, such as maintenance and scheduling, as well as 
 
 By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. Emits a `stopped` event if needed.
 
+Claims already in flight are settled without starting another handler before `stop()` resolves. Waiting for those database operations can extend shutdown beyond the active-handler timeout.
+
 **Arguments**
 
 * `options`: object
@@ -57,7 +59,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
   * `timeout`, int
 
-    Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the PgBoss instance.
+    Default: 30000. Maximum time (in milliseconds) to allow active handlers to finish before failing and aborting their jobs. Pending claims and database cleanup are still awaited before shutdown completes.
 
     > [!WARNING]
     > This option is ignored when `graceful` is set to `false`.
@@ -72,7 +74,7 @@ await boss.stop({ close: false })
 // ...and close the pool once the rest of the process is done with it
 await boss.stop()
 
-// shut down immediately without waiting for active jobs
+// abort active jobs without a grace period, then await database cleanup
 await boss.stop({ graceful: false })
 ```
 

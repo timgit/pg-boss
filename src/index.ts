@@ -372,6 +372,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     const shutdown = async () => {
       await this.#manager.failWip()
+      // Pending claims may not have reached worker.jobs when failWip ran. Drain their refusal
+      // before closing the pool or publishing stopped.
+      await this.#manager.settleCleanups()
 
       // After the drain, so a graceful stop reads as live until its workers have finished.
       await this.#registrar.stop()
@@ -409,7 +412,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       return
     }
 
-    // Real time, not the configured clock: the deadline bounds shutdown I/O, and under a test
+    // Real time, not the configured clock: the deadline bounds active-handler grace, and under a test
     // clock nothing would tick it while the test is blocked inside stop().
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<void>(resolve => { deadlineTimer = setTimeout(resolve, timeout) })
