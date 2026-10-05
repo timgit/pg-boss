@@ -980,9 +980,13 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
+    // `db` is how this call runs, not part of the schedule: it comes out first so the options blob
+    // stored on the row, and later handed to send() by the cron pass, never carries a connection.
+    const { db, ...persisted } = options
+
     // `missed` comes out with tz and key: it tells the pass what to do about a gap and is no more a
     // send option than they are, so the send-option check below is not handed it.
-    const { tz: requestedTz, key = '', missed, ...rest } = options
+    const { tz: requestedTz, key = '', missed, ...rest } = persisted
 
     // Any falsy zone is "none specified", not a zone to be judged: a destructuring default only
     // covers `undefined`, and a value threaded out of a config object or read back off the nullable
@@ -1014,7 +1018,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     try {
       const sql = plans.schedule(this.config.schema)
-      await this.db.executeSql(sql, [name, key, kind, cron, tz, data, options])
+      await (db || this.db).executeSql(sql, [name, key, kind, cron, tz, data, persisted])
     } catch (err: any) {
       if (err.message.includes('foreign key')) {
         err.message = `Queue ${name} not found`
@@ -1024,9 +1028,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async unschedule (name: string, key = ''): Promise<void> {
+  async unschedule (name: string, key = '', options: types.ConnectionOptions = {}): Promise<void> {
     const sql = plans.unschedule(this.config.schema)
-    await this.db.executeSql(sql, [name, key])
+    await (options.db || this.db).executeSql(sql, [name, key])
   }
 }
 
