@@ -121,7 +121,7 @@ The check this disables exists because `schema: 'MySchema'` and `schema: '"MySch
 
 String, default `'postgres'`
 
-Selects the database pg-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.
+Selects the database pg-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'cockroachdb'`, `'citus'`, or `'pglite'`.
 
 ```js
 const boss = new PgBoss({ connectionString, backend: 'cockroachdb' })
@@ -210,7 +210,7 @@ Autovacuum reclaims heap space but never shrinks a btree, so a job index stays a
 
 Set to `false` to disable rebuilds. Detection is unaffected: bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommands-options) still returns the statements to run by hand. The same applies to indexes the connected role does not own, and to `db` adapters that wrap queries in a transaction, since `REINDEX CONCURRENTLY` cannot run inside one.
 
-CockroachDB and YugabyteDB skip this entirely, detection included. They store data outside PostgreSQL's heap, so there is no btree page bloat to reclaim, they reject `REINDEX`, and neither reports the page counts the check reads.
+CockroachDB skips this entirely, detection included. It stores data outside PostgreSQL's heap, so there is no btree page bloat to reclaim, it rejects `REINDEX`, and it does not report the page counts the check reads.
 
 Pass an object to change the thresholds:
 
@@ -259,7 +259,7 @@ ALTER TABLE pgboss.job_common SET (autovacuum_vacuum_scale_factor = 0.05);
 
 An `xmin_horizon` warning names the holder it found; track it down through `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. Where the connected role cannot read one of those catalogs, `unreadableSources` says so, rather than reporting a partial answer as a clean one.
 
-Not available on CockroachDB or YugabyteDB, which reclaim on their own schedule rather than from the oldest live snapshot.
+Not available on CockroachDB, which reclaims on its own schedule rather than from the oldest live snapshot.
 
 ### `flowIntervalSeconds`
 

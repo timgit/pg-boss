@@ -115,7 +115,7 @@ Nothing else `doctor` finds is ever repaired.
 
 ### `reindex`
 
-Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY`, one at a time, skipping any index the connected role does not own. Without flags it rebuilds only the indexes the bloat check flags; `--force` rebuilds every job index. `--dry-run` prints the SQL instead of running it. Unsupported on CockroachDB and YugabyteDB, which neither accept `REINDEX` nor report the catalog statistics the bloat check reads.
+Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY`, one at a time, skipping any index the connected role does not own. Without flags it rebuilds only the indexes the bloat check flags; `--force` rebuilds every job index. `--dry-run` prints the SQL instead of running it. Unsupported on CockroachDB, which neither accepts `REINDEX` nor reports the catalog statistics the bloat check reads.
 
 ```bash
 pg-boss reindex --connection-string postgres://localhost/myapp
@@ -213,7 +213,7 @@ The CLI supports multiple ways to configure the database connection, in order of
 | `--schema` | `-s` | pg-boss schema name (default: pgboss) |
 | `--config` | `-c` | Path to config file (default: pgboss.json, .pgbossrc, .pgbossrc.json) |
 | `--ssl` | | Enable SSL connection (`rejectUnauthorized: false`) |
-| `--backend` | | Database backend profile: `postgres` (default), `cockroachdb`, `yugabytedb`, `citus` |
+| `--backend` | | Database backend profile: `postgres` (default), `cockroachdb`, `citus` |
 | `--dry-run` | | Show SQL without executing (for `migrate`, `create`, `rollback`, `plans`, `reindex`) |
 | `--force` | | Rebuild every job index, not just the bloated ones (for `reindex`) |
 | `--fix` | | Restore a `job_now()` left overridden by a killed TestClock run (for `doctor`) |
@@ -230,9 +230,6 @@ Without it the CLI assumes stock PostgreSQL. On CockroachDB that means table par
 ```bash
 # CockroachDB
 pg-boss migrate --backend cockroachdb --connection-string postgres://root@localhost:26257/mydb
-
-# YugabyteDB
-PGBOSS_BACKEND=yugabytedb pg-boss migrate
 ```
 
 `pglite` is in-process and has no connection string, so it is library-only and rejected here.

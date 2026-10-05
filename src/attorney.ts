@@ -611,6 +611,16 @@ function resolveBackend (config: any) {
   config.backend = backend
   const { flags } = BACKEND_PROFILES[backend as types.BackendProfile]
 
+  // A DeprecationWarning, like the deprecated fetch options in manager.ts: dropping the profile is a
+  // configuration change a developer makes, not a condition an operator watches.
+  if (backend === 'yugabytedb') {
+    process.emitWarning(
+      "backend: 'yugabytedb' is deprecated and will be rejected in the next major. YugabyteDB is not supported: releases are not tested against it and upgrades do not work there. See https://pgboss.io/database-backends#not-supported-yugabytedb",
+      'DeprecationWarning',
+      'PGBOSS_DEP_YUGABYTEDB'
+    )
+  }
+
   for (const flag of COMPATIBILITY_FLAGS) {
     config[flag] = flags[flag] ?? false
   }

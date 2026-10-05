@@ -38,6 +38,39 @@ describe('config', function () {
     it('rejects an unknown backend', function () {
       expect(() => Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'nope' as any })).toThrow('backend must be one of')
     })
+    describe('yugabytedb deprecation', function () {
+      // process.emitWarning delivers on the next tick, so a warning from an earlier test is let through
+      // before listening.
+      async function deprecations (backend: any) {
+        await new Promise(resolve => setImmediate(resolve))
+
+        const seen: NodeJS.ErrnoException[] = []
+        const listener = (w: Error) => seen.push(w as NodeJS.ErrnoException)
+
+        process.on('warning', listener)
+
+        try {
+          Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend })
+          await new Promise(resolve => setImmediate(resolve))
+        } finally {
+          process.off('warning', listener)
+        }
+
+        return seen.filter(w => w.name === 'DeprecationWarning' && w.code === 'PGBOSS_DEP_YUGABYTEDB')
+      }
+
+      it('emits a DeprecationWarning for yugabytedb', async function () {
+        const warnings = await deprecations('yugabytedb')
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0].message).toContain('next major')
+      })
+
+      it('emits none for the other backends', async function () {
+        for (const backend of ['postgres', 'cockroachdb', 'citus', 'pglite']) {
+          expect(await deprecations(backend)).toHaveLength(0)
+        }
+      })
+    })
   })
 
   describe('expiration limit', function () {

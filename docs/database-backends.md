@@ -1,8 +1,6 @@
 # Database Backends
 
-pg-boss runs on stock single-node PostgreSQL by default, but it also supports several
-PostgreSQL-compatible backends. Those are distributed SQL engines like CockroachDB, YugabyteDB
-and Citus, plus the embedded WASM build [PGlite](https://pglite.dev). You select one with the `backend` option,
+pg-boss runs on stock single-node PostgreSQL by default, but it also supports several PostgreSQL-compatible backends. Those are distributed SQL engines like CockroachDB and Citus, plus the embedded WASM build [PGlite](https://pglite.dev). You select one with the `backend` option,
 which applies all the compatibility behavior that backend needs.
 
 ## Backend profiles
@@ -22,11 +20,10 @@ const boss = new PgBoss({
 Each backend has a *kind*: `standard` (stock PostgreSQL), `distributed` (clustered
 Postgres-compatible engines), or `embedded` (in-process PostgreSQL):
 
-| `backend` | Kind | What it enables |
+| `backend` | Kind | What it changes |
 |-----------|------|-----------------|
 | `postgres` *(default)* | standard | *(none, full PostgreSQL)* |
 | `cockroachdb` | distributed | Lock-free fetch, split-statement writes, single shared table, immediate constraints, lock-free schema setup, plain indexes (+ numeric coercion), default-only column adds, no LISTEN/NOTIFY |
-| `yugabytedb` | distributed | Lock-free schema setup + single shared table |
 | `citus` | distributed | *(none, coordinator-local tables behave like plain PostgreSQL)* |
 | `pglite` | embedded | *(none, full PostgreSQL; see [PGlite](#pglite-embedded))* |
 
@@ -45,22 +42,14 @@ available (❌), pg-boss automatically switches to the compatible alternative. S
 |----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | PostgreSQL | Tested | `postgres` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | CockroachDB | Tested | `cockroachdb` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| YugabyteDB | Partial¹ | `yugabytedb` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅³ |
-| Citus | Tested² | `citus` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| PGlite | Tested | `pglite` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁴ |
+| Citus | Tested¹ | `citus` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PGlite | Tested | `pglite` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅² |
 
-¹ YugabyteDB runs the standard fetch path; non-partitioned queueing works, but partitioned queues,
-multi-master startup, and live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
-
-² In standard mode (coordinator-local table) Citus supports these like plain PostgreSQL. A
+¹ In standard mode (coordinator-local table) Citus supports these like plain PostgreSQL. A
 deliberately sharded job table would lose `SKIP LOCKED` compatibility and need the atomic-`UPDATE`
 fetch instead. See [Citus](#tested-citus-compatible-in-standard-mode).
 
-³ YugabyteDB supports cluster-wide LISTEN/NOTIFY as an early-access feature that is **off by
-default**, so enable the `ysql_yb_enable_listen_notify` flag on TServers and Masters. When it's off,
-leave `useListenNotify` disabled and avoid the queue `notify` option; pg-boss delivers via polling.
-
-⁴ PGlite is embedded single-connection PostgreSQL, so LISTEN/NOTIFY works entirely in-process. The
+² PGlite is embedded single-connection PostgreSQL, so LISTEN/NOTIFY works entirely in-process. The
 `fromPglite` adapter wires it up automatically, so `useListenNotify` works with no extra setup.
 
 Bun's `Bun.SQL` client has no row of its own: it is a different *driver* against PostgreSQL, not a
@@ -146,8 +135,8 @@ these as `int4` numbers, so no coercion is needed there.)
 ### Transaction isolation
 
 For optimal correctness with `noSkipLocked`, SERIALIZABLE isolation ensures no two workers claim
-the same job, which is the recommended level for distributed work queues. With READ COMMITTED (PostgreSQL or
-YugabyteDB defaults), the `state < 'active'` recheck in the `UPDATE` still prevents duplicate claims.
+the same job, which is the recommended level for distributed work queues. With READ COMMITTED (the PostgreSQL
+default), the `state < 'active'` recheck in the `UPDATE` still prevents duplicate claims.
 
 ## Per-database notes
 
@@ -250,51 +239,6 @@ PostgreSQL schema/migration shape), `test/testHelper.ts` exports `itPostgresOnly
 transaction, and the compatibility-flag construction paths). Those cases force distributed runtime
 via `__test__distributed` (or select `backend: 'cockroachdb'` for the schema-construction case), so
 they run in every mode.
-
-### Partially compatible: YugabyteDB
-
-YugabyteDB is a PostgreSQL-compatible distributed database (reports as PostgreSQL 15). pg-boss has
-been tested against a single-node YugabyteDB (`docker compose -f docker-compose.yugabyte.yaml up -d`,
-`npm run test:yugabytedb:full`). Basic queueing works, but there is a significant caveat.
-
-**Use `backend: 'yugabytedb'`.** It enables `noAdvisoryLocks` + `noTablePartitioning` and keeps the
-standard fetch mode. YugabyteDB does **not** need `noSkipLocked` or `noMultiMutationCte` (it has
-neither CockroachDB's `SKIP LOCKED` issues nor the multi-mutation CTE restriction). With this
-backend, standard (non-partitioned) queueing works: send / fetch / complete, retries, job
-expiration, flows, and queue policies (`short` / `singleton` / `stately`).
-
-```typescript
-const boss = new PgBoss({
-  connectionString: 'postgresql://localhost:5433/pgboss',
-  backend: 'yugabytedb'
-})
-```
-
-**Why `noTablePartitioning` is required.** pg-boss creates a per-queue partition with DDL (`CREATE
-TABLE … PARTITION OF …`) inside the same transaction that inserts the queue row. Two YugabyteDB
-behaviors make this fail:
-
-1. It cannot transparently retry a multi-statement transaction sent over the *simple* query
-   protocol on a conflict ([yugabyte-db#21833](https://github.com/yugabyte/yugabyte-db/issues/21833))
-   and pg-boss wraps these operations in a `BEGIN; … ; COMMIT;` text block, so the conflict surfaces
-   as `current transaction is expired or aborted`.
-2. DDL is **not rolled back transactionally**, so the partition table survives the aborted
-   transaction, and a retry then fails with `relation "…" already exists`.
-
-`noTablePartitioning` keeps all jobs in one table and skips the per-queue DDL, sidestepping both.
-Advisory locks are a [Tech Preview](https://github.com/yugabyte/yugabyte-db/issues/3642) on
-YugabyteDB, hence `noAdvisoryLocks`.
-
-**Still not reliable on YugabyteDB:** partitioned queues (`partition: true`), multi-master
-concurrent startup, and live schema migrations between pg-boss versions all involve DDL under
-contention. A fresh install (`createSchema`) is fine; upgrading an existing deployment is not.
-
-For the partitioned-queue case specifically, this is **not** just a query-protocol problem and
-cannot be fixed by parameterizing the call. Running `create_queue` as a real client-side transaction,
-or as a single parameterized autocommit statement, was tested and still fails: once the partition
-DDL hits a conflict YugabyteDB reports `query layer retry isn't possible … some data was already
-sent to the user` and aborts, because it cannot transparently retry a transaction that performs DDL.
-Avoiding the partition DDL (`noTablePartitioning`) is the only thing that works.
 
 ### Tested: Citus (compatible in standard mode)
 
@@ -478,6 +422,59 @@ notification missed while the listener was down is recovered by the next fetch.
 On an earlier Bun the adapter exposes no listener at all, and pg-boss emits a
 `listen_notify_unavailable` warning and delivers by polling, which is the default and never more than a
 latency difference.
+
+### Not supported: YugabyteDB
+
+YugabyteDB is a PostgreSQL-compatible distributed database (reports as PostgreSQL 15). A
+`yugabytedb` profile exists, but releases are not tested against it, and upgrading an existing
+deployment to a new pg-boss schema version does not work. The blocker is in YugabyteDB itself
+([yugabyte-db#21833](https://github.com/yugabyte/yugabyte-db/issues/21833), still open). For a
+distributed backend, use CockroachDB or Citus. If you run pg-boss on YugabyteDB, please report your
+findings.
+
+`backend: 'yugabytedb'` is deprecated and will be rejected in the next major. Setting it emits a Node
+`DeprecationWarning` (code `PGBOSS_DEP_YUGABYTEDB`). Run with `--trace-deprecation` to find where it
+is set.
+
+**Use `backend: 'yugabytedb'`.** It enables `noAdvisoryLocks` + `noTablePartitioning` and keeps the
+standard fetch mode. YugabyteDB does **not** need `noSkipLocked` or `noMultiMutationCte` (it has
+neither CockroachDB's `SKIP LOCKED` issues nor the multi-mutation CTE restriction). When the suite was
+last run against a single-node YugabyteDB (`docker compose -f docker-compose.yugabyte.yaml up -d`,
+`npm run test:yugabytedb:full`), standard (non-partitioned) queueing worked: send / fetch / complete,
+retries, job expiration, flows, and queue policies (`short` / `singleton` / `stately`).
+
+```typescript
+const boss = new PgBoss({
+  connectionString: 'postgresql://localhost:5433/pgboss',
+  backend: 'yugabytedb'
+})
+```
+
+**Why `noTablePartitioning` is required.** pg-boss creates a per-queue partition with DDL (`CREATE
+TABLE … PARTITION OF …`) inside the same transaction that inserts the queue row. Two YugabyteDB
+behaviors make this fail:
+
+1. It cannot transparently retry a multi-statement transaction sent over the *simple* query
+   protocol on a conflict, and pg-boss wraps these operations in a `BEGIN; … ; COMMIT;` text
+   block, so the conflict surfaces as `current transaction is expired or aborted`.
+2. DDL is **not rolled back transactionally**, so the partition table survives the aborted
+   transaction, and a retry then fails with `relation "…" already exists`.
+
+`noTablePartitioning` keeps all jobs in one table and skips the per-queue DDL, sidestepping both.
+Advisory locks are a [Tech Preview](https://github.com/yugabyte/yugabyte-db/issues/3642) on
+YugabyteDB, hence `noAdvisoryLocks`.
+
+**Not supported on YugabyteDB:** partitioned queues (`partition: true`), multi-master concurrent
+startup, and schema migrations between pg-boss versions, which all involve DDL under contention. A
+fresh install (`createSchema`) works. Upgrading an existing deployment does not, and pg-boss releases
+often include a schema migration.
+
+For the partitioned-queue case specifically, this is **not** just a query-protocol problem and
+cannot be fixed by parameterizing the call. Running `create_queue` as a real client-side transaction,
+or as a single parameterized autocommit statement, was tested and still fails: once the partition
+DDL hits a conflict YugabyteDB reports `query layer retry isn't possible … some data was already
+sent to the user` and aborts, because it cannot transparently retry a transaction that performs DDL.
+Avoiding the partition DDL (`noTablePartitioning`) is the only thing that works.
 
 ### Not supported: Aurora DSQL
 

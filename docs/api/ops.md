@@ -140,7 +140,7 @@ Steps within a pass are individually rate-limited by their own intervals (`maint
 
 Returns the SQL statements that would rebuild the currently bloated job indexes, in the order they should be run, including a `DROP INDEX CONCURRENTLY` for any invalid stub left behind by an interrupted rebuild.
 
-Use this where pg-boss cannot run the rebuild itself, because the connected role does not own the indexes or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` cannot run inside one). Returns an empty array on CockroachDB and YugabyteDB, which have no btree bloat to reclaim and reject `REINDEX` in any form. Unlike the background pass, no ownership filter and no size cap are applied unless `maxIndexBytes` is passed, since the commands are intended for an operator who may run them as a different role.
+Use this where pg-boss cannot run the rebuild itself, because the connected role does not own the indexes or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` cannot run inside one). Returns an empty array on CockroachDB, which has no btree bloat to reclaim and rejects `REINDEX` in any form. Unlike the background pass, no ownership filter and no size cap are applied unless `maxIndexBytes` is passed, since the commands are intended for an operator who may run them as a different role.
 
 ```js
 const commands = await boss.getReindexCommands()
