@@ -50,6 +50,9 @@ export default defineConfig(({ command }) => ({
   // Router dev server requires `basename` to start with `base`, and the dev
   // server serves assets from the root regardless of the app's basename.
   base: command === 'build' ? viteBase : '/',
+  // A Pro dev server's aliases differ from the free one's, so the two would otherwise
+  // re-optimize one shared cache under each other and serve the page two Reacts.
+  cacheDir: process.env.PGBOSS_PRO === '1' ? 'node_modules/.vite-pro' : 'node_modules/.vite',
   plugins: [
     tailwindcss(),
     reactRouter(),
