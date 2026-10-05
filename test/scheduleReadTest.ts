@@ -140,11 +140,11 @@ describe('previewSchedule', function () {
     expect(() => tk.previewSchedule('bogus')).toThrow()
   })
 
-  it('should reject an empty or blank expression rather than read it as every minute', function () {
+  it('should reject an empty, blank or missing expression rather than read it as every minute', function () {
     const tk = makeTk()
 
-    for (const expression of ['', ' ', '   ', '\t']) {
-      expect(() => tk.previewSchedule(expression)).toThrow(/must not be empty/)
+    for (const expression of ['', ' ', '   ', '\t', undefined, null, 5] as any[]) {
+      expect(() => tk.previewSchedule(expression)).toThrow('cron expression must be a non-empty string')
     }
   })
 
