@@ -848,7 +848,7 @@ describe('timekeeper clock domain', function () {
   it('schedule() rejects an empty, blank or missing cron expression rather than read it as every minute', async function () {
     const tk = makeTk(0)
 
-    for (const expression of ['', ' ', '   ', '\t', undefined, null, 5] as any[]) {
+    for (const expression of ['', ' ', '   ', '\t', undefined, null, 5, ['FREQ=DAILY']] as any[]) {
       await expect(tk.schedule('q', expression)).rejects.toThrow('cron expression must be a non-empty string')
     }
 

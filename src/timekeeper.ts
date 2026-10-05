@@ -226,10 +226,6 @@ function assertMissedPolicy (missed: unknown): void {
  * The returned interval is the one the caller wants anyway, so the walk costs a single parse.
  */
 function parseRecurrence (cron: string, tz: string, currentDate: Date) {
-  // cron-parser reads an empty expression, and undefined or null, as `* * * * *`, and those are
-  // nearly always a missing value, not a request to run every minute.
-  assert(typeof cron === 'string' && cron.trim() !== '', 'cron expression must be a non-empty string')
-
   CronExpressionParser.parse(cron, { tz: 'UTC', strict: false })
 
   assertTimezone(tz)
@@ -237,11 +233,20 @@ function parseRecurrence (cron: string, tz: string, currentDate: Date) {
   return CronExpressionParser.parse(cron, { tz, strict: false, currentDate })
 }
 
+// cron-parser reads an empty expression, and undefined or null, as `* * * * *`, and those are nearly
+// always a missing value, not a request to run every minute. Checked before isRrule(), which reads a
+// non-string as its string form and would send something like ['FREQ=DAILY'] down the rule path.
+function assertExpression (expression: unknown): asserts expression is string {
+  assert(typeof expression === 'string' && expression.trim() !== '', 'cron expression must be a non-empty string')
+}
+
 /**
  * Validates a recurrence in whichever of the two formats it is written, so previewSchedule() and
  * schedule() reject exactly the same expressions.
  */
 function assertRecurrence (expression: string, tz: string, now: Date): void {
+  assertExpression(expression)
+
   if (isRrule(expression)) {
     assertRrule(expression, tz)
   } else {
@@ -915,6 +920,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * occurrence after the last one handed back.
    */
   private occurrenceWalker (expression: string, tz: string, from: Date): () => Date | null {
+    assertExpression(expression)
+
     if (isRrule(expression)) {
       assertRrule(expression, tz)
 
