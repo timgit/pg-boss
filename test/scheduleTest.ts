@@ -1009,6 +1009,29 @@ describe('timekeeper clock domain', function () {
     expect(warnings.length).toBe(1)
   })
 
+  // schedule() refuses an empty expression (#947), but a row stored before it did is still in the
+  // table, and cron-parser reads one as every minute.
+  it('a stored schedule with an empty expression is skipped with a warning instead of firing every minute', async function () {
+    const sent: string[] = []
+    const tk = makeTk(0)
+    ;(tk as any).stopped = false
+    ;(tk as any).manager = { insert: async (_: string, jobs: any[]) => { sent.push(...jobs.map(job => job.data.name)) } }
+    ;(tk as any).getSchedules = async () => ([
+      { name: 'empty', key: '', data: null, options: {}, kind: 'cron', cron: '', timezone: 'UTC' },
+      { name: 'blank', key: '', data: null, options: {}, kind: 'cron', cron: '  ', timezone: 'UTC' },
+      { name: 'healthy', key: '', data: null, options: {}, kind: 'cron', cron: '* * * * *', timezone: 'UTC' }
+    ])
+
+    const warnings: any[] = []
+    tk.on('warning', (w: any) => warnings.push(w))
+
+    await tk.cron()
+
+    expect(sent).toEqual(['healthy'])
+    expect(warnings.map(w => w.data.queue).sort()).toEqual(['blank', 'empty'])
+    expect(warnings.every(w => w.message.includes('cron expression must be a non-empty string'))).toBe(true)
+  })
+
   it('a repaired schedule row warns again if it breaks a second time', async function () {
     const tk = makeTk(0)
     ;(tk as any).stopped = false

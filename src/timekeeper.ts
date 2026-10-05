@@ -671,8 +671,13 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * labels every row from its default. Either way the row reads fine and never fires again. So when
    * an expression cannot be read the way the column says, and is written the other way, it is read
    * the way it is written: one regex, on a path that was already about to give up.
+   *
+   * An empty expression is refused first, as schedule() refuses it. cron-parser would read one as
+   * every minute, and a row stored before schedule() checked for it would keep firing that often.
    */
   private dueOccurrences (expression: string, kind: types.ScheduleKind, tz: string, databaseTime = this.databaseTime): DueOccurrences {
+    assertExpression(expression)
+
     try {
       return { kind, occurrences: this.readOccurrences(expression, kind, tz, databaseTime) }
     } catch (err) {
@@ -815,7 +820,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       // key and slot are the pass's own bookkeeping, read below rather than sent: send() takes the
       // request the schedule row described and nothing else.
       const { key, slot, ...request } = data
-      // A row written before 12.36.1 may still carry `db` from schedule(); it is never a send option here.
+      // A row written before 12.37.0 may still carry `db` from schedule(); it is never a send option here.
       const { db, ...options } = request.options ?? {}
       return await this.manager.send({ ...request, options })
     }))
