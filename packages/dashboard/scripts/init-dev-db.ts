@@ -382,6 +382,88 @@ async function seedReadyHistory () {
   }
 }
 
+// Mirrors LATENCY_SLOTS and LATENCY_MIN_SECONDS in src/plans.ts: slot 0 is under 10 ms, each slot
+// after it √2 wider, and the last slot everything past about 23 hours.
+const LATENCY_SLOTS = 48
+const LATENCY_MIN_SECONDS = 0.01
+
+function latencySlot (seconds: number): number {
+  if (seconds < LATENCY_MIN_SECONDS) return 0
+  const k = Math.floor(Math.log(seconds / LATENCY_MIN_SECONDS) / (Math.log(2) / 2)) + 1
+  return Math.min(LATENCY_SLOTS - 1, k)
+}
+
+/**
+ * Spread `count` jobs over the slots around `seconds`, as a Postgres array literal with nulls
+ * where no job landed, which is how the monitor stores them. A small tail two slots above the
+ * centre gives the p95 and p99 somewhere to be. Null when nothing finished, as the monitor writes
+ * an all-null histogram rather than none.
+ */
+function binsLiteral (count: number, seconds: number): string {
+  const slots: Array<number | null> = new Array(LATENCY_SLOTS).fill(null)
+
+  if (count > 0) {
+    const centre = latencySlot(seconds)
+    const weights = [[-2, 0.06], [-1, 0.24], [0, 0.4], [1, 0.2], [2, 0.07], [4, 0.03]] as const
+    let placed = 0
+
+    for (const [offset, weight] of weights) {
+      const slot = Math.max(0, Math.min(LATENCY_SLOTS - 1, centre + offset))
+      const n = Math.floor(count * weight)
+      if (n > 0) slots[slot] = (slots[slot] ?? 0) + n
+      placed += n
+    }
+
+    // Rounding leftovers go to the centre, so the slots add up to the jobs counted.
+    if (placed < count) slots[centre] = (slots[centre] ?? 0) + count - placed
+  }
+
+  return `{${slots.map((n) => n ?? 'NULL').join(',')}}`
+}
+
+/**
+ * Throughput, latency and oldest-ready-wait series to go beside the counts in `seedQueueStats`.
+ *
+ * The throughput rides the same daily wave as the counts, a little ahead of it, so arrivals peak
+ * before the backlog does. Wait times follow the ready count over the drain rate, which is what a
+ * backlog does to them, and each queue keeps its own typical run time. Every ninth queue by hash
+ * fails noticeably, so the failure series is not zero everywhere.
+ */
+function sampleThroughput (h: number, ready: number[], perDay: number, phase: number, windowSeconds: number) {
+  const perMinute = 5 + (h % 40)
+  const failRate = h % 9 === 0 ? 0.08 : 0.005 + (h % 5) * 0.002
+  const runSeconds = 0.05 * Math.SQRT2 ** (h % 14)
+
+  const out = {
+    created: [] as number[],
+    completed: [] as number[],
+    failed: [] as number[],
+    readyOldest: [] as number[],
+    waitBins: [] as string[],
+    runBins: [] as string[],
+  }
+
+  for (let i = 0; i < ready.length; i++) {
+    const wave = 0.5 + 0.5 * Math.sin((i / perDay) * 2 * Math.PI + phase + 0.4)
+    const finished = Math.round(perMinute * (windowSeconds / 60) * (0.3 + 0.9 * wave))
+    const failed = Math.round(finished * failRate)
+    // Arrivals outrun the drain while the backlog builds and trail it while it empties.
+    const backlogChange = i === 0 ? 0 : ready[i] - ready[i - 1]
+    const created = Math.max(0, finished + backlogChange * 3 + ((i * 11 + h) % 7) - 3)
+    const drainPerSecond = Math.max(finished / windowSeconds, 0.01)
+    const waitSeconds = Math.max(0.02, ready[i] / drainPerSecond / 4)
+
+    out.created.push(created)
+    out.completed.push(finished - failed)
+    out.failed.push(failed)
+    out.readyOldest.push(ready[i] === 0 ? 0 : Math.round(waitSeconds * 2.5))
+    out.waitBins.push(binsLiteral(finished, waitSeconds))
+    out.runBins.push(binsLiteral(finished, runSeconds))
+  }
+
+  return out
+}
+
 /**
  * Backfill `queue_stats` so the metrics chart has a range to draw.
  *
@@ -406,7 +488,10 @@ async function seedReadyHistory () {
  *
  * Each series is blended into the queue's real current counts, exactly as the
  * ready sparkline is, so the right edge of the chart agrees with the numbers
- * rendered on the queue detail page beside it.
+ * rendered on the queue detail page beside it. Every row also carries the
+ * throughput deltas, wait and run histograms and oldest ready wait that a
+ * counted monitor pass writes (see `sampleThroughput`), so the throughput and
+ * latency views have the same six days to draw.
  */
 async function seedQueueStats () {
   const DAYS = 6
@@ -504,6 +589,8 @@ async function seedQueueStats () {
         series.total.push(Math.round(peak * (0.8 + 0.6 * wave)) + jitter)
       }
 
+      const throughput = sampleThroughput(h, series.ready, PER_DAY, p, INTERVAL_MINUTES * 60)
+
       const ends: Record<string, number> = {
         ready: Number(queue.ready_count),
         active: Number(queue.active_count),
@@ -517,13 +604,23 @@ async function seedQueueStats () {
         series[key] = blendTail(series[key], ends[key], 12)
       }
 
+      // The deltas cover the window up to each sample, so delta_on is the sample's own time.
+      // The bins travel as array literals, since unnest flattens a two-dimensional array.
       await client.query(
         `INSERT INTO ${schema}.queue_stats
-           (name, captured_on, ready_count, active_count, failed_count, queued_count, deferred_count, total_count)
-         SELECT $1, t, r, a, f, q, d, tot
-           FROM unnest($2::timestamptz[], $3::int[], $4::int[], $5::int[], $6::int[], $7::int[], $8::int[])
-             AS s(t, r, a, f, q, d, tot)`,
-        [queue.name, at, series.ready, series.active, series.failed, series.queued, series.deferred, series.total]
+           (name, captured_on, ready_count, active_count, failed_count, queued_count, deferred_count, total_count,
+            created_delta, completed_delta, failed_delta, delta_seconds, delta_on, ready_oldest_seconds,
+            wait_bins, run_bins)
+         SELECT $1, t, r, a, f, q, d, tot, cd, cpd, fd, $9, t, ros, wb::int[], rb::int[]
+           FROM unnest($2::timestamptz[], $3::int[], $4::int[], $5::int[], $6::int[], $7::int[], $8::int[],
+                       $10::int[], $11::int[], $12::int[], $13::int[], $14::text[], $15::text[])
+             AS s(t, r, a, f, q, d, tot, cd, cpd, fd, ros, wb, rb)`,
+        [
+          queue.name, at, series.ready, series.active, series.failed, series.queued, series.deferred, series.total,
+          INTERVAL_MINUTES * 60,
+          throughput.created, throughput.completed, throughput.failed, throughput.readyOldest,
+          throughput.waitBins, throughput.runBins,
+        ]
       )
 
       rows += SAMPLES
