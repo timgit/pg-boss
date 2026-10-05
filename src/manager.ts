@@ -721,6 +721,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       }
 
+      // A fetch or transaction begin can finish after stop() has exhausted its active-handler grace.
+      if (worker?.stopping) {
+        throw new Error('pg-boss shut down before the handler started')
+      }
+
       const handling = transaction
         ? (callback as unknown as types.TransactionalWorkHandler<T>)(jobs, untracked(transaction.db))
         : callback(jobs)
