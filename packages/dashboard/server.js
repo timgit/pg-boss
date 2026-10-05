@@ -9,8 +9,16 @@ import { getRequestListener } from '@hono/node-server'
 const port = Number(process.env.PORT) || 3000
 const host = process.env.HOST || 'localhost'
 
+// Created before Vite so HMR can share its port. Vite's default HMR port is a fixed
+// 24678, so a second dev server (the free dashboard beside Pro, say) would connect its
+// pages to the first one's websocket and fail the handshake.
+const server = createHttpServer((req, res) => {
+  // Vite handles its own asset/HMR/module requests; anything it passes on goes to Hono.
+  vite.middlewares(req, res, () => honoListener(req, res))
+})
+
 const vite = await createViteServer({
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, hmr: { server } },
   appType: 'custom',
 })
 
@@ -36,11 +44,6 @@ const app = createHonoApp({
 })
 
 const honoListener = getRequestListener(app.fetch)
-
-const server = createHttpServer((req, res) => {
-  // Vite handles its own asset/HMR/module requests; anything it passes on goes to Hono.
-  vite.middlewares(req, res, () => honoListener(req, res))
-})
 
 server.listen(port, host, () => {
   console.log(`pg-boss dashboard dev server: http://${host}:${port}`)
