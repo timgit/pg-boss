@@ -146,6 +146,10 @@ Schedules a job to be sent to the specified queue based on a cron expression or 
   default) or `once`. See [Catch-up after an outage](#catch-up-after-an-outage). A `null` policy
   reads as none given, like a `null` zone; any other value is rejected.
 
+* **db**
+
+  An optional [database adapter](./adapters.md) to run the write on, such as one wrapping a transaction. It is used for this call only and is not stored with the schedule.
+
 
 For example, the following code will send a job at 3:00am in the US central time zone into the queue `notification-abc`.
 
@@ -172,6 +176,8 @@ await boss.schedule('report', '0 18 * * *', { region: 'eu' }, { key: 'eu' })
 
 await boss.unschedule('report', 'eu')
 ```
+
+An optional third argument takes a `db` to run the removal on, as `schedule()` does: `boss.unschedule('report', 'eu', { db })`.
 
 ### `getSchedules()`
 

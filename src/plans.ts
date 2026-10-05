@@ -18,7 +18,11 @@ export interface SqlQuery {
 }
 
 export const PG_ERROR = {
-  divisionByZero: '22012'
+  divisionByZero: '22012',
+  lockNotAvailable: '55P03',
+  foreignKeyViolation: '23503',
+  undefinedTable: '42P01',
+  checkViolation: '23514'
 }
 
 export const DEFAULT_SCHEMA = 'pgboss'
@@ -665,7 +669,7 @@ const INSTANCE_COLUMNS = `id, name, host, pid, version, node_version, heartbeat_
       supervise, schedule, migrate, persist_queue_stats, persist_warnings,
       pool_max, pool_total, pool_idle, pool_waiting, workers, metrics, config, application_name, started_on, heartbeat_on`
 
-const INSTANCE_VALUES = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19::jsonb,
+const INSTANCE_VALUES = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::text::jsonb, $18::text::jsonb, $19::text::jsonb,
       current_setting('application_name')`
 
 const INSTANCE_BEAT = `pool_max = EXCLUDED.pool_max,
@@ -955,7 +959,9 @@ function createTableJob (schema: string, noPartitioning = false) {
       source_created_on timestamp with time zone,
       source_retry_count int,
       source_output jsonb,
-      source_root_id uuid
+      source_root_id uuid,
+      trace_context jsonb,
+      upsert_by_key bool
     ) ${partitionClause}
   `
 }
@@ -1013,6 +1019,7 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobBlocking(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobSourceRoot(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobUpsert(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -1035,6 +1042,7 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobGroupConcurrency(schema)};
     ${createIndexJobBlocking(schema)};
     ${createIndexJobSourceRoot(schema)};
+    ${createIndexJobUpsert(schema)};
   `
 }
 
@@ -1160,6 +1168,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobBlocking(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobSourceRoot(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobUpsert(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -1249,8 +1258,33 @@ export function notifyQueue (schema: string, name: string): string {
   return `SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')`
 }
 
-export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean) {
-  const sql = `SELECT ${schema}.delete_queue('${name}')`
+// Dropping a queue's own table (partition: true) needs ACCESS EXCLUSIVE on it, on job and on job_common,
+// and an insert into job_common or a query through job takes those in other orders. So the locks are
+// taken first, all with NOWAIT: the transaction never waits holding one, so it can never be part of a
+// deadlock, and the caller tries again when one is busy. The table is read in the same transaction, so
+// a stale cache cannot name the wrong one, and a queue already gone is left alone.
+export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean, partitioned = false) {
+  const sql = partitioned
+    ? `
+      DO $$
+      DECLARE
+        v_table text;
+        v_partition bool;
+      BEGIN
+        SELECT table_name, partition FROM ${schema}.queue WHERE name = '${name}' INTO v_table, v_partition;
+        IF NOT FOUND THEN
+          RETURN;
+        END IF;
+
+        IF v_partition AND to_regclass(format('${schema}.%I', v_table)) IS NOT NULL THEN
+          EXECUTE format('LOCK TABLE ${schema}.${COMMON_JOB_TABLE}, ${schema}.%I, ${schema}.${BASE_JOB_TABLE} IN ACCESS EXCLUSIVE MODE NOWAIT', v_table);
+        END IF;
+
+        PERFORM ${schema}.delete_queue('${name}');
+      END $$
+    `
+    : `SELECT ${schema}.delete_queue('${name}')`
+
   return locked(schema, sql, 'delete-queue', noAdvisoryLocks)
 }
 
@@ -1358,6 +1392,15 @@ function createIndexJobBlocking (schema: string) {
 // been through a dead letter queue are in it and a queue that never dead-letters carries it empty.
 function createIndexJobSourceRoot (schema: string) {
   return `CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
+}
+
+// At most one waiting job per key among the jobs upsert() inserted by singletonKey, which is what makes
+// concurrent upserts of one key agree: the second insert waits on the first's index entry, conflicts,
+// and edits that job instead. upsert_by_key is set only on those inserts, so send() keeps its own policy's
+// rules and a queue that never upserts carries the index empty. Only created, not retry, so a failing
+// job never collides with a newer upsert on its way back to retry.
+function createIndexJobUpsert (schema: string) {
+  return `CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = '${JOB_STATES.created}' AND upsert_by_key`
 }
 
 // The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only
@@ -1594,6 +1637,10 @@ export function updateQueue (schema: string) {
   `
 }
 
+export function currentDatabase () {
+  return 'SELECT current_database() AS name'
+}
+
 export function getQueues (schema: string, names?: string[]): SqlQuery {
   const hasNames = names && names.length > 0
   return {
@@ -1740,7 +1787,7 @@ export function setScheduleLastJobIds (schema: string) {
   return `
     UPDATE ${schema}.schedule s
     SET last_job_id = x."jobId"
-    FROM json_to_recordset($1::json) AS x (name text, key text, "jobId" uuid)
+    FROM json_to_recordset($1::text::json) AS x (name text, key text, "jobId" uuid)
     WHERE s.name = x.name
       AND COALESCE(s.key, '') = x.key
   `
@@ -1761,7 +1808,7 @@ export function setScheduleLastJobIds (schema: string) {
 export function setScheduleKinds (schema: string) {
   return `
     UPDATE ${schema}.schedule s SET kind = k.kind
-    FROM json_to_recordset($1::json) as k (name text, key text, kind text, cron text)
+    FROM json_to_recordset($1::text::json) as k (name text, key text, kind text, cron text)
     WHERE s.name = k.name
       AND COALESCE(s.key, '') = k.key
       AND s.cron = k.cron
@@ -1822,7 +1869,7 @@ export function getTime (schema: string) {
 export function insertWarning (schema: string) {
   return `
     INSERT INTO ${schema}.warning (type, message, data, created_on)
-    VALUES ($1, $2, $3, ${schema}.job_now())
+    VALUES ($1, $2, $3::text::jsonb, ${schema}.job_now())
   `
 }
 
@@ -2101,6 +2148,11 @@ const STATS_AGG = {
 // YugabyteDB, none of which can rely on it. to_timestamp / extract(epoch) / floor exist on all of
 // them (extract returns double on PG13, numeric on PG14+; floor/division handle both identically),
 // and buckets align to the Unix epoch so their boundaries are stable across calls.
+//
+// Wait and run histograms are added up per returned bucket in SQL (passes, slots, histograms), so a
+// bucket comes back as one histogram however many passes it covers. Each pass lands in the bucket
+// its counters were placed in, then its counts are summed per bucket and slot, a slot with no job in
+// any pass as 0. A bucket no pass measured has no histogram row and comes back null.
 export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' | 'min' | 'avg', mode: 'bucket' | 'auto'): string {
   const agg = STATS_AGG[aggregate]
 
@@ -2186,10 +2238,6 @@ export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' |
       FROM gauges g
         FULL JOIN counters c ON c.bucket = g.bucket
     ),
-    -- Wait and run histograms, added up per returned bucket in SQL, so a bucket comes back as one
-    -- histogram however many passes it covers. Each pass lands in the bucket its counters were placed
-    -- in above, then its counts are summed per bucket and slot, a slot with no job in any pass as 0.
-    -- A bucket no pass measured has no row here and comes back null.
     passes AS (
       SELECT ${bucket('delta_on')} as "counterBucket", wait_bins, run_bins
       FROM ${schema}.queue_stats, w
@@ -2289,6 +2337,8 @@ interface FetchJobOptions {
   policy: string | undefined
   limit: number
   includeMetadata?: boolean
+  // Returns the job's stored trace context as "__traceContext", which Manager strips off the job.
+  includeTraceContext?: boolean
   priority?: boolean
   orderByCreatedOn?: boolean
   ignoreStartAfter?: boolean
@@ -2391,7 +2441,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
  * exceeds fetch time.
  */
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
+  const { schema, table, name, policy, limit, includeMetadata, includeTraceContext = false, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
@@ -2594,7 +2644,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       WHERE name = '${name}' AND ${updateMatch}
       ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
       ${distributedStateCheck}
-      RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
+      RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}${includeTraceContext ? ', j.trace_context as "__traceContext"' : ''}
     `,
     values: params.values
   }
@@ -2774,12 +2824,19 @@ export function cancelJobs (schema: string, table: string, fenced?: boolean) {
   `
 }
 
+// A resumed job's start_after moves up to now, as a released flow child's does, so its wait (in the
+// monitor's histograms and ready_oldest_seconds) counts from when it could run again rather than
+// from when it was first sent. A start_after still in the future is kept. It also loses upsert_by_key,
+// here and in restoreJobs, so it never collides in job_i13 with a newer job upserted by the same key,
+// and queues beside it.
 export function resumeJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
       SET completed_on = NULL,
-        state = '${JOB_STATES.created}'
+        state = '${JOB_STATES.created}',
+        upsert_by_key = NULL,
+        start_after = GREATEST(start_after, ${schema}.job_now())
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.cancelled}'
@@ -2794,7 +2851,8 @@ export function restoreJobs (schema: string, table: string) {
     UPDATE ${schema}.${table}
     SET state = '${JOB_STATES.created}',
         started_on = NULL,
-        heartbeat_on = NULL
+        heartbeat_on = NULL,
+        upsert_by_key = NULL
     WHERE name = $1
       AND id = ANY($2::uuid[])
   `
@@ -2830,9 +2888,16 @@ interface InsertJobsOptions {
   // statement a public insert() builds does not declare the column and a caller naming it sets
   // nothing.
   slots?: boolean
+  // Marks the jobs as inserted by upsert() by singletonKey, for job_i13. Set by the statement, never
+  // read from the recordset, so insert() cannot mark a job.
+  upsertByKey?: boolean
 }
 
-export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false }: InsertJobsOptions) {
+// The queue is LEFT JOINed and every NOT NULL column it supplies falls back to the schema default, so
+// a job for a queue deleted after the caller cached it still reaches q_fkey and fails there (23503),
+// rather than producing no row, which would read the same as a singleton or throttle refusal. The
+// fallbacks never apply to a queue that exists, since its own columns are NOT NULL.
+export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false, upsertByKey = false }: InsertJobsOptions) {
   // When notify is enabled we always RETURN start_after so the wrapper below can gate
   // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
   const returning = notify ? 'RETURNING id, start_after' : returnId ? 'RETURNING id' : ''
@@ -2870,7 +2935,8 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       heartbeat_seconds,
       blocked,
       blocking,
-      pending_dependencies
+      pending_dependencies,
+      trace_context${upsertByKey ? ', upsert_by_key' : ''}
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
@@ -2887,19 +2953,20 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         END as singleton_on,
       "groupId" as group_id,
       "groupTier" as group_tier,
-      COALESCE("expireInSeconds", q.expire_seconds) as expire_seconds,
-      COALESCE("deleteAfterSeconds", q.deletion_seconds) as deletion_seconds,
-      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds) * interval '1s') as keep_until,
-      COALESCE("retryLimit", q.retry_limit) as retry_limit,
-      COALESCE("retryDelay", q.retry_delay) as retry_delay,
-      COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
+      COALESCE("expireInSeconds", q.expire_seconds, ${QUEUE_DEFAULTS.expire_seconds}) as expire_seconds,
+      COALESCE("deleteAfterSeconds", q.deletion_seconds, ${QUEUE_DEFAULTS.deletion_seconds}) as deletion_seconds,
+      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds, ${QUEUE_DEFAULTS.retention_seconds}) * interval '1s') as keep_until,
+      COALESCE("retryLimit", q.retry_limit, ${QUEUE_DEFAULTS.retry_limit}) as retry_limit,
+      COALESCE("retryDelay", q.retry_delay, ${QUEUE_DEFAULTS.retry_delay}) as retry_delay,
+      COALESCE("retryBackoff", q.retry_backoff, ${QUEUE_DEFAULTS.retry_backoff}) as retry_backoff,
       COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
       q.policy,
       COALESCE("deadLetter", q.dead_letter) as dead_letter,
       COALESCE("heartbeatSeconds", q.heartbeat_seconds) as heartbeat_seconds,
       COALESCE(blocked, false) as blocked,
       COALESCE(blocking, false) as blocking,
-      COALESCE("pendingDependencies", 0) as pending_dependencies
+      COALESCE("pendingDependencies", 0) as pending_dependencies,
+      "__traceContext" as trace_context${upsertByKey ? ', true as upsert_by_key' : ''}
     FROM (
       SELECT *,
         CASE
@@ -2928,10 +2995,11 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         "heartbeatSeconds" integer,
         blocked boolean,
         blocking boolean,
-        "pendingDependencies" integer
+        "pendingDependencies" integer,
+        "__traceContext" jsonb
       )
     ) j
-    JOIN ${schema}.queue q ON q.name = '${name}'
+    LEFT JOIN ${schema}.queue q ON q.name = '${name}'
     ON CONFLICT DO NOTHING
     ${returning}
   `
@@ -3102,7 +3170,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_created_on,
         source_retry_count,
         source_output,
-        source_root_id
+        source_root_id,
+        trace_context
       )
       SELECT
         id,
@@ -3148,7 +3217,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_created_on,
         source_retry_count,
         source_output,
-        source_root_id
+        source_root_id,
+        trace_context
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -3189,7 +3259,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_created_on,
         source_retry_count,
         source_output,
-        source_root_id
+        source_root_id,
+        trace_context
       )
       SELECT
         id,
@@ -3226,7 +3297,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_created_on,
         source_retry_count,
         source_output,
-        source_root_id
+        source_root_id,
+        trace_context
       FROM deleted_jobs
       WHERE id NOT IN (SELECT id from retried_jobs)
       RETURNING *
@@ -3239,7 +3311,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
     dlq_jobs as (
       INSERT INTO ${schema}.job (name, priority, data, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
         expire_seconds, singleton_key, group_id, group_tier, heartbeat_seconds,
-        source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id)
+        source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id, trace_context)
       SELECT
         r.dead_letter,
         r.priority,
@@ -3261,7 +3333,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         r.created_on,
         r.retry_count,
         r.output,
-        COALESCE(r.source_root_id, r.id)
+        COALESCE(r.source_root_id, r.id),
+        r.trace_context
       FROM results r
         JOIN ${schema}.queue q ON q.name = r.dead_letter
       WHERE state = '${JOB_STATES.failed}'
@@ -3479,10 +3552,10 @@ export function insertRetryJob (schema: string, table: string): string {
       group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
       keep_until, policy, output, dead_letter,
       heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies,
-      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id
+      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id, trace_context
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-      $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35
+      $1, $2, $3, $4::text::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
+      $23::text::jsonb, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34::text::jsonb, $35, $36::text::jsonb
     ) ON CONFLICT DO NOTHING
     RETURNING id
   `
@@ -3492,10 +3565,10 @@ export function insertDeadLetterJob (schema: string): string {
   return `
     INSERT INTO ${schema}.job (name, data, priority, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
       expire_seconds, singleton_key, group_id, group_tier, heartbeat_seconds,
-      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id)
-    SELECT $1, $2, $9, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
+      source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id, trace_context)
+    SELECT $1, $2::text::jsonb, $9, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds,
       q.expire_seconds, $8, $10, $11, q.heartbeat_seconds,
-      $4, $5, $6, $7, $3, COALESCE($12::uuid, $5::uuid)
+      $4, $5, $6, $7, $3::text::jsonb, COALESCE($12::uuid, $5::uuid), $13::text::jsonb
     FROM ${schema}.queue q WHERE q.name = $1
   `
 }
@@ -3521,7 +3594,7 @@ function redriveWhere (schema: string, table: string): string {
             AND k.state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}')
         )
         AND ($3::text IS NULL OR j.source_name = $3)
-        AND ($4::jsonb IS NULL OR j.data @> $4::jsonb)
+        AND ($4::text::jsonb IS NULL OR j.data @> $4::text::jsonb)
         AND ($5::timestamptz IS NULL OR j.created_on < $5)
         AND ($6::uuid[] IS NULL OR j.id = ANY($6::uuid[]))`
 }
@@ -3536,14 +3609,14 @@ function redriveWhere (schema: string, table: string): string {
 // Job-identity columns (priority, singleton_key, group_id, group_tier) are carried over instead.
 const REDRIVE_INSERT_COLUMNS = `(id, name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
        expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
-       heartbeat_seconds, dead_letter, source_root_id)`
+       heartbeat_seconds, dead_letter, source_root_id, trace_context)`
 
 function redriveInsertValues (schema: string, newId: string, destination: string): string {
   return `${newId}, COALESCE(${destination}, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
       q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.job_now(), ${schema}.job_now(),
       ${schema}.job_now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
       m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter,
-      COALESCE(m.source_root_id, m.source_id)`
+      COALESCE(m.source_root_id, m.source_id), m.trace_context`
 }
 
 // What a job that could not be re-created becomes: failed, in place, in the dead letter queue, with
@@ -3720,13 +3793,15 @@ export function deletion (schema: string, table: string, queues: string[], noAdv
   return locked(schema, sql, table + 'deletion', noAdvisoryLocks)
 }
 
+// start_after moves up to now, as in resumeJobs.
 export function retryJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.job
       SET state = '${JOB_STATES.retry}',
         retry_limit = retry_limit + 1,
-        completed_on = NULL
+        completed_on = NULL,
+        start_after = GREATEST(start_after, ${schema}.job_now())
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.failed}'
@@ -4089,8 +4164,11 @@ const EMPTY_BINS = `'{${new Array(LATENCY_SLOTS).fill('NULL').join(',')}}'::int[
 // cost twice as much: measured on 2.5M rows, +55 ms on a ~560 ms pass packed, +80 to 120 ms apart.
 const LATENCY_PACK = 64
 
-const waitSeconds = 'extract(epoch from (j.started_on - GREATEST(j.created_on, j.start_after)))'
-const runSeconds = 'extract(epoch from (j.completed_on - j.started_on))'
+// date_part rather than extract: extract returns numeric on PostgreSQL 14 and later, and the numeric
+// arithmetic on every finished job was a large share of the histograms' cost. date_part is float8
+// on every supported backend, as the bin math needs anyway.
+const waitSeconds = "date_part('epoch', (j.started_on - GREATEST(j.created_on, j.start_after)))"
+const runSeconds = "date_part('epoch', (j.completed_on - j.started_on))"
 
 // The slot is width_bucket's, written out: CockroachDB's width_bucket takes decimals, not float8.
 // ln(t / 10 ms) over ln(√2), plus one, clamped to slot 0 below 10 ms and the last slot past the end.
@@ -4102,19 +4180,29 @@ function latencyBin (seconds: string): string {
   return `LEAST(GREATEST(${raw}, 0), ${LATENCY_SLOTS - 1})`
 }
 
-// Unpacks the aggregate's array into one histogram: every slot in slot order, null where no job
-// landed. A pass in which nothing finished still writes the 48 slots (unnest of a null array is no
-// rows, and the left join keeps every slot), so a pass that counted says so, as its deltas do.
-// floor() of a float division rather than integer division, which CockroachDB answers in decimal.
+// The aggregate's array is unnested once per queue, in a lateral join after the aggregate, and
+// counted by packed value: at most LATENCY_SLOTS² rows (ps, ns) however many jobs finished. Both
+// histograms are read from those, so the per-job array is walked once rather than once each.
+function latencyCounts (packed: string): string {
+  return `LEFT JOIN LATERAL (
+        SELECT array_agg(g.p) AS ps, array_agg(g.n) AS ns
+        FROM (SELECT p, count(*)::int AS n FROM unnest(${packed}) AS u(p) GROUP BY p) g
+      ) latency ON true`
+}
+
+// One histogram from latencyCounts: every slot in slot order, null where no job landed. A pass in
+// which nothing finished still writes the 48 slots (unnest of a null array is no rows, and the left
+// join keeps every slot), so a pass that counted says so, as its deltas do. floor() of a float
+// division rather than integer division, which CockroachDB answers in decimal.
 function latencySlotOf (which: 'wait' | 'run'): string {
   return which === 'wait' ? `floor(p / ${LATENCY_PACK}.0)::int` : `(p % ${LATENCY_PACK})::int`
 }
 
-function latencyHistogram (packed: string, which: 'wait' | 'run'): string {
+function latencyHistogram (which: 'wait' | 'run'): string {
   return `(SELECT array_agg(c.n ORDER BY s.slot)
           FROM generate_series(0, ${LATENCY_SLOTS - 1}) AS s(slot)
-            LEFT JOIN (SELECT ${latencySlotOf(which)} AS slot, count(*)::int AS n
-                       FROM unnest(${packed}) AS u(p) GROUP BY 1) c ON c.slot = s.slot)`
+            LEFT JOIN (SELECT ${latencySlotOf(which)} AS slot, sum(n)::int AS n
+                       FROM unnest(latency.ps, latency.ns) AS u(p, n) GROUP BY 1) c ON c.slot = s.slot)`
 }
 
 // Every count the monitor keeps, from one pass over the queue's table.
@@ -4161,8 +4249,8 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         "createdDelta",
         "completedDelta",
         "failedDelta",
-        ${latencyHistogram('"latencyBins"', 'wait')} as "waitBins",
-        ${latencyHistogram('"latencyBins"', 'run')} as "runBins",
+        ${latencyHistogram('wait')} as "waitBins",
+        ${latencyHistogram('run')} as "runBins",
         "readyOldestSeconds",
         COALESCE("recount" > "settled", false) as "trueUp",`,
         counts: `
@@ -4182,9 +4270,10 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
             SELECT q.name, q.delta_on, a.h, t.top, t.settled
             FROM ${schema}.queue q${trueUpSettled(schema, 'q', window.trueUpMax)}
             WHERE q.name = ANY($1::text[])
-          ) q ON q.name = j.name`
+          ) q ON q.name = j.name`,
+        lateral: latencyCounts('stats."latencyBins"')
       }
-    : { select: '', counts: '', join: '' }
+    : { select: '', counts: '', join: '', lateral: '' }
 
   return {
     text: `
@@ -4214,6 +4303,7 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
           WHERE j.name = ANY($1::text[])
           GROUP BY 1
       ) stats
+      ${counters.lateral}
   `,
     values: [queues]
   }
@@ -4472,7 +4562,7 @@ export function findJobs (schema: string, table: string, options: { queued: bool
 
   if (byData) {
     ++paramIndex
-    whereConditions.push(`AND data @> $${paramIndex}`)
+    whereConditions.push(`AND data @> $${paramIndex}::text::jsonb`)
   }
 
   if (queued) {
@@ -4847,6 +4937,35 @@ function manifestSection (partitioned: boolean) {
 
 function applyManifestSchema (text: string, schema: string): string {
   return text.split(schemaManifest.schemaToken).join(schema)
+}
+
+// The argument types in a manifest function's definition, without names or defaults, as DROP FUNCTION
+// takes them: "create_queue(queue_name text, options jsonb)" gives "text, jsonb".
+function functionArgTypes (def: string): string {
+  const args = def.slice(def.indexOf('(') + 1, def.indexOf(')'))
+  return args.split(',')
+    .map(arg => arg.trim().replace(/\s+DEFAULT\s+.*$/i, ''))
+    .filter(Boolean)
+    .map(arg => arg.split(/\s+/).slice(1).join(' '))
+    .join(', ')
+}
+
+// Removes everything create() installs, for a schema pg-boss shares with other objects; a schema of
+// its own is simply dropped. Read from the manifest, so it covers whatever this version installs.
+// Dropping job takes every queue's own table with it: a partitioned queue's table is a partition of
+// job, and without partitioning every queue's jobs are in job itself. queue_stats' daily partitions
+// go with queue_stats the same way.
+export function uninstall (schema: string, partitioned = true): string {
+  const section = manifestSection(partitioned)
+  const tables = section.tables.map(table => `${schema}.${table}`).join(', ')
+  const functions = section.functions.map(fn => `${schema}.${fn.name}(${functionArgTypes(fn.def)})`).join(', ')
+
+  // Functions first: CockroachDB records a function as depending on the tables its body names.
+  return [
+    `DROP FUNCTION IF EXISTS ${functions};`,
+    `DROP TABLE IF EXISTS ${tables};`,
+    `DROP TYPE IF EXISTS ${schema}.job_state;`
+  ].join('\n')
 }
 
 // The job_state enum values in declaration order, from the manifest (both sections carry the same enum).
@@ -5252,12 +5371,12 @@ export function getXminHorizon (lastVacuum: Date, sources: readonly XminHorizonS
   // query it is follows from pid, application_name and role, looked up live where the catalog's own
   // privilege rules still apply.
   //
-  // selfApplicationName is what makes "ours or theirs" answerable. Db sets application_name to
-  // 'pgboss' on the pool it owns, so a holder matching this connection's own value is pg-boss doing
-  // it to itself - the monitor's own aggregate, most likely - which has a completely different fix
-  // from an external reporting tool holding a transaction open. It is compared rather than hardcoded
-  // because an adapter-supplied pool sets whatever the host app chose, and claiming that is
-  // definitely pg-boss would be a guess.
+  // selfApplicationName is what makes "ours or theirs" answerable. pg-boss names the pool it owns
+  // 'pgboss', or 'pgboss:<id>' for a registered instance, so a holder matching this connection's own
+  // value is pg-boss doing it to itself - the monitor's own aggregate, most likely - which has a
+  // completely different fix from an external reporting tool holding a transaction open. It is
+  // compared rather than hardcoded because an adapter-supplied pool sets whatever the host app
+  // chose, and claiming that is definitely pg-boss would be a guess.
   const backendIdentity = sources.includes('backends')
     ? `,
       (SELECT to_jsonb(h) FROM (

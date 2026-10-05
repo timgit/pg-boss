@@ -1,3 +1,5 @@
+import type { MeterProvider, TextMapPropagator, TracerProvider } from '@opentelemetry/api'
+
 export type JobStates = {
   created: 'created',
   retry: 'retry',
@@ -139,13 +141,12 @@ export interface SchedulingOptions {
  * Backends fall into three kinds, standard, distributed, and embedded:
  * - `postgres` (default): standard PostgreSQL, all flags off.
  * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, `noListenNotify`, and all four `no*` schema gates.
- * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`. Supports cluster-wide
- *   LISTEN/NOTIFY (early access, off by default, enable the `ysql_yb_enable_listen_notify` flag).
+ * - `yugabytedb`: deprecated and removed in the next major, since YugabyteDB is not supported.
  * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local); LISTEN/NOTIFY works on the coordinator.
  * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
  *
- * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
- * supported. @see https://pgboss.io/database-backends
+ * YugabyteDB, Spanner, Aurora DSQL, and other targets are not supported.
+ * @see https://pgboss.io/database-backends
  */
 export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite'
 
@@ -284,7 +285,7 @@ export interface QueueStats {
   /**
    * Wait times of the jobs that finished in the deltas' window, as a histogram of 48 counts in
    * log-spaced bins; sum histograms to read a percentile over any span. Null wherever the deltas are.
-   * @see https://pgboss.io/api/queues#latency-histograms
+   * @see https://pgboss.io/api/queues#getqueues-names
    */
   waitBins: number[] | null;
   /** Run times of the same jobs, in the same bins as `waitBins`. */
@@ -293,7 +294,7 @@ export interface QueueStats {
   readyOldestSeconds: number | null;
   /**
    * With the `percentiles` option: one entry per percentile asked for, read from `waitBins` and `runBins`.
-   * @see https://pgboss.io/api/queues#latency-histograms
+   * @see https://pgboss.io/api/queues#getqueuestats-name-options
    */
   percentiles?: QueueStatsPercentile[];
   capturedOn: Date;
@@ -341,7 +342,7 @@ export interface QueueStatsOptions {
   /**
    * Percentiles to read from each snapshot's wait and run histograms, as percents from 1 to 100, such
    * as `[50, 95, 99.9]`. Each snapshot then carries a `percentiles` list, one entry per distinct value.
-   * @see https://pgboss.io/api/queues#latency-histograms
+   * @see https://pgboss.io/api/queues#getqueuestats-name-options
    */
   percentiles?: number[];
   /**
@@ -565,6 +566,38 @@ export interface InstanceOptions {
   instanceHeartbeatSeconds?: number;
 }
 
+export interface OpenTelemetryOptions {
+  /**
+   * Set to false to emit no spans or metrics and store no trace context on jobs.
+   * @default true
+   */
+  enabled?: boolean;
+  /**
+   * Store the trace context active at `send()` on the job, so the span that processes it continues
+   * the producer's trace. With the SDK's default propagators this stores W3C Baggage as well as the
+   * trace id; pass `propagator` to store less.
+   * @default false
+   * @see https://pgboss.io/opentelemetry#options
+   */
+  propagateContext?: boolean;
+  /**
+   * Propagator that writes the trace context stored on a job and reads it back when the job is
+   * processed, for example `new W3CTraceContextPropagator()` to store trace ids only.
+   * @default the propagator registered globally with the OpenTelemetry API
+   */
+  propagator?: TextMapPropagator;
+  /**
+   * Tracer provider to create pg-boss spans with.
+   * @default the global tracer provider
+   */
+  tracerProvider?: TracerProvider;
+  /**
+   * Meter provider to create pg-boss instruments with.
+   * @default the global meter provider
+   */
+  meterProvider?: MeterProvider;
+}
+
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions, InstanceOptions {
   /**
    * Source of time and timers for this instance. Defaults to the system clock (`Date.now` and the
@@ -583,6 +616,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @default false
    */
   useListenNotify?: boolean;
+  /**
+   * OpenTelemetry tracing and metrics. On by default and free until an OpenTelemetry SDK is
+   * registered: without one every span and instrument is a no-op.
+   * @see https://pgboss.io/opentelemetry
+   */
+  openTelemetry?: OpenTelemetryOptions;
   /** @internal */
   __test__warn_slow_query?: boolean;
   /** @internal */
@@ -857,7 +896,13 @@ export interface RedrivePreview {
   unroutable: number;
 }
 
-export type InsertOptions = ConnectionOptions & { returnId?: boolean }
+export type InsertOptions = ConnectionOptions & {
+  /**
+   * Resolve to the ids of the inserted jobs instead of `null`. Defaults to `false`.
+   * @see https://pgboss.io/api/jobs#insert-name-job-options
+   */
+  returnId?: boolean
+}
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
@@ -1424,6 +1469,11 @@ export interface InstanceWorker {
   lastFetchedOn: string | null;
   lastJobEndedOn: string | null;
   lastErrorOn: string | null;
+  /**
+   * The other `work()` options this call set; one left at its default is absent.
+   * @see https://pgboss.io/api/ops#getinstances
+   */
+  options?: Partial<WorkOptions>;
 }
 
 /**
@@ -1497,6 +1547,15 @@ export interface Instance {
   live: boolean;
 }
 
+export interface StartOptions {
+  /**
+   * How many times to try before rejecting with the last error, waiting 1 second after the first
+   * failure and doubling up to 30 seconds between tries. Default 1.
+   * @see https://pgboss.io/api/ops#start-options
+   */
+  attempts?: number;
+}
+
 export interface StopOptions {
   close?: boolean;
   graceful?: boolean;
@@ -1533,7 +1592,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry'
 
 export interface PersistedWarning {
   id: number;

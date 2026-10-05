@@ -162,6 +162,22 @@ describe('retries', function () {
     expect(retryLimit === 1).toBeTruthy()
   })
 
+  it('manual retry moves startAfter up to the retry, so the wait counts from then', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+    assertTruthy(jobId)
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    await clock.tick(60_000)
+    await ctx.boss.retry(ctx.schema, jobId)
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    assertTruthy(job)
+    expect(job.startAfter.getTime()).toBe(clock.now())
+  })
+
   it('manual retry clears completed_on so retention deletion is not mis-triggered', async function () {
     // fail() stamps completed_on; retry() must null it again (like resume does). If it lingers, a
     // queue with deleteAfterSeconds can delete the job while it sits queued or active mid-flight.

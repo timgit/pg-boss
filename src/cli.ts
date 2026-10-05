@@ -51,7 +51,7 @@ Options:
   --password, -p <pass>   Database password
   --connection-string     Full connection string (overrides other connection options)
   --ssl                   Enable SSL connection
-  --backend <profile>     Database backend: postgres (default), cockroachdb, yugabytedb, citus.
+  --backend <profile>     Database backend: postgres (default), cockroachdb, citus.
                           Non-postgres backends need this to emit schema they accept.
   --dry-run               Output SQL without executing (for plans and reindex commands)
   --force                 Rebuild every job index, not just the bloated ones (reindex)
@@ -85,6 +85,7 @@ Examples:
   pg-boss migrate --schema my_schema
   pg-boss create --connection-string postgres://user:pass@localhost/db
   pg-boss plans migrate --dry-run
+  pg-boss plans uninstall --schema my_schema
   pg-boss migrate --backend cockroachdb --connection-string postgres://root@localhost:26257/db
   pg-boss version
   PGBOSS_DATABASE_URL=postgres://localhost/mydb pg-boss migrate
@@ -784,9 +785,15 @@ async function cmdPlans (args: ReturnType<typeof parseCliArgs>): Promise<void> {
       console.log(migrationStore.rollback(schema, schemaVersion, migrationStore.getAllForConfig(config), config.noAdvisoryLocks))
       break
 
+    case 'uninstall':
+      console.log('-- SQL to remove every pg-boss object from a schema it shares with other objects.')
+      console.log(`-- If pg-boss has the schema to itself, DROP SCHEMA ${schema} CASCADE does the same.`)
+      console.log(plans.uninstall(schema, !config.noTablePartitioning))
+      break
+
     default:
       console.error(`Unknown plans subcommand: ${subCommand}`)
-      console.error('Available: create, migrate, rollback')
+      console.error('Available: create, migrate, rollback, uninstall')
       process.exit(1)
   }
 }

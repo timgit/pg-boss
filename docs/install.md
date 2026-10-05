@@ -20,23 +20,12 @@ If the CREATE privilege is not available or desired, you have two options:
 
 # Database uninstall
 
-If you need to uninstall pg-boss from a database, just run the following command.
+To remove pg-boss from a database, drop its schema:
 
 ```sql
-DROP SCHEMA $1 CASCADE
+DROP SCHEMA pgboss CASCADE
 ```
 
-Where `$1` is the name of your schema if you've customized it.  Otherwise, the default schema is `pgboss`.
+Use your schema's name in place of `pgboss` if you set one.
 
-NOTE: If an existing schema was used during installation, created objects will need to be removed manually using the following commands.
-
-```sql
-DROP TABLE pgboss.version;
-DROP TABLE pgboss.job;
-DROP TYPE pgboss.job_state;
-DROP TABLE pgboss.subscription;
-DROP TABLE pgboss.schedule;
-DROP FUNCTION pgboss.create_queue;
-DROP FUNCTION pgboss.delete_queue;
-DROP TABLE pgboss.queue;
-```
+If pg-boss was installed into an existing schema that also holds other objects, dropping the schema would remove those too. Drop only pg-boss's own objects instead, with the SQL from [`pg-boss plans uninstall --schema <name>`](./cli#plans) or [`getUninstallPlans()`](./api/utils#getuninstallplans-schema-options).

@@ -158,6 +158,150 @@ describe('upsert', function () {
     expect(jobs[0].data).toEqual({ body: 'v2' })
   })
 
+  // job_i13 is what makes two upserts of one key agree when neither sees the other's job before it
+  // inserts. 20 keys, since the race showed on nearly every pair before it (issue #942).
+  it.each([
+    { policy: 'standard', partition: false },
+    { policy: 'singleton', partition: false },
+    { policy: 'key_strict_fifo', partition: false },
+    { policy: 'standard', partition: true }
+  ] as const)('leaves one queued job per key after concurrent upserts ($policy, partition: $partition)', async function ({ policy, partition }) {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.createQueue(ctx.schema, { policy, partition })
+
+    const keys = Array.from({ length: 20 }, (_, i) => `k${i}`)
+
+    for (const singletonKey of keys) {
+      const results = await Promise.all([
+        ctx.boss.upsert(ctx.schema, { v: 'a' }, { singletonKey }),
+        ctx.boss.upsert(ctx.schema, { v: 'b' }, { singletonKey })
+      ])
+      // One inserts and the other edits that job, in either order.
+      expect(results.map(r => r.inserted).sort()).toEqual([0, 1])
+      expect(new Set(results.flatMap(r => r.jobs)).size).toBe(1)
+    }
+
+    const jobs = await ctx.boss.findJobs(ctx.schema, { queued: true })
+    expect(jobs.map(job => job.singletonKey).sort()).toEqual([...keys].sort())
+  })
+
+  it('leaves send() free to queue several jobs with one key on a standard queue', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { singletonKey: 'k' })
+    await ctx.boss.send(ctx.schema, null, { singletonKey: 'k' })
+    // insert() cannot set upsert_by_key either, under either spelling.
+    await ctx.boss.insert(ctx.schema, [{ singletonKey: 'k' }, { singletonKey: 'k', upsertByKey: true, upsert_by_key: true } as any])
+
+    expect(await ctx.boss.findJobs(ctx.schema, { key: 'k', queued: true })).toHaveLength(4)
+  })
+
+  it('lets a failed upserted job go back to retry beside a newer upserted job', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const first = await ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })
+    const [fetched] = await ctx.boss.fetch(ctx.schema)
+    expect(fetched.id).toBe(first.jobs[0])
+
+    const second = await ctx.boss.upsert(ctx.schema, { v: 2 }, { singletonKey: 'k' })
+    expect(second.inserted).toBe(1)
+
+    await ctx.boss.fail(ctx.schema, fetched.id)
+
+    expect((await ctx.boss.getJobById(ctx.schema, fetched.id))?.state).toBe('retry')
+    expect(await ctx.boss.findJobs(ctx.schema, { key: 'k', queued: true })).toHaveLength(2)
+  })
+
+  it('resumes a cancelled upserted job beside a newer upserted job with the same key', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const first = await ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })
+    await ctx.boss.cancel(ctx.schema, first.jobs[0])
+    const second = await ctx.boss.upsert(ctx.schema, { v: 2 }, { singletonKey: 'k' })
+    expect(second.inserted).toBe(1)
+
+    expect(await ctx.boss.resume(ctx.schema, first.jobs[0])).toMatchObject({ affected: 1 })
+    expect(await ctx.boss.findJobs(ctx.schema, { key: 'k', queued: true })).toHaveLength(2)
+  })
+
+  // Postgres runs these at READ COMMITTED, where an upsert never fails with 40001, so a db that fails
+  // the upsert's update on cue stands in for CockroachDB restarting the transaction.
+  describe('serialization failure', function () {
+    const isUpsertUpdate = (text: string) => text.includes("job.singleton_key = o.data->>'singletonKey'")
+
+    async function flakyDb (failures: number, code = '40001') {
+      const db = await helper.getDb()
+      let calls = 0
+
+      return {
+        get calls () { return calls },
+        executeSql: async (text: string, values?: unknown[]) => {
+          if (isUpsertUpdate(text) && ++calls <= failures) {
+            throw Object.assign(new Error('restart transaction'), { code })
+          }
+          return db.executeSql(text, values)
+        },
+        close: () => helper.isPglite ? Promise.resolve() : db.close()
+      }
+    }
+
+    it('runs the upsert again after a serialization failure', async function () {
+      const db = await flakyDb(1)
+
+      try {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, db })
+        const result = await ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })
+
+        expect(result.inserted).toBe(1)
+        expect(db.calls).toBe(2)
+      } finally {
+        await ctx.boss?.stop({ graceful: false })
+        await db.close()
+      }
+    })
+
+    it('gives up after three serialization failures', async function () {
+      const db = await flakyDb(Infinity)
+
+      try {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, db })
+
+        await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })).rejects.toMatchObject({ code: '40001' })
+        expect(db.calls).toBe(3)
+      } finally {
+        await ctx.boss?.stop({ graceful: false })
+        await db.close()
+      }
+    })
+
+    it('does not run the upsert again for any other error', async function () {
+      const db = await flakyDb(Infinity, '23505')
+
+      try {
+        ctx.boss = await helper.start({ ...ctx.bossConfig, db })
+
+        await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })).rejects.toMatchObject({ code: '23505' })
+        expect(db.calls).toBe(1)
+      } finally {
+        await ctx.boss?.stop({ graceful: false })
+        await db.close()
+      }
+    })
+
+    it('leaves a serialization failure in a db passed to upsert() to the caller', async function () {
+      const db = await flakyDb(Infinity)
+
+      try {
+        ctx.boss = await helper.start(ctx.bossConfig)
+
+        await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k', db })).rejects.toMatchObject({ code: '40001' })
+        expect(db.calls).toBe(1)
+      } finally {
+        await db.close()
+      }
+    })
+  })
+
   describe('object API', function () {
     it('should insert then update a job passed as a single object argument', async function () {
       ctx.boss = await helper.start(ctx.bossConfig)

@@ -6,6 +6,11 @@ Pub-sub in pg-boss is a light abstraction over creating more than 1 job into mul
 
 Publish an event with optional data and options (Same as `send()` args). Looks up all subscriptions for the event and sends to each queue.
 
+A subscribed queue deleted while `publish()` is running is skipped, unless the send ran on a `db` you passed: a
+failed statement may have aborted your transaction, so it is reported. Other send failures reject with an
+`AggregateError` naming each failed queue after all sends settle. Outside a caller-owned transaction, successful
+deliveries remain, so retrying the publication can duplicate them.
+
 ```js
 // creates a job in each queue subscribed to 'user.signed-up'
 await boss.publish('user.signed-up', { userId: 123 })

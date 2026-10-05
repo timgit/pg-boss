@@ -314,6 +314,31 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
     expect(stored.message).toContain("another pg-boss instance's connection (application_name 'pgboss:0f1e2d3c'")
   })
 
+  it('counts an unregistered pg-boss instance as pg-boss during a rolling upgrade', async function () {
+    // An instance before the registry, or with registerInstance off, names its connections 'pgboss'.
+    const boss = await withStagedHolder({
+      backendHolder: { pid: 4246, applicationName: 'pgboss', userName: 'app', state: 'active', age: 900, xactSeconds: 30 },
+      selfApplicationName: 'pgboss:a1b2c3d4'
+    })
+
+    const stored = await provoke(boss)
+
+    expect(stored.data.self).toBe(true)
+    expect(stored.message).toContain("another pg-boss instance's connection (application_name 'pgboss'")
+  })
+
+  it('does not count a pg-boss name as pg-boss when this connection is named by the host app', async function () {
+    const boss = await withStagedHolder({
+      backendHolder: { pid: 4247, applicationName: 'pgboss', userName: 'app', state: 'active', age: 900, xactSeconds: 30 },
+      selfApplicationName: 'billing-api'
+    })
+
+    const stored = await provoke(boss)
+
+    expect(stored.data.self).toBe(false)
+    expect(stored.message).toContain("another application (application_name 'pgboss'")
+  })
+
   it('will not guess when the holder set no application_name', async function () {
     const boss = await withStagedHolder({
       backendHolder: { pid: 4244, applicationName: '', userName: 'app', state: null, age: 900, xactSeconds: null },

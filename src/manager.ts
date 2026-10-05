@@ -11,15 +11,27 @@ import * as plans from './plans.ts'
 import { percentile } from './latency.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
-import { resolveWithinSeconds } from './tools.ts'
+import { delay, resolveWithinSeconds } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
 import { JobSpy, type JobSpyInterface } from './spy.ts'
+import Telemetry, { type TraceCarrier } from './telemetry.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
 
 // postgres: current transaction is aborted, commands ignored until end of transaction block
 const TRANSACTION_ABORTED = '25P02'
+
+// serialization_failure, which CockroachDB raises for a transaction it has to restart.
+const SERIALIZATION_FAILURE = '40001'
+const UPSERT_ATTEMPTS = 3
+
+const QUEUE_NOT_FOUND = 'PGBOSS_QUEUE_NOT_FOUND'
+
+// How long deleteQueue() keeps trying for the locks a queue with its own table needs: 25 ms doubling
+// to 400 ms between tries, about 3 seconds in all.
+const DELETE_QUEUE_ATTEMPTS = 12
+const DELETE_QUEUE_MAX_DELAY_MS = 400
 
 // pg's own default when the pool size is not configured. Used to tell a transactional worker how
 // much room it actually has, since each handler in flight holds a connection of its own.
@@ -130,8 +142,6 @@ const STATS_COUNT_FIELDS = [
   'totalCount'
 ] as const
 
-// The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
-// getQueueStats.
 // A snapshot's histogram, LATENCY_SLOTS counts from a recorded pass or added up over a bucket, with
 // the slots stored as null (no job landed there) handed out as 0. Null when no pass counted it; all
 // zeros when one did and nothing finished. CockroachDB hands integers over as strings.
@@ -139,6 +149,8 @@ function toBins (bins: unknown): number[] | null {
   return Array.isArray(bins) ? bins.map(n => (n == null ? 0 : Number(n))) : null
 }
 
+// The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
+// getQueueStats.
 const STATS_DELTA_FIELDS = [
   'completedDelta',
   'failedDelta',
@@ -184,6 +196,23 @@ function rethrowWriteError (err: any): never {
   throw err
 }
 
+// The foreign key a job insert broke, from the error's constraint field where the driver reports one
+// and from the message otherwise, and the key value it could not find. Bun.SQL carries the SQLSTATE
+// in errno.
+function brokenForeignKey (err: any): { constraint?: string, value?: string } | undefined {
+  if (err?.code !== plans.PG_ERROR.foreignKeyViolation && err?.errno !== plans.PG_ERROR.foreignKeyViolation) return
+
+  const constraint = err.constraint ?? err.constraint_name ?? /foreign key constraint "(\w+)"/.exec(err.message)?.[1]
+  const value = /\)=\('?(.*?)'?\) is not present/.exec(err.detail ?? err.message)?.[1]
+
+  return { constraint, value }
+}
+
+// For a json value read back from a row and bound again behind `::text::jsonb`. Null stays SQL NULL.
+function toJsonText (value: unknown): string | null {
+  return value == null ? null : JSON.stringify(value)
+}
+
 class Manager extends EventEmitter implements types.EventsMixin {
   events = events
   // Warn once per option per instance, not once per fetch.
@@ -220,6 +249,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
   #localGroupMaxLimit: Map<string, number>
+  #telemetry: Telemetry
+  // The trace context each fetched job was sent with, kept off the job object handed to the handler.
+  #traceContexts: WeakMap<object, TraceCarrier>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -240,6 +272,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
     this.#localGroupMaxLimit = new Map()
+    this.#telemetry = new Telemetry(config.openTelemetry, config.schema, () => this.queues)
+    this.#traceContexts = new WeakMap()
   }
 
   getSpy<T = object> (name: string): JobSpyInterface<T> {
@@ -399,14 +433,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // (each output carried per-id via a JSON recordset), so batch size never drives the statement
   // count. Any batch job the handler omits (or returns with an invalid shape) is failed with a
   // descriptive error so it retries / dead-letters per queue config.
-  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<void> {
+  // Resolves with the error the whole batch was failed with, or undefined.
+  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<Error | undefined> {
     if (!Array.isArray(result)) {
       // The handler opted into perJobResults but did not return an array: a contract violation.
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
       await this.fail(name, jobs, err)
       await this.#trackJobsFailed(name, jobs, err)
-      return
+      return err
     }
 
     // Index the handler's dispositions by job id, keeping only valid entries that reference a job
@@ -440,9 +475,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const items = (entries: { job: types.Job<T>, output: unknown }[]) =>
       entries.map(({ job, output }) => ({ id: job.id, retryCount: job.retryCount, output }))
 
-    const completedIds = completed.length > 0 ? await this.#completeWithOutputs(name, items(completed)) : null
-    const failedIds = failed.length > 0 ? await this.#failWithOutputs(name, items(failed)) : null
-    const deadLetteredIds = deadLettered.length > 0 ? await this.#failWithOutputs(name, items(deadLettered), true) : null
+    const ids = (entries: { job: types.Job<T> }[]) => entries.map(({ job }) => job.id)
+
+    const completedIds = completed.length > 0
+      ? await this.#telemetry.settle('complete', name, ids(completed), () => this.#completeWithOutputs(name, items(completed)))
+      : null
+    const failedIds = failed.length > 0
+      ? await this.#telemetry.settle('fail', name, ids(failed), () => this.#failWithOutputs(name, items(failed)))
+      : null
+    const deadLetteredIds = deadLettered.length > 0
+      ? await this.#telemetry.settle('fail', name, ids(deadLettered), () => this.#failWithOutputs(name, items(deadLettered), true))
+      : null
 
     // Only the jobs each statement actually settled: the attempt fence leaves a job whose claim
     // lapsed alone, and recording it would tell a spy it settled when another attempt holds it.
@@ -580,6 +623,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
    * same as any other worker's. Because the claim is outside the transaction, the jobs stay
    * visibly `active` throughout, which is what keeps heartbeats, `expireInSeconds`, and another
    * instance's supervisor working on them as usual.
+   *
+   * Resolves with the error the batch was failed with, or undefined when it completed.
    */
   async #processJobs<T> (
     name: string,
@@ -590,7 +635,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     perJobResults = false,
     transactional = false,
     transactionTimeoutSeconds?: number
-  ): Promise<void> {
+  ): Promise<unknown> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
     // Minimum, not maximum: heartbeatSeconds is per-job, and failJobsByHeartbeat fails a job once
@@ -657,6 +702,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     let completedAffected = 0
     let failedError: any
     let didFail = false
+    // A perJobResults batch #settlePerJob failed as a whole. Kept apart from failedError, since
+    // #settlePerJob has already failed and tracked those jobs itself.
+    let perJobError: Error | undefined
     // Only for a transactional worker, and only from the begin below until it settles. rollback()
     // is idempotent, so the catch can settle it without tracking whether the commit got there
     // first.
@@ -694,6 +742,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       }
 
+      // A fetch or transaction begin can finish after stop() has exhausted its active-handler grace.
+      if (worker?.graceExpired) {
+        throw new Error('pg-boss shut down before the handler started')
+      }
+
       const handling = transaction
         ? (callback as unknown as types.TransactionalWorkHandler<T>)(jobs, untracked(transaction.db))
         : callback(jobs)
@@ -716,7 +769,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // #settlePerJob settles each job individually and does its own (synchronous,
         // lookup-free) spy tracking via #trackJobsSettled, so the deferred tracker below
         // is skipped for this path.
-        await this.#settlePerJob(name, jobs, result)
+        perJobError = await this.#settlePerJob(name, jobs, result)
       } else {
         // Read out before the completion below, which goes through the same complete() and would
         // otherwise record pg-boss's own settle as one the handler made.
@@ -774,6 +827,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
       }
     }
+
+    return didFail ? (failedError ?? new Error('handler rejected without a reason')) : perJobError
   }
 
   /**
@@ -935,6 +990,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   async start () {
     this.stopped = false
+    if (this.#telemetry.enabled) {
+      const { rows } = await this.db.executeSql(plans.currentDatabase())
+      this.#telemetry.setDatabase(rows[0].name)
+    }
     this.queueCacheInterval = this.config.clock.setInterval(() => this.onCacheQueues({ emit: true }), this.config.queueCacheIntervalSeconds! * 1000)
     this.wipInterval = this.config.clock.setInterval(() => {
       const now = this.config.clock.now()
@@ -949,6 +1008,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }, 2000)
     await this.onCacheQueues()
+    this.#telemetry.observeQueues()
   }
 
   async onCacheQueues ({ emit = false } = {}) {
@@ -956,6 +1016,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       assert(!this.config.__test__throw_queueCache, 'test error')
       const queues = await this.getQueues()
       this.queues = queues.reduce<Record<string, types.QueueResult>>((acc, i) => { acc[i.name] = i; return acc }, {})
+      this.#telemetry.refreshInstruments()
     } catch (error: any) {
       emit && this.emit(events.error, { ...error, message: error.message, stack: error.stack })
     }
@@ -973,7 +1034,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     queue = await this.getQueue(name)
 
     if (!queue) {
-      throw new Error(`Queue ${name} does not exist`)
+      throw Object.assign(new Error(`Queue ${name} does not exist`), { code: QUEUE_NOT_FOUND })
     }
 
     this.queues[name] = queue
@@ -985,11 +1046,66 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (this.queues) delete this.queues[name]
   }
 
+  // A job insert is what notices a queue deleted after this instance cached it: q_fkey fails for a
+  // queue in the shared table, and a queue with its own table (partition: true) fails on the dropped
+  // table (42P01), dlq_fkey for its dead letter queue. Each is rewritten into the error a missing
+  // queue gets up front, and a missing queue loses its cache entry so the next call fails before
+  // reaching the database. `names` are the queues the statement wrote to.
+  async #rethrowInsertError (err: any, names: string[], owned: boolean): Promise<never> {
+    const broken = brokenForeignKey(err)
+
+    if (broken?.constraint === 'q_fkey') {
+      this.#throwQueueNotFound(broken.value && names.includes(broken.value) ? [broken.value] : names, err, owned)
+    }
+
+    // A missing table can also mean a queue deleted and created again elsewhere under its own table, and
+    // a partition constraint (23514) one created again with its own table while this instance still
+    // writes to the shared one. So the queues are read again: a gone one is reported as missing, and the
+    // others take their current row, so the next call writes to the right table. A failed read leaves
+    // the original error.
+    if (err?.code === plans.PG_ERROR.undefinedTable || err?.code === plans.PG_ERROR.checkViolation) {
+      const queues = await Promise.all(names.map(name => this.getQueue(name))).catch(() => null)
+
+      if (queues) {
+        const missing = names.filter((name, i) => !queues[i])
+        if (missing.length) this.#throwQueueNotFound(missing, err, owned)
+        queues.forEach(queue => { if (queue && this.queues) this.queues[queue.name] = queue })
+      }
+    }
+
+    if (broken?.constraint === 'dlq_fkey') {
+      throw new Error(broken.value ? `Dead letter queue ${broken.value} does not exist` : 'Dead letter queue does not exist', { cause: err })
+    }
+
+    rethrowWriteError(err)
+  }
+
+  // Coded, so publish() skips it, only when the statement ran on pg-boss's own connection: a failed
+  // statement in a caller's transaction has aborted it, and that has to reach the caller.
+  #throwQueueNotFound (missing: string[], cause: unknown, owned: boolean): never {
+    missing.forEach(name => this.#evictQueueCache(name))
+    throw Object.assign(new Error(`Queue ${missing.join(', ')} does not exist`, { cause }), owned ? { code: QUEUE_NOT_FOUND } : {})
+  }
+
+  // Replaces a queue's cache entry with its row as it stands, rather than evicting it, so a queue
+  // created again or updated stays in the cache and the queue gauge while still picking up what
+  // changed: new options, or a table that changed under it (deleted and recreated elsewhere with
+  // another partition setting).
+  async #reloadQueueCache (name: string) {
+    if (!this.queues) return
+
+    const queue = await this.getQueue(name)
+
+    if (queue) this.queues[name] = queue
+    else this.#evictQueueCache(name)
+  }
+
   async stop () {
     this.stopped = true
 
     this.config.clock.clearInterval(this.queueCacheInterval)
     this.config.clock.clearInterval(this.wipInterval)
+    this.#telemetry.unobserveQueues()
 
     // offWork stops every worker on a queue, so iterate queue names rather than workers - otherwise
     // a localConcurrency of N re-stops all N workers N times and registers N pending cleanups.
@@ -1011,6 +1127,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // `stopped` all wait on this, so every worker has to be reached even when one of them cannot be
   // failed.
   async failWip () {
+    // Every worker is marked before any fail below is awaited, so a claim landing on a later worker
+    // while an earlier one's fail is in flight is refused too.
+    for (const worker of this.workers.values()) {
+      worker.graceExpired = true
+    }
+
     for (const worker of this.workers.values()) {
       const jobIds = worker.jobs.map(j => j.id)
 
@@ -1075,6 +1197,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       await this.#assertTransactionalHeartbeatSupported(name)
 
+      // A stop() during that await has already looked for workers, and would not see this one.
+      if (this.stopped) {
+        throw new Error('Workers are disabled. pg-boss is stopped')
+      }
+
       this.#warnOnTransactionalPoolHeadroom(localConcurrency)
     }
 
@@ -1116,7 +1243,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority })
+        return this.#fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority })
+      }
+
+      // Counted here rather than on fetch: jobs past localGroupConcurrency are restored, not delivered.
+      const processBatch = (batch: types.Job<ReqData>[], worker?: Worker) => {
+        this.#telemetry.consumed(name, batch.length)
+        return this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
+          this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds))
       }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
@@ -1131,7 +1265,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
-          await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds)
+          await processBatch(jobs, worker)
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
@@ -1147,7 +1281,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
             }
 
             if (allowed.length > 0) {
-              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds)
+              await processBatch(allowed, worker)
             }
           } finally {
             this.#trackLocalGroupEnd(name, groupedJobs)
@@ -1265,8 +1399,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return data
   }
 
-  hasPendingCleanups (): boolean {
-    return this.pendingOffWorkCleanups.size > 0
+  trackCleanup (cleanup: Promise<unknown>): void {
+    this.pendingOffWorkCleanups.add(cleanup)
+    const settled = () => { this.pendingOffWorkCleanups.delete(cleanup) }
+    cleanup.then(settled, settled)
+  }
+
+  // Resolves once no cleanup is pending, including any a settling cleanup registers, so a graceful
+  // stop() carries on the moment its last worker has stopped.
+  async settleCleanups (): Promise<void> {
+    while (this.pendingOffWorkCleanups.size > 0) {
+      await Promise.allSettled([...this.pendingOffWorkCleanups])
+    }
   }
 
   async offWork (name: string, options: types.OffWorkOptions = { wait: true }): Promise<void> {
@@ -1301,11 +1445,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       await cleanupPromise
       this.#cleanupLocalGroupTracking(name)
     } else {
-      this.pendingOffWorkCleanups.add(cleanupPromise)
-      cleanupPromise.finally(() => {
-        this.pendingOffWorkCleanups.delete(cleanupPromise)
-        this.#cleanupLocalGroupTracking(name)
-      })
+      this.trackCleanup(cleanupPromise)
+      cleanupPromise.finally(() => this.#cleanupLocalGroupTracking(name))
     }
   }
 
@@ -1357,6 +1498,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   publish (event: string, data?: object, options?: types.SendOptions): Promise<void>
   async publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     assert(event, 'Missing required argument')
+
+    // Counts no jobs of its own: each send() below records the job it creates.
+    await this.#telemetry.send('publish', event, 0, () => this.#publish(event, data, options))
+  }
+
+  async #publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     const sql = plans.getQueuesForEvent(this.config.schema)
     const { rows } = await this.db.executeSql(sql, [event])
 
@@ -1364,7 +1511,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const failures = results
       .map((result, index) => ({ result, name: rows[index].name }))
-      .filter((entry): entry is { result: PromiseRejectedResult, name: string } => entry.result.status === 'rejected')
+      // A deleted subscriber can still be in the selection, just as a cached send can insert no job.
+      .filter((entry): entry is { result: PromiseRejectedResult, name: string } =>
+        entry.result.status === 'rejected' && entry.result.reason?.code !== QUEUE_NOT_FOUND)
 
     if (failures.length > 0) {
       // Each entry names its own queue, so attribution doesn't depend on lining errors[] up with
@@ -1461,10 +1610,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   async createJob (request: types.Request): Promise<string | null> {
+    return this.#telemetry.send('send', request.name, 1, carrier => this.#createJob(request, carrier), id => id ? [id] : null)
+  }
+
+  async #createJob (request: types.Request, traceContext: TraceCarrier | null): Promise<string | null> {
     const { name, data = null, options = {} } = request
     const { db: wrapper, singletonSeconds, singletonNextSlot } = options
 
-    const job = this.#toJobPayload(name, data, options)
+    const job = { ...this.#toJobPayload(name, data, options), __traceContext: traceContext }
 
     const db = wrapper || this.db
 
@@ -1475,8 +1628,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: this.#notifyEnabled(notify) })
+    const insert = () => db.executeSql(sql, [JSON.stringify([job])]).catch(err => this.#rethrowInsertError(err, [name], !wrapper))
 
-    const { rows: try1 } = await db.executeSql(sql, [JSON.stringify([job])])
+    const { rows: try1 } = await insert()
 
     if (try1.length === 1) {
       const jobId = try1[0].id
@@ -1494,7 +1648,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       job.startAfter = this.getDebounceStartAfter(singletonSeconds!, this.timekeeper!.clockSkew)
       job.singletonOffset = singletonSeconds
 
-      const { rows: try2 } = await db.executeSql(sql, [JSON.stringify([job])])
+      const { rows: try2 } = await insert()
 
       if (try2.length === 1) {
         const jobId = try2[0].id
@@ -1571,10 +1725,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
   upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpsertResponse>
   async upsert (...args: any[]): Promise<types.UpsertResponse> {
     const request = Attorney.checkUpdateArgs(args, { upsert: true })
+    Attorney.assertQueueName(request.name)
+
+    // Only an insert counts as a send, and only an inserted job stores the trace context: an
+    // updated job keeps the trace of the send that created it.
+    return this.#telemetry.send('upsert', request.name, result => result.inserted, carrier => this.#upsert(request, carrier), result => result.jobs)
+  }
+
+  async #upsert (request: types.Request, traceContext: TraceCarrier | null): Promise<types.UpsertResponse> {
     const { name, data } = request
     const opts = (request.options ?? {}) as types.UpdateOptions
 
-    Attorney.assertQueueName(name)
     const db = this.assertDb(opts)
     const { table, policy, notify } = await this.getQueueCache(name)
 
@@ -1589,13 +1750,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const notifyEnabled = this.#notifyEnabled(notify)
     const updateSql = plans.updateJob(this.config.schema, table, name, by, match, notifyEnabled)
-    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled })
+    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled, upsertByKey: by === 'singletonKey' })
 
     const job = this.#toUpdatePayload(data, opts)
     const updatePayload = JSON.stringify(job)
-    const insertPayload = JSON.stringify([job])
+    const insertPayload = JSON.stringify([{ ...job, __traceContext: traceContext }])
 
-    const result = await this.ensureTransaction(db, async (tx) => {
+    // The catch is outside the transaction: a deferred q_fkey reports at its COMMIT.
+    const attempt = () => this.ensureTransaction(db, async (tx) => {
       const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])
       if (updated.length) {
         const jobs = updated.map(row => row.id)
@@ -1613,7 +1775,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const { rows: retry } = await tx.executeSql(updateSql, [updatePayload])
       const jobs = retry.map(row => row.id)
       return { jobs, updated: jobs.length, inserted: 0 }
-    })
+    }).catch(err => this.#rethrowInsertError(err, [name], !opts.db))
+
+    // Where every transaction is serializable (CockroachDB), two upserts of one key that both miss
+    // conflict and one fails with 40001, rather than waiting on job_i13 as under READ COMMITTED. The
+    // transaction is pg-boss's own unless the caller passed a db, so the upsert runs again and finds
+    // the other's job. A caller's transaction is theirs to retry.
+    let result: types.UpsertResponse
+    for (let attempts = 1; ; attempts++) {
+      try {
+        result = await attempt()
+        break
+      } catch (err: any) {
+        if (opts.db || err?.code !== SERIALIZATION_FAILURE || attempts === UPSERT_ATTEMPTS) throw err
+      }
+    }
 
     // Track inserted (newly created) jobs for spies, matching createJob/insert. Runs after the
     // transaction commits so a rolled-back insert never leaves a phantom spy entry.
@@ -1640,6 +1816,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
+    return this.#telemetry.send('insert', name, jobs.length, carrier => this.#insert(name, jobs, options, carrier))
+  }
+
+  async #insert (
+    name: string,
+    jobs: types.JobInsert[],
+    options: types.InsertOptions & { __singletonSlots?: boolean },
+    traceContext: TraceCarrier | null
+  ) {
     const slots = options.__singletonSlots === true
 
     const seenIds = new Set<string>()
@@ -1686,6 +1871,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
         ...rest
       } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown, __singletonSlot?: string }
 
+      // Overwrites any __traceContext the caller passed.
+      Object.assign(rest, { __traceContext: traceContext })
+
       // Reattached only for the caller that asked for the column, so a public insert() drops the
       // field rather than handing an unvalidated value to a timestamp cast.
       if (slots && __singletonSlot !== undefined) {
@@ -1727,7 +1915,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId, notify: this.#notifyEnabled(notify), slots })
 
-    const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
+    const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)]).catch(err => this.#rethrowInsertError(err, [name], !options.db))
 
     if (rows.length) {
       if (spy) {
@@ -1745,6 +1933,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async flow (jobs: types.FlowJob[], options: types.ConnectionOptions = {}): Promise<Record<string, string>> {
     Attorney.validateFlowJobs(jobs)
 
+    const queues = new Set(jobs.map(job => job.name))
+    const destination = queues.size === 1 ? jobs[0].name : null
+
+    return this.#telemetry.send('flow', destination, jobs.length, carrier => this.#flow(jobs, options, carrier), refToId => Object.values(refToId))
+  }
+
+  async #flow (jobs: types.FlowJob[], options: types.ConnectionOptions, traceContext: TraceCarrier | null): Promise<Record<string, string>> {
     // validate and normalize each job's options the same way send()/insert() do
     const flowJobs = jobs.map(job => ({
       ...job,
@@ -1815,7 +2010,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
           deadLetter: j.options?.deadLetter ?? undefined,
           blocked: dependencyCount > 0 || undefined,
           blocking: parentRefs.has(j.ref) || undefined,
-          pendingDependencies: dependencyCount || undefined
+          pendingDependencies: dependencyCount || undefined,
+          __traceContext: traceContext
         }
       })
 
@@ -1842,7 +2038,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     try {
       await db.executeSql(sql)
     } catch (err) {
-      rethrowWriteError(err)
+      await this.#rethrowInsertError(err, [...byQueue.keys()], !options.db)
     }
 
     return refToId
@@ -1889,9 +2085,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
   fetch<T>(name: string): Promise<types.Job<T>[]>
   fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
   fetch<T>(name: string, options: types.FetchOptions): Promise<types.Job<T>[]>
-  async fetch (name: string, options: types.FetchOptions = {}) {
+  async fetch<T = object> (name: string, options: types.FetchOptions = {}): Promise<types.Job<T>[]> {
     Attorney.checkFetchArgs(name, options)
 
+    return this.#telemetry.receive(name, () => this.#fetch<T>(name, options), job => this.#traceContexts.get(job))
+  }
+
+  async #fetch<T> (name: string, options: types.FetchOptions): Promise<types.Job<T>[]> {
     this.#warnDeprecatedFetchOptions(options)
 
     const db = this.assertDb(options)
@@ -1905,7 +2105,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       name,
       policy,
       limit: options.batchSize || 1,
-      ignoreSingletons: singletonsActive
+      ignoreSingletons: singletonsActive,
+      includeTraceContext: this.#telemetry.enabled
     }
 
     const query = plans.fetchNextJob(fetchOptions, this.config.noSkipLocked)
@@ -1925,9 +2126,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const rows = result?.rows || []
 
+    for (const row of rows) {
+      // A db adapter may hand jsonb back unparsed.
+      const carrier = typeof row.__traceContext === 'string' ? JSON.parse(row.__traceContext) : row.__traceContext
+      delete row.__traceContext
+      if (carrier) this.#traceContexts.set(row, carrier)
+    }
+
     // Even a minimal fetch (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds and
     // heartbeatSeconds, so normalize regardless of includeMetadata.
-    return this.#numericJobFields(rows)
+    return this.#numericJobFields(rows) as types.Job<T>[]
   }
 
   // The id argument of the calls that settle or refresh a claim. Jobs passed as { id, retryCount }
@@ -1993,24 +2201,27 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const { ids, attempts: fetched } = this.mapAttemptArg(id, 'complete')
     const attempts = fetched ?? this.#handlerAttempts(options, ids)
-    const { table } = await this.getQueueCache(name)
-    const outputData = this.mapCompletionDataArg(data)
 
-    let response: types.CommandResponse
+    return this.#telemetry.settle('complete', name, ids, async () => {
+      const { table } = await this.getQueueCache(name)
+      const outputData = this.mapCompletionDataArg(data)
 
-    // noMultiMutationCte: split the dependency-unblocking into a separate statement to
-    // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
-    if (this.config.noMultiMutationCte) {
-      response = await this.completeDistributed(name, ids, outputData, table, db, options.includeQueued, attempts)
-    } else {
-      const sql = plans.completeJobs(this.config.schema, table, options.includeQueued, !!attempts)
-      const result = await db.executeSql(sql, attempts ? [name, ids, outputData, plans.attemptPairs(ids, attempts)] : [name, ids, outputData])
-      response = this.mapCommandResponse(ids, result)
-    }
+      let response: types.CommandResponse
 
-    this.#trackHandlerSettle(options, response)
+      // noMultiMutationCte: split the dependency-unblocking into a separate statement to
+      // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
+      if (this.config.noMultiMutationCte) {
+        response = await this.completeDistributed(name, ids, outputData, table, db, options.includeQueued, attempts)
+      } else {
+        const sql = plans.completeJobs(this.config.schema, table, options.includeQueued, !!attempts)
+        const result = await db.executeSql(sql, attempts ? [name, ids, outputData, plans.attemptPairs(ids, attempts)] : [name, ids, outputData])
+        response = this.mapCommandResponse(ids, result)
+      }
 
-    return response
+      this.#trackHandlerSettle(options, response)
+
+      return response
+    })
   }
 
   // Distributed complete/fail need several statements run atomically. When we own the pooled
@@ -2039,25 +2250,28 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const { ids, attempts: fetched } = this.mapAttemptArg(id, 'fail')
     const attempts = fetched ?? this.#handlerAttempts(options, ids)
-    const { table } = await this.getQueueCache(name)
-    const outputData = this.mapCompletionDataArg(data)
 
-    let response: types.CommandResponse
+    return this.#telemetry.settle('fail', name, ids, async () => {
+      const { table } = await this.getQueueCache(name)
+      const outputData = this.mapCompletionDataArg(data)
 
-    // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
-    // The delete and re-insert run in a single transaction (see ensureTransaction) so the
-    // job cannot be lost between the two statements.
-    if (this.config.noMultiMutationCte) {
-      response = await this.failDistributed(name, ids, outputData, table, db, attempts)
-    } else {
-      const sql = plans.failJobsById(this.config.schema, table, !!attempts)
-      const result = await db.executeSql(sql, attempts ? [name, ids, outputData, plans.attemptPairs(ids, attempts)] : [name, ids, outputData])
-      response = this.mapCommandResponse(ids, result)
-    }
+      let response: types.CommandResponse
 
-    this.#trackHandlerSettle(options, response)
+      // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
+      // The delete and re-insert run in a single transaction (see ensureTransaction) so the
+      // job cannot be lost between the two statements.
+      if (this.config.noMultiMutationCte) {
+        response = await this.failDistributed(name, ids, outputData, table, db, attempts)
+      } else {
+        const sql = plans.failJobsById(this.config.schema, table, !!attempts)
+        const result = await db.executeSql(sql, attempts ? [name, ids, outputData, plans.attemptPairs(ids, attempts)] : [name, ids, outputData])
+        response = this.mapCommandResponse(ids, result)
+      }
 
-    return response
+      this.#trackHandlerSettle(options, response)
+
+      return response
+    })
   }
 
   private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, attempts?: number[]): Promise<types.CommandResponse> {
@@ -2183,6 +2397,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // still knows where to be redriven. See failJobsBody for the single-statement path.
       const sourceCreatedOn = job.source_created_on_text ?? job.source_created_on
 
+      // The json columns go back as text. Bound as read, a job whose data is an array reaches pg as
+      // a Postgres array literal and a string as bare text, and neither parses as json.
+      const data = toJsonText(job.data)
+      const output = toJsonText(jobOutput)
+      const sourceOutput = toJsonText(job.source_output)
+      const traceContext = toJsonText(job.trace_context)
+
       // forceTerminal (perJobResults `deadletter`) skips retries so the job fails terminally and
       // routes straight to the dead letter queue below.
       const canRetry = !forceTerminal && retryCount < retryLimit
@@ -2206,13 +2427,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // pending_dependencies are preserved so flows and heartbeat detection survive a retry
         // (matches the non-distributed failJobs() CTE).
         const { rows } = await tx.executeSql(insertSql, [
-          job.id, job.name, job.priority, job.data, 'retry', job.retry_limit, job.retry_count,
+          job.id, job.name, job.priority, data, 'retry', job.retry_limit, job.retry_count,
           job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, startedOn,
           job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
-          jobOutput, job.dead_letter,
+          output, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, sourceOutput, job.source_root_id, traceContext
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2223,18 +2444,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       if (!retried) {
         await tx.executeSql(insertSql, [
-          job.id, job.name, job.priority, job.data, 'failed', job.retry_limit, job.retry_count,
+          job.id, job.name, job.priority, data, 'failed', job.retry_limit, job.retry_count,
           job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfterColumn, startedOn,
           job.singleton_key, singletonOn, job.group_id, job.group_tier, job.expire_seconds,
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
-          jobOutput, job.dead_letter,
+          output, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, job.source_output, job.source_root_id
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, sourceOutput, job.source_root_id, traceContext
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier, job.source_root_id])
+          await tx.executeSql(dlqSql, [job.dead_letter, data, output, job.name, job.id, createdOn, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier, job.source_root_id, traceContext])
         }
       }
 
@@ -2250,15 +2471,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const { ids, attempts: fetched } = this.mapAttemptArg(id, 'deleteJob')
     const attempts = fetched ?? this.#handlerAttempts(options, ids)
-    const { table } = await this.getQueueCache(name)
 
-    const sql = plans.deleteJobsById(this.config.schema, table, !!attempts)
-    const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
-    const response = this.mapCommandResponse(ids, result)
+    return this.#telemetry.settle('delete', name, ids, async () => {
+      const { table } = await this.getQueueCache(name)
 
-    this.#trackHandlerSettle(options, response)
+      const sql = plans.deleteJobsById(this.config.schema, table, !!attempts)
+      const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
+      const response = this.mapCommandResponse(ids, result)
 
-    return response
+      this.#trackHandlerSettle(options, response)
+
+      return response
+    })
   }
 
   // The filter half of redrive and previewRedrive, validated once and in the parameter order
@@ -2369,15 +2593,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const { ids, attempts: fetched } = this.mapAttemptArg(id, 'cancel')
     const attempts = fetched ?? this.#handlerAttempts(options, ids)
-    const { table } = await this.getQueueCache(name)
 
-    const sql = plans.cancelJobs(this.config.schema, table, !!attempts)
-    const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
-    const response = this.mapCommandResponse(ids, result)
+    return this.#telemetry.settle('cancel', name, ids, async () => {
+      const { table } = await this.getQueueCache(name)
 
-    this.#trackHandlerSettle(options, response)
+      const sql = plans.cancelJobs(this.config.schema, table, !!attempts)
+      const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
+      const response = this.mapCommandResponse(ids, result)
 
-    return response
+      this.#trackHandlerSettle(options, response)
+
+      return response
+    })
   }
 
   async resume (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
@@ -2440,7 +2667,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.createQueue(this.config.schema, name, { ...options, policy }, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
-    this.#evictQueueCache(name)
+    await this.#reloadQueueCache(name)
   }
 
   async getBlockedKeys (name: string): Promise<string[]> {
@@ -2513,7 +2740,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.updateQueue(this.config.schema)
     await this.db.executeSql(sql, [name, options])
-    this.#evictQueueCache(name)
+    await this.#reloadQueueCache(name)
   }
 
   async getQueue (name: string) {
@@ -2534,8 +2761,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks)
-    await this.db.executeSql(sql)
+    const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks, !this.config.noTablePartitioning)
+
+    // Only a queue with its own table takes locks that can be busy, and only those are tried again.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.db.executeSql(sql)
+        break
+      } catch (err: any) {
+        if (err?.code !== plans.PG_ERROR.lockNotAvailable) throw err
+        if (attempt === DELETE_QUEUE_ATTEMPTS) throw new Error(`Queue ${name} was not deleted: its tables stayed locked through ${attempt} tries`, { cause: err })
+        await delay(Math.min(25 * 2 ** (attempt - 1), DELETE_QUEUE_MAX_DELAY_MS) * (0.5 + Math.random() / 2))
+      }
+    }
+
     this.#evictQueueCache(name)
   }
 
@@ -2819,7 +3058,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     if (this.db._pgbdb) {
-      assert(this.db.opened, 'Database connection is not opened')
+      assert(this.db.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
     }
 
     return this.db

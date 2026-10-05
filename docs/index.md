@@ -34,7 +34,7 @@ features:
     link: /dashboard
     linkText: Dashboard
   - title: Runs anywhere Postgres does
-    details: Serverless and multi-master friendly, with CockroachDB, YugabyteDB, Citus and embedded PGlite support.
+    details: Serverless and multi-master friendly, with CockroachDB, Citus and embedded PGlite support.
     link: /database-backends
     linkText: Database backends
 
@@ -88,8 +88,9 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Pub/sub API for fan-out queue relationships
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
+* [OpenTelemetry](/opentelemetry) traces and metrics
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Additional database backends](/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
+* [Additional database backends](/database-backends) for Postgres-based databases such as CockroachDB and Citus. Or, use embedded PGlite for running entirely in-process.
 
 ## CLI
 

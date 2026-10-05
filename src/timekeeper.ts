@@ -233,11 +233,20 @@ function parseRecurrence (cron: string, tz: string, currentDate: Date) {
   return CronExpressionParser.parse(cron, { tz, strict: false, currentDate })
 }
 
+// cron-parser reads an empty expression, and undefined or null, as `* * * * *`, and those are nearly
+// always a missing value, not a request to run every minute. Checked before isRrule(), which reads a
+// non-string as its string form and would send something like ['FREQ=DAILY'] down the rule path.
+function assertExpression (expression: unknown): asserts expression is string {
+  assert(typeof expression === 'string' && expression.trim() !== '', 'cron expression must be a non-empty string')
+}
+
 /**
  * Validates a recurrence in whichever of the two formats it is written, so previewSchedule() and
  * schedule() reject exactly the same expressions.
  */
 function assertRecurrence (expression: string, tz: string, now: Date): void {
+  assertExpression(expression)
+
   if (isRrule(expression)) {
     assertRrule(expression, tz)
   } else {
@@ -662,8 +671,13 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * labels every row from its default. Either way the row reads fine and never fires again. So when
    * an expression cannot be read the way the column says, and is written the other way, it is read
    * the way it is written: one regex, on a path that was already about to give up.
+   *
+   * An empty expression is refused first, as schedule() refuses it. cron-parser would read one as
+   * every minute, and a row stored before schedule() checked for it would keep firing that often.
    */
   private dueOccurrences (expression: string, kind: types.ScheduleKind, tz: string, databaseTime = this.databaseTime): DueOccurrences {
+    assertExpression(expression)
+
     try {
       return { kind, occurrences: this.readOccurrences(expression, kind, tz, databaseTime) }
     } catch (err) {
@@ -806,7 +820,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       // key and slot are the pass's own bookkeeping, read below rather than sent: send() takes the
       // request the schedule row described and nothing else.
       const { key, slot, ...request } = data
-      return await this.manager.send(request)
+      // A row written before 12.37.0 may still carry `db` from schedule(); it is never a send option here.
+      const { db, ...options } = request.options ?? {}
+      return await this.manager.send({ ...request, options })
     }))
 
     // Keyed on (name, key) so a batch holding more than one occurrence of the same schedule
@@ -909,6 +925,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * occurrence after the last one handed back.
    */
   private occurrenceWalker (expression: string, tz: string, from: Date): () => Date | null {
+    assertExpression(expression)
+
     if (isRrule(expression)) {
       assertRrule(expression, tz)
 
@@ -980,9 +998,13 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
+    // `db` is how this call runs, not part of the schedule: it comes out first so the options blob
+    // stored on the row, and later handed to send() by the cron pass, never carries a connection.
+    const { db, ...persisted } = options
+
     // `missed` comes out with tz and key: it tells the pass what to do about a gap and is no more a
     // send option than they are, so the send-option check below is not handed it.
-    const { tz: requestedTz, key = '', missed, ...rest } = options
+    const { tz: requestedTz, key = '', missed, ...rest } = persisted
 
     // Any falsy zone is "none specified", not a zone to be judged: a destructuring default only
     // covers `undefined`, and a value threaded out of a config object or read back off the nullable
@@ -1014,7 +1036,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     try {
       const sql = plans.schedule(this.config.schema)
-      await this.db.executeSql(sql, [name, key, kind, cron, tz, data, options])
+      await (db || this.db).executeSql(sql, [name, key, kind, cron, tz, data, persisted])
     } catch (err: any) {
       if (err.message.includes('foreign key')) {
         err.message = `Queue ${name} not found`
@@ -1024,9 +1046,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async unschedule (name: string, key = ''): Promise<void> {
+  async unschedule (name: string, key = '', options: types.ConnectionOptions = {}): Promise<void> {
     const sql = plans.unschedule(this.config.schema)
-    await this.db.executeSql(sql, [name, key])
+    await (options.db || this.db).executeSql(sql, [name, key])
   }
 }
 

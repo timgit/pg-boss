@@ -47,11 +47,12 @@ export default defineConfig({
     ],
     sidebar: [
       { text: 'Introduction', link: '/introduction' },
-      { text: 'Install', link: '/install' },
       { text: 'CLI', link: '/cli' },
       { text: 'Dashboard', link: '/dashboard' },
       { text: 'Proxy', link: '/proxy' },
+      { text: 'Database Install', link: '/install' },
       { text: 'Database Backends', link: '/database-backends' },
+      { text: 'OpenTelemetry', link: '/opentelemetry' },
       { text: 'Sponsors', link: '/sponsors' },
       {
         text: 'API',

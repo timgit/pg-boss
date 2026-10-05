@@ -88,7 +88,7 @@ describe('instance registry', function () {
 
     const first = await only(ctx.boss)
 
-    await ctx.boss.work(ctx.schema, { localConcurrency: 2, batchSize: 3, pollingIntervalSeconds: 0.5 }, async () => {})
+    await ctx.boss.work(ctx.schema, { localConcurrency: 2, batchSize: 3, pollingIntervalSeconds: 0.5, includeMetadata: true, maxPriority: 5 }, async () => {})
     await ctx.boss.send(ctx.schema)
 
     await helper.until(async () => {
@@ -104,6 +104,7 @@ describe('instance registry', function () {
     expect(worker.batchSize).toBe(3)
     expect(worker.pollingIntervalSeconds).toBe(0.5)
     expect(worker.active).toBe(0)
+    expect(worker.options).toEqual({ includeMetadata: true, maxPriority: 5 })
     expect(Date.parse(worker.lastFetchedOn!)).not.toBeNaN()
     expect(row.heartbeatOn.getTime()).toBeGreaterThan(first.heartbeatOn.getTime())
     expect(row.startedOn.getTime()).toBe(first.startedOn.getTime())
@@ -183,6 +184,29 @@ describe('instance registry', function () {
 
     const ids = (await instances(ctx.boss)).map(i => i.id)
     expect(ids).toEqual([recent.id])
+  })
+
+  /** A role granted privileges table by table may have none on the instance table yet. */
+  helper.itPostgresOnly('maintenance emits an instance cleanup it cannot run and finishes the pass', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, registerInstance: false, supervise: false })
+    const errors: Error[] = []
+    ctx.boss.on('error', err => errors.push(err))
+
+    await sql(`ALTER TABLE ${ctx.schema}.instance RENAME TO instance_unreadable`)
+    try {
+      await expect(ctx.boss.supervise()).resolves.toBeUndefined()
+    } finally {
+      await sql(`ALTER TABLE ${ctx.schema}.instance_unreadable RENAME TO instance`)
+    }
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toContain('instance')
+
+    // The reindex, last in the pass, still ran and claimed its interval.
+    if (!helper.isPglite) {
+      const { rows } = await sql(`SELECT reindex_on FROM ${ctx.schema}.version`)
+      expect(rows[0].reindex_on).not.toBeNull()
+    }
   })
 
   // Rows for other lives, n of them, started a minute apart ending `newestMinutesAgo` ago. Quiet unless

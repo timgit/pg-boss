@@ -197,7 +197,7 @@ async function memoryLimit (cg: Cgroup): Promise<Limit | null> {
 // Memory in use by the cgroup less its inactive file cache: the working set that container runtimes
 // and the kubelet compare against the limit, since inactive cache is reclaimed before anything is killed.
 async function workingSet (cg: Cgroup, dir: string): Promise<number | null> {
-  const usage = Number(await read(dir + (cg.version === 2 ? '/memory.current' : '/memory.usage_in_bytes')))
+  const usage = Number(await read(dir + (cg.version === 2 ? '/memory.current' : '/memory.usage_in_bytes')) ?? NaN)
   if (!(usage >= 0)) return null
 
   const inactive = statField(await read(dir + '/memory.stat'), cg.version === 2 ? 'inactive_file' : 'total_inactive_file') ?? 0
@@ -262,9 +262,9 @@ class Nurse {
     this.#loop = null
   }
 
-  // Rates cover the time since the previous sample. The first sample after start() only sets the
+  // Rates cover the time since the previous check. The first check after start() only sets the
   // baseline, since at registration it would cover a few microseconds, so its rates are null.
-  async sample (): Promise<types.InstanceMetrics> {
+  async check (): Promise<types.InstanceMetrics> {
     const first = this.#at === null
     const now = process.hrtime.bigint()
     const cpuNow = process.cpuUsage()
@@ -330,8 +330,8 @@ class Nurse {
     }
   }
 
-  // The share of CPU periods since the previous sample in which the cgroup that holds the quota ran
-  // out of it and was paused. Null on the first sample, or when the quota moved to another cgroup.
+  // The share of CPU periods since the previous check in which the cgroup that holds the quota ran
+  // out of it and was paused. Null on the first check, or when the quota moved to another cgroup.
   async #throttled (cg: Cgroup, dir: string): Promise<number | null> {
     const text = await read(dir + '/cpu.stat')
     const periods = statField(text, 'nr_periods')

@@ -24,6 +24,14 @@ const RECORDED_OPTIONS = [
   'warningSlowQuerySeconds', 'warningQueueSize'
 ] as const satisfies ReadonlyArray<keyof types.ResolvedConstructorOptions>
 
+// The work() options recorded on each worker entry, besides the three it keeps as fields. The same
+// allowlist reasoning: groupConcurrency tiers are names, never data, and nothing here connects.
+const RECORDED_WORK_OPTIONS = [
+  'includeMetadata', 'ignoreStartAfter', 'minPriority', 'maxPriority', 'localGroupConcurrency', 'groupConcurrency',
+  'heartbeatRefreshSeconds', 'perJobResults', 'transactional', 'transactionTimeoutSeconds', 'notifyPollingIntervalSeconds',
+  'burstWhenReadyExceeds', 'burstWhenBatchFull'
+] as const satisfies ReadonlyArray<keyof types.WorkOptions>
+
 // Keeps this PgBoss object's row in the instance table: registered at start(), refreshed on its own
 // heartbeat timer whether or not this instance supervises (an instance with supervise off is exactly
 // the kind people lose track of), and marked stopped by a graceful stop(). Nothing on the job path
@@ -40,6 +48,7 @@ class Registrar extends EventEmitter implements types.EventsMixin {
   #nurse = new Nurse()
   #recount: types.ClockTimer | undefined
   #active = false
+  #startAttempt = 1
 
   events = events
 
@@ -52,8 +61,11 @@ class Registrar extends EventEmitter implements types.EventsMixin {
     this.#config = config
   }
 
-  async start () {
+  // startAttempt is the start() try this registration comes from, recorded in config when past the first.
+  async start (startAttempt = 1) {
     if (!this.#config.registerInstance || this.#timer) return
+
+    this.#startAttempt = startAttempt
 
     this.#active = true
     this.#nurse.start()
@@ -135,7 +147,6 @@ class Registrar extends EventEmitter implements types.EventsMixin {
 
     this.#recount = clock.setTimeout(() => {
       this.#recount = undefined
-      if (!this.#active) return
       this.#countCrashRestarts().catch(err => this.emit(events.error, err))
     }, Math.max(1000, at - clock.now() + 1000))
   }
@@ -178,7 +189,7 @@ class Registrar extends EventEmitter implements types.EventsMixin {
       pool?.idle ?? null,
       pool?.waiting ?? null,
       JSON.stringify(this.#workers()),
-      JSON.stringify(await this.#nurse.sample()),
+      JSON.stringify(await this.#nurse.check()),
       JSON.stringify(this.#recordedConfig())
     ]
   }
@@ -191,6 +202,8 @@ class Registrar extends EventEmitter implements types.EventsMixin {
       const value = this.#config[key]
       if (value !== undefined) config[key] = value
     }
+
+    if (this.#startAttempt > 1) config.startAttempt = this.#startAttempt
 
     return config
   }
@@ -220,7 +233,12 @@ class Registrar extends EventEmitter implements types.EventsMixin {
           active: 0,
           lastFetchedOn: null,
           lastJobEndedOn: null,
-          lastErrorOn: null
+          lastErrorOn: null,
+          options: {}
+        }
+        for (const key of RECORDED_WORK_OPTIONS) {
+          const value = w.options[key]
+          if (value !== undefined) (entry.options as Record<string, unknown>)[key] = value
         }
         byWork.set(w.workId, entry)
       }

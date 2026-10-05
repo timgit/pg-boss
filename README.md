@@ -51,8 +51,9 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Pub/sub API for fan-out queue relationships
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
+* [OpenTelemetry](https://pgboss.io/opentelemetry) traces and metrics
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Additional database backends](https://pgboss.io/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
+* [Additional database backends](https://pgboss.io/database-backends) for Postgres-based databases such as CockroachDB and Citus. Or, use embedded PGlite for running entirely in-process.
 
 ## CLI
 

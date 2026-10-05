@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.35.0",
+  "version": "12.37.0",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,19 +13,27 @@
   },
   "dependencies": {
     "cron-parser": "^5.10.1",
-    "pg": "^8.23.0",
-    "rrule-temporal": "^2.2.6",
-    "serialize-error": "^13.0.1"
+    "pg": "^8.23.1",
+    "rrule-temporal": "^2.2.8",
+    "serialize-error": "^13.0.2"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/sdk-trace": "^2.11.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@tsconfig/node-ts": "^23.6.4",
     "@tsconfig/node22": "^22.0.6",
     "@types/bun": "^1.4.2",
-    "@types/luxon": "^3.7.5",
-    "@types/node": "^22.20.4",
+    "@types/luxon": "^3.7.6",
+    "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
     "@vitest/coverage-v8": "^4.1.2",
     "cli-testlab": "^6.0.1",
@@ -40,7 +48,7 @@
     "prisma": "^7.10.0",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "vite": "^8.3.0",
+    "vite": "^8.3.2",
     "vitest": "^4.0.18"
   },
   "scripts": {
@@ -71,12 +79,13 @@
     "readme": "node ./examples/readme.js",
     "docs": "npm run docs:dev --prefix docs",
     "docs:readme": "node ./scripts/sync-readme.js",
+    "docs:anchors": "node ./scripts/check-doc-anchors.mjs",
     "docs:sponsors": "node --env-file-if-exists=.env ./scripts/sync-sponsors.js",
     "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js",
     "test:browser": "vite --config test/browser/vite.config.mjs"
   },
   "pgboss": {
-    "schema": 44
+    "schema": 45
   },
   "repository": {
     "type": "git",

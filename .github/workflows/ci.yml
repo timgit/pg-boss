@@ -149,6 +149,24 @@ jobs:
     - name: Check docs/index.md is in sync with README.md
       run: npm run docs:readme -- --check
 
+  # Every anchor link in docs/, and every pgboss.io link in src/, against the heading ids VitePress
+  # generates. A heading rename or a GitHub-style slug otherwise breaks a link silently. Node
+  # builtins only, like the README check.
+  docs-anchors:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
+
+    - name: Check doc anchors resolve
+      run: npm run docs:anchors
+
   # Fast feedback on every push/PR against a real CockroachDB cluster: the distributed-mode
   # invariants the rest of the suite can't express, and the migrations. Migrations are here rather
   # than left to a pre-release run because CockroachDB refuses schema the other backends accept

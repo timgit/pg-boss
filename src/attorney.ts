@@ -523,6 +523,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   applyFlowConfig(config)
   applyInstanceConfig(config)
   validateWarningConfig(config)
+  validateOpenTelemetryConfig(config)
 
   return config as types.ResolvedConstructorOptions
 }
@@ -561,6 +562,27 @@ function applyInstanceConfig (config: any) {
   config.instanceHeartbeatSeconds = config.instanceHeartbeatSeconds || 30
 }
 
+function validateOpenTelemetryConfig (config: any) {
+  const otel = config.openTelemetry
+
+  if (otel == null) return
+
+  assert(typeof otel === 'object', 'configuration assert: openTelemetry must be an object')
+
+  for (const key of ['enabled', 'propagateContext']) {
+    assert(otel[key] === undefined || typeof otel[key] === 'boolean', `configuration assert: openTelemetry.${key} must be a boolean`)
+  }
+
+  assert(otel.tracerProvider === undefined || typeof otel.tracerProvider?.getTracer === 'function',
+    'configuration assert: openTelemetry.tracerProvider must implement getTracer()')
+
+  assert(otel.meterProvider === undefined || typeof otel.meterProvider?.getMeter === 'function',
+    'configuration assert: openTelemetry.meterProvider must implement getMeter()')
+
+  assert(otel.propagator === undefined || (typeof otel.propagator?.inject === 'function' && typeof otel.propagator?.extract === 'function'),
+    'configuration assert: openTelemetry.propagator must implement inject() and extract()')
+}
+
 function validateWarningConfig (config: any) {
   assert(!('warningQueueSize' in config) || config.warningQueueSize >= 1,
     'configuration assert: warningQueueSize must be at least 1')
@@ -588,6 +610,16 @@ function resolveBackend (config: any) {
 
   config.backend = backend
   const { flags } = BACKEND_PROFILES[backend as types.BackendProfile]
+
+  // A DeprecationWarning, like the deprecated fetch options in manager.ts: dropping the profile is a
+  // configuration change a developer makes, not a condition an operator watches.
+  if (backend === 'yugabytedb') {
+    process.emitWarning(
+      "backend: 'yugabytedb' is deprecated and will be rejected in the next major. YugabyteDB is not supported: releases are not tested against it and upgrades do not work there. See https://pgboss.io/database-backends#not-supported-yugabytedb",
+      'DeprecationWarning',
+      'PGBOSS_DEP_YUGABYTEDB'
+    )
+  }
 
   for (const flag of COMPATIBILITY_FLAGS) {
     config[flag] = flags[flag] ?? false

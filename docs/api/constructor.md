@@ -121,7 +121,7 @@ The check this disables exists because `schema: 'MySchema'` and `schema: '"MySch
 
 String, default `'postgres'`
 
-Selects the database pg-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.
+Selects the database pg-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'cockroachdb'`, `'citus'`, or `'pglite'`.
 
 ```js
 const boss = new PgBoss({ connectionString, backend: 'cockroachdb' })
@@ -210,7 +210,7 @@ Autovacuum reclaims heap space but never shrinks a btree, so a job index stays a
 
 Set to `false` to disable rebuilds. Detection is unaffected: bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommands-options) still returns the statements to run by hand. The same applies to indexes the connected role does not own, and to `db` adapters that wrap queries in a transaction, since `REINDEX CONCURRENTLY` cannot run inside one.
 
-CockroachDB and YugabyteDB skip this entirely, detection included. They store data outside PostgreSQL's heap, so there is no btree page bloat to reclaim, they reject `REINDEX`, and neither reports the page counts the check reads.
+CockroachDB skips this entirely, detection included. It stores data outside PostgreSQL's heap, so there is no btree page bloat to reclaim, it rejects `REINDEX`, and it does not report the page counts the check reads.
 
 Pass an object to change the thresholds:
 
@@ -259,7 +259,7 @@ ALTER TABLE pgboss.job_common SET (autovacuum_vacuum_scale_factor = 0.05);
 
 An `xmin_horizon` warning names the holder it found; track it down through `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. Where the connected role cannot read one of those catalogs, `unreadableSources` says so, rather than reporting a partial answer as a clean one.
 
-Not available on CockroachDB or YugabyteDB, which reclaim on their own schedule rather than from the oldest live snapshot.
+Not available on CockroachDB, which reclaims on its own schedule rather than from the oldest live snapshot.
 
 ### `flowIntervalSeconds`
 
@@ -297,7 +297,7 @@ Bool, default false
 
 If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
-With it on, each monitor pass also counts how many jobs were created, completed and failed, and how long the finished ones waited and ran, from the same pass over the job table that takes the counts. Measured on a job table of 2.5 million rows, the wait and run times add about 10% to that pass (about 55 ms on 560 ms). They also make a `queue_stats` snapshot larger: about 50 bytes a histogram, two per snapshot, where jobs finished, and about 30 where none did.
+Each monitor pass then also counts the jobs created and finished since the previous pass, and records the wait and run times of the finished ones, in the same read of the job table. The wait and run times cost more the more jobs finished since the previous pass, whatever the size of the table. Measured on one queue on PostgreSQL 18, they added about 0.4 s to a 2.4 s pass with 100,000 finished jobs, and about 1.1 s to a 3.7 s pass with 1,000,000, with about 9 MB of memory per million finished jobs held for the length of the pass. On CockroachDB they added about 0.7 s with 100,000.
 
 ### `queueStatRetentionDays`
 
@@ -309,19 +309,28 @@ When `persistQueueStats` is enabled, this controls automatic cleanup of old snap
 
 Bool, default true
 
-Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`, so [`getInstances()`](./ops.md#getinstances) can list every pg-boss instance sharing the database. The heartbeat is one statement per instance every `instanceHeartbeatSeconds`, on its own timer, and nothing on the job path waits for it. Set to false to leave this instance out of the registry.
+Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`. [`getInstances()`](./ops.md#getinstances) lists every pg-boss instance connecting to this schema. Set to false to leave this instance out of the registry. 
+
+> [!NOTE]
+> Short-lived processes such as serverless functions should set this to false, since frequent registrations would produce false positives of a frozen or crashed instance.
 
 ### `instanceName`
 
 String, optional
 
-A name for this instance in the registry, such as `api` or `billing-worker`. Instances of the same deployment can share one.
+A label for this instance in the registry, such as `api` or `billing-worker`. It does not need to be unique, since each instance is recorded under its own id. Instances with the same name are grouped for pruning stopped rows and for counting crash restarts; see [`getInstances()`](./ops.md#getinstances).
 
 ### `instanceHeartbeatSeconds`
 
 Int, default 30
 
 How often this instance refreshes its registry row. It reads as quiet, rather than live, once three heartbeats are missed. Must be from 1 to 3600.
+
+### `openTelemetry`
+
+Object, see [OpenTelemetry](../opentelemetry.md#options)
+
+Tracing and metrics through the OpenTelemetry API. On by default, and a no-op until the application registers an OpenTelemetry SDK. `enabled: false` turns it off.
 
 ## Testing
 

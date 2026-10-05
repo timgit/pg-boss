@@ -1,6 +1,6 @@
 # CLI
 
-pg-boss includes a command-line interface for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
+pg-boss includes a command-line interface that can be used to manage some database operations without requiring writing custom code against the API. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
 
 ## Installation
 
@@ -115,7 +115,7 @@ Nothing else `doctor` finds is ever repaired.
 
 ### `reindex`
 
-Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY`, one at a time, skipping any index the connected role does not own. Without flags it rebuilds only the indexes the bloat check flags; `--force` rebuilds every job index. `--dry-run` prints the SQL instead of running it. Unsupported on CockroachDB and YugabyteDB, which neither accept `REINDEX` nor report the catalog statistics the bloat check reads.
+Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY`, one at a time, skipping any index the connected role does not own. Without flags it rebuilds only the indexes the bloat check flags; `--force` rebuilds every job index. `--dry-run` prints the SQL instead of running it. Unsupported on CockroachDB, which neither accepts `REINDEX` nor reports the catalog statistics the bloat check reads.
 
 ```bash
 pg-boss reindex --connection-string postgres://localhost/myapp
@@ -140,6 +140,7 @@ Prints SQL to stdout without touching the database, which is useful for review, 
 | `create` (alias `construct`) | SQL to install the schema at the latest version |
 | `migrate` (default) | SQL to migrate from version 0 to the latest, with async index builds inlined |
 | `rollback` | SQL to roll back one version from the latest |
+| `uninstall` | SQL to remove every pg-boss object, for a schema pg-boss shares with other objects |
 
 A connection is **optional**. Given one, `plans migrate` enumerates the partitioned queue tables so per-partition index builds are included; without one, it emits a `job_common`-only script and prints a note. All other subcommands need no connection.
 
@@ -152,6 +153,9 @@ pg-boss plans migrate --connection-string postgres://localhost/myapp
 
 # Output rollback SQL
 pg-boss plans rollback --schema myapp_jobs
+
+# Output SQL to remove pg-boss from a schema it shares
+pg-boss plans uninstall --schema myapp
 ```
 
 ## Connection Configuration
@@ -209,7 +213,7 @@ The CLI supports multiple ways to configure the database connection, in order of
 | `--schema` | `-s` | pg-boss schema name (default: pgboss) |
 | `--config` | `-c` | Path to config file (default: pgboss.json, .pgbossrc, .pgbossrc.json) |
 | `--ssl` | | Enable SSL connection (`rejectUnauthorized: false`) |
-| `--backend` | | Database backend profile: `postgres` (default), `cockroachdb`, `yugabytedb`, `citus` |
+| `--backend` | | Database backend profile: `postgres` (default), `cockroachdb`, `citus` |
 | `--dry-run` | | Show SQL without executing (for `migrate`, `create`, `rollback`, `plans`, `reindex`) |
 | `--force` | | Rebuild every job index, not just the bloated ones (for `reindex`) |
 | `--fix` | | Restore a `job_now()` left overridden by a killed TestClock run (for `doctor`) |
@@ -226,9 +230,6 @@ Without it the CLI assumes stock PostgreSQL. On CockroachDB that means table par
 ```bash
 # CockroachDB
 pg-boss migrate --backend cockroachdb --connection-string postgres://root@localhost:26257/mydb
-
-# YugabyteDB
-PGBOSS_BACKEND=yugabytedb pg-boss migrate
 ```
 
 `pglite` is in-process and has no connection string, so it is library-only and rejected here.
