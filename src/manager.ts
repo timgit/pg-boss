@@ -11,7 +11,7 @@ import * as plans from './plans.ts'
 import { percentile } from './latency.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
-import { resolveWithinSeconds } from './tools.ts'
+import { delay, resolveWithinSeconds } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
 import { JobSpy, type JobSpyInterface } from './spy.ts'
@@ -23,6 +23,11 @@ const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, s
 const TRANSACTION_ABORTED = '25P02'
 
 const QUEUE_NOT_FOUND = 'PGBOSS_QUEUE_NOT_FOUND'
+
+// How long deleteQueue() keeps trying for the locks a queue with its own table needs: 25 ms doubling
+// to 400 ms between tries, about 3 seconds in all.
+const DELETE_QUEUE_ATTEMPTS = 12
+const DELETE_QUEUE_MAX_DELAY_MS = 400
 
 // pg's own default when the pool size is not configured. Used to tell a transactional worker how
 // much room it actually has, since each handler in flight holds a connection of its own.
@@ -2722,9 +2727,37 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks)
-    await this.db.executeSql(sql)
+    if (this.config.noTablePartitioning) {
+      await this.db.executeSql(plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks))
+    } else {
+      await this.#deleteQueueTables(name)
+    }
+
     this.#evictQueueCache(name)
+  }
+
+  // Each try reads the queue's table afresh, so one that detached and then failed to get the drop's
+  // locks resumes at the drop. Only a lock that was busy is tried again.
+  async #deleteQueueTables (name: string) {
+    const { schema, noAdvisoryLocks } = this.config
+
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const { rows: [state] } = await this.db.executeSql(plans.getQueueTableState(schema), [name])
+        if (!state) return
+
+        if (state.partition && state.attached) {
+          await this.db.executeSql(plans.detachQueueTable(schema, state.table, noAdvisoryLocks))
+        }
+
+        await this.db.executeSql(plans.deleteQueue(schema, name, noAdvisoryLocks, state.partition && state.exists ? state.table : undefined))
+        return
+      } catch (err: any) {
+        if (err?.code !== plans.PG_ERROR.lockNotAvailable) throw err
+        if (attempt === DELETE_QUEUE_ATTEMPTS) throw new Error(`Queue ${name} was not deleted: its tables stayed locked through ${attempt} tries`, { cause: err })
+        await delay(Math.min(25 * 2 ** (attempt - 1), DELETE_QUEUE_MAX_DELAY_MS) * (0.5 + Math.random() / 2))
+      }
+    }
   }
 
   async deleteQueuedJobs (name: string) {

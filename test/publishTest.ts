@@ -119,11 +119,8 @@ describe('pubsub', function () {
       )
 
       try {
-        // Both boundaries follow subscription selection, before the departing send uses SQL. The healthy
-        // send lands first: dropping a queue's own table while an insert into job_common is in flight
-        // can deadlock the two, which is not what this test is about.
+        // Both boundaries follow subscription selection, before the departing send uses SQL.
         await reached
-        await helper.until(async () => (await ctx.boss!.findJobs(healthy)).length > 0)
         await ctx.boss.unsubscribe(event, departing)
         await ctx.boss.deleteQueue(departing)
         expect(await ctx.boss.getQueue(departing)).toBeNull()

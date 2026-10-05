@@ -179,6 +179,105 @@ describe('queues', function () {
 
     spy.mockRestore()
   })
+  // A queue with its own table is detached with NOWAIT locks, tried again while they are busy, then
+  // dropped. PGlite has one connection to hold a lock with, and these backends have no partitions.
+  describe.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('deleteQueue with partition: true', function () {
+    async function holdLock (sql: string) {
+      const db = await helper.getDb()
+      const tx = await db.beginTransaction()
+      await tx.db.executeSql(sql)
+      return async () => {
+        await tx.commit()
+        await db.close()
+      }
+    }
+
+    async function run (sql: string) {
+      const db = await helper.getDb()
+      try {
+        return (await db.executeSql(sql)).rows
+      } finally {
+        await db.close()
+      }
+    }
+
+    const tableExists = async (table: string) => (await run(`SELECT to_regclass('${ctx.schema}.${table}') IS NOT NULL as "exists"`))[0].exists
+
+    async function partitioned () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await ctx.boss.createQueue(ctx.schema, { partition: true })
+      const queue = await ctx.boss.getQueue(ctx.schema)
+      assertTruthy(queue)
+      return queue.table
+    }
+
+    it('waits out a send holding job_common instead of deadlocking with it', async function () {
+      const table = await partitioned()
+      // What an insert into a shared queue holds while it runs.
+      const release = await holdLock(`LOCK TABLE ${ctx.schema}.job_common IN ROW EXCLUSIVE MODE`)
+
+      let settled = false
+      const deleting = ctx.boss!.deleteQueue(ctx.schema).finally(() => { settled = true })
+      await new Promise(resolve => setTimeout(resolve, 300))
+      expect(settled).toBe(false)
+      expect(await ctx.boss!.getQueue(ctx.schema)).toBeTruthy()
+
+      await release()
+      await deleting
+
+      expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
+      expect(await tableExists(table)).toBe(false)
+    })
+
+    it('gives up when its tables stay locked, and leaves the queue in place', async function () {
+      await partitioned()
+      const release = await holdLock(`LOCK TABLE ${ctx.schema}.job_common IN ROW EXCLUSIVE MODE`)
+
+      try {
+        await expect(ctx.boss!.deleteQueue(ctx.schema)).rejects.toThrow(`Queue ${ctx.schema} was not deleted: its tables stayed locked through 12 tries`)
+        expect(await ctx.boss!.getQueue(ctx.schema)).toBeTruthy()
+      } finally {
+        await release()
+      }
+
+      await ctx.boss!.deleteQueue(ctx.schema)
+      expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
+    })
+
+    it('finishes a deletion that stopped after the detach', async function () {
+      const table = await partitioned()
+      await run(`ALTER TABLE ${ctx.schema}.job DETACH PARTITION ${ctx.schema}.${table}`)
+
+      await ctx.boss!.deleteQueue(ctx.schema)
+
+      expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
+      expect(await tableExists(table)).toBe(false)
+    })
+
+    it('deletes the queue when its detached table is already gone', async function () {
+      const table = await partitioned()
+      await run(`ALTER TABLE ${ctx.schema}.job DETACH PARTITION ${ctx.schema}.${table}`)
+      await run(`DROP TABLE ${ctx.schema}.${table}`)
+
+      await ctx.boss!.deleteQueue(ctx.schema)
+
+      expect(await ctx.boss!.getQueue(ctx.schema)).toBeNull()
+    })
+
+    it('does nothing for a queue another instance already deleted', async function () {
+      await partitioned()
+      await ctx.boss!.fetch(ctx.schema)
+      const other = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      try {
+        await other.deleteQueue(ctx.schema)
+        await expect(ctx.boss!.deleteQueue(ctx.schema)).resolves.toBeUndefined()
+      } finally {
+        await other.stop({ graceful: false })
+      }
+    })
+  })
+
   it('should create a queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

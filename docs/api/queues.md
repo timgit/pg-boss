@@ -181,6 +181,8 @@ Deletes a queue and all jobs.
 await boss.deleteQueue('email-send')
 ```
 
+A queue created with `partition: true` has its table detached from the job table and then dropped. The detach needs brief exclusive locks on the job tables, which `deleteQueue()` takes without waiting so it never deadlocks with work in flight: while they are busy it tries again, for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue in place. A deletion that stopped after the detach is finished by the next call.
+
 Other instances find out on their next write to it: `send()`, `insert()`, `upsert()` and `flow()` reject with `Queue <name> does not exist`, as for a queue that was never created, and a job naming it as its `deadLetter` rejects with `Dead letter queue <name> does not exist`.
 
 Inside a transaction passed as `db`, a queue in the shared job table is checked when that transaction commits, with the default partitioned layout: `send()` resolves with an id, and the `COMMIT` fails with a foreign key violation (`23503`). A queue created with `partition: true`, or any queue under `noTablePartitioning` (CockroachDB and YugabyteDB), makes the `send()` itself reject.
