@@ -32,7 +32,7 @@ It is also safe to call `start()` again yourself on the same instance until it s
 
 * **attempts**, int, default 1
 
-  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error.
+  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error. An instance that started on a later try records it as `config.startAttempt` in [`getInstances()`](#getinstances).
 
 Once started, pg-boss rides out a database that drops and comes back: workers emit `error` while it is gone and resume when it returns, with no restart needed.
 
@@ -221,7 +221,7 @@ Array of objects with the following properties:
 | `poolMax`, `poolTotal`, `poolIdle`, `poolWaiting` | number \| null | Its pool at the last heartbeat; null for a `db` adapter |
 | `workers` | array | One entry per `work()` call, below |
 | `metrics` | object \| null | Its process's CPU, memory and event loop at the last heartbeat, below |
-| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Each holds the value it resolved to, defaults included; an option with no default that was not given is absent. Connection settings and credentials are never recorded |
+| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Each holds the value it resolved to, defaults included; an option with no default that was not given is absent. Connection settings and credentials are never recorded. Also `startAttempt`, the [`start({ attempts })`](#start-options) try it registered on, when that was not the first |
 | `crashRestarts` | number | Lives in a row with this name on this host that ended without `stop()` before this one started |
 | `crashRestartsSince` | Date \| null | When the first of those went quiet |
 | `startedOn`, `heartbeatOn` | Date | When it started, and its last heartbeat |

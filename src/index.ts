@@ -209,7 +209,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     try {
       for (let attempt = 1; ; attempt++) {
         try {
-          return await this.#doStart()
+          return await this.#doStart(attempt)
         } catch (err: any) {
           if (attempt >= attempts || retry.cancelled || err instanceof AssertionError) {
             throw err
@@ -239,7 +239,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     }
   }
 
-  async #doStart (): Promise<this> {
+  async #doStart (attempt = 1): Promise<this> {
     // Before anything opens a connection or runs a statement. The schema clock is gated on a
     // session setting, and a session that misses it reads real time while its peers read fake
     // time - silently, and differently on every checkout. Declaring the setup here means no
@@ -285,7 +285,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#bam.start()
     }
 
-    await this.#registrar.start()
+    await this.#registrar.start(attempt)
 
     this.#started = true
 

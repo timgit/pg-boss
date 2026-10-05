@@ -119,6 +119,11 @@ describe('database', function () {
 
       expect(retries).toHaveLength(1)
       expect(retries[0]).toMatchObject({ type: 'start_retry', attempts: 5 })
+
+      // The registry records the try it started on.
+      const instances = await boss.getInstances()
+      expect(instances.some(i => i.live && (i.config.startAttempt as number) > 1)).toBe(true)
+      expect(instances.filter(i => i.config.startAttempt !== undefined).every(i => (i.config.startAttempt as number) > 1)).toBe(true)
       expect(typeof retries[0].error).toBe('string')
       await boss.createQueue(ctx.schema)
       expect(await boss.getQueue(ctx.schema)).toBeTruthy()
