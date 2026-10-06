@@ -25,7 +25,6 @@ import {
   getJobCountFromQueue,
   getJobById,
   getWarnings,
-  getWarningCount,
   getBamEntries,
   getBamCount,
   getBamStatusSummary,
@@ -839,43 +838,6 @@ describe('Warning Queries', () => {
 
       expect(page1).toHaveLength(2)
       expect(page2).toHaveLength(2)
-    })
-  })
-
-  describe('getWarningCount', () => {
-    it('returns 0 when warning table does not exist', async () => {
-      // Create a minimal schema without the warning table
-      const testSchema = 'pgboss_no_warning_count'
-      const pool = new Pool({ connectionString: ctx.connectionString })
-      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
-      await pool.query(`CREATE SCHEMA ${testSchema}`)
-      await pool.end()
-
-      const count = await getWarningCount(ctx.connectionString, testSchema)
-      expect(count).toBe(0)
-    })
-
-    it('returns 0 when no warnings exist', async () => {
-      const count = await getWarningCount(ctx.connectionString, ctx.schema)
-      expect(count).toBe(0)
-    })
-
-    it('returns total count', async () => {
-      await insertTestWarning(ctx.schema, 'slow_query', 'Warning 1')
-      await insertTestWarning(ctx.schema, 'queue_backlog', 'Warning 2')
-      await insertTestWarning(ctx.schema, 'clock_skew', 'Warning 3')
-
-      const count = await getWarningCount(ctx.connectionString, ctx.schema)
-      expect(count).toBe(3)
-    })
-
-    it('returns filtered count', async () => {
-      await insertTestWarning(ctx.schema, 'slow_query', 'Warning 1')
-      await insertTestWarning(ctx.schema, 'queue_backlog', 'Warning 2')
-      await insertTestWarning(ctx.schema, 'slow_query', 'Warning 3')
-
-      const count = await getWarningCount(ctx.connectionString, ctx.schema, 'slow_query')
-      expect(count).toBe(2)
     })
   })
 

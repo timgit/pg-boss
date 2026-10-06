@@ -763,31 +763,6 @@ export async function getWarnings (
   }
 }
 
-// Get warning count (for pagination)
-// Returns 0 if warning table doesn't exist (persistWarnings not enabled)
-export async function getWarningCount (
-  dbUrl: string,
-  schema: string,
-  type?: string | null
-): Promise<number> {
-  const s = validateIdentifier(schema)
-  const sql = `
-    SELECT COUNT(*)::int as count
-    FROM ${s}.warning
-    WHERE ($1::text IS NULL OR type = $1)
-  `
-  try {
-    const result = await queryOne<{ count: number }>(dbUrl, sql, [type ?? null])
-    return result?.count ?? 0
-  } catch (err: unknown) {
-    // Table doesn't exist - persistWarnings not enabled
-    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
-      return 0
-    }
-    throw err
-  }
-}
-
 // Get background async migration (BAM) entries, newest schema version first.
 // Mirrors plans.getBamEntries in the pg-boss core (same column aliases).
 // Returns [] if the bam table doesn't exist (schema predates async migrations).

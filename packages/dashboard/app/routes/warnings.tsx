@@ -1,6 +1,6 @@
 import { useSearchParams } from 'react-router'
 import type { Route } from './+types/warnings'
-import { getWarnings, getWarningCount } from '~/lib/queries.server'
+import { getWarnings } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
@@ -46,23 +46,19 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
-  const [warnings, totalCount] = await Promise.all([
-    getWarnings(DB_URL, SCHEMA, {
-      type: typeFilter,
-      limit,
-      offset,
-      sort,
-      dir,
-    }),
-    getWarningCount(DB_URL, SCHEMA, typeFilter),
-  ])
+  // No count: the warning table grows for as long as warnings are kept, so a full page offers Next.
+  const warnings = await getWarnings(DB_URL, SCHEMA, {
+    type: typeFilter,
+    limit,
+    offset,
+    sort,
+    dir,
+  })
 
   return {
     warnings,
-    totalCount,
     typeFilter,
-    pageSize: PAGE_SIZE,
-    ...pageInfo(page, PAGE_SIZE, warnings.length, totalCount),
+    ...pageInfo(page, PAGE_SIZE, warnings.length, null),
   }
 }
 
@@ -77,7 +73,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function Warnings ({ loaderData }: Route.ComponentProps) {
-  const { warnings, totalCount, typeFilter, pageSize, page, totalPages, hasNextPage, hasPrevPage } = loaderData
+  const { warnings, typeFilter, page, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
 
   const handleFilterChange = (key: string, value: string | null) => {
@@ -96,7 +92,7 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title="Warnings"
-        subtitle={`${totalCount.toLocaleString()} warning${totalCount !== 1 ? 's' : ''} recorded · events emitted while persistWarnings is enabled`}
+        subtitle="Events emitted while persistWarnings is enabled, newest first"
       />
 
       <Card>
@@ -151,11 +147,9 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
 
         <TablePagination
           page={page}
-          totalPages={totalPages}
+          totalPages={null}
           hasNextPage={hasNextPage}
           hasPrevPage={hasPrevPage}
-          totalCount={totalCount}
-          pageSize={pageSize}
         />
       </Card>
     </div>
