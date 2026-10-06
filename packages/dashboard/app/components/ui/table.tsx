@@ -29,6 +29,7 @@ interface TableRowProps {
    * modifier/middle clicks fall through so the row's primary link can still open in a new tab.
    */
   to?: string
+  id?: string
 }
 
 // Descendants that handle their own click — a row-level navigation must not hijack these.
@@ -72,32 +73,58 @@ export function TableBody ({ children, className }: TableBodyProps) {
   )
 }
 
-export function TableRow ({ children, className, onClick, to }: TableRowProps) {
+/** The pointer and hover a clickable row shows, for a row that is not a `TableRow`. */
+export const CLICKABLE_ROW = 'cursor-pointer hover:bg-[var(--surface-hover)] transition-colors'
+
+/**
+ * A row's click handler: navigates to `to` (preserving the db selection) and calls `onClick`, unless
+ * the click was on something inside that handles its own, was modified or not the main button, or
+ * ended a text selection. Undefined when the row has nowhere to go and nothing to do.
+ */
+export function useRowClick ({ to, onClick }: { to?: string, onClick?: () => void }) {
   const navigate = useNavigate()
   // Hooks must run unconditionally; the resolved href is only used when `to` is set.
   const href = useDbHref(to ?? '')
-  const clickable = Boolean(to || onClick)
+  if (!to && !onClick) return undefined
 
-  const handleClick = (event: MouseEvent<HTMLTableRowElement>) => {
-    onClick?.()
-    if (!to) return
+  return (event: MouseEvent<HTMLElement>) => {
     // Let the browser/inner element handle new-tab/window and modified clicks.
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
       return
     }
     // Defer to nested interactive elements so they keep their own behavior.
+    // A click in a menu or dialog the row opened reaches it through the portal, not from inside it.
+    if (!event.currentTarget.contains(event.target as Node)) return
     if ((event.target as HTMLElement).closest(ROW_INTERACTIVE_SELECTOR)) return
-    navigate(href)
+    // Selecting a row's text is not a request to leave the page.
+    if (window.getSelection()?.toString()) return
+    onClick?.()
+    if (to) navigate(href)
   }
+}
+
+/** A list item that behaves as a clickable row: the `<li>` counterpart of `TableRow`. */
+export function ListRow ({ children, className, onClick, to, id }: TableRowProps) {
+  const handleClick = useRowClick({ to, onClick })
+  return (
+    <li id={id} className={cn(handleClick && CLICKABLE_ROW, className)} onClick={handleClick}>
+      {children}
+    </li>
+  )
+}
+
+export function TableRow ({ children, className, onClick, to, id }: TableRowProps) {
+  const handleClick = useRowClick({ to, onClick })
 
   return (
     <tr
+      id={id}
       className={cn(
         'border-b border-[var(--border-subtle)]',
-        clickable && 'cursor-pointer hover:bg-[var(--surface-hover)] transition-colors',
+        handleClick && CLICKABLE_ROW,
         className
       )}
-      onClick={clickable ? handleClick : undefined}
+      onClick={handleClick}
     >
       {children}
     </tr>
