@@ -29,7 +29,6 @@ describe('Sidebar', () => {
       expect(screen.getByText('Overview')).toBeInTheDocument()
       expect(screen.getByText('Jobs')).toBeInTheDocument()
       expect(screen.getByText('Queues')).toBeInTheDocument()
-      expect(screen.getByText('Stats')).toBeInTheDocument()
       expect(screen.getByText('Schedules')).toBeInTheDocument()
       expect(screen.getByText('Subscriptions')).toBeInTheDocument()
       expect(screen.getByText('Migrations')).toBeInTheDocument()
@@ -45,7 +44,7 @@ describe('Sidebar', () => {
       expect(hrefs).toContain('/')
       expect(hrefs).toContain('/jobs')
       expect(hrefs).toContain('/queues')
-      expect(hrefs).toContain('/stats')
+      expect(hrefs).not.toContain('/stats')
       expect(hrefs).toContain('/schedules')
       expect(hrefs).toContain('/subscriptions')
       expect(hrefs).toContain('/migrations')
@@ -63,9 +62,9 @@ describe('Sidebar', () => {
       expect(iconsInNav.length).toBeGreaterThanOrEqual(5)
     })
 
-    it('marks Stats current on a queue\'s stats page', () => {
-      renderWithRouter('/stats/my-queue')
-      expect(screen.getByRole('link', { name: 'Stats' })).toHaveAttribute('aria-current', 'page')
+    it('marks Queues current on a queue\'s metrics page', () => {
+      renderWithRouter('/queues/my-queue/metrics')
+      expect(screen.getByRole('link', { name: 'Queues' })).toHaveAttribute('aria-current', 'page')
     })
 
     it('renders navigation items for queues route', () => {

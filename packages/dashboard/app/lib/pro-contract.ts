@@ -1,9 +1,8 @@
-import type { ComponentType, ReactNode } from 'react'
+import type { ComponentType } from 'react'
 import type { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { RouterContextProvider } from 'react-router'
-import type { Instance, QueueThroughputPoint } from '~/lib/types'
-import type { LatencySummary, StatsInterval } from '~/lib/stats'
+import type { Instance } from '~/lib/types'
 
 /**
  * The contract between this package and an optional Pro overlay.
@@ -63,82 +62,6 @@ export interface ScheduleSlotProps {
     /** Null for the queue's default schedule. */
     key: string | null
   }
-}
-
-/**
- * One queue's throughput as a /stats page already holds it: every bucket of the previous window
- * then the current one, the two halves equal in length, empty buckets as nulls.
- */
-export interface StatsQueueSeries {
-  name: string
-  interval: StatsInterval
-  /** The width of each point, in seconds. */
-  bucketSeconds: number
-  /** On `/stats/:queue` each point also carries its bucket's wait and run histograms; on a tile it does not. */
-  points: QueueThroughputPoint[]
-  /** Wait and run times summed per window, and the oldest ready wait. Null before pg-boss 12.36. */
-  latency: LatencySummary | null
-}
-
-/** What `/stats/:queue` tells `statsQueueKpi`: the queue at the page's own resolution. */
-export interface StatsQueueKpiProps {
-  queue: StatsQueueSeries
-}
-
-/** What `/stats` tells `statsOverviewKpi`: every queue, at its tile's resolution. */
-export interface StatsOverviewKpiProps {
-  queues: StatsQueueSeries[]
-}
-
-/** How a tile stands: its border, its place in the overlay's order, and a badge beside its name. */
-export interface StatsTileAssessment {
-  /** A red border for critical, amber for watch, none for null. */
-  severity: 'critical' | 'watch' | null
-  /** Lower comes first in the overlay's order; ties go busiest first. */
-  rank: number
-  badge?: ReactNode
-  /** A line under the tile's chart, such as a figure the free tile does not show. */
-  line?: ReactNode
-}
-
-/**
- * The overlay's part in the `/stats` tiles. Not a component: a tile's border and the grid's order
- * are the grid's own, so the overlay says how each queue stands and the grid draws it.
- */
-export interface StatsTileSlot {
-  /**
-   * A React hook the grid calls on every render with every queue's tile series, so the overlay can
-   * load what it needs once for all of them. Returns how each queue stands, by name; a queue left
-   * out gets no badge, no border and the last place in the overlay's order.
-   */
-  useAssessments: (queues: StatsQueueSeries[]) => ReadonlyMap<string, StatsTileAssessment>
-  /** The name of the order `rank` gives, offered beside "Busiest first" and chosen by default. */
-  sortLabel?: string
-}
-
-/** What `/stats/:queue` tells `statsQueuePanels`: the queue, and the axis and cursor its charts share. */
-export interface StatsQueuePanelsProps {
-  queue: StatsQueueSeries
-  /** Unix seconds at the left and right edges of the page's charts. */
-  range: [number, number]
-  /** Charts given this key move one cursor with the page's own. */
-  syncKey: string
-  /** "hour", "6 hours", "24 hours". */
-  noun: string
-}
-
-/** What a `/stats` chart tells `statsChartMarkers` about the axis the row sits under. */
-export interface StatsChartMarkersProps {
-  /** Null on the all-queues chart. */
-  queue: string | null
-  chart: 'throughput' | 'depth'
-  /** Unix seconds at the left and right edges of the plot. */
-  from: number
-  to: number
-  /** The chart's bucket width in seconds: changes inside one bucket are one point on the chart. */
-  bucketSeconds: number
-  /** Where the plot sits across the chart, in CSS pixels, so a marker at time t lines up with the axis. */
-  plot: { left: number, width: number }
 }
 
 /** What `/instances` tells `instancesOverview`: every registered instance, read at `checkedOn`. */
@@ -245,25 +168,6 @@ export interface ProSlots {
 
   /** In a schedule page's header, for actions on that schedule. */
   scheduleActions?: ComponentType<ScheduleSlotProps>
-
-  /**
-   * Cards after the two rates in the `/stats/:queue` key figures, in a cell about as wide as two and
-   * a half rate cards, room for two. Given the series the page loaded, so the common case needs no
-   * request of its own.
-   */
-  statsQueueKpi?: ComponentType<StatsQueueKpiProps>
-
-  /** Panels under the depth chart on `/stats/:queue`, on the page's time axis and cursor. */
-  statsQueuePanels?: ComponentType<StatsQueuePanelsProps>
-
-  /** A third card in the `/stats` key figures, given every queue's tile series. */
-  statsOverviewKpi?: ComponentType<StatsOverviewKpiProps>
-
-  /** A badge, a border and an order for the `/stats` tiles. */
-  statsQueueTile?: StatsTileSlot
-
-  /** A row under a `/stats` chart's time axis, lined up with the plot. */
-  statsChartMarkers?: ComponentType<StatsChartMarkersProps>
 
   /** Above the `/instances` list, given every registered instance. */
   instancesOverview?: ComponentType<InstancesOverviewProps>
