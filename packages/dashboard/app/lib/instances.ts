@@ -1,32 +1,25 @@
-import type { Instance } from './types'
+import type { Instance, InstanceWorker } from './types'
 
-/** A quiet instance stays in the default view this long after it went quiet, unless a newer start replaced it. */
+/** A quiet instance stays in the default view this long after it went quiet. */
 export const QUIET_LISTED_MS = 60 * 60_000
+
+/** What the Recent filter means: started, stopped or gone quiet within this long. */
+export const RECENT_MS = 24 * 60 * 60_000
 
 /** Heartbeats an instance may miss before it reads as quiet, as core judges it. */
 const QUIET_BEATS = 3
 
 export type InstanceStatus = 'live' | 'quiet' | 'stopped'
 
-/** Which status filter lists a row. Older quiet rows sit with the stopped ones. */
+/** Which status filter lists a row. Quiet rows older than an hour sit with the stopped ones. */
 export type InstanceBucket = InstanceStatus
 
 export interface ListedInstance {
   instance: Instance
   status: InstanceStatus
   bucket: InstanceBucket
-  /** A newer instance with the same name on the same host started after this one. */
-  replaced: boolean
-  /** The newest row for the same name and host, when this is an earlier life that went quiet. */
-  foldedUnder: string | null
-  /** Earlier lives for the same name and host that went quiet, folded under this row. */
-  earlier: Instance[]
-}
-
-// Name and host: a process restarted in place keeps both, so this is what "the same instance" means
-// to someone reading the list. Unnamed instances on one host share a key, as core's crash count does.
-export function instanceKey (instance: Pick<Instance, 'name' | 'host'>): string {
-  return `${instance.name ?? ''}\u0000${instance.host}`
+  /** Started, stopped or went quiet within `RECENT_MS`. */
+  recent: boolean
 }
 
 export function instanceStatus (instance: Instance): InstanceStatus {
@@ -41,34 +34,21 @@ export function quietSince (instance: Instance): Date {
 
 const time = (d: Date | string) => new Date(d).getTime()
 
-/**
- * Every row with its status, the filter that lists it, and its place among the lives of the same
- * name and host. Earlier lives that went quiet fold under the newest one, or a crash loop fills the
- * list; stopped rows never fold, since core keeps only the last 20 per name.
- */
+/** When a row ended: its clean stop, or when it went quiet; null while it is live. */
+export function endedOn (instance: Instance): Date | null {
+  if (instance.stoppedOn) return new Date(instance.stoppedOn)
+  return instance.live ? null : quietSince(instance)
+}
+
+/** Every row with its status and the filter that lists it. Each row is one start of one process. */
 export function listInstances (instances: Instance[], now: Date): ListedInstance[] {
-  const newest = new Map<string, Instance>()
-  for (const i of instances) {
-    const head = newest.get(instanceKey(i))
-    if (!head || time(i.startedOn) > time(head.startedOn)) newest.set(instanceKey(i), i)
-  }
-
-  const listed = instances.map((instance): ListedInstance => {
+  return instances.map((instance): ListedInstance => {
     const status = instanceStatus(instance)
-    const head = newest.get(instanceKey(instance))!
-    const replaced = head !== instance
-    const recent = now.getTime() - quietSince(instance).getTime() < QUIET_LISTED_MS
-    const bucket = status === 'quiet' && (replaced || !recent) ? 'stopped' : status
-    return { instance, status, bucket, replaced, foldedUnder: status === 'quiet' && replaced ? head.id : null, earlier: [] }
+    const ended = endedOn(instance)
+    const bucket = status === 'quiet' && ended && now.getTime() - ended.getTime() >= QUIET_LISTED_MS ? 'stopped' : status
+    const recent = now.getTime() - time(instance.startedOn) < RECENT_MS || (ended !== null && now.getTime() - ended.getTime() < RECENT_MS)
+    return { instance, status, bucket, recent }
   })
-
-  const byId = new Map(listed.map((l) => [l.instance.id, l]))
-  for (const l of listed) {
-    if (l.foldedUnder) byId.get(l.foldedUnder)!.earlier.push(l.instance)
-  }
-  for (const l of listed) l.earlier.sort((a, b) => time(b.startedOn) - time(a.startedOn))
-
-  return listed
 }
 
 /** By name with unnamed last, then host, then newest first. */
@@ -93,6 +73,11 @@ export function matchesInstance (instance: Instance, needle: string): boolean {
     instance.workers.some((w) => w.queue.toLowerCase().includes(n))
 }
 
+/** The roles an instance took on, in the order the options are documented. */
+export function instanceRoles (instance: Instance): string[] {
+  return [instance.supervise && 'supervisor', instance.schedule && 'scheduler', instance.migrate && 'migrator'].filter((r): r is string => Boolean(r))
+}
+
 /** A span in the largest unit that reads well: "40s", "12m", "3h 5m", "2d". */
 export function formatSpan (ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000))
@@ -107,4 +92,117 @@ export function formatSpan (ms: number): string {
 /** How long before `now` a time was, as "12s ago". */
 export function formatAgo (then: Date | string, now: Date): string {
   return `${formatSpan(now.getTime() - time(then))} ago`
+}
+
+/** One queue an instance works, with the `work()` calls on it and their totals. */
+export interface QueueWork {
+  queue: string
+  calls: InstanceWorker[]
+  /** Every call's `localConcurrency`, added up. */
+  workers: number
+  active: number
+  lastFetchedOn: string | null
+  lastJobEndedOn: string | null
+  lastErrorOn: string | null
+}
+
+const later = (a: string | null, b: string | null) => (a === null || (b !== null && b > a) ? b : a)
+
+/** An instance's `work()` calls grouped by queue, in name order, each group's times the latest of its calls. */
+export function workByQueue (workers: InstanceWorker[]): QueueWork[] {
+  const byQueue = new Map<string, QueueWork>()
+  for (const w of workers) {
+    const group = byQueue.get(w.queue) ?? { queue: w.queue, calls: [], workers: 0, active: 0, lastFetchedOn: null, lastJobEndedOn: null, lastErrorOn: null }
+    group.calls.push(w)
+    group.workers += w.localConcurrency
+    group.active += w.active
+    group.lastFetchedOn = later(group.lastFetchedOn, w.lastFetchedOn)
+    group.lastJobEndedOn = later(group.lastJobEndedOn, w.lastJobEndedOn)
+    group.lastErrorOn = later(group.lastErrorOn, w.lastErrorOn)
+    byQueue.set(w.queue, group)
+  }
+  return [...byQueue.values()].sort((a, b) => a.queue.localeCompare(b.queue))
+}
+
+const seconds = (n: number) => `${n}s`
+const WORK_OPTION: Record<string, (value: unknown) => string> = {
+  heartbeatRefreshSeconds: (v) => seconds(v as number),
+  transactionTimeoutSeconds: (v) => seconds(v as number),
+  notifyPollingIntervalSeconds: (v) => seconds(v as number),
+}
+
+function formatWorkOption (key: string, value: unknown): string {
+  if (WORK_OPTION[key]) return WORK_OPTION[key](value)
+  if (typeof value === 'boolean') return value ? 'on' : 'off'
+  if (value !== null && typeof value === 'object') {
+    // groupConcurrency and localGroupConcurrency: a default, and a limit per tier.
+    const { default: base, tiers } = value as { default?: number, tiers?: Record<string, number> }
+    return [String(base), ...Object.entries(tiers ?? {}).map(([tier, n]) => `${tier} ${n}`)].join(', ')
+  }
+  return String(value)
+}
+
+/**
+ * One `work()` call's settings, as label and value. Batch size and polling always; the rest only
+ * when the call set them, which a row from a pg-boss that did not record them never says.
+ */
+export function workSettings (w: InstanceWorker): Array<[string, string]> {
+  return [
+    ['batchSize', String(w.batchSize)],
+    ['pollingIntervalSeconds', w.pollingIntervalSeconds == null ? 'the default' : seconds(w.pollingIntervalSeconds)],
+    ...Object.entries(w.options ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]): [string, string] => [key, formatWorkOption(key, value)]),
+  ]
+}
+
+/** A recorded option's value, or "the default" for one left unset. */
+export function formatConfig (value: unknown): string {
+  if (value === undefined || value === null) return 'the default'
+  return typeof value === 'object' ? JSON.stringify(value) : String(value)
+}
+
+/**
+ * What core resolves each recorded option to when it is not given, so the options a person changed
+ * can be told apart. A test holds these to core's own `getConfig`.
+ */
+export const OPTION_DEFAULTS: Readonly<Record<string, unknown>> = {
+  adapter: 'pg',
+  backend: 'postgres',
+  max: 10,
+  useListenNotify: false,
+  instanceHeartbeatSeconds: 30,
+  supervise: true,
+  schedule: true,
+  migrate: true,
+  createSchema: true,
+  superviseIntervalSeconds: 60,
+  maintenanceIntervalSeconds: 86_400,
+  monitorIntervalSeconds: 60,
+  queueCacheIntervalSeconds: 60,
+  bamIntervalSeconds: 60,
+  flowIntervalSeconds: 5,
+  reindex: true,
+  reindexIntervalSeconds: 86_400,
+  monitorVacuum: true,
+  clockMonitorIntervalSeconds: 600,
+  cronMonitorIntervalSeconds: 30,
+  cronWorkerIntervalSeconds: 5,
+  persistWarnings: false,
+  warningRetentionDays: 365,
+  persistQueueStats: false,
+  queueStatRetentionDays: 7,
+  warningSlowQuerySeconds: 30,
+  warningQueueSize: 10_000,
+}
+
+/** Whether a recorded option differs from core's default; false for a key with no default to compare, such as `startAttempt`. */
+export function isChangedOption (key: string, value: unknown): boolean {
+  if (!Object.hasOwn(OPTION_DEFAULTS, key)) return false
+  return JSON.stringify(value) !== JSON.stringify(OPTION_DEFAULTS[key])
+}
+
+/** What an instance is called: its name, or "unnamed instance" for one started without `instanceName`. */
+export function instanceName (name: string | null): string {
+  return name ?? 'unnamed instance'
 }
