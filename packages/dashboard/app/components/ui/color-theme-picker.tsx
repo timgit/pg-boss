@@ -49,7 +49,7 @@ export function ColorThemePicker ({ children }: { children: React.ReactNode }) {
   const { colorTheme, setColorTheme } = useTheme()
 
   return (
-    <Menu.Root>
+    <Menu.Root modal={false}>
       {/*
         No transform on hover, and that is not a taste call. The popup is placed
         from the trigger's bounding rect, and a transform changes that rect even

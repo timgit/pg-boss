@@ -3,7 +3,10 @@ import { Check, ChevronRight, Circle } from 'lucide-react'
 import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from 'react'
 import { cn } from '~/lib/utils'
 
-const DropdownMenu = Menu.Root
+// Not modal: a modal menu locks page scroll, which hides the scrollbar and shifts the page while open.
+function DropdownMenu (props: Menu.Root.Props) {
+  return <Menu.Root modal={false} {...props} />
+}
 
 const DropdownMenuTrigger = Menu.Trigger
 
