@@ -4,20 +4,20 @@ import { useRender, mergeProps } from '@base-ui/react'
 import { cn } from '~/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center font-semibold rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-gray-900',
+  'inline-flex items-center justify-center font-semibold rounded-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-offset-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed dark:focus-visible:ring-offset-gray-900',
   {
     variants: {
       variant: {
         primary:
-          'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-600 shadow-sm',
+          'bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-600 shadow-sm',
         secondary:
-          'bg-primary-50 text-primary-700 hover:bg-primary-100 focus:ring-primary-600 dark:bg-primary-950 dark:text-primary-300 dark:hover:bg-primary-900',
+          'bg-primary-50 text-primary-700 hover:bg-primary-100 focus-visible:ring-primary-600 dark:bg-primary-950 dark:text-primary-300 dark:hover:bg-primary-900',
         outline:
-          'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-primary-600 shadow-sm dark:bg-gray-900 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800',
+          'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus-visible:ring-primary-600 shadow-sm dark:bg-gray-900 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800',
         ghost:
-          'text-gray-700 hover:bg-gray-100 focus:ring-primary-600 dark:text-gray-300 dark:hover:bg-gray-800',
+          'text-gray-700 hover:bg-gray-100 focus-visible:ring-primary-600 dark:text-gray-300 dark:hover:bg-gray-800',
         danger:
-          'bg-red-600 text-white hover:bg-red-700 focus:ring-red-600 shadow-sm',
+          'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600 shadow-sm',
       },
       size: {
         sm: 'px-3 py-1.5 text-sm',

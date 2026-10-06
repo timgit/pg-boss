@@ -81,7 +81,7 @@ function PaginationLink ({ to, isActive, size = 'icon', className, children, ...
 
 function PaginationPrevious ({ className, ...props }: Omit<PaginationLinkProps, 'children'>) {
   return (
-    <PaginationLink aria-label="Go to previous page" size="md" className={cn('gap-1 px-2.5 sm:pl-2.5', className)} {...props}>
+    <PaginationLink aria-label="Go to previous page" size="md" className={cn('h-9 gap-1 px-3 py-0', className)} {...props}>
       <ChevronLeft className="h-4 w-4" aria-hidden="true" />
       <span className="hidden sm:block">Previous</span>
     </PaginationLink>
@@ -90,7 +90,7 @@ function PaginationPrevious ({ className, ...props }: Omit<PaginationLinkProps, 
 
 function PaginationNext ({ className, ...props }: Omit<PaginationLinkProps, 'children'>) {
   return (
-    <PaginationLink aria-label="Go to next page" size="md" className={cn('gap-1 px-2.5 sm:pr-2.5', className)} {...props}>
+    <PaginationLink aria-label="Go to next page" size="md" className={cn('h-9 gap-1 px-3 py-0', className)} {...props}>
       <span className="hidden sm:block">Next</span>
       <ChevronRight className="h-4 w-4" aria-hidden="true" />
     </PaginationLink>
