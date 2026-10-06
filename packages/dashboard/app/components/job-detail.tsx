@@ -78,7 +78,7 @@ export function CopyButton ({ value, label, children }: { value: string, label: 
         children ? 'px-1.5 py-1 text-[13px]' : 'h-[30px] w-[30px] justify-center border border-[var(--border-default)]'
       )}
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-[var(--success-600)]" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? <Check className="h-3.5 w-3.5 text-[var(--state-completed-fg)]" /> : <Copy className="h-3.5 w-3.5" />}
       {children && (copied ? 'Copied' : children)}
     </button>
   )

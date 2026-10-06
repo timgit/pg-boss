@@ -102,7 +102,7 @@ export function QueueMultiSelect ({
                   )}
                 >
                   <span className="w-4 h-4 inline-flex items-center justify-center">
-                    {isSelected && <Check className="h-4 w-4 text-primary-600" />}
+                    {isSelected && <Check className="h-4 w-4 text-primary-600 dark:text-primary-400" />}
                   </span>
                   <span className="truncate flex-1">{name}</span>
                 </button>
