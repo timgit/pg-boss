@@ -835,33 +835,7 @@ export async function getWarnings (
   }
 }
 
-// Most warnings getWarningCount counts before it stops and reports the count as capped. Nothing
-// deletes warnings unless warningRetentionDays is set, so the table can grow without bound.
-export const WARNING_COUNT_CAP = 10_000
-
-// Warning count for the page header, up to `cap`.
-// Returns 0 if warning table doesn't exist (persistWarnings not enabled)
-export async function getWarningCount (
-  dbUrl: string,
-  schema: string,
-  type?: string | null,
-  cap: number = WARNING_COUNT_CAP
-): Promise<{ count: number; capped: boolean }> {
-  const s = validateIdentifier(schema)
-  const sql = `
-    SELECT COUNT(*)::int as count
-    FROM (SELECT 1 FROM ${s}.warning WHERE ($1::text IS NULL OR type = $1) LIMIT $2) t
-  `
-  try {
-    const count = (await queryOne<{ count: number }>(dbUrl, sql, [type ?? null, cap + 1]))?.count ?? 0
-    return count > cap ? { count: cap, capped: true } : { count, capped: false }
-  } catch (err: unknown) {
-    if (isMissingTable(err)) return { count: 0, capped: false }
-    throw err
-  }
-}
-
-// One page of background async migration (BAM) entries, newest schema version first.
+// Get background async migration (BAM) entries, newest schema version first.
 // Mirrors plans.getBamEntries in the pg-boss core (same column aliases).
 // Returns an empty page if the bam table doesn't exist (schema predates async migrations).
 export async function getBamEntries (
