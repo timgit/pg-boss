@@ -39,6 +39,7 @@ const ROW_INTERACTIVE_SELECTOR =
 interface TableHeadProps {
   children: ReactNode
   className?: string
+  colSpan?: number
 }
 
 interface TableCellProps {
@@ -131,10 +132,11 @@ export function TableRow ({ children, className, onClick, to, id }: TableRowProp
   )
 }
 
-export function TableHead ({ children, className }: TableHeadProps) {
+export function TableHead ({ children, className, colSpan }: TableHeadProps) {
   return (
     <th
       scope="col"
+      colSpan={colSpan}
       className={cn(
         'px-4 py-2.5 align-middle text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)] whitespace-nowrap',
         className
