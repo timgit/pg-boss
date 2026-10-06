@@ -98,6 +98,18 @@ describe('pro overlay', () => {
     })
   })
 
+  describe('navigation', () => {
+    it('sets the overlay pages apart, under its heading', async () => {
+      mockOverlay({ nav: [{ name: 'Demo', href: '/pro-demo', icon: () => null }], navLabel: 'Pro', slots: {} })
+
+      await renderSidebar()
+
+      const group = screen.getByRole('group', { name: 'Pro' })
+      expect(group).toHaveTextContent(/^ProDemo$/)
+      expect(screen.getByRole('link', { name: 'Warnings' }).closest('[role="group"]')).toBeNull()
+    })
+  })
+
   describe('with an overlay', () => {
     it('renders a slot the overlay fills', async () => {
       mockOverlay({ nav: [], slots: { sidebarFooter: DemoFooter } })

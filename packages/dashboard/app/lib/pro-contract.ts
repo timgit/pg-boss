@@ -124,6 +124,8 @@ export interface ProSlots {
 
 export interface ProOverlay {
   nav: ProNavItem[]
+  /** A heading over `nav`, which the sidebar sets apart from the dashboard's own pages under a rule. */
+  navLabel?: string
   slots: ProSlots
   /** The app's name after each page's in the browser tab, and a name for a page that sets no `handle.title`. */
   title?: {
