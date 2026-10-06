@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ctx, getBoss, makeContext } from './helpers'
 import { loader } from '~/routes/subscriptions'
+import { PAGE_SIZE } from '~/lib/pagination'
 import { loader as queueLoader } from '~/routes/queues.$name'
 
 async function loadSubscriptions (search = '') {
@@ -81,16 +82,18 @@ describe('/subscriptions loader', () => {
   it('pages by event', async () => {
     const boss = getBoss()
     await boss.createQueue('fanout')
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < PAGE_SIZE + 5; i++) {
       await boss.subscribe(`event-${String(i).padStart(2, '0')}`, 'fanout')
     }
 
     const first = await loadSubscriptions()
     const second = await loadSubscriptions('?page=2')
 
-    expect(first.subscriptions).toHaveLength(20)
+    expect(first.subscriptions).toHaveLength(PAGE_SIZE)
     expect(first.hasNextPage).toBe(true)
-    expect(second.subscriptions.map((s) => s.event)).toEqual(['event-20', 'event-21', 'event-22', 'event-23', 'event-24'])
+    expect(second.subscriptions.map((s) => s.event)).toEqual(
+      Array.from({ length: 5 }, (_, i) => `event-${String(PAGE_SIZE + i).padStart(2, '0')}`)
+    )
   })
 })
 

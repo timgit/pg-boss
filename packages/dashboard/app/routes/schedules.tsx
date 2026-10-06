@@ -19,7 +19,7 @@ import {
   SortableHeader,
 } from '~/components/ui/table'
 import { TablePagination } from '~/components/table-pagination'
-import { pageWindow, pageInfo } from '~/lib/pagination'
+import { PAGE_SIZE, pageWindow, pageInfo } from '~/lib/pagination'
 import { ErrorCard } from '~/components/error-card'
 import { dbContext } from '~/lib/db-context'
 import type { ScheduleKind } from '~/lib/types'
@@ -31,8 +31,6 @@ import type { TitleHandle } from '~/lib/page-title'
 
 /** The browser tab's name for this page. */
 export const handle: TitleHandle = { title: 'Schedules' }
-
-const PAGE_SIZE = 20
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)

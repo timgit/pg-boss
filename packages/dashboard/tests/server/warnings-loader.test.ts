@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ctx, makeContext, insertTestWarning } from './helpers'
 import { loader } from '~/routes/warnings'
+import { PAGE_SIZE } from '~/lib/pagination'
 
 async function load (search = '') {
   return loader({
@@ -12,10 +13,10 @@ async function load (search = '') {
 
 describe('warnings loader', () => {
   it('pages by Previous and Next without counting the warning table', async () => {
-    for (let i = 0; i < 51; i++) await insertTestWarning(ctx.schema, 'slow_query', `Warning ${i}`)
+    for (let i = 0; i < PAGE_SIZE + 1; i++) await insertTestWarning(ctx.schema, 'slow_query', `Warning ${i}`)
 
     const first = await load()
-    expect(first.warnings).toHaveLength(50)
+    expect(first.warnings).toHaveLength(PAGE_SIZE)
     expect([first.hasPrevPage, first.hasNextPage]).toEqual([false, true])
     expect(first).not.toHaveProperty('totalCount')
     expect(first.totalPages).toBeNull()

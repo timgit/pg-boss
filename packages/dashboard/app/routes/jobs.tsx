@@ -19,7 +19,7 @@ import {
   TableCell,
 } from '~/components/ui/table'
 import { TablePagination } from '~/components/table-pagination'
-import { pageWindow, pageInfo } from '~/lib/pagination'
+import { PAGE_SIZE, pageWindow, pageInfo } from '~/lib/pagination'
 import { ErrorCard } from '~/components/error-card'
 import { QueryTimeoutBanner } from '~/components/query-timeout-banner'
 import { JobsFilterBar, type JobsFilters } from '~/components/jobs-filter-bar'
@@ -99,8 +99,6 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
     hasActiveFilters,
   }
 }
-
-const PAGE_SIZE = 20
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)

@@ -16,7 +16,7 @@ import {
 } from '~/components/ui/table'
 import { FilterSelect } from '~/components/ui/filter-select'
 import { TablePagination } from '~/components/table-pagination'
-import { pageWindow, pageInfo } from '~/lib/pagination'
+import { PAGE_SIZE, pageWindow, pageInfo } from '~/lib/pagination'
 import { ErrorCard } from '~/components/error-card'
 import type { BamEntryResult, BamStatus, BamStatusSummary } from '~/lib/types'
 import {
@@ -32,8 +32,6 @@ import type { TitleHandle } from '~/lib/page-title'
 
 /** The browser tab's name for this page. */
 export const handle: TitleHandle = { title: 'Migrations' }
-
-const PAGE_SIZE = 50
 
 // Accent for the four summary tiles. pending/in_progress get attention colors
 // since those are the actionable (incomplete) states.
