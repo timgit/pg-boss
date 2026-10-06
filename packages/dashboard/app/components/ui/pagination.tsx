@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react'
-import { Button } from './button'
+import { Button, buttonVariants } from './button'
 import { DbLink } from '~/components/db-link'
 import { cn } from '~/lib/utils'
 
@@ -40,9 +40,28 @@ interface PaginationLinkProps {
 function PaginationLink ({ to, isActive, size = 'icon', className, children, ...props }: PaginationLinkProps) {
   const disabled = to === undefined
 
+  // The page on screen is where you are, not somewhere to go: marked, and not a link back to itself.
+  if (isActive) {
+    return (
+      <span
+        aria-current="page"
+        data-slot="pagination-link"
+        data-active="true"
+        className={cn(
+          buttonVariants({ size }),
+          'cursor-default bg-primary-600 font-semibold text-white shadow-sm hover:bg-primary-600',
+          className
+        )}
+        {...props}
+      >
+        {children}
+      </span>
+    )
+  }
+
   return (
     <Button
-      variant={isActive ? 'outline' : 'ghost'}
+      variant="ghost"
       size={size}
       className={cn(disabled && 'pointer-events-none opacity-50', className)}
       render={disabled
@@ -50,9 +69,7 @@ function PaginationLink ({ to, isActive, size = 'icon', className, children, ...
         : (
           <DbLink
             to={to}
-            aria-current={isActive ? 'page' : undefined}
             data-slot="pagination-link"
-            data-active={isActive ? 'true' : undefined}
           />
           )}
       {...props}
