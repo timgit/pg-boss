@@ -42,7 +42,12 @@ export function Breadcrumbs() {
   } else if (pathSegments[0] === 'warnings') {
     breadcrumbs.push({ label: 'Warnings' })
   } else if (pathSegments[0] === 'instances') {
-    breadcrumbs.push({ label: 'Instances' })
+    breadcrumbs.push({ label: 'Instances', href: '/instances' })
+
+    // One registered row: its id is the only thing that names it, since names may repeat.
+    if (pathSegments[1]) {
+      breadcrumbs.push({ label: decodeURIComponent(pathSegments[1]).slice(0, 8) })
+    }
   }
 
   // Only the Home root and no page-specific crumb (unmatched route) — show nothing.

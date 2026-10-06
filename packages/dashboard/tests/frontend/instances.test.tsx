@@ -1,16 +1,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { formatSpan, listInstances, matchesInstance } from '~/lib/instances'
+import { formatSpan, listInstances, matchesInstance, workByQueue, workSettings } from '~/lib/instances'
 import { InstancesTable } from '~/components/instances-table'
+import { InstancePage } from '~/components/instance-page'
 import type { Instance } from '~/lib/types'
 import { NOW, instance, quiet, secondsAgo, stopped, worker } from '../fixtures/instances'
 
-// The free list, whatever the build: a Pro build mounts its overlay at `~pro`, and the overlay's
-// part in the list is tested in pro-overlay.test.tsx against the fixture.
+// The free list and page, whatever the build: a Pro build mounts its overlay at `~pro`.
 vi.mock('~pro', () => ({ default: { nav: [], slots: {} } }))
-
-const byId = (listed: ReturnType<typeof listInstances>, i: Instance) => listed.find((l) => l.instance.id === i.id)!
 
 describe('listInstances', () => {
   it('lists live and recently quiet instances by default, and older ones with the stopped', () => {
@@ -29,28 +27,23 @@ describe('listInstances', () => {
     ])
   })
 
-  it('folds earlier quiet lives under the newest start with the same name and host', () => {
-    const first = quiet(1800, { name: 'billing', host: 'jobs-03', startedOn: secondsAgo(2400) })
-    const second = quiet(900, { name: 'billing', host: 'jobs-03', startedOn: secondsAgo(1500) })
+  it('keeps every start as its own row, whatever its name and host', () => {
+    const first = quiet(900, { name: 'billing', host: 'jobs-03', startedOn: secondsAgo(1500) })
     const current = instance({ name: 'billing', host: 'jobs-03', startedOn: secondsAgo(300) })
-    const elsewhere = instance({ name: 'billing', host: 'jobs-04', startedOn: secondsAgo(60) })
 
-    const listed = listInstances([first, second, current, elsewhere], NOW)
-
-    expect(byId(listed, first)).toMatchObject({ replaced: true, bucket: 'stopped', foldedUnder: current.id })
-    expect(byId(listed, second)).toMatchObject({ replaced: true, bucket: 'stopped', foldedUnder: current.id })
-    expect(byId(listed, current).earlier.map((i) => i.id)).toEqual([second.id, first.id])
-    expect(byId(listed, elsewhere)).toMatchObject({ replaced: false, earlier: [] })
+    expect(listInstances([first, current], NOW).map((l) => [l.instance.id, l.bucket])).toEqual([
+      [first.id, 'quiet'],
+      [current.id, 'live'],
+    ])
   })
 
-  it('never folds a stopped life, only a crashed one', () => {
-    const before = stopped(3600, { name: 'api' })
-    const now = instance({ name: 'api', startedOn: secondsAgo(60) })
+  it('marks as recent a row started, stopped or gone quiet in the last day', () => {
+    const old = instance({ startedOn: secondsAgo(3 * 86400) })
+    const fresh = instance({ startedOn: secondsAgo(600) })
+    const stoppedToday = stopped(3600)
+    const stoppedLastWeek = stopped(3 * 86400)
 
-    const listed = listInstances([before, now], NOW)
-
-    expect(byId(listed, before)).toMatchObject({ foldedUnder: null, bucket: 'stopped' })
-    expect(byId(listed, now).earlier).toEqual([])
+    expect(listInstances([old, fresh, stoppedToday, stoppedLastWeek], NOW).map((l) => l.recent)).toEqual([false, true, true, false])
   })
 })
 
@@ -70,6 +63,28 @@ describe('matchesInstance', () => {
   })
 })
 
+describe('workByQueue and workSettings', () => {
+  it('adds up the calls on each queue, in name order, taking the latest times', () => {
+    const a = { ...worker('emails'), id: 'w1', localConcurrency: 2, active: 1, lastFetchedOn: '2026-09-29T11:59:00.000Z' }
+    const b = { ...worker('emails'), id: 'w2', localConcurrency: 3, active: 2, lastFetchedOn: '2026-09-29T11:59:30.000Z' }
+    const c = worker('billing')
+
+    const groups = workByQueue([a, b, c])
+
+    expect(groups.map((g) => [g.queue, g.workers, g.active, g.calls.length])).toEqual([['billing', 2, 0, 1], ['emails', 5, 3, 2]])
+    expect(groups[1].lastFetchedOn).toBe('2026-09-29T11:59:30.000Z')
+  })
+
+  it('lists batch size and polling, then only the options a call set', () => {
+    expect(workSettings({ ...worker('a'), options: { transactional: true, heartbeatRefreshSeconds: 15 } })).toEqual([
+      ['batchSize', '1'],
+      ['pollingIntervalSeconds', '2s'],
+      ['heartbeatRefreshSeconds', '15s'],
+      ['transactional', 'on'],
+    ])
+  })
+})
+
 describe('InstancesTable', () => {
   function renderTable (instances: Instance[]) {
     return render(
@@ -79,27 +94,47 @@ describe('InstancesTable', () => {
     )
   }
 
-  const names = () => screen.getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[0].textContent)
+  const names = () => screen.getAllByRole('row').slice(1).map((r) => within(within(r).getAllByRole('cell')[0]).getAllByRole('link')[0].textContent)
 
-  it('shows live and quiet instances by name, with a count per status', () => {
+  it('shows live and quiet rows by name, with a count per status', () => {
     renderTable([
-      instance({ name: 'worker', id: 'bbbbbbbb-0000-4000-8000-000000000000' }),
-      instance({ name: 'api', id: 'aaaaaaaa-0000-4000-8000-000000000000', supervise: true, schedule: true }),
-      quiet(120, { name: 'billing', host: 'jobs-03', id: 'cccccccc-0000-4000-8000-000000000000' }),
-      stopped(600, { name: 'mailer', id: 'dddddddd-0000-4000-8000-000000000000' }),
+      instance({ name: 'worker' }),
+      instance({ name: 'api', supervise: true, schedule: true }),
+      quiet(120, { name: 'billing', host: 'jobs-03' }),
+      stopped(600, { name: 'mailer' }),
     ])
 
-    expect(names()).toEqual(['apiaaaaaaaa', 'billingcccccccc', 'workerbbbbbbbb'])
+    expect(names()).toEqual(['api', 'billing', 'worker'])
     expect(screen.getByRole('button', { name: 'Live 2' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Quiet 1' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Stopped 1' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('supervisor')).toBeInTheDocument()
     expect(screen.getByText('scheduler')).toBeInTheDocument()
-    expect(screen.getByText('By name')).toBeInTheDocument()
+    expect(screen.getByText('last beat 2m ago')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Stopped 1' }))
-    expect(names()).toContain('mailerdddddddd')
+    expect(names()).toContain('mailer')
     expect(screen.getByText('stopped 10m ago')).toBeInTheDocument()
+  })
+
+  it('lists each start on its own, linking to its page', () => {
+    const first = quiet(900, { name: 'billing', host: 'jobs-03', startedOn: secondsAgo(1500) })
+    const current = instance({ name: 'billing', host: 'jobs-03', startedOn: secondsAgo(300) })
+    renderTable([first, current])
+
+    const links = screen.getAllByRole('link', { name: 'billing' })
+    expect(links.map((a) => a.getAttribute('href'))).toEqual([`/instances/${current.id}`, `/instances/${first.id}`])
+    expect(screen.getByText(current.id.slice(0, 8))).toBeInTheDocument()
+  })
+
+  it('narrows to the recent rows', () => {
+    renderTable([
+      instance({ name: 'steady', startedOn: secondsAgo(3 * 86400) }),
+      instance({ name: 'fresh', startedOn: secondsAgo(600) }),
+    ])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recent 1' }))
+    expect(names()).toEqual(['fresh'])
   })
 
   it('says what an instance works, linking each queue', () => {
@@ -113,22 +148,6 @@ describe('InstancesTable', () => {
     expect(screen.getByText('sends only')).toBeInTheDocument()
   })
 
-  it('folds a crash loop under its newest life, and says how often it restarted', () => {
-    const since = secondsAgo(2400)
-    renderTable([
-      quiet(1800, { name: 'billing', host: 'jobs-03', startedOn: secondsAgo(2400), id: '11111111-0000-4000-8000-000000000000' }),
-      quiet(900, { name: 'billing', host: 'jobs-03', startedOn: secondsAgo(1500), id: '22222222-0000-4000-8000-000000000000' }),
-      instance({ name: 'billing', host: 'jobs-03', startedOn: secondsAgo(300), crashRestarts: 2, crashRestartsSince: since, id: '33333333-0000-4000-8000-000000000000' }),
-    ])
-
-    expect(names()).toEqual(['billing33333333'])
-    expect(screen.getByText(/^2 crash restarts since/)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show 2 earlier quiet' }))
-    expect(names()).toEqual(['billing33333333', 'billing22222222', 'billing11111111'])
-    expect(screen.getAllByText('replaced by a newer start')).toHaveLength(2)
-  })
-
   it('filters by name, host or queue', () => {
     renderTable([
       instance({ name: 'api' }),
@@ -136,24 +155,82 @@ describe('InstancesTable', () => {
     ])
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Filter instances' }), { target: { value: 'pay' } })
-    expect(names()).toEqual([expect.stringMatching(/^jobs/)])
+    expect(names()).toEqual(['jobs'])
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Filter instances' }), { target: { value: 'nothing' } })
     expect(screen.getByText('No instances match. Clear the filter or turn on another status.')).toBeInTheDocument()
   })
 
-  it('offers no detail and no extra columns without an overlay', () => {
+  it('has no health, grouping or resource columns of its own', () => {
     renderTable([instance()])
 
-    expect(screen.queryByRole('button', { expanded: false })).toBeNull()
-    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(
-      ['Instance', 'Host', 'Version', 'Roles', 'Works', 'Up for', 'Heartbeat', 'Status']
-    )
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Instance', 'Status', 'Version', 'Roles', 'Works'])
   })
 
   it('says when nothing has registered', () => {
     renderTable([])
 
     expect(screen.getByText('No instance has registered in this database yet.')).toBeInTheDocument()
+  })
+})
+
+describe('InstancePage', () => {
+  function renderPage (i: Instance) {
+    return render(
+      <MemoryRouter>
+        <InstancePage data={{ instance: i, instances: [i], checkedOn: NOW }} />
+      </MemoryRouter>
+    )
+  }
+
+  it('names the row by its short id and says how it stands', () => {
+    const i = instance({ name: 'billing', host: 'jobs-03', supervise: true })
+    renderPage(i)
+
+    expect(screen.getByText(i.id.slice(0, 8))).toHaveAttribute('title', i.id)
+    expect(screen.getByText('Live')).toBeInTheDocument()
+    expect(screen.getByText('supervisor')).toBeInTheDocument()
+    expect(screen.getByText(/heartbeat 10s ago, every 30s/)).toBeInTheDocument()
+  })
+
+  it('opens a queue to each work() call and the options it set, with the queue page a link away', () => {
+    const one = { ...worker('emails'), id: 'aaaaaaaa-1', localConcurrency: 5, options: { transactional: true } }
+    const two = { ...worker('billing'), id: 'bbbbbbbb-2' }
+    renderPage(instance({ workers: [one, two] }))
+
+    expect(screen.getByText('2 workers on 2 queues · 0 of 7 slots busy')).toBeInTheDocument()
+    const emails = screen.getByRole('button', { name: 'emails' })
+    expect(emails).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('transactional: on')).not.toBeVisible()
+
+    fireEvent.click(emails)
+    expect(emails).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('transactional: on')).toBeVisible()
+    expect(screen.getByText('5 × 1')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Queue page for emails' })).toHaveAttribute('href', '/queues/emails')
+  })
+
+  it('says when an instance only sends', () => {
+    renderPage(instance())
+
+    expect(screen.getByText('No work() calls. This instance only sends jobs.')).toBeInTheDocument()
+  })
+
+  it('puts the options changed from the default first, with the default beside each', () => {
+    renderPage(instance({ config: { supervise: true, monitorIntervalSeconds: 30, persistQueueStats: true } }))
+
+    expect(screen.getByText('2 changed from the default')).toBeInTheDocument()
+    const rows = document.querySelectorAll('details dl div')
+    expect([...rows].map((r) => r.querySelector('dt')!.textContent)).toEqual(['monitorIntervalSeconds', 'persistQueueStats', 'supervise'])
+    expect(rows[0]).toHaveAttribute('data-changed', 'true')
+    expect(rows[0]).toHaveTextContent('30· default 60')
+    expect(rows[2]).not.toHaveAttribute('data-changed')
+  })
+
+  it('folds its options away', () => {
+    renderPage(instance({ config: { monitorIntervalSeconds: 60, supervise: true } }))
+
+    expect(screen.getByText('· 2 recorded')).toBeInTheDocument()
+    expect(screen.getByText('monitorIntervalSeconds')).not.toBeVisible()
   })
 })

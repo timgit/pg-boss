@@ -1,33 +1,23 @@
-import { useEffect, useRef } from 'react'
-import { useRevalidator, type ShouldRevalidateFunctionArgs } from 'react-router'
-import type { Route } from './+types/instances'
-import { getInstanceRegistry } from '~/lib/queries.server'
+import type { RouterContextProvider } from 'react-router'
 import { dbContext } from '~/lib/db-context'
+import { loadInstances, type InstancesData } from '~/lib/instances.server'
 import { ErrorCard } from '~/components/error-card'
 import { PageHeader } from '~/components/ui/page-header'
-import { InstancesTable } from '~/components/instances-table'
-import { ProSlot } from '~/components/pro-slot'
+import { InstancesTable, RegistryFootnote, RegistryUnavailable, useRegistryRefresh } from '~/components/instances-table'
+import type { TitleHandle } from '~/lib/page-title'
 
-// Heartbeats land every 30 seconds by default, so a list read once goes stale within a minute.
-const REFRESH_MS = 15_000
+/** The browser tab's name for this page. */
+export const handle: TitleHandle = { title: 'Instances' }
 
-export async function loader ({ context }: Route.LoaderArgs) {
+// Typed by hand rather than from `./+types/instances`: a Pro build replaces this route with its
+// own, React Router then generates no types for it, and the build still typechecks this file.
+
+export async function loader ({ context }: { context: Readonly<RouterContextProvider> }) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
-  return getInstanceRegistry(DB_URL, SCHEMA)
+  return loadInstances(DB_URL, SCHEMA)
 }
 
-// Opening a row only changes `?instance=`; that is the list's, not a reason to read the registry again.
-export function shouldRevalidate ({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
-  const without = (url: URL) => {
-    const params = new URLSearchParams(url.search)
-    params.delete('instance')
-    return `${url.pathname}?${params}`
-  }
-  if (currentUrl.href !== nextUrl.href && without(currentUrl) === without(nextUrl)) return false
-  return defaultShouldRevalidate
-}
-
-export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
+export function ErrorBoundary ({ error }: { error: unknown }) {
   return (
     <ErrorCard
       title="Failed to load instances"
@@ -37,30 +27,9 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   )
 }
 
-// Re-reads the registry while the tab is visible, and the moment it is shown again. The revalidator
-// is read through a ref so the interval is not restarted by the re-render each refresh causes.
-function useRefresh (enabled: boolean) {
-  const revalidator = useRevalidator()
-  const latest = useRef(revalidator)
-  latest.current = revalidator
-
-  useEffect(() => {
-    if (!enabled) return
-    const refresh = () => {
-      if (document.visibilityState === 'visible' && latest.current.state === 'idle') latest.current.revalidate()
-    }
-    const timer = setInterval(refresh, REFRESH_MS)
-    document.addEventListener('visibilitychange', refresh)
-    return () => {
-      clearInterval(timer)
-      document.removeEventListener('visibilitychange', refresh)
-    }
-  }, [enabled])
-}
-
-export default function Instances ({ loaderData }: Route.ComponentProps) {
+export default function Instances ({ loaderData }: { loaderData: InstancesData }) {
   const { available, instances, checkedOn } = loaderData
-  useRefresh(available)
+  useRegistryRefresh(available)
 
   const live = instances.filter((i) => i.live)
   const hosts = new Set(live.map((i) => i.host)).size
@@ -77,21 +46,11 @@ export default function Instances ({ loaderData }: Route.ComponentProps) {
       {available
         ? (
           <>
-            <ProSlot name="instancesOverview" instances={instances} checkedOn={checkedOn} />
             <InstancesTable instances={instances} checkedOn={checkedOn} />
-            <p className="text-xs text-[var(--text-tertiary)]">
-              Instances register from pg-boss 12.36. Older versions, and any started
-              with <code className="font-mono">registerInstance: false</code>, connect without appearing here. A row goes
-              quiet after three missed heartbeats, and is deleted a week after its last one.
-            </p>
+            <RegistryFootnote />
           </>
           )
-        : (
-          <p role="status" className="text-sm text-[var(--text-secondary)]">
-            This database's pg-boss schema predates the instance registry. Instances appear here once it is
-            migrated by pg-boss 12.36 or later.
-          </p>
-          )}
+        : <RegistryUnavailable />}
     </div>
   )
 }

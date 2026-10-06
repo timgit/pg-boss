@@ -2,7 +2,6 @@ import type { ComponentType } from 'react'
 import type { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { RouterContextProvider } from 'react-router'
-import type { Instance } from '~/lib/types'
 import type { TitleMatch } from '~/lib/page-title'
 
 /**
@@ -65,54 +64,6 @@ export interface ScheduleSlotProps {
   }
 }
 
-/** What `/instances` tells `instancesOverview`: every registered instance, read at `checkedOn`. */
-export interface InstancesOverviewProps {
-  /** Every row in the registry, live, quiet and stopped, whatever the list is filtered to. */
-  instances: Instance[]
-  /** The database's clock when the rows were read. Judge ages against it, not the browser's. */
-  checkedOn: Date
-}
-
-/** One instance in the `/instances` list. */
-export interface InstanceSlotProps {
-  instance: Instance
-  checkedOn: Date
-}
-
-/** How an instance stands in the list: its row's stripe, its place in the overlay's order, and its version. */
-export interface InstanceAssessment {
-  /** A red stripe for critical, amber for watch, none for null. */
-  severity: 'critical' | 'watch' | null
-  /** Lower comes first in the overlay's order; ties go by name. */
-  rank: number
-  /** Draw the version as out of step with the rest of the live instances. */
-  flagVersion?: boolean
-}
-
-/** A column the overlay adds to the `/instances` list, after Works. */
-export interface InstanceColumn {
-  header: string
-  align?: 'left' | 'right'
-  Cell: ComponentType<InstanceSlotProps>
-}
-
-/**
- * The overlay's part in the `/instances` list. Not a component: the rows, their order and their
- * filter are the list's own, so the overlay says how each instance stands and what else to show.
- */
-export interface InstancesListSlot {
-  /**
-   * A React hook the list calls on every render with every registered instance. Returns how each
-   * stands, by id; one left out gets no stripe and the last place in the overlay's order.
-   */
-  useAssessments?: (instances: Instance[], checkedOn: Date) => ReadonlyMap<string, InstanceAssessment>
-  /** The name of the order `rank` gives, offered beside "By name" and chosen by default. */
-  sortLabel?: string
-  columns?: InstanceColumn[]
-  /** Opens under a row when its name is pressed. */
-  Detail?: ComponentType<InstanceSlotProps>
-}
-
 /**
  * Named regions of the free UI an overlay may render into.
  *
@@ -169,12 +120,6 @@ export interface ProSlots {
 
   /** In a schedule page's header, for actions on that schedule. */
   scheduleActions?: ComponentType<ScheduleSlotProps>
-
-  /** Above the `/instances` list, given every registered instance. */
-  instancesOverview?: ComponentType<InstancesOverviewProps>
-
-  /** Columns, a stripe, an order and a row detail for the `/instances` list. */
-  instancesList?: InstancesListSlot
 }
 
 export interface ProOverlay {
