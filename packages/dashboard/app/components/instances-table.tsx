@@ -267,8 +267,8 @@ export function RegistryFootnote () {
 export function RegistryUnavailable () {
   return (
     <p role="status" className="text-sm text-[var(--text-secondary)]">
-      This database's pg-boss schema predates the instance registry. Instances appear here once it is
-      migrated by pg-boss 12.36 or later.
+      This database's schema predates the instance registry. Instances appear here once it is
+      migrated to 12.36 or later.
     </p>
   )
 }

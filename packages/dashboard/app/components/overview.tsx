@@ -55,7 +55,6 @@ export function OverviewHeader () {
   return (
     <PageHeader
       title="Overview"
-      subtitle="Monitor your pg-boss job queues"
       action={<ProSlot name="pageActions" page="overview" />}
     />
   )
