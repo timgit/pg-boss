@@ -215,7 +215,7 @@ export async function insertTestWarning (
   type: string,
   message: string,
   data: object = {}
-): Promise<number> {
+): Promise<string> {
   const p = getPool()
   const result = await p.query(
     `

@@ -67,7 +67,7 @@ export type JobResult =
 export type WarningType = WarningTypeValue
 
 export interface WarningResult {
-  id: number;
+  id: string;
   type: WarningType;
   message: string;
   data: unknown;
