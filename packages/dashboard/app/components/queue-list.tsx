@@ -23,6 +23,8 @@ import { cn } from '~/lib/utils'
 import { QUEUE_VIEW_COOKIE, type QueueView } from '~/lib/queue-list'
 import type { QueueResult } from '~/lib/types'
 import type { QueueListData } from '~/lib/queue-list.server'
+import { Count } from '~/components/ui/count'
+import { formatCompact } from '~/lib/format'
 
 /** One figure in a card's row of three. */
 export interface QueueCardFigure {
@@ -75,6 +77,14 @@ export interface QueueSortOption {
  * What an overlay that replaces `/queues` adds to the sections it composes. Every field is optional,
  * and without them the page is the free one.
  */
+/** A way of drawing the list that an overlay adds beside the cards and the table. */
+export interface QueueViewOption {
+  value: QueueView
+  label: string
+  icon?: ReactNode
+  render: (queues: QueueResult[]) => ReactNode
+}
+
 export interface QueueListExtensions {
   subtitle?: ReactNode
   /** After the free controls in the toolbar. */
@@ -86,6 +96,8 @@ export interface QueueListExtensions {
   /** Sorts offered before the free ones; the first is the default when the URL names none. */
   sorts?: QueueSortOption[]
   card?: (queue: QueueResult) => QueueCardExtension | undefined
+  /** Views of the overlay's own, drawn in place of the cards or the table when chosen. */
+  views?: QueueViewOption[]
   table?: {
     columns?: QueueTableColumn[]
     /** In place of the ready sparkline in the Trend column. */
@@ -123,7 +135,12 @@ function remember (view: QueueView) {
   }
 }
 
-function ViewToggle ({ view }: { view: QueueView }) {
+const BUILT_IN_VIEWS: Record<string, { label: string, icon: ReactNode }> = {
+  cards: { label: 'Cards', icon: <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" /> },
+  table: { label: 'Table', icon: <List className="h-3.5 w-3.5" aria-hidden="true" /> },
+}
+
+function ViewToggle ({ views, view, extensions }: { views: QueueView[], view: QueueView, extensions?: QueueListExtensions }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const choose = (next: QueueView) => {
     remember(next)
@@ -133,14 +150,15 @@ function ViewToggle ({ view }: { view: QueueView }) {
   }
   return (
     <ToggleGroup aria-label="View" value={[view]} onValueChange={(value) => { if (value[0]) choose(value[0] as QueueView) }}>
-      <ToggleGroupItem value="cards" className="inline-flex items-center gap-1.5">
-        <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
-        Cards
-      </ToggleGroupItem>
-      <ToggleGroupItem value="table" className="inline-flex items-center gap-1.5">
-        <List className="h-3.5 w-3.5" aria-hidden="true" />
-        Table
-      </ToggleGroupItem>
+      {views.map((value) => {
+        const option = extensions?.views?.find((v) => v.value === value) ?? BUILT_IN_VIEWS[value]
+        return (
+          <ToggleGroupItem key={value} value={value} className="inline-flex items-center gap-1.5">
+            {option?.icon}
+            {option?.label ?? value}
+          </ToggleGroupItem>
+        )
+      })}
     </ToggleGroup>
   )
 }
@@ -255,7 +273,7 @@ export function ReadyChart ({ history }: { history: number[] | null | undefined 
   return (
     <div className="relative pt-3.5">
       <span className="pgb-num absolute left-0 top-0 text-[10px] text-[var(--text-tertiary)]">last hour</span>
-      <span className="pgb-num absolute right-0 top-0 text-[10px] text-[var(--stats-ready)]">{top.toLocaleString('en-US')}</span>
+      <span className="pgb-num absolute right-0 top-0 text-[10px] text-[var(--stats-ready)]">{formatCompact(top)}</span>
       <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} preserveAspectRatio="none" className="block h-12 w-full" aria-hidden="true">
         <polygon points={`0,${CHART_H} ${line} ${CHART_W},${CHART_H}`} fill="var(--stats-ready)" opacity={0.14} />
         <polyline points={line} fill="none" stroke="var(--stats-ready)" strokeWidth={1.6} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
@@ -287,9 +305,9 @@ const n = (value: number) => value.toLocaleString('en-US')
 /** One queue as a card: three figures, a chart, its counts, and whatever an overlay adds. Opens its page. */
 export function QueueCard ({ queue, extension }: { queue: QueueResult, extension?: QueueCardExtension }) {
   const figures = extension?.figures ?? [
-    { value: n(queue.readyCount), label: 'ready', color: 'var(--stats-ready)' },
-    { value: n(queue.activeCount), label: 'active' },
-    { value: n(queue.failedCount), label: 'failed' },
+    { value: <Count value={queue.readyCount} />, label: 'ready', color: 'var(--stats-ready)' },
+    { value: <Count value={queue.activeCount} />, label: 'active' },
+    { value: <Count value={queue.failedCount} />, label: 'failed' },
   ]
   const severity = extension?.severity
   return (
@@ -310,7 +328,7 @@ export function QueueCard ({ queue, extension }: { queue: QueueResult, extension
       </div>
       {extension?.chart ?? <ReadyChart history={queue.readyHistory} />}
       <div className="pgb-num text-[11.5px] text-[var(--text-tertiary)]">
-        {extension?.counts ?? `queued ${n(queue.queuedCount)} · deferred ${n(queue.deferredCount)} · total ${n(queue.totalCount)}`}
+        {extension?.counts ?? `queued ${formatCompact(queue.queuedCount)} · deferred ${formatCompact(queue.deferredCount)} · total ${formatCompact(queue.totalCount)}`}
       </div>
       {extension?.lines}
       {extension?.footer}
@@ -406,6 +424,7 @@ export function QueueTable ({ queues, extensions }: { queues: QueueResult[], ext
                         height={20}
                         color="var(--stats-ready)"
                         showDot={false}
+                        area
                         aria-label={`Ready count over the last hour for ${queue.name}`}
                       />
                       )
@@ -435,9 +454,10 @@ export function QueueListHeader ({ data, extensions }: { data: QueueListData, ex
       title="Queues"
       subtitle={extensions?.subtitle ?? `${n(totalCount)} queue${totalCount !== 1 ? 's' : ''} ${filtered ? 'found' : 'configured'}`}
       action={
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        // The view toggle sits under the page's own action, so the action keeps its place whichever view is chosen.
+        <div className="flex flex-col items-end gap-2">
           <ProSlot name="pageActions" page="queues" />
-          <ViewToggle view={view} />
+          {data.views.length > 1 && <ViewToggle views={data.views} view={view} extensions={extensions} />}
         </div>
       }
     />
@@ -450,6 +470,9 @@ export function QueueListHeader ({ data, extensions }: { data: QueueListData, ex
  */
 export function QueueListSections ({ data, extensions }: { data: QueueListData, extensions?: QueueListExtensions }) {
   const { queues, view, page, totalPages, hasNextPage, hasPrevPage, totalCount, pageSize } = data
+  // Anything but the table is laid out the same way: the overlay's own view, or the cards.
+  const drawn = extensions?.views?.find((v) => v.value === view)?.render ??
+    (view === 'cards' ? (list: QueueResult[]) => <QueueCards queues={list} extensions={extensions} /> : null)
   const pagination = (
     <TablePagination
       page={page}
@@ -464,11 +487,11 @@ export function QueueListSections ({ data, extensions }: { data: QueueListData, 
     <div className="space-y-4">
       <Toolbar data={data} extensions={extensions} />
       {extensions?.above}
-      {view === 'cards'
+      {drawn
         ? (
           <section aria-label="Queues" className="space-y-3">
             {queues.length > 0
-              ? <QueueCards queues={queues} extensions={extensions} />
+              ? drawn(queues)
               : <Card><CardContent className="py-8 text-center text-[var(--text-tertiary)]">No queues found</CardContent></Card>}
             {totalPages != null && totalPages > 1 && <Card>{pagination}</Card>}
           </section>

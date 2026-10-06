@@ -21,12 +21,19 @@ function cookieValue (request: Request, name: string): string | null {
 }
 
 /**
- * What `/queues` shows: one page of queues, the filter, search and sort that chose them, and whether
- * they are drawn as cards or a table. Apart from the route so an overlay that replaces the page can
- * load it too. With `all`, every queue the filter and search match comes back as one page, for an
- * overlay with an order of its own to sort and page itself.
+ * What `/queues` shows: one page of queues, and the filter, search and sort that chose them. Apart
+ * from the route so an overlay that replaces the page can load it too. With `all`, every queue the
+ * filter and search match comes back as one page, for an overlay with an order of its own to sort
+ * and page itself. `views` are the ways an overlay offers to draw the list, in the order its toggle
+ * shows them, and `defaultView` the one it opens on, the first unless named; without an overlay
+ * there is only the table.
  */
-export async function loadQueueList (DB_URL: string, SCHEMA: string, request: Request, { all = false }: { all?: boolean } = {}) {
+export async function loadQueueList (
+  DB_URL: string,
+  SCHEMA: string,
+  request: Request,
+  { all = false, views = ['table'], defaultView }: { all?: boolean, views?: QueueView[], defaultView?: QueueView } = {}
+) {
   const url = new URL(request.url)
   const { page, limit, offset } = all ? { page: 1, limit: ALL_LIMIT, offset: 0 } : pageWindow(url, QUEUE_PAGE_SIZE)
   const rawFilter = url.searchParams.get('filter') || 'all'
@@ -34,8 +41,8 @@ export async function loadQueueList (DB_URL: string, SCHEMA: string, request: Re
   const search = url.searchParams.get('search') || ''
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
-  // The URL wins, then the viewer's last choice, then cards.
-  const view: QueueView = parseQueueView(url.searchParams.get('view') ?? cookieValue(request, QUEUE_VIEW_COOKIE))
+  // The URL wins, then the viewer's last choice, then the default.
+  const view: QueueView = parseQueueView(url.searchParams.get('view') ?? cookieValue(request, QUEUE_VIEW_COOKIE), views, defaultView)
 
   // Most ready first unless the URL names a sort. A sort only an overlay knows falls back to name
   // here, and the overlay orders the page itself.
@@ -53,6 +60,7 @@ export async function loadQueueList (DB_URL: string, SCHEMA: string, request: Re
     search,
     sort,
     dir,
+    views,
     view,
   }
 }
