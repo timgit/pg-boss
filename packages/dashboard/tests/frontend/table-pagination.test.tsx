@@ -47,7 +47,8 @@ describe("TablePagination", () => {
     renderAt("/queues?page=10&after=c", { page: 10, ...cursors, totalPages: 20, hasPrevPage: true, hasNextPage: true });
 
     expect(pageLabels()).toEqual(["1", "…", "9", "10", "11", "…"]);
-    expect(screen.getByRole("link", { name: "10" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText("10")).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: "10" })).not.toBeInTheDocument();
   });
 
   it("keeps every other search param and pages by cursor, dropping it for the first page", () => {

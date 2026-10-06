@@ -31,12 +31,13 @@ describe("Pagination primitives", () => {
     expect(screen.getByRole("listitem")).toBeInTheDocument();
   });
 
-  it("marks the active page as the current one", () => {
+  it("marks the active page as the current one, not as a link back to it", () => {
     renderInRouter(<PaginationLink to="/jobs?page=3" isActive>3</PaginationLink>);
 
-    const link = screen.getByRole("link", { name: "3" });
-    expect(link).toHaveAttribute("aria-current", "page");
-    expect(link).toHaveAttribute("data-active", "true");
+    const current = screen.getByText("3");
+    expect(current).toHaveAttribute("aria-current", "page");
+    expect(current).toHaveAttribute("data-active", "true");
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("links through the router, keeping the selected database", () => {
