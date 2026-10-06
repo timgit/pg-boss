@@ -12,8 +12,6 @@ const freeRoutes = [
   route('queues', 'routes/queues._index.tsx'),
   route('queues/:name', 'routes/queues.$name.tsx'),
   route('queues/:name/metrics', 'routes/queues.$name.metrics.tsx'),
-  route('stats', 'routes/stats._index.tsx'),
-  route('stats/:queue', 'routes/stats.$queue.tsx'),
   route('queues/:name/jobs/:jobId', 'routes/queues.$name.jobs.$jobId.tsx'),
   route('schedules', 'routes/schedules.tsx'),
   route('schedules/:name/:key', 'routes/schedules.$name.$key.tsx'),

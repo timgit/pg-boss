@@ -30,12 +30,6 @@ export function Breadcrumbs() {
         breadcrumbs.push({ label: 'Job Detail' })
       }
     }
-  } else if (pathSegments[0] === 'stats') {
-    breadcrumbs.push({ label: 'Stats', href: '/stats' })
-
-    if (pathSegments.length > 1) {
-      breadcrumbs.push({ label: decodeURIComponent(pathSegments[1]) })
-    }
   } else if (pathSegments[0] === 'schedules') {
     breadcrumbs.push({ label: 'Schedules', href: '/schedules' })
 

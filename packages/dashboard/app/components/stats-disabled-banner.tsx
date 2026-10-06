@@ -1,8 +1,8 @@
 import { TriangleAlert } from 'lucide-react'
 import { cn } from '~/lib/utils'
 
-// Shown on the queue-detail and /stats pages when persisted queue stats history isn't being
-// recorded, so the stats charts and the failed-count trend would be empty. (The ready sparkline
+// Shown on the queue-detail and metrics surfaces when persisted queue stats history isn't being
+// recorded, so the interactive chart and the failed-count trend would be empty. (The ready sparkline
 // is always available from queue.ready_history and needs nothing.) The `queue_stats` table is created
 // at schema v35 but stays empty until pg-boss is constructed with `persistQueueStats: true`; see
 // getQueueStatsCollectionStatus in queries.server.ts.
@@ -20,7 +20,7 @@ export function StatsDisabledBanner ({ className }: { className?: string }) {
       <div className="text-sm">
         <p className="font-medium text-[var(--text-primary)]">Queue stats history isn&rsquo;t being recorded</p>
         <p className="mt-0.5 text-[var(--text-secondary)]">
-          The stats pages and longer-range trends draw from recorded history. Enable it by constructing pg-boss with{' '}
+          The interactive metrics chart and longer-range trends draw from recorded history. Enable it by constructing pg-boss with{' '}
           <code className="rounded bg-[var(--surface-card)] px-1 py-0.5 font-mono text-[0.85em] text-[var(--text-primary)]">persistQueueStats: true</code>
         </p>
       </div>
