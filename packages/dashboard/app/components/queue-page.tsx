@@ -30,6 +30,7 @@ import {
   type JobColumn,
 } from '~/lib/job-columns'
 import type { QueuePageData } from '~/lib/queue-page.server'
+import { Count } from '~/components/ui/count'
 
 /**
  * What an overlay that replaces a queue's page adds to the sections it composes. Every field is
@@ -101,16 +102,16 @@ export function QueueCounts ({ queue, statsAvailable }: { queue: QueueResult, st
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard
           label="Queued"
-          value={queue.queuedCount.toLocaleString()}
+          value={<Count value={queue.queuedCount} />}
           accent={overThreshold ? 'error' : 'neutral'}
           hint={overThreshold ? 'over threshold' : undefined}
           footer={queue.blockedCount > 0 ? `${queue.blockedCount.toLocaleString()} blocked by a flow parent` : undefined}
           to={metricsHref('queued')}
         />
-        <StatCard label="Deferred" value={queue.deferredCount.toLocaleString()} to={metricsHref('deferred')} />
+        <StatCard label="Deferred" value={<Count value={queue.deferredCount} />} to={metricsHref('deferred')} />
         <StatCard
           label="Ready"
-          value={queue.readyCount.toLocaleString()}
+          value={<Count value={queue.readyCount} />}
           accent="primary"
           to={metricsHref('ready')}
           sparkline={readyTrend.length > 0 && (
@@ -119,13 +120,14 @@ export function QueueCounts ({ queue, statsAvailable }: { queue: QueueResult, st
               width={160}
               height={24}
               color="var(--primary-600)"
+              area
               aria-label="Ready count over the last hour"
             />
           )}
         />
-        <StatCard label="Active" value={queue.activeCount.toLocaleString()} accent="primary" to={metricsHref('active')} />
-        <StatCard label="Failed" value={queue.failedCount.toLocaleString()} to={metricsHref('failed')} />
-        <StatCard label="Total" value={queue.totalCount.toLocaleString()} to={metricsHref('total')} />
+        <StatCard label="Active" value={<Count value={queue.activeCount} />} accent="primary" to={metricsHref('active')} />
+        <StatCard label="Failed" value={<Count value={queue.failedCount} />} to={metricsHref('failed')} />
+        <StatCard label="Total" value={<Count value={queue.totalCount} />} to={metricsHref('total')} />
       </div>
     </>
   )
