@@ -2,17 +2,22 @@ import { describe, it, expect } from 'vitest'
 import { ctx, createTestQueue, updateQueueStats } from './helpers'
 import { loadQueueList } from '~/lib/queue-list.server'
 
-function load (search = '', cookie?: string) {
+function load (search = '', cookie?: string, options?: { views?: string[], defaultView?: string }) {
   const request = new Request(`http://localhost/queues${search}`, cookie ? { headers: { cookie } } : undefined)
-  return loadQueueList(ctx.connectionString, ctx.schema, request)
+  return loadQueueList(ctx.connectionString, ctx.schema, request, options)
 }
 
 describe('loadQueueList', () => {
-  it('opens on cards, or on the view the URL or the viewer\'s cookie names', async () => {
-    expect((await load()).view).toBe('cards')
-    expect((await load('', 'other=1; pgboss-queues-view=table')).view).toBe('table')
-    expect((await load('?view=cards', 'pgboss-queues-view=table')).view).toBe('cards')
-    expect((await load('?view=sideways')).view).toBe('cards')
+  it('draws a table, whatever the URL or cookie asks, unless an overlay offers cards', async () => {
+    expect(await load('?view=cards', 'pgboss-queues-view=cards')).toMatchObject({ views: ['table'], view: 'table' })
+  })
+
+  it('with cards on offer, opens on cards, or on the view the URL or the viewer\'s cookie names', async () => {
+    const cards = { views: ['table', 'cards'], defaultView: 'cards' }
+    expect((await load('', undefined, cards)).view).toBe('cards')
+    expect((await load('', 'other=1; pgboss-queues-view=table', cards)).view).toBe('table')
+    expect((await load('?view=cards', 'pgboss-queues-view=table', cards)).view).toBe('cards')
+    expect((await load('?view=sideways', undefined, cards)).view).toBe('cards')
   })
 
   it('puts the most ready first unless the URL names a sort', async () => {
