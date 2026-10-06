@@ -144,6 +144,7 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
                           height={20}
                           color="var(--primary-600)"
                           showDot={false}
+                          area
                           aria-label={`Ready count trend for ${queue.name}`}
                         />
                       ) : (

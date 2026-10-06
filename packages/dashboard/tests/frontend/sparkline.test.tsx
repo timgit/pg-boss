@@ -90,4 +90,12 @@ describe('Sparkline stretch', () => {
     expect(svg.getAttribute('class')).toContain('w-full')
     expect(container.querySelector('polyline')!.getAttribute('vector-effect')).toBe('non-scaling-stroke')
   })
+
+  it('shades under each run of the line when asked, and not across a gap', () => {
+    const { container } = render(<Sparkline data={[1, 3, null, 2, 4]} area />)
+    expect(container.querySelectorAll('polygon')).toHaveLength(2)
+
+    const { container: plain } = render(<Sparkline data={[1, 3, 2]} />)
+    expect(plain.querySelectorAll('polygon')).toHaveLength(0)
+  })
 })
