@@ -88,7 +88,7 @@ export function InstancePageHeader ({ instance: i, checkedOn }: { instance: Inst
       <PageHeader
         title={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className={cn(!i.name && 'font-normal italic')}>{instanceName(i.name)}</span>
+            <span>Instance: <span className={cn(!i.name && 'font-normal italic')}>{instanceName(i.name)}</span></span>
             <span className="font-mono text-base font-medium text-[var(--text-tertiary)]" title={i.id}>{i.id.slice(0, 8)}</span>
             <StatusBadge status={status} />
           </span>

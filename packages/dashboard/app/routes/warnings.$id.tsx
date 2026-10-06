@@ -47,7 +47,7 @@ export default function WarningDetail ({ loaderData }: Route.ComponentProps) {
   return (
     <div className="space-y-4">
       <PageHeader
-        title={warningTypeLabel(warning.type)}
+        title={`Warning: ${warningTypeLabel(warning.type)}`}
         subtitle={`Recorded ${formatTimeAgo(createdOn)}`}
       />
 

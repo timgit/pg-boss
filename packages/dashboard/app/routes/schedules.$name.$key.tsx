@@ -45,7 +45,7 @@ export default function ScheduleDetail ({ loaderData }: Route.ComponentProps) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {schedule.name}
+            Schedule: {schedule.name}
             {schedule.key && (
               <span className="font-normal text-gray-500 dark:text-gray-400"> ({schedule.key})</span>
             )}

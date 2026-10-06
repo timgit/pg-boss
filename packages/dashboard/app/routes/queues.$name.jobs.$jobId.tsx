@@ -187,7 +187,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="break-all font-mono text-xl font-medium tracking-[-0.01em] text-[var(--text-primary)] sm:text-2xl">
-              {job.id}
+              <span className="font-sans">Job: </span>{job.id}
             </h1>
             <CopyButton value={job.id} label="Copy job ID" />
             <StateBadge state={state} />

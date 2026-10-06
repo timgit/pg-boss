@@ -53,7 +53,7 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
   return (
     <>
       <PageHeader
-        title={queue.name}
+        title={`Queue: ${queue.name}`}
         action={
           <div className="flex flex-col items-end gap-2">
             <div className="flex flex-wrap items-center justify-end gap-2">
