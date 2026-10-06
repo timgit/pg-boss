@@ -3,6 +3,7 @@ import { ctx, getBoss, makeContext } from './helpers'
 import { loader } from '~/routes/subscriptions'
 import { loader as queueLoader } from '~/routes/queues.$name'
 import { PAGE_SIZE } from '~/lib/pagination'
+import { loader as eventLoader } from '~/routes/subscriptions.$event'
 
 async function loadSubscriptions (search = '') {
   return loader({
@@ -96,6 +97,28 @@ describe('/subscriptions loader', () => {
     )
     expect(second.page).toBe(2)
     expect(second.hasNextPage).toBe(false)
+  })
+})
+
+describe('/subscriptions/:event loader', () => {
+  const loadEvent = (event: string) => eventLoader({
+    params: { event },
+    context: makeContext(ctx),
+    request: new Request(`http://localhost/subscriptions/${encodeURIComponent(event)}`),
+  } as Parameters<typeof eventLoader>[0])
+
+  it('lists the queues subscribed to one event, by name', async () => {
+    await seed()
+
+    const data = await loadEvent('user.created')
+    expect(data.event).toBe('user.created')
+    expect(data.queues.map((q) => q.name)).toEqual(['billing', 'email', 'search'])
+  })
+
+  it('is not found for an event nobody is subscribed to', async () => {
+    await seed()
+
+    await expect(loadEvent('nobody.cares')).rejects.toMatchObject({ status: 404 })
   })
 })
 
