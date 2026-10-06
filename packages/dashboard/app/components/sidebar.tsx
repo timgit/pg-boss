@@ -7,6 +7,7 @@ import { proPresent } from '~/lib/pro-present'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
 import type { PublicDatabase } from '~/lib/types'
+import type { ProNavItem } from '~/lib/pro-contract'
 import markWhite from '~/assets/pg-boss-mark-white.svg?raw'
 import {
   Sidebar,
@@ -14,6 +15,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -28,14 +30,13 @@ interface RootLoaderData {
 
 const navigation = [
   { name: 'Overview', href: '/', icon: HomeIcon },
-  { name: 'Jobs', href: '/jobs', icon: JobsIcon },
   { name: 'Queues', href: '/queues', icon: QueueIcon },
   { name: 'Schedules', href: '/schedules', icon: SchedulesIcon },
   { name: 'Subscriptions', href: '/subscriptions', icon: SubscriptionsIcon },
   { name: 'Instances', href: '/instances', icon: InstancesIcon },
+  { name: 'Jobs', href: '/jobs', icon: JobsIcon },
   { name: 'Migrations', href: '/migrations', icon: MigrationsIcon },
   { name: 'Warnings', href: '/warnings', icon: WarningIcon },
-  ...overlay.nav,
 ]
 
 function HomeIcon ({ className }: { className?: string }) {
@@ -240,7 +241,7 @@ function NavItem ({
   href,
   onNavigate,
 }: {
-  item: (typeof navigation)[number]
+  item: ProNavItem
   href: string
   onNavigate: () => void
 }) {
@@ -380,6 +381,28 @@ export function AppSidebar () {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {/* The overlay's pages under a rule of their own, so what it adds reads apart from the dashboard. */}
+        {overlay.nav.length > 0 && (
+          <SidebarGroup role="group" aria-label={overlay.navLabel} className="border-t border-[var(--border-subtle)] pt-3">
+            {overlay.navLabel && (
+              <SidebarGroupLabel className="pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] group-data-[state=collapsed]:hidden">
+                {overlay.navLabel}
+              </SidebarGroupLabel>
+            )}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {overlay.nav.map((item) => (
+                  <NavItem
+                    key={item.name}
+                    item={item}
+                    href={buildHref(item.href)}
+                    onNavigate={() => setOpenMobile(false)}
+                  />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       {/*
