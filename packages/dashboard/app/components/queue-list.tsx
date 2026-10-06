@@ -314,9 +314,10 @@ export function QueueCard ({ queue, extension }: { queue: QueueResult, extension
     <DbLink
       to={queueHref(queue.name)}
       className={cn(
-        'group grid content-start gap-2 rounded-[10px] border bg-[var(--surface-card)] px-3.5 pb-2.5 pt-3',
+        // The card gradient, as every Card has: a solid fill reads darker beside them in dark mode.
+        'group grid content-start gap-2 rounded-[10px] border [background:var(--surface-card-grad)] px-3.5 pb-2.5 pt-3',
         severity ? SEVERITY_BORDER[severity] : 'border-[var(--border-default)]',
-        'transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]'
+        'transition-colors hover:[background:var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]'
       )}
     >
       <div className="flex min-w-0 items-center justify-between gap-2">

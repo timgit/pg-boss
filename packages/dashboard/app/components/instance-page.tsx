@@ -111,7 +111,7 @@ export function InstancePageHeader ({ instance: i, checkedOn }: { instance: Inst
   )
 }
 
-const WORK_HEAD = 'whitespace-nowrap px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-tertiary)]'
+const WORK_HEAD = 'whitespace-nowrap px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]'
 
 /**
  * The queues an instance works, one row each, opening to the `work()` calls on it and their settings.
@@ -139,7 +139,8 @@ export function WorkersCard ({ instance: i, checkedOn, columns = [] }: { instanc
         : (
           <div className="-mx-2 overflow-x-auto">
             <table className="min-w-full text-[13px]">
-              <thead>
+              {/* The band every list's header has. */}
+              <thead className="bg-[var(--surface-sunken)]">
                 <tr className="text-left">
                   <th className={WORK_HEAD}>Queue</th>
                   <th className={cn(WORK_HEAD, 'text-right')}>Workers</th>
