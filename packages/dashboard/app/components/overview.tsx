@@ -64,7 +64,7 @@ export function OverviewHeader () {
 }
 
 /**
- * The overview's body: the stat row, the migrations banner, and top queues beside recent warnings.
+ * The overview's body: the migrations banner when there is one, the stat row, and top queues beside recent warnings.
  * `narrow` lays it out for a column beside something else, three stats to a row and the two cards
  * stacked. Exported so an overlay that replaces the page composes it rather than copying it.
  */
@@ -81,6 +81,9 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
 
   return (
     <div>
+      {/* First, when there is one: migrations waiting, running or failed need somebody to look. */}
+      <MigrationsBanner migrations={migrations} />
+
       {/* Stat row */}
       <div className={narrow
         ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 mb-4'
@@ -88,8 +91,6 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
       >
         <StatsCards stats={stats} footers={extensions.statFooters} />
       </div>
-
-      <MigrationsBanner migrations={migrations} />
 
       {/* Two column: top queues + recent warnings */}
       <div className={narrow ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4'}>
