@@ -69,10 +69,10 @@ DropdownMenuSubContent.displayName = 'DropdownMenuSubContent'
 
 const DropdownMenuContent = forwardRef<
   ElementRef<typeof Menu.Popup>,
-  ComponentPropsWithoutRef<typeof Menu.Popup>
->(({ className, ...props }, ref) => (
+  ComponentPropsWithoutRef<typeof Menu.Popup> & Pick<ComponentPropsWithoutRef<typeof Menu.Positioner>, 'align' | 'sideOffset'>
+>(({ className, align, sideOffset, ...props }, ref) => (
   <Menu.Portal>
-    <Menu.Positioner>
+    <Menu.Positioner align={align} sideOffset={sideOffset}>
       <Menu.Popup
         ref={ref}
         className={cn(
