@@ -338,7 +338,7 @@ export function OptionsCard ({ instance: i }: { instance: Instance }) {
               </dl>
               )}
           <p className="text-xs text-[var(--text-tertiary)]">
-            Changed options are compared with pg-boss's current defaults. Connection settings are not saved for security reasons.
+            Changed options are compared with the current defaults. Connection settings are not saved for security reasons.
           </p>
         </div>
       </details>

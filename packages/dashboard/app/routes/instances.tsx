@@ -39,8 +39,8 @@ export default function Instances ({ loaderData }: { loaderData: InstancesData }
       <PageHeader
         title="Instances"
         subtitle={available
-          ? `Every pg-boss instance registered in this database: ${live.length} live on ${hosts === 1 ? 'one host' : `${hosts} hosts`}`
-          : 'The pg-boss instances that share this database'}
+          ? `Every instance registered in this database: ${live.length} live on ${hosts === 1 ? 'one host' : `${hosts} hosts`}`
+          : 'The instances that share this database'}
       />
 
       {available

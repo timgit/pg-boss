@@ -120,7 +120,7 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
                   <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={4}>
                     {typeFilter
                       ? `No ${typeFilter.replace('_', ' ')} warnings found`
-                      : 'No warnings recorded. Enable persistWarnings in pg-boss config to capture warnings.'}
+                      : 'No warnings recorded. Enable persistWarnings in your config to capture warnings.'}
                   </TableCell>
                 </TableRow>
               ) : (
