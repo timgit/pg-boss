@@ -20,7 +20,6 @@ import {
   getProblemQueuesCount,
   getTopQueues,
   getRecentJobs,
-  getRecentJobsCount,
   getQueueNames,
   getJobs,
   getJobCountFromQueue,
@@ -570,42 +569,6 @@ describe('Job Queries', () => {
         expect(jobs).toHaveLength(1)
         expect(jobs[0].id).toBe(targetId)
       })
-    })
-  })
-
-  describe('getRecentJobsCount', () => {
-    it('returns 0 when no jobs exist', async () => {
-      const count = await getRecentJobsCount(ctx.connectionString, ctx.schema)
-      expect(count).toBe(0)
-    })
-
-    it('counts all jobs when no filters are set', async () => {
-      await createTestQueue('test-queue')
-      await sendTestJob('test-queue', { task: '1' })
-      await sendTestJob('test-queue', { task: '2' })
-      await sendTestJob('test-queue', { task: '3' })
-
-      const count = await getRecentJobsCount(ctx.connectionString, ctx.schema)
-      expect(count).toBe(3)
-    })
-
-    it('respects filters', async () => {
-      await createTestQueue('alpha')
-      await createTestQueue('beta')
-      await sendTestJob('alpha', { task: 'a1' })
-      await sendTestJob('alpha', { task: 'a2' })
-      await sendTestJob('beta', { task: 'b1' })
-
-      const count = await getRecentJobsCount(ctx.connectionString, ctx.schema, { queues: ['alpha'] })
-      expect(count).toBe(2)
-    })
-
-    it('returns 0 when id filter is malformed', async () => {
-      await createTestQueue('test-queue')
-      await sendTestJob('test-queue', { task: '1' })
-
-      const count = await getRecentJobsCount(ctx.connectionString, ctx.schema, { id: 'nope' })
-      expect(count).toBe(0)
     })
   })
 

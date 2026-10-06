@@ -3,7 +3,6 @@ import { ProSlot } from '~/components/pro-slot'
 import type { Route } from './+types/jobs'
 import {
   getRecentJobs,
-  getRecentJobsCount,
   getQueueNames,
   type RecentJobsFilterOptions,
 } from '~/lib/queries.server'
@@ -50,7 +49,6 @@ export const handle: TitleHandle = { title: 'Jobs' }
 interface ParsedFilters extends JobsFilters {
   serverFilters: RecentJobsFilterOptions
   hasActiveFilters: boolean
-  shouldRunCount: boolean
 }
 
 // Exported for tests: buildSearchParams must round-trip through this parser.
@@ -64,9 +62,7 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
   const queuesRaw = (searchParams.get('queues') || '').trim()
   const queues = queuesRaw ? queuesRaw.split(',').filter(Boolean) : []
   const minRetriesRaw = (searchParams.get('minRetries') || '').trim()
-  // 0 is normalized away: retry_count >= 0 matches every job, but a non-empty
-  // value here would still flip hasNarrowingFilters and trigger an unbounded
-  // COUNT(*) even though buildRecentJobsWhere adds no condition for it.
+  // 0 is normalized away: retry_count >= 0 matches every job, so it is no filter at all.
   const minRetries = /^\d+$/.test(minRetriesRaw) && Number(minRetriesRaw) > 0 ? minRetriesRaw : ''
 
   const dataPairs = parseJsonFilterPairs(searchParams, 'data')
@@ -74,12 +70,6 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
   const dataObject = jsonFilterPairsToObject(dataPairs.filter(p => p.key.trim() && p.value !== ''))
   const outputObject = jsonFilterPairsToObject(outputPairs.filter(p => p.key.trim() && p.value !== ''))
 
-  // Cosmetic vs cost-bearing distinction:
-  //   hasActiveFilters drives the "X jobs found" subtitle and the chip strip.
-  //   shouldRunCount gates the COUNT(*) — we only run it when there's a WHERE
-  //   that actually shrinks the scan. state='all' alone adds no WHERE and would
-  //   force a full table scan to count every row, which is exactly what we
-  //   wanted to avoid by skipping the count for the default view.
   const hasNarrowingFilters =
     id !== '' ||
     queues.length > 0 ||
@@ -88,7 +78,6 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
     Object.keys(outputObject).length > 0
 
   const hasActiveFilters = hasNarrowingFilters || state !== DEFAULT_STATE_FILTER
-  const shouldRunCount = hasNarrowingFilters || (state !== DEFAULT_STATE_FILTER && state !== 'all')
 
   const serverFilters: RecentJobsFilterOptions = {
     state,
@@ -108,7 +97,6 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
     output: outputPairs,
     serverFilters,
     hasActiveFilters,
-    shouldRunCount,
   }
 }
 
@@ -122,7 +110,10 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
 
   const { page, limit, offset } = pageWindow(url, PAGE_SIZE)
 
-  const [recentJobsResult, queueNames, totalCount] = await Promise.all([
+  // No count of the job table, filtered or not: an aggregate over it is a scan of every matching
+  // row on a large deployment, and only ever numbered the pages. A full page offers Next, which
+  // can land on an empty page when the rows end exactly at a page boundary.
+  const [recentJobsResult, queueNames] = await Promise.all([
     getRecentJobs(DB_URL, SCHEMA, {
       ...parsed.serverFilters,
       limit,
@@ -139,28 +130,15 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
       }
     ),
     getQueueNames(DB_URL, SCHEMA),
-    // Count is best-effort: a failure here would block the entire page even
-    // though the result list already loaded. Degrade to a null count so the
-    // subtitle silently falls back to the next-page heuristic.
-    parsed.shouldRunCount
-      ? getRecentJobsCount(DB_URL, SCHEMA, parsed.serverFilters)
-        .catch(() => null)
-      : Promise.resolve<number | null>(null),
   ])
 
   const recentJobs = recentJobsResult.rows
-  const info = pageInfo(page, PAGE_SIZE, recentJobs.length, totalCount)
-  // A timed-out list has no rows to page through, whatever the count says.
-  const hasNextPage = !recentJobsResult.timedOut && info.hasNextPage
-  const hasPrevPage = info.hasPrevPage
-  const totalPages = recentJobsResult.timedOut ? null : info.totalPages
+  const { hasNextPage, hasPrevPage } = pageInfo(page, PAGE_SIZE, recentJobs.length, null)
 
   return {
     recentJobs,
     queueNames,
-    totalCount,
     page,
-    totalPages,
     timedOut: recentJobsResult.timedOut,
     queryTimeoutMs: getQueryTimeoutMs(),
     filters: {
@@ -230,9 +208,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
   const {
     recentJobs,
     queueNames,
-    totalCount,
     page,
-    totalPages,
     filters,
     hasActiveFilters,
     hasNextPage,
@@ -275,8 +251,8 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     }, jobColumns))
   }
 
-  const subtitle = hasActiveFilters && totalCount != null
-    ? `${totalCount.toLocaleString()} job${totalCount === 1 ? '' : 's'} found`
+  const subtitle = hasActiveFilters
+    ? 'Jobs matching these filters, newest first'
     : 'Recently created jobs across all queues'
 
   return (
@@ -344,11 +320,9 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
 
         <TablePagination
           page={page}
-          totalPages={totalPages}
+          totalPages={null}
           hasNextPage={hasNextPage}
           hasPrevPage={hasPrevPage}
-          totalCount={totalCount}
-          pageSize={PAGE_SIZE}
         />
       </Card>
     </div>

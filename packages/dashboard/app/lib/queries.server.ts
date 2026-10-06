@@ -535,7 +535,7 @@ export interface RecentJobsFilterOptions {
   output?: Record<string, unknown> | null;
 }
 
-// Build the shared WHERE fragment used by getRecentJobs and getRecentJobsCount.
+// Build the WHERE fragment getRecentJobs filters by.
 // Returns the assembled clause (with leading WHERE if any conditions exist) plus
 // the bound params. The caller appends its own LIMIT/OFFSET params after these.
 function buildRecentJobsWhere (
@@ -624,23 +624,6 @@ export async function getRecentJobs (
     LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
   `
   return query<JobResult>(dbUrl, sql, [...params, limit, offset])
-}
-
-// Count of jobs matching the same filters as getRecentJobs. Intentionally
-// separate so the loader can skip it when no filter is active (an unfiltered
-// COUNT(*) on the job table is expensive on large deployments).
-export async function getRecentJobsCount (
-  dbUrl: string,
-  schema: string,
-  options: RecentJobsFilterOptions = {}
-): Promise<number> {
-  const s = validateIdentifier(schema)
-  const { clause, params, impossible } = buildRecentJobsWhere(s, options)
-  if (impossible) return 0
-
-  const sql = `SELECT COUNT(*)::int as count FROM ${s}.job ${clause}`
-  const result = await queryOne<{ count: number }>(dbUrl, sql, params)
-  return result?.count ?? 0
 }
 
 // Lightweight name-only listing of queues for filter dropdowns. Kept separate

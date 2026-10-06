@@ -28,11 +28,10 @@ describe('jobs URL filter round-trip', () => {
     expect(buildSearchParams(filters).toString()).toBe('')
   })
 
-  it('parses an empty query string to default filters with no count', () => {
+  it('parses an empty query string to default filters', () => {
     const parsed = parseFiltersFromUrl(new URLSearchParams())
     expect(parsed.state).toBe(DEFAULT_STATE_FILTER)
     expect(parsed.hasActiveFilters).toBe(false)
-    expect(parsed.shouldRunCount).toBe(false)
   })
 
   it('round-trips every filter type unchanged', () => {
@@ -59,15 +58,10 @@ describe('jobs URL filter round-trip', () => {
     expect(buildSearchParams(filters).toString()).toBe('')
   })
 
-  it('normalizes minRetries=0 from the URL to no filter (regression: count gate bypass)', () => {
+  it('normalizes minRetries=0 from the URL to no filter', () => {
     const parsed = parseFiltersFromUrl(new URLSearchParams('minRetries=0'))
     expect(parsed.minRetries).toBe('')
     expect(parsed.hasActiveFilters).toBe(false)
-    expect(parsed.shouldRunCount).toBe(false)
-  })
-
-  it('does not run the count for state=all even with minRetries=0 present', () => {
-    expect(parseFiltersFromUrl(new URLSearchParams('state=all&minRetries=0')).shouldRunCount).toBe(false)
   })
 
   it('collapses duplicate data keys to the value the query uses', () => {
