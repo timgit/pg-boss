@@ -16,6 +16,8 @@ interface SparklineProps {
   shadeTo?: number
   /** Fill the container's width, stretching the plot rather than keeping its aspect ratio. */
   stretch?: boolean
+  /** Shade under the line in its color, down to the bottom of the plot. */
+  area?: boolean
   className?: string
   'aria-label'?: string
 }
@@ -34,6 +36,7 @@ export function Sparkline ({
   zeroBased = false,
   shadeTo,
   stretch = false,
+  area = false,
   className,
   'aria-label': ariaLabel,
 }: SparklineProps) {
@@ -54,18 +57,21 @@ export function Sparkline ({
   // Flat series has no span to normalize against — center it instead of pinning it to the baseline.
   const y = (v: number) => (max === min ? height / 2 : pad + (1 - (v - min) / span) * innerH)
 
-  // Consecutive non-null values, each drawn as its own line.
-  const runs: string[] = []
+  // Consecutive non-null values, each drawn as its own line, with where it starts and ends for the area.
+  const runs: Array<{ points: string, from: number, to: number }> = []
   let run: string[] = []
+  let start = 0
   data.forEach((v, i) => {
     if (v == null) {
-      if (run.length > 1) runs.push(run.join(' '))
+      if (run.length > 1) runs.push({ points: run.join(' '), from: x(start), to: x(i - 1) })
       run = []
       return
     }
+    if (run.length === 0) start = i
     run.push(`${x(i).toFixed(2)},${y(v).toFixed(2)}`)
   })
-  if (run.length > 1) runs.push(run.join(' '))
+  if (run.length > 1) runs.push({ points: run.join(' '), from: x(start), to: x(n - 1) })
+  const floor = height - pad
 
   const last = data[n - 1]
 
@@ -83,7 +89,10 @@ export function Sparkline ({
       {shadeTo != null && shadeTo > 0 && (
         <rect x={0} y={0} width={width * Math.min(shadeTo, 1)} height={height} fill="var(--stats-previous-band)" />
       )}
-      {runs.map((points, i) => (
+      {area && runs.map((r, i) => (
+        <polygon key={`a${i}`} points={`${r.from.toFixed(2)},${floor} ${r.points} ${r.to.toFixed(2)},${floor}`} fill={color} opacity={0.14} />
+      ))}
+      {runs.map(({ points }, i) => (
         <polyline
           key={i}
           points={points}
