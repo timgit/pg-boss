@@ -100,17 +100,16 @@ export default function Subscriptions ({ loaderData }: Route.ComponentProps) {
                 </TableRow>
               ) : (
                 subscriptions.map((subscription) => (
-                  <TableRow key={subscription.event}>
-                    <TableCell className="font-medium font-mono text-xs text-[var(--text-primary)]">
-                      {subscription.event}
+                  <TableRow key={subscription.event} to={`/subscriptions/${encodeURIComponent(subscription.event)}`}>
+                    <TableCell className="font-medium font-mono text-xs">
+                      <DbLink to={`/subscriptions/${encodeURIComponent(subscription.event)}`} className={queueLinkClass}>
+                        {subscription.event}
+                      </DbLink>
                     </TableCell>
-                    <TableCell>
-                      <span className="flex flex-wrap gap-x-3 gap-y-1">
-                        {subscription.queues.map((name) => (
-                          <DbLink key={name} to={`/queues/${encodeURIComponent(name)}`} className={queueLinkClass}>
-                            {name}
-                          </DbLink>
-                        ))}
+                    {/* Names only: a queue is a link on the event's own page, where the row has one job. */}
+                    <TableCell className="whitespace-normal">
+                      <span className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-[var(--text-secondary)]">
+                        {subscription.queues.map((name) => <span key={name}>{name}</span>)}
                       </span>
                     </TableCell>
                     <TableCell className="pgb-num text-[var(--text-secondary)]">

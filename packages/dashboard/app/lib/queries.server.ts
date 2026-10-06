@@ -1349,6 +1349,23 @@ export async function getSubscriptions (
   return await query<SubscriptionResult>(dbUrl, sql, params)
 }
 
+// The queues subscribed to one event, by name, each with when it subscribed. Empty for an event
+// nobody is subscribed to.
+export async function getSubscription (
+  dbUrl: string,
+  schema: string,
+  event: string
+): Promise<Array<{ name: string, createdOn: Date, updatedOn: Date }>> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT name, created_on as "createdOn", updated_on as "updatedOn"
+    FROM ${s}.subscription
+    WHERE event = $1
+    ORDER BY name
+  `
+  return await query<{ name: string, createdOn: Date, updatedOn: Date }>(dbUrl, sql, [event])
+}
+
 export async function getSubscriptionEventCount (
   dbUrl: string,
   schema: string,

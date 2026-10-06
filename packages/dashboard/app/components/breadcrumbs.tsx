@@ -37,6 +37,12 @@ export function Breadcrumbs() {
       const scheduleName = decodeURIComponent(pathSegments[1])
       breadcrumbs.push({ label: scheduleName })
     }
+  } else if (pathSegments[0] === 'subscriptions') {
+    breadcrumbs.push({ label: 'Subscriptions', href: '/subscriptions' })
+
+    if (pathSegments[1]) {
+      breadcrumbs.push({ label: decodeURIComponent(pathSegments[1]) })
+    }
   } else if (pathSegments[0] === 'jobs') {
     breadcrumbs.push({ label: 'Jobs' })
   } else if (pathSegments[0] === 'warnings') {
