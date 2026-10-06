@@ -12,6 +12,9 @@ async function main () {
     // Keeps `queue_stats` growing while the worker runs, so the metrics chart
     // moves instead of ending at whatever `dev:init-db` backfilled.
     persistQueueStats: true,
+    // `dev:init-db` installs the schema and seeds sample async migrations in every status; a worker
+    // that migrated would run the pending and failed ones and the samples would not last a minute.
+    migrate: false,
   })
 
   boss.on('error', (err) => console.error('pg-boss error:', err.message))
