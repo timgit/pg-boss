@@ -20,6 +20,7 @@ const freeRoutes = [
   route('instances', 'routes/instances.tsx'),
   route('instances/:id', 'routes/instances.$id.tsx'),
   route('migrations', 'routes/migrations.tsx'),
+  route('migrations/:id', 'routes/migrations.$id.tsx'),
   route('warnings', 'routes/warnings.tsx'),
   route('warnings/:id', 'routes/warnings.$id.tsx'),
 ]

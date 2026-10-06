@@ -1,3 +1,4 @@
+import { DbLink } from '~/components/db-link'
 import { useSearchParams } from 'react-router'
 import type { Route } from './+types/migrations'
 import { getBamEntries, getBamCount, getBamStatusSummary } from '~/lib/queries.server'
@@ -10,7 +11,6 @@ import {
   TableHeader,
   TableBody,
   TableRow,
-  TableHead,
   TableCell,
   SortableHeader,
 } from '~/components/ui/table'
@@ -135,13 +135,12 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
                 <SortableHeader column="created">Created</SortableHeader>
                 <SortableHeader column="started">Started</SortableHeader>
                 <SortableHeader column="completed">Completed</SortableHeader>
-                <TableHead>Command / Error</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {entries.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={8}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={7}>
                     {statusFilter
                       ? `No ${BAM_STATUS_LABELS[statusFilter].toLowerCase()} migrations found`
                       : 'No async migrations recorded.'}
@@ -149,9 +148,11 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
                 </TableRow>
               ) : (
                 entries.map((entry: BamEntryResult) => (
-                  <TableRow key={entry.id}>
-                    <TableCell className="text-[var(--text-primary)] font-medium">
-                      {entry.name}
+                  <TableRow key={entry.id} to={`/migrations/${entry.id}`}>
+                    <TableCell className="font-medium">
+                      <DbLink to={`/migrations/${entry.id}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+                        {entry.name}
+                      </DbLink>
                     </TableCell>
                     <TableCell className="text-right pgb-num text-[var(--text-tertiary)]">
                       {entry.version}
@@ -175,21 +176,6 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
                     </TableCell>
                     <TableCell className="pgb-num text-[var(--text-tertiary)] whitespace-nowrap">
                       {formatTimestamp(entry.completedOn)}
-                    </TableCell>
-                    <TableCell className="max-w-md">
-                      {entry.error ? (
-                        <p className="mb-1 font-mono text-xs text-[var(--state-failed-fg)] break-words whitespace-pre-wrap">
-                          {entry.error}
-                        </p>
-                      ) : null}
-                      <details>
-                        <summary className="cursor-pointer text-xs text-[var(--text-tertiary)] select-none">
-                          View command
-                        </summary>
-                        <pre className="mt-1 overflow-x-auto rounded bg-[var(--surface-sunken)] p-2 font-mono text-xs text-[var(--text-secondary)] whitespace-pre-wrap">
-                          {entry.command}
-                        </pre>
-                      </details>
                     </TableCell>
                   </TableRow>
                 ))

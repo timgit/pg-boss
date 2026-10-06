@@ -830,6 +830,39 @@ export async function getBamEntries (
   }
 }
 
+// One background async migration by id, or null when there is none (or no bam table at all).
+export async function getBamEntry (
+  dbUrl: string,
+  schema: string,
+  id: string
+): Promise<BamEntryResult | null> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT
+      id,
+      name,
+      version,
+      status,
+      queue,
+      table_name as "table",
+      command,
+      error,
+      created_on as "createdOn",
+      started_on as "startedOn",
+      completed_on as "completedOn"
+    FROM ${s}.bam
+    WHERE id = $1
+  `
+  try {
+    return await queryOne<BamEntryResult>(dbUrl, sql, [id])
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return null
+    }
+    throw err
+  }
+}
+
 // Get BAM entry count (for pagination), optionally filtered by status.
 // Returns 0 if the bam table doesn't exist.
 export async function getBamCount (
