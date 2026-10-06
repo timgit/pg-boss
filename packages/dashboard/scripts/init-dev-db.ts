@@ -101,6 +101,7 @@ async function main () {
   await boss.stop()
 
   await seedWarnings()
+  await seedAsyncMigrations()
   await seedReadyHistory()
   await seedQueueStats()
 
@@ -310,6 +311,41 @@ async function seedWarnings () {
          '{"seed":"demo","queue":"demo-exports","queued":9,"threshold":5}', now() - interval '1 day')
     `)
     console.log('  warnings: 3')
+  } finally {
+    await client.end()
+  }
+}
+
+/**
+ * Recent background async migrations, one in each status, so /migrations has rows to show: index
+ * builds pg-boss queued for its current schema version and the one before, one finished, one
+ * running, one waiting and one that failed on a lock timeout.
+ */
+async function seedAsyncMigrations () {
+  const client = new Client({ connectionString })
+  await client.connect()
+
+  try {
+    const { rows: [{ version }] } = await client.query<{ version: number }>(`SELECT version FROM ${schema}.version`)
+    const index = (name: string, on: string) => `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${name} ON ${schema}.job_common ${on}`
+    const rows: Array<[string, number, string, string | null, string, string | null, string, string | null, string | null]> = [
+      // name, version, status, queue, command, error, created ago, started ago, completed ago
+      ['job_i7', version - 1, 'completed', null, index('job_i7', "(name, group_id) WHERE state = 'active' AND group_id IS NOT NULL"), null, '3 hours', '3 hours', '2 hours 52 minutes'],
+      ['job_i8', version, 'completed', 'demo-exports', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', '38 minutes', '35 minutes'],
+      ['job_i8', version, 'in_progress', 'demo-payments', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', '4 minutes', null],
+      ['job_i8', version, 'pending', 'demo-webhooks', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', null, null],
+      ['job_i6', version - 1, 'failed', 'demo-imports', index('job_i6', '(name, keep_until) WHERE state >= \'completed\''), 'canceling statement due to lock timeout', '1 day', '1 day', null],
+    ]
+
+    for (const [name, v, status, queue, command, error, created, started, completed] of rows) {
+      await client.query(
+        `INSERT INTO ${schema}.bam (name, version, status, queue, table_name, command, error, created_on, started_on, completed_on)
+         VALUES ($1, $2, $3, $4, 'job_common', $5, $6, now() - $7::interval,
+                 now() - $8::interval, now() - $9::interval)`,
+        [name, v, status, queue, command, error, created, started, completed]
+      )
+    }
+    console.log(`  async migrations: ${rows.length}`)
   } finally {
     await client.end()
   }
