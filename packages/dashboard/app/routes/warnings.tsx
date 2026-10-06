@@ -1,4 +1,5 @@
 import { useSearchParams } from 'react-router'
+import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/warnings'
 import { getWarnings } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
@@ -126,8 +127,10 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
                     <TableCell>
                       <WarningTypeBadge type={warning.type} />
                     </TableCell>
-                    <TableCell className="text-[var(--text-primary)] max-w-md truncate">
-                      {warning.message}
+                    <TableCell className="max-w-md truncate">
+                      <DbLink to={`/warnings/${warning.id}`} className="text-[var(--text-primary)] hover:underline">
+                        {warning.message}
+                      </DbLink>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-[var(--text-tertiary)] max-w-xs truncate">
                       {formatWarningData(warning.data)}
