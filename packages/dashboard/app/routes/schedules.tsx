@@ -27,6 +27,10 @@ import {
   formatDate,
   formatTimeUntil,
 } from '~/lib/utils'
+import type { TitleHandle } from '~/lib/page-title'
+
+/** The browser tab's name for this page. */
+export const handle: TitleHandle = { title: 'Schedules' }
 
 const PAGE_SIZE = 20
 

@@ -3,6 +3,7 @@ import type { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { RouterContextProvider } from 'react-router'
 import type { Instance } from '~/lib/types'
+import type { TitleMatch } from '~/lib/page-title'
 
 /**
  * The contract between this package and an optional Pro overlay.
@@ -179,6 +180,11 @@ export interface ProSlots {
 export interface ProOverlay {
   nav: ProNavItem[]
   slots: ProSlots
+  /** The app's name after each page's in the browser tab, and a name for a page that sets no `handle.title`. */
+  title?: {
+    app: string
+    fallback?: (match: TitleMatch) => string | null
+  }
 }
 
 /**

@@ -17,6 +17,10 @@ import { FilterSelect } from '~/components/ui/filter-select'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { UplotChart, type UplotSeries } from '~/components/ui/uplot-chart'
 import { cn } from '~/lib/utils'
+import type { TitleHandle } from '~/lib/page-title'
+
+/** The browser tab's name for this page. */
+export const handle: TitleHandle = { title: ({ params }) => (params.name ? `${params.name} metrics` : null) }
 
 // Time-range presets. `custom` switches the controls to explicit from/to inputs.
 const RANGES = [

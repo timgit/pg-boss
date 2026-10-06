@@ -27,6 +27,10 @@ import {
   warningTypeLabel,
 } from '~/lib/utils'
 import { dbContext } from '~/lib/db-context'
+import type { TitleHandle } from '~/lib/page-title'
+
+/** The browser tab's name for this page. */
+export const handle: TitleHandle = { title: 'Warnings' }
 
 const PAGE_SIZE = 50
 
