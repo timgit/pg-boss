@@ -27,6 +27,10 @@ import {
 } from '~/components/job-detail'
 import { attempts, formatDuration, formatSeconds, isFinalState, statusLine, toDate, type JobTimes } from '~/lib/job-detail'
 import { formatDate } from '~/lib/utils'
+import type { TitleHandle } from '~/lib/page-title'
+
+/** The browser tab's name for this page. */
+export const handle: TitleHandle = { title: ({ params }) => (params.jobId ? `Job ${params.jobId.slice(0, 8)} · ${params.name}` : null) }
 
 // How often an unfinished job's page checks for a new state while it is open and visible.
 const REFRESH_MS = 10_000

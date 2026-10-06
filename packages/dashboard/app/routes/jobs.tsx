@@ -44,6 +44,10 @@ import {
   jobListSortColumn,
   type JobStateFilter,
 } from '~/lib/utils'
+import type { TitleHandle } from '~/lib/page-title'
+
+/** The browser tab's name for this page. */
+export const handle: TitleHandle = { title: 'Jobs' }
 
 interface ParsedFilters extends JobsFilters {
   serverFilters: RecentJobsFilterOptions

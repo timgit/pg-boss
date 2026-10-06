@@ -7,6 +7,7 @@ import {
   isRouteErrorResponse,
 } from "react-router";
 import type { Route } from "./+types/root";
+import { DocumentTitle } from "~/components/document-title";
 import "./app.css";
 import { AppSidebar } from "~/components/sidebar";
 import { ThemeToggle } from "~/components/ui/theme-toggle";
@@ -146,6 +147,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <DocumentTitle />
         <Meta />
         <Links />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
@@ -198,11 +200,9 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   );
 }
 
+// The title is rendered by `DocumentTitle`, which can see every matched page; `meta` cannot.
 export function meta() {
-  return [
-    { title: "pg-boss Dashboard" },
-    { name: "description", content: "Monitor and manage pg-boss job queues" },
-  ];
+  return [{ name: "description", content: "Monitor and manage pg-boss job queues" }];
 }
 
 export function links() {

@@ -20,6 +20,10 @@ import { TablePagination } from '~/components/table-pagination'
 import { ErrorCard } from '~/components/error-card'
 import { dbContext } from '~/lib/db-context'
 import { formatDate, parsePaging } from '~/lib/utils'
+import type { TitleHandle } from '~/lib/page-title'
+
+/** The browser tab's name for this page. */
+export const handle: TitleHandle = { title: 'Subscriptions' }
 
 const PAGE_SIZE = 20
 
