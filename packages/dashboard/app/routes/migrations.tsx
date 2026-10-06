@@ -180,7 +180,7 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
                     </TableCell>
                     <TableCell className="max-w-md">
                       {entry.error ? (
-                        <p className="mb-1 font-mono text-xs text-[var(--error-600)] break-words whitespace-pre-wrap">
+                        <p className="mb-1 font-mono text-xs text-[var(--state-failed-fg)] break-words whitespace-pre-wrap">
                           {entry.error}
                         </p>
                       ) : null}

@@ -267,7 +267,7 @@ function PairFilterGroup ({ title, hint, pairs, onChange }: PairFilterGroupProps
             type="button"
             onClick={() => removePair(index)}
             aria-label={`Remove ${title.toLowerCase()} filter ${index + 1}`}
-            className="p-1 text-gray-400 hover:text-red-600 cursor-pointer"
+            className="p-1 text-gray-400 hover:text-[var(--state-failed-fg)] cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>

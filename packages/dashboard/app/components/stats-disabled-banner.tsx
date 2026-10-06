@@ -16,7 +16,7 @@ export function StatsDisabledBanner ({ className }: { className?: string }) {
       )}
       style={{ background: 'var(--state-retry-bg)' }}
     >
-      <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-[var(--warning-600)]" aria-hidden="true" />
+      <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-[var(--state-retry-fg)]" aria-hidden="true" />
       <div className="text-sm">
         <p className="font-medium text-[var(--text-primary)]">Queue stats history isn&rsquo;t being recorded</p>
         <p className="mt-0.5 text-[var(--text-secondary)]">

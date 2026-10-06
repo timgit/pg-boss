@@ -242,7 +242,7 @@ function Toolbar ({ data, extensions }: { data: QueueListData, extensions?: Queu
           <button
             type="button"
             onClick={() => { setSearchInput(''); update((p) => { p.delete('search'); p.delete('filter') }) }}
-            className="cursor-pointer text-sm text-[var(--primary-600)] hover:text-[var(--primary-700)]"
+            className="cursor-pointer text-sm text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:text-[var(--primary-700)] dark:hover:text-[var(--primary-300)]"
           >
             Clear all
           </button>
@@ -406,7 +406,7 @@ export function QueueTable ({ queues, extensions }: { queues: QueueResult[], ext
           : queues.map((queue) => (
             <TableRow key={queue.name} to={queueHref(queue.name)}>
               <TableCell>
-                <DbLink to={queueHref(queue.name)} className="font-medium text-[var(--primary-600)] hover:text-[var(--primary-700)]">
+                <DbLink to={queueHref(queue.name)} className="font-medium text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:text-[var(--primary-700)] dark:hover:text-[var(--primary-300)]">
                   {queue.name}
                 </DbLink>
               </TableCell>

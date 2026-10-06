@@ -23,9 +23,9 @@ interface StatCardProps {
 const accentText: Record<StatAccent, string> = {
   neutral: 'text-gray-900 dark:text-gray-100',
   primary: 'text-primary-600 dark:text-primary-400',
-  success: 'text-[var(--success-600)]',
-  warning: 'text-[var(--warning-600)]',
-  error: 'text-[var(--error-600)]',
+  success: 'text-[var(--state-completed-fg)]',
+  warning: 'text-[var(--state-retry-fg)]',
+  error: 'text-[var(--state-failed-fg)]',
 }
 
 export function StatCard ({ label, value, hint, accent = 'neutral', sparkline, to, footer, className }: StatCardProps) {
