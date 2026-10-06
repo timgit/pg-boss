@@ -40,7 +40,11 @@ export function Breadcrumbs() {
   } else if (pathSegments[0] === 'jobs') {
     breadcrumbs.push({ label: 'Jobs' })
   } else if (pathSegments[0] === 'warnings') {
-    breadcrumbs.push({ label: 'Warnings' })
+    breadcrumbs.push({ label: 'Warnings', href: '/warnings' })
+
+    if (pathSegments[1]) {
+      breadcrumbs.push({ label: decodeURIComponent(pathSegments[1]).slice(0, 8) })
+    }
   } else if (pathSegments[0] === 'instances') {
     breadcrumbs.push({ label: 'Instances', href: '/instances' })
 

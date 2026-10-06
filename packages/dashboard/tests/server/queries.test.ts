@@ -24,6 +24,7 @@ import {
   getJobs,
   getJobCountFromQueue,
   getJobById,
+  getWarning,
   getWarnings,
   getBamEntries,
   getBamCount,
@@ -838,6 +839,25 @@ describe('Warning Queries', () => {
 
       expect(page1).toHaveLength(2)
       expect(page2).toHaveLength(2)
+    })
+  })
+
+  describe('getWarning', () => {
+    it('reads one warning by id, and null for one that is not there', async () => {
+      const id = await insertTestWarning(ctx.schema, 'slow_query', 'Slow', { ms: 1200 })
+
+      expect(await getWarning(ctx.connectionString, ctx.schema, id)).toMatchObject({ id, type: 'slow_query', message: 'Slow', data: { ms: 1200 } })
+      expect(await getWarning(ctx.connectionString, ctx.schema, '00000000-0000-4000-8000-000000000000')).toBeNull()
+    })
+
+    it('returns null when the warning table does not exist', async () => {
+      const testSchema = 'pgboss_no_warning_one'
+      const pool = new Pool({ connectionString: ctx.connectionString })
+      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
+      await pool.query(`CREATE SCHEMA ${testSchema}`)
+      await pool.end()
+
+      expect(await getWarning(ctx.connectionString, testSchema, '00000000-0000-4000-8000-000000000000')).toBeNull()
     })
   })
 

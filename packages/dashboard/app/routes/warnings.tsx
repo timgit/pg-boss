@@ -125,7 +125,7 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
                 </TableRow>
               ) : (
                 warnings.map((warning: WarningResult) => (
-                  <TableRow key={warning.id}>
+                  <TableRow key={warning.id} to={`/warnings/${warning.id}`}>
                     <TableCell>
                       <WarningTypeBadge type={warning.type} />
                     </TableCell>

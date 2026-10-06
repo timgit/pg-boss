@@ -66,7 +66,7 @@ export type JobResult =
 export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff'
 
 export interface WarningResult {
-  id: number;
+  id: string;
   type: WarningType;
   message: string;
   data: unknown;

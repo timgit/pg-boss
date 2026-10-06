@@ -763,6 +763,28 @@ export async function getWarnings (
   }
 }
 
+// One recorded warning by id, or null when there is none (or no warning table at all).
+export async function getWarning (
+  dbUrl: string,
+  schema: string,
+  id: string
+): Promise<WarningResult | null> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT id, type, message, data, created_on as "createdOn"
+    FROM ${s}.warning
+    WHERE id = $1
+  `
+  try {
+    return await queryOne<WarningResult>(dbUrl, sql, [id])
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return null
+    }
+    throw err
+  }
+}
+
 // Get background async migration (BAM) entries, newest schema version first.
 // Mirrors plans.getBamEntries in the pg-boss core (same column aliases).
 // Returns [] if the bam table doesn't exist (schema predates async migrations).

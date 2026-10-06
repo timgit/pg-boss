@@ -11,9 +11,12 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  CLICKABLE_ROW,
+  useRowClick,
 } from '~/components/ui/table'
 import { Sparkline } from '~/components/ui/sparkline'
 import {
+  cn,
   formatTimeAgo,
   warningTypeVariant,
   warningTypeLabel,
@@ -178,10 +181,7 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
               <p className="text-sm text-[var(--text-tertiary)] p-2">No warnings recorded</p>
             ) : (
               warnings.map((warning: WarningResult) => (
-                <div
-                  key={warning.id}
-                  className="flex items-start gap-3 px-3 py-2.5 rounded-lg bg-[var(--surface-sunken)]"
-                >
+                <WarningItem key={warning.id} id={warning.id}>
                   <WarningIcon className="w-[18px] h-[18px] text-[var(--warning-500)] flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -195,17 +195,27 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
                         {formatTimeAgo(new Date(warning.createdOn))}
                       </span>
                     </div>
-                    <p className="text-sm text-[var(--text-secondary)] truncate">
+                    <DbLink to={`/warnings/${warning.id}`} className="block truncate text-sm text-[var(--text-secondary)] hover:underline">
                       {warning.message}
-                    </p>
+                    </DbLink>
                     {WarningFooter && <WarningFooter warning={warning} />}
                   </div>
-                </div>
+                </WarningItem>
               ))
             )}
           </div>
         </Card>
       </div>
+    </div>
+  )
+}
+
+/** One recent warning, opening its page from anywhere on it but the controls inside. */
+function WarningItem ({ id, children }: { id: string, children: ReactNode }) {
+  const onClick = useRowClick({ to: `/warnings/${id}` })
+  return (
+    <div onClick={onClick} className={cn('flex items-start gap-3 px-3 py-2.5 rounded-lg bg-[var(--surface-sunken)]', CLICKABLE_ROW, 'hover:bg-[var(--surface-hover)]')}>
+      {children}
     </div>
   )
 }

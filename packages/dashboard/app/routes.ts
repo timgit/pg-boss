@@ -20,6 +20,7 @@ const freeRoutes = [
   route('instances/:id', 'routes/instances.$id.tsx'),
   route('migrations', 'routes/migrations.tsx'),
   route('warnings', 'routes/warnings.tsx'),
+  route('warnings/:id', 'routes/warnings.$id.tsx'),
 ]
 
 export default (await proRoutes(freeRoutes)) satisfies RouteConfig
