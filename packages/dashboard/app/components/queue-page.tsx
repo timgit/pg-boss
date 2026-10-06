@@ -37,8 +37,8 @@ import { Count } from '~/components/ui/count'
  * optional, and without them the page is the free one.
  */
 export interface QueuePageExtensions {
-  /** In the header, before the overlay's queue actions and View metrics. */
-  actions?: ReactNode
+  /** In the header, on its own line under the queue actions and View metrics, such as a range switch. */
+  toolbar?: ReactNode
   /** Between the header and the counts. */
   afterHeader?: ReactNode
   /** At the end of the page, under the jobs. */
@@ -55,17 +55,19 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
       <PageHeader
         title={queue.name}
         action={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {extensions?.actions}
-            <ProSlot name="queueActions" queue={{ name: queue.name, isDeadLetter }} />
-            <Button
-              variant="outline"
-              size="md"
-              render={<DbLink to={metricsPath(queue.name)} />}
-            >
-              <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
-              View metrics
-            </Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <ProSlot name="queueActions" queue={{ name: queue.name, isDeadLetter }} />
+              <Button
+                variant="outline"
+                size="md"
+                render={<DbLink to={metricsPath(queue.name)} />}
+              >
+                <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                View metrics
+              </Button>
+            </div>
+            {extensions?.toolbar}
           </div>
         }
       />
