@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import {
   Table,
   TableHeader,
   TableBody,
   TableRow,
+  ListRow,
   TableHead,
   TableCell,
 } from "~/components/ui/table";
@@ -103,11 +105,52 @@ describe("TableRow navigation (`to`)", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("ignores a click in a menu the row opened, which reaches it through a portal", () => {
+    renderRow(<td>{createPortal(<div>menu padding</div>, document.body)}</td>);
+
+    fireEvent.click(screen.getByText("menu padding"));
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("ignores modifier-clicks so the primary link can open in a new tab", () => {
     renderRow(<td>plain cell</td>);
     fireEvent.click(screen.getByText("plain cell"), { metaKey: true });
     fireEvent.click(screen.getByText("plain cell"), { ctrlKey: true });
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("runs a row's own click only when the click is not on something that handles its own", () => {
+    const toggle = vi.fn();
+    render(
+      <table>
+        <tbody>
+          <TableRow onClick={toggle}>
+            <td>plain cell</td>
+            <td><button onClick={toggle}>expander</button></td>
+          </TableRow>
+        </tbody>
+      </table>
+    );
+
+    fireEvent.click(screen.getByText("plain cell"));
+    fireEvent.click(screen.getByText("expander"));
+    expect(toggle).toHaveBeenCalledTimes(2);
+  });
+
+  it("makes a list item a clickable row too", () => {
+    render(
+      <ul>
+        <ListRow to="/pro/accounts/1">
+          <span>Sam</span>
+          <button>Remove</button>
+        </ListRow>
+      </ul>
+    );
+
+    fireEvent.click(screen.getByText("Remove"));
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Sam"));
+    expect(navigate).toHaveBeenCalledWith("/pro/accounts/1");
   });
 });
 
