@@ -15,6 +15,9 @@
  *
  * - The first six queues carry ordinary fetchable jobs, so `npm run dev:worker`
  *   has something to process and you can watch jobs move.
+ * - A fleet of further queues (60 by default, `PGBOSS_SEED_QUEUES` to change it)
+ *   with a few ready jobs each and nothing working them, so lists, cards and the
+ *   honeycomb can be seen at a realistic size.
  * - The `demo-*` queues hold jobs pinned in every state the UI knows how to render
  *   (active, completed, failed, retry, cancelled, dead-lettered). Their pending
  *   jobs use a far-future `startAfter`, so a running worker cannot drain them and
@@ -88,6 +91,7 @@ async function main () {
 
   await seedWorkerQueues()
   await seedEveryJobState()
+  await seedFleetQueues()
   await seedSchedules()
 
   // Let the supervisor move the dead-lettered jobs and the monitor refresh the
@@ -142,6 +146,43 @@ async function seedWorkerQueues () {
   await boss.send('tenant-jobs', { action: 'backup-data' }, { group: { id: 'tenant-initech', tier: 'basic' } })
 
   console.log(`  worker queues: ${queues.length}, with jobs ready to process`)
+}
+
+const FLEET_DOMAINS = ['orders', 'invoices', 'shipments', 'inventory', 'accounts', 'search', 'media', 'alerts', 'analytics', 'ledger', 'catalog', 'support']
+const FLEET_TASKS = ['sync', 'ingest', 'export', 'reindex', 'notify', 'reconcile', 'resize', 'score', 'archive', 'enrich']
+
+/**
+ * A fleet of queues beyond the handful above, so the queue views can be judged at a size closer to a
+ * real deployment's. Named domain-task, each with a few ready jobs (none for some) and nobody working
+ * them, so their backlogs stay put. Their stats history comes from `seedQueueStats`, like every queue's.
+ */
+/** Fleet queues whose last hour of stats shows them in trouble, so health has every colour to draw. */
+const TROUBLE: Record<string, 'stalled' | 'behind'> = {
+  'ledger-reindex': 'stalled',
+  'media-ingest': 'stalled',
+  'orders-export': 'behind',
+  'search-sync': 'behind',
+  'alerts-notify': 'behind',
+}
+
+function troubleOf (name: string): 'stalled' | 'behind' | null {
+  return TROUBLE[name] ?? null
+}
+
+async function seedFleetQueues () {
+  const count = Math.max(0, Number(process.env.PGBOSS_SEED_QUEUES ?? 60))
+  const names = FLEET_TASKS.flatMap((task) => FLEET_DOMAINS.map((domain) => `${domain}-${task}`)).slice(0, count)
+
+  for (const [k, name] of names.entries()) {
+    await boss.createQueue(name, { policy: 'standard' })
+    // A real backlog behind the queues `seedQueueStats` makes stall or fall behind.
+    const ready = troubleOf(name) === 'stalled' ? 140 : troubleOf(name) === 'behind' ? 70 : (k * 7) % 9
+    if (ready > 0) {
+      await boss.insert(name, Array.from({ length: ready }, (_, i) => ({ data: { seq: i } })))
+    }
+  }
+
+  console.log(`  fleet queues: ${names.length}`)
 }
 
 /**
@@ -590,6 +631,17 @@ async function seedQueueStats () {
       }
 
       const throughput = sampleThroughput(h, series.ready, PER_DAY, p, INTERVAL_MINUTES * 60)
+
+      // Over the last hour a stalled queue finishes nothing and one falling behind finishes half of
+      // what arrives, while the blend below walks its ready count up into the backlog it holds.
+      const trouble = troubleOf(queue.name)
+      if (trouble) {
+        for (let i = SAMPLES - 60 / INTERVAL_MINUTES; i < SAMPLES; i++) {
+          throughput.created[i] = Math.max(throughput.created[i], 6)
+          throughput.completed[i] = trouble === 'stalled' ? 0 : Math.round(throughput.created[i] * 0.5)
+          throughput.failed[i] = 0
+        }
+      }
 
       const ends: Record<string, number> = {
         ready: Number(queue.ready_count),
