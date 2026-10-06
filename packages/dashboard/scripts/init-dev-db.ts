@@ -93,6 +93,7 @@ async function main () {
   await seedEveryJobState()
   await seedFleetQueues()
   await seedSchedules()
+  await seedSubscriptions()
 
   // Let the supervisor move the dead-lettered jobs and the monitor refresh the
   // per-queue counters the queue list reads.
@@ -287,6 +288,28 @@ async function seedSchedules () {
   await boss.schedule('demo-billing', '30 2 * * 1', { run: 'weekly-invoices' }, { tz: 'America/Chicago' })
   await boss.schedule('demo-webhooks', '*/15 * * * *', { ping: true })
   console.log('  schedules: 3')
+}
+
+/**
+ * Events published to more than one queue and to one, so /subscriptions lists a fan-out and a
+ * queue's page shows the events it is subscribed to.
+ */
+const SUBSCRIPTIONS: Array<[string, string[]]> = [
+  ['order.placed', ['demo-payments', 'demo-exports', 'demo-webhooks']],
+  ['order.refunded', ['demo-payments', 'demo-billing']],
+  ['invoice.due', ['demo-billing']],
+  ['customer.imported', ['demo-imports', 'demo-webhooks']],
+]
+
+async function seedSubscriptions () {
+  let count = 0
+  for (const [event, queues] of SUBSCRIPTIONS) {
+    for (const queue of queues) {
+      await boss.subscribe(event, queue)
+      count++
+    }
+  }
+  console.log(`  subscriptions: ${count} across ${SUBSCRIPTIONS.length} events`)
 }
 
 /**
