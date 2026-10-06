@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { QueueStats } from '~/lib/types'
 import { StatCard } from '~/components/ui/stat-card'
+import { Count } from '~/components/ui/count'
 
 /** Which card: the `QueueStats` figure it shows. */
 export type StatKey = 'totalQueued' | 'totalDeferred' | 'totalReady' | 'totalActive' | 'totalFailed' | 'totalJobs'
@@ -27,7 +28,7 @@ export function StatsCards ({ stats, footers }: StatsCardsProps) {
         <StatCard
           key={stat.key}
           label={stat.name}
-          value={stats[stat.key].toLocaleString()}
+          value={<Count value={stats[stat.key]} />}
           hint={stat.hint}
           accent={stat.accent}
           footer={footers?.[stat.key]}
