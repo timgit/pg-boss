@@ -8,8 +8,7 @@ import {
 } from './queries.server'
 import { parsePaging, isValidJobState, DEFAULT_STATE_FILTER } from './utils'
 import { DEFAULT_QUEUE_JOB_COLUMNS, defaultJobColumnsFor, parseJobColumns } from './job-columns'
-
-const PAGE_SIZE = 50
+import { PAGE_SIZE } from './pagination'
 
 /**
  * What a queue's page shows: the queue, one page of its jobs, and what its header and banners need.

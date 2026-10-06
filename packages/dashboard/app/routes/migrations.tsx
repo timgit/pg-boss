@@ -30,11 +30,11 @@ import {
 } from '~/lib/utils'
 import { dbContext } from '~/lib/db-context'
 import type { TitleHandle } from '~/lib/page-title'
+import { PAGE_SIZE } from '~/lib/pagination'
 
 /** The browser tab's name for this page. */
 export const handle: TitleHandle = { title: 'Migrations' }
 
-const PAGE_SIZE = 50
 
 // Accent for the four summary tiles. pending/in_progress get attention colors
 // since those are the actionable (incomplete) states.

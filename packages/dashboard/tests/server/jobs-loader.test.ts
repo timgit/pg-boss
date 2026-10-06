@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ctx, makeContext, createTestQueue, sendTestJob } from './helpers'
 import { loader } from '~/routes/jobs'
+import { PAGE_SIZE } from '~/lib/pagination'
 
 async function load (search = '') {
   return loader({
@@ -17,10 +18,10 @@ async function send (n: number) {
 
 describe('jobs loader', () => {
   it('pages by Previous and Next, past the last job of the page before', async () => {
-    await send(21)
+    await send(PAGE_SIZE + 1)
 
     const first = await load()
-    expect(first.recentJobs).toHaveLength(20)
+    expect(first.recentJobs).toHaveLength(PAGE_SIZE)
     expect([first.hasPrevPage, first.hasNextPage]).toEqual([false, true])
 
     const second = await load(`?after=${first.nextCursor}&page=2`)
@@ -29,10 +30,10 @@ describe('jobs loader', () => {
   })
 
   it('offers no Next after an exactly full last page, since a page reads one job past its end', async () => {
-    await send(20)
+    await send(PAGE_SIZE)
 
     const only = await load('?queues=paged')
-    expect(only.recentJobs).toHaveLength(20)
+    expect(only.recentJobs).toHaveLength(PAGE_SIZE)
     expect([only.hasPrevPage, only.hasNextPage]).toEqual([false, false])
   })
 

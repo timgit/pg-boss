@@ -21,11 +21,11 @@ import { ErrorCard } from '~/components/error-card'
 import { dbContext } from '~/lib/db-context'
 import { formatDate, parsePaging } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
+import { PAGE_SIZE } from '~/lib/pagination'
 
 /** The browser tab's name for this page. */
 export const handle: TitleHandle = { title: 'Subscriptions' }
 
-const PAGE_SIZE = 20
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)

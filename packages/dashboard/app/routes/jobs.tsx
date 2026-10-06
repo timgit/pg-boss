@@ -45,6 +45,7 @@ import {
   type JobStateFilter,
 } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
+import { PAGE_SIZE } from '~/lib/pagination'
 
 /** The browser tab's name for this page. */
 export const handle: TitleHandle = { title: 'Jobs' }
@@ -110,7 +111,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const jobColumns = parseJobColumns(url.searchParams, defaultJobColumnsFor(parsed.state))
 
   const { page, cursor } = parsePaging(url.searchParams)
-  const limit = 20
+  const limit = PAGE_SIZE
 
   const [recentJobsResult, queueNames] = await Promise.all([
     getRecentJobs(DB_URL, SCHEMA, {

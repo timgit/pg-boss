@@ -1,9 +1,10 @@
 import { getQueuePage, getQueueCount } from './queries.server'
 import { parsePaging } from './utils'
 import { parseQueueView, QUEUE_VIEW_COOKIE, type QueueView } from './queue-list'
+import { PAGE_SIZE } from './pagination'
 
 /** Queues per page. */
-export const QUEUE_PAGE_SIZE = 50
+export const QUEUE_PAGE_SIZE = PAGE_SIZE
 /** The most queues `all` reads: an overlay ordering the whole list pages it itself. */
 const ALL_LIMIT = 10_000
 

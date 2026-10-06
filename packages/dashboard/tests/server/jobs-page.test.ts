@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { ctx, createTestQueue, sendTestJob, makeContext, getBoss } from './helpers'
 import { loader } from '~/routes/jobs'
 import { pagingSearchParams } from '~/lib/utils'
+import { PAGE_SIZE } from '~/lib/pagination'
 
 async function loadJobs (params: URLSearchParams | string = '') {
   return loader({
@@ -21,15 +22,15 @@ function step (from: Loaded, current: URLSearchParams, newPage: number) {
 describe('jobs loader paging', () => {
   it('shows a next page only when a row follows the page', async () => {
     await createTestQueue('test-queue')
-    for (let i = 0; i < 20; i++) await sendTestJob('test-queue', { i })
+    for (let i = 0; i < PAGE_SIZE; i++) await sendTestJob('test-queue', { i })
 
     const full = await loadJobs()
-    expect(full.recentJobs).toHaveLength(20)
+    expect(full.recentJobs).toHaveLength(PAGE_SIZE)
     expect(full.hasNextPage).toBe(false)
 
-    await sendTestJob('test-queue', { i: 20 })
+    await sendTestJob('test-queue', { i: PAGE_SIZE })
     const first = await loadJobs()
-    expect(first.recentJobs).toHaveLength(20)
+    expect(first.recentJobs).toHaveLength(PAGE_SIZE)
     expect(first.hasNextPage).toBe(true)
     expect(first.hasPrevPage).toBe(false)
 
@@ -41,7 +42,7 @@ describe('jobs loader paging', () => {
     expect(second.hasPrevPage).toBe(true)
 
     const seen = new Set([...first.recentJobs, ...second.recentJobs].map(j => j.id))
-    expect(seen.size).toBe(21)
+    expect(seen.size).toBe(PAGE_SIZE + 1)
   })
 
   it('pages forward and back through jobs that share created_on', async () => {
@@ -64,16 +65,16 @@ describe('jobs loader paging', () => {
     const ids = pages.flatMap(p => p.recentJobs.map(j => `${j.name}/${j.id}`))
     expect(ids).toHaveLength(55)
     expect(new Set(ids).size).toBe(55)
-    expect(pages.map(p => p.page)).toEqual([1, 2, 3])
+    expect(pages.map(p => p.page)).toEqual(Array.from({ length: Math.ceil(55 / PAGE_SIZE) }, (_, i) => i + 1))
 
-    const back = await loadJobs(step(page, params, 2))
-    expect(back.page).toBe(2)
-    expect(back.recentJobs.map(j => j.id)).toEqual(pages[1].recentJobs.map(j => j.id))
+    const back = await loadJobs(step(page, params, page.page - 1))
+    expect(back.page).toBe(page.page - 1)
+    expect(back.recentJobs.map(j => j.id)).toEqual(pages.at(-2)!.recentJobs.map(j => j.id))
   })
 
   it('continues past a boundary job deleted since the page was read', async () => {
     await createTestQueue('test-queue')
-    for (let i = 0; i < 25; i++) await sendTestJob('test-queue', { i })
+    for (let i = 0; i < PAGE_SIZE + 5; i++) await sendTestJob('test-queue', { i })
 
     const first = await loadJobs()
     const last = first.recentJobs.at(-1)!
