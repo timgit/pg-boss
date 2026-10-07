@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import pg from 'pg'
 import { ctx, createTestQueue, insertQueueStatsHistory } from './helpers'
-import { getQueueThroughput, getThroughputOverview } from '~/lib/queries.server'
+import { getLatencyWindows, getQueueThroughput, getThroughputOverview } from '~/lib/queries.server'
 
 const MISSING_SCHEMA = 'pgboss_does_not_exist_xyz'
 const BUCKET = 300
@@ -213,6 +213,36 @@ describe('wait and run times', () => {
 
     const [series] = await getThroughputOverview(ctx.connectionString, ctx.schema, window)
     expect(series.points[0].waitBins?.[10]).toBe(3)
+  })
+
+  it('sums each queue\'s histograms over a window, and the overview can leave them out', async () => {
+    await createTestQueue('tp-latency-windows')
+    await insertQueueStatsHistory(ctx.schema, 'tp-latency-windows', [
+      { capturedOn: at(40), readyCount: 1, createdDelta: 1, completedDelta: 1, failedDelta: 0, deltaSeconds: 30 },
+      { capturedOn: at(130), readyCount: 1, createdDelta: 1, completedDelta: 3, failedDelta: 0, deltaSeconds: 90 },
+      { capturedOn: at(1900), readyCount: 1, createdDelta: 1, completedDelta: 2, failedDelta: 0, deltaSeconds: 60 },
+    ])
+    const pool = openPool()
+    await setLatency(pool, 'tp-latency-windows', at(40), { 10: 1 }, { 4: 1 }, 12)
+    await setLatency(pool, 'tp-latency-windows', at(130), { 10: 2, 12: 1 }, { 5: 3 }, 30)
+    await setLatency(pool, 'tp-latency-windows', at(1900), { 7: 2 }, { 3: 2 }, 5)
+    await pool.end()
+
+    const rows = await getLatencyWindows(ctx.connectionString, ctx.schema, {
+      previous: { from: at(0), to: at(1800) },
+      current: { from: at(1800), to: at(3600) },
+    })
+    const previous = rows.find((r) => r.name === 'tp-latency-windows' && r.window === 'previous')
+    const current = rows.find((r) => r.name === 'tp-latency-windows' && r.window === 'current')
+    expect(previous?.waitBins?.[10]).toBe(3)
+    expect(previous?.waitBins?.[12]).toBe(1)
+    expect(previous?.runBins?.[5]).toBe(3)
+    expect(current?.waitBins?.[7]).toBe(2)
+    expect(current?.waitBins?.reduce((a, b) => a + b, 0)).toBe(2)
+
+    const [series] = await getThroughputOverview(ctx.connectionString, ctx.schema, { ...window, histograms: false })
+    expect(series.points[0].waitBins).toBeNull()
+    expect(series.points[0].readyOldestSeconds).toBe(30)
   })
 
   it('reports all-zero histograms for a bucket whose passes measured and saw nothing finish', async () => {
