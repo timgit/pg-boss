@@ -168,12 +168,15 @@ function DatabaseSelector ({
         type="button"
         onClick={() => (isOpen ? setIsOpen(false) : openMenu())}
         className={cn(
-          'w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors cursor-pointer',
+          // Bordered, so it reads as a control rather than another link in the menu below; the icon
+          // and name spaced as the menu's own buttons are.
+          // One pixel less padding than the menu's 12, for the border, so the icon and name line up with theirs.
+          'w-full flex items-center justify-between gap-2.5 pl-[11px] pr-3 py-2 text-sm rounded-md border border-sidebar-border transition-colors cursor-pointer',
           'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
         )}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <DatabaseIcon className="w-4 h-4 flex-shrink-0" />
+        <div className="flex items-center gap-2.5 min-w-0">
+          <DatabaseIcon className="w-5 h-5 flex-shrink-0" />
           <span className="font-medium truncate">{currentDb.name}</span>
         </div>
         <ChevronIcon className={cn('w-4 h-4 flex-shrink-0 transition-transform', isOpen && 'rotate-180')} />
