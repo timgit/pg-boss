@@ -71,8 +71,6 @@ export default function WarningDetail ({ loaderData }: Route.ComponentProps) {
                 <dd><DbLink to={`/queues/${encodeURIComponent(queue)}`} className={linkClass}>{queue}</DbLink></dd>
               </>
             )}
-            <dt className="text-[var(--text-tertiary)]">Id</dt>
-            <dd className="pgb-num break-all text-[var(--text-secondary)]">{warning.id}</dd>
           </dl>
         </CardContent>
       </Card>
