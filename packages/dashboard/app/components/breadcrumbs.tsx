@@ -1,8 +1,11 @@
-import { useMatches, useLocation } from 'react-router'
-import { DbLink } from './db-link'
+import { Fragment } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router'
+import { MoreHorizontal } from 'lucide-react'
+import { DbLink, resolveDbHref } from './db-link'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
+import { cn } from '~/lib/utils'
 
 export function Breadcrumbs() {
-  const matches = useMatches()
   const location = useLocation()
 
   // Build breadcrumb items based on current path
@@ -71,26 +74,81 @@ export function Breadcrumbs() {
     return null
   }
 
-  return (
-    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-      {breadcrumbs.map((crumb, index) => {
-        const isLast = index === breadcrumbs.length - 1
+  return <Trail crumbs={breadcrumbs.map((crumb) => ({ label: crumb.label, to: crumb.href }))} />
+}
 
-        return (
-          <div key={index} className="flex items-center gap-2">
-            {index > 0 && <span>/</span>}
-            {crumb.href && !isLast ? (
-              <DbLink to={crumb.href} className="hover:text-gray-700 dark:hover:text-gray-300">
-                {crumb.label}
-              </DbLink>
-            ) : (
-              <span className={isLast ? "text-gray-900 dark:text-gray-100 font-medium" : ""}>
-                {crumb.label}
-              </span>
-            )}
-          </div>
-        )
-      })}
-    </div>
+export interface Crumb {
+  label: string
+  /** Omitted for the page you are on, which is never a link. */
+  to?: string
+}
+
+/**
+ * A breadcrumb trail, shared by the free pages and the Pro Console's. When the topbar is too narrow
+ * for all of it (a phone, or a narrow window with the sidebar open) it keeps Home and the page you
+ * are on, and the crumbs between collapse into an ellipsis that opens them as a menu. Narrow is the
+ * topbar's own width, a container query, so it holds whatever takes the room.
+ */
+export function Trail ({ crumbs }: { crumbs: Crumb[] }) {
+  const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const middle = crumbs.slice(1, -1)
+
+  return (
+    <nav aria-label="Breadcrumb" className="min-w-0">
+      <ol className="flex min-w-0 items-center gap-2 text-sm text-[var(--text-tertiary)]">
+        {crumbs.map((crumb, index) => {
+          const last = index === crumbs.length - 1
+          const between = index > 0 && !last
+
+          return (
+            <Fragment key={`${crumb.label}-${index}`}>
+              {/* Where the collapsed crumbs go: after Home, only while they are hidden. */}
+              {index === 1 && middle.length > 0 && (
+                <li className="hidden shrink-0 items-center gap-2 @max-xl:flex">
+                  <span aria-hidden="true">/</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      aria-label={`${middle.length} more`}
+                      className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+                    >
+                      <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {middle.map((hidden, k) => (
+                        <DropdownMenuItem
+                          key={`${hidden.label}-${k}`}
+                          disabled={!hidden.to}
+                          onClick={() => { if (hidden.to) navigate(resolveDbHref(hidden.to, params.get('db'))) }}
+                        >
+                          {hidden.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </li>
+              )}
+              <li className={cn('flex items-center gap-2', last ? 'min-w-0' : 'shrink-0', between && '@max-xl:hidden')}>
+                {index > 0 && <span aria-hidden="true">/</span>}
+                {crumb.to && !last
+                  ? (
+                    // `DbLink`, so the trail keeps the database somebody selected.
+                    <DbLink to={crumb.to} className="hover:text-[var(--text-primary)]">{crumb.label}</DbLink>
+                    )
+                  : (
+                    <span
+                      aria-current={last ? 'page' : undefined}
+                      className={cn(last && 'truncate font-medium text-[var(--text-primary)]')}
+                      title={last ? crumb.label : undefined}
+                    >
+                      {crumb.label}
+                    </span>
+                    )}
+              </li>
+            </Fragment>
+          )
+        })}
+      </ol>
+    </nav>
   )
 }

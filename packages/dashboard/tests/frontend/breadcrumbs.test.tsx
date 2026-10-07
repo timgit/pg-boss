@@ -175,9 +175,27 @@ describe("Breadcrumbs", () => {
       </MemoryRouter>
     );
 
-    // Home / Queues / my-queue → two separators
+    // Home / Queues / my-queue → two separators, plus one before the ellipsis that stands in for
+    // Queues when the topbar is narrow (hidden by a container query jsdom does not apply).
     const separators = screen.getAllByText("/");
-    expect(separators).toHaveLength(2);
+    expect(separators).toHaveLength(3);
+  });
+
+  it("offers the crumbs between Home and the page behind an ellipsis, for a narrow topbar", () => {
+    vi.mocked(useLocation).mockReturnValue({ pathname: "/queues/my-queue/jobs/abc" } as any);
+    vi.mocked(useMatches).mockReturnValue([]);
+
+    render(
+      <MemoryRouter>
+        <Breadcrumbs />
+      </MemoryRouter>
+    );
+
+    // Queues and my-queue collapse; Home and the page stay.
+    expect(screen.getByRole("button", { name: "2 more" }).closest("li")?.className).toContain("@max-xl:flex");
+    expect(screen.getByText("Queues").closest("li")?.className).toContain("@max-xl:hidden");
+    expect(screen.getByText("Home").closest("li")?.className).not.toContain("@max-xl:hidden");
+    expect(screen.getByText("Job Detail")).toHaveAttribute("aria-current", "page");
   });
 
   it("renders last breadcrumb without link", () => {

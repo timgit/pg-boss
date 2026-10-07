@@ -39,7 +39,8 @@ function MainContent ({ children }: { children: React.ReactNode }) {
         className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 px-6 border-b border-[var(--border-subtle)] backdrop-blur-md backdrop-saturate-150"
         style={{ background: 'var(--surface-topbar)', boxShadow: 'var(--topbar-shadow)' }}
       >
-        <div className="flex items-center gap-4">
+        {/* A container, so the breadcrumbs collapse on the room they have rather than the screen's width. */}
+        <div className="@container flex min-w-0 flex-1 items-center gap-4">
           <SidebarTrigger />
           <Breadcrumbs />
           <ProSlot name="topbarStart" />
