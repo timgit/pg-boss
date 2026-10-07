@@ -51,6 +51,12 @@ export interface OverviewExtensions {
   }
   /** Under each recent warning. */
   WarningFooter?: ComponentType<{ warning: WarningResult }>
+  /**
+   * A row of the overlay's own above everything else, such as what needs attention: drawn in one
+   * card with the migrations row when both show, rather than as two cards. Leave it out when there
+   * is nothing to say.
+   */
+  notice?: ReactNode
 }
 
 /** The overview's title and the overlay's actions beside it, for an overlay that replaces the page. */
@@ -81,8 +87,9 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
 
   return (
     <div>
-      {/* First, when there is one: migrations waiting, running or failed need somebody to look. */}
-      <MigrationsBanner migrations={migrations} />
+      {/* First, when there is either: the overlay's notice, and migrations waiting, running or
+          failed, which need somebody to look. */}
+      <Notices notice={extensions.notice} migrations={migrations} />
 
       {/* Stat row */}
       <div className={narrow
@@ -221,14 +228,19 @@ function WarningItem ({ id, children }: { id: string, children: ReactNode }) {
   )
 }
 
-function MigrationsBanner ({
-  migrations,
-}: {
-  migrations: { pending: number; inProgress: number; failed: number }
-}) {
-  const { pending, inProgress, failed } = migrations
-  // Nothing in flight or failed — keep the overview uncluttered. The dedicated
-  // Migrations page is always reachable from the sidebar.
+/** The overview's notices in one card, a row each: the overlay's, then migrations. Nothing when neither has anything. */
+function Notices ({ notice, migrations }: { notice?: ReactNode, migrations: { pending: number; inProgress: number; failed: number } }) {
+  const rows = [notice, migrationsRow(migrations)].filter(Boolean)
+  if (rows.length === 0) return null
+  return (
+    <Card className="mb-4 divide-y divide-[var(--border-subtle)]">
+      {rows.map((row, k) => <div key={k}>{row}</div>)}
+    </Card>
+  )
+}
+
+/** A row for migrations in flight or failed; null when none are, to keep the overview uncluttered. */
+function migrationsRow ({ pending, inProgress, failed }: { pending: number; inProgress: number; failed: number }): ReactNode {
   if (pending === 0 && inProgress === 0 && failed === 0) return null
 
   const parts: string[] = []
@@ -237,16 +249,14 @@ function MigrationsBanner ({
   if (failed > 0) parts.push(`${failed.toLocaleString()} failed`)
 
   return (
-    <DbLink to="/migrations" className="block mb-4">
-      <Card className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-hover)]">
-        <Badge variant={failed > 0 ? 'error' : 'warning'} size="sm" dot>
-          Async migrations
-        </Badge>
-        <span className="text-sm text-[var(--text-secondary)]">{parts.join(' · ')}</span>
-        <span className="ml-auto text-sm font-medium text-primary-600 dark:text-primary-400">
-          View
-        </span>
-      </Card>
+    <DbLink to="/migrations" className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-hover)]">
+      <Badge variant={failed > 0 ? 'error' : 'warning'} size="sm" dot>
+        Async migrations
+      </Badge>
+      <span className="text-sm text-[var(--text-secondary)]">{parts.join(' · ')}</span>
+      <span className="ml-auto text-sm font-medium text-primary-600 dark:text-primary-400">
+        View
+      </span>
     </DbLink>
   )
 }
