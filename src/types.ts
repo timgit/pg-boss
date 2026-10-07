@@ -19,7 +19,7 @@ export type Events = {
 }
 
 export interface IDatabase {
-  executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
+  executeSql(text: string, values?: unknown[]): Promise<{ rows: any[], rowCount?: number | null }>;
   /**
    * Optional capability for LISTEN/NOTIFY support. When present, pg-boss can hold a
    * dedicated session-pinned connection to receive notifications. The built-in pool-based

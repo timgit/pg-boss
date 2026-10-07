@@ -2781,29 +2781,35 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#evictQueueCache(name)
   }
 
-  async deleteQueuedJobs (name: string) {
+  // What a DELETE removed, from the row count the database reports with it, which costs nothing.
+  // Null when the database adapter does not report one: counting instead would cost what the delete did.
+  static #deleted (result: { rowCount?: number | null }): number | null {
+    return typeof result.rowCount === 'number' ? result.rowCount : null
+  }
+
+  async deleteQueuedJobs (name: string): Promise<number | null> {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteQueuedJobs(this.config.schema, table)
-    await this.db.executeSql(sql, [name])
+    return Manager.#deleted(await this.db.executeSql(sql, [name]))
   }
 
-  async deleteStoredJobs (name: string) {
+  async deleteStoredJobs (name: string): Promise<number | null> {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteStoredJobs(this.config.schema, table)
-    await this.db.executeSql(sql, [name])
+    return Manager.#deleted(await this.db.executeSql(sql, [name]))
   }
 
-  // A truncate leaves nothing to count, so it zeroes the cached counts after itself. A monitor pass
-  // that read the table first holds it until done, so the truncate and then the zeroes land after
-  // that pass's write.
-  async deleteAllJobs (name?: string) {
+  // A truncate leaves nothing to count, so it zeroes the cached counts after itself and returns
+  // null. A monitor pass that read the table first holds it until done, so the truncate and then
+  // the zeroes land after that pass's write.
+  async deleteAllJobs (name?: string): Promise<number | null> {
     if (!name) {
       const sql = plans.truncateTable(this.config.schema, plans.BASE_JOB_TABLE)
       await this.db.executeSql(sql)
       await this.db.executeSql(plans.zeroQueueStats(this.config.schema))
-      return
+      return null
     }
 
     Attorney.assertQueueName(name)
@@ -2813,10 +2819,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const sql = plans.truncateTable(this.config.schema, table)
       await this.db.executeSql(sql)
       await this.db.executeSql(plans.zeroQueueStats(this.config.schema, true), [name])
-    } else {
-      const sql = plans.deleteAllJobs(this.config.schema, table)
-      await this.db.executeSql(sql, [name])
+      return null
     }
+
+    const sql = plans.deleteAllJobs(this.config.schema, table)
+    return Manager.#deleted(await this.db.executeSql(sql, [name]))
   }
 
   // Queue stats are a time series, always returned as an array (newest first).
