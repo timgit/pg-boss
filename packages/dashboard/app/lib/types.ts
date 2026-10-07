@@ -1,6 +1,7 @@
 // Types based on or imported from pg-boss
 import type { Instance, InstanceMetrics, InstanceWorker, JobWithMetadata, QueuePolicy, QueueResult as PgBossQueueResult, ScheduleKind } from 'pg-boss'
 import type { WarningTypeValue } from './utils'
+import type { DatabaseColor } from './database-colors'
 export type { Instance, InstanceMetrics, InstanceWorker, JobWithMetadata, QueuePolicy, ScheduleKind }
 
 // SendOptions type from pg-boss (defined locally for compatibility)
@@ -170,4 +171,5 @@ export interface PublicDatabase {
   id: string;
   name: string;
   schema: string;
+  color?: DatabaseColor;
 }

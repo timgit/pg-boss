@@ -1,4 +1,5 @@
 import type { PublicDatabase } from './types'
+import type { DatabaseColor } from './database-colors'
 
 // Multi-database configuration support
 // Format: "name1=postgres://host1/db1|name2=postgres://host2/db2"
@@ -9,6 +10,7 @@ export interface DatabaseConfig {
   name: string;    // Display name
   url: string;     // Connection string
   schema: string;  // pg-boss schema
+  color?: DatabaseColor; // Set by an overlay; otherwise one is picked by position
 }
 
 /**
@@ -19,8 +21,8 @@ export interface DatabaseConfig {
  * the projection has to happen before the value leaves the server, not in the
  * component that renders it.
  */
-export function toPublicDatabase ({ id, name, schema }: DatabaseConfig): PublicDatabase {
-  return { id, name, schema }
+export function toPublicDatabase ({ id, name, schema, color }: DatabaseConfig): PublicDatabase {
+  return color ? { id, name, schema, color } : { id, name, schema }
 }
 
 const SEPARATOR = '|'

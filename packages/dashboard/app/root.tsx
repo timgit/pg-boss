@@ -14,6 +14,7 @@ import { ThemeToggle } from "~/components/ui/theme-toggle";
 import { LoadingBar } from "~/components/loading-bar";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Breadcrumbs } from "~/components/breadcrumbs";
+import { DatabaseSwitcher } from "~/components/database-switcher";
 import { ProSlot } from "~/components/pro-slot";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 import { cn } from "~/lib/utils";
@@ -42,6 +43,8 @@ function MainContent ({ children }: { children: React.ReactNode }) {
         {/* A container, so the breadcrumbs collapse on the room they have rather than the screen's width. */}
         <div className="@container flex min-w-0 flex-1 items-center gap-4">
           <SidebarTrigger />
+          {/* The database first, as Supabase leads with the project: in view on every page, at every width. */}
+          <DatabaseSwitcher />
           <Breadcrumbs />
           <ProSlot name="topbarStart" />
         </div>
