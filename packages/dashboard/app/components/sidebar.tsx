@@ -17,6 +17,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
   useSidebar,
 } from '~/components/ui/sidebar'
 
@@ -135,7 +136,7 @@ function NavItem ({
 
 export function AppSidebar () {
   const [searchParams] = useSearchParams()
-  const { setOpenMobile } = useSidebar()
+  const { setOpenMobile, state } = useSidebar()
 
   const dbParam = searchParams.get('db')
 
@@ -255,8 +256,13 @@ export function AppSidebar () {
         every page. Light and dark is one button in the topbar now, and the
         palette hangs off the mark above.
       */}
-      <SidebarFooter>
+      {/*
+        Pinned to the foot of the sidebar, over the menu as it scrolls, so collapsing and expanding are
+        always in the same place: here, and on the icon rail it collapses to.
+      */}
+      <SidebarFooter className="sticky bottom-0 border-t border-sidebar-border" style={{ background: 'var(--sidebar-bg)' }}>
         <ProSlot name="sidebarFooter" />
+        <SidebarTrigger className="self-start" title={`${state === 'expanded' ? 'Collapse' : 'Expand'} the sidebar (Ctrl+B)`} />
       </SidebarFooter>
     </Sidebar>
   )

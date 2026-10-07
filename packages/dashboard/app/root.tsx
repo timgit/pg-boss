@@ -42,7 +42,8 @@ function MainContent ({ children }: { children: React.ReactNode }) {
       >
         {/* A container, so the breadcrumbs collapse on the room they have rather than the screen's width. */}
         <div className="@container flex min-w-0 flex-1 items-center gap-4">
-          <SidebarTrigger />
+          {/* Phones only: the sidebar is a sheet there, so its own toggle cannot open it. */}
+          <SidebarTrigger className="-ml-2 md:hidden" />
           {/* The database first, as Supabase leads with the project: in view on every page, at every width. */}
           <DatabaseSwitcher />
           <Breadcrumbs />
