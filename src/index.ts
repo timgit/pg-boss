@@ -530,7 +530,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.redrive(name, options)
   }
 
-  previewRedrive (name: string, options?: types.RedriveFilter): Promise<types.RedrivePreview> {
+  previewRedrive (name: string, options?: types.RedrivePreviewOptions): Promise<types.RedrivePreview> {
     return this.#manager.previewRedrive(name, options)
   }
 

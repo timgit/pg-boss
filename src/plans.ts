@@ -3766,15 +3766,19 @@ export function failRedriveConflicts (schema: string, table: string): string {
 // What a redrive with the same filter would do, without doing it: matching jobs grouped by the
 // queue each would land in. The LEFT JOIN keeps jobs the redrive would leave behind (no source
 // and no override, or a source queue since deleted) so they can be reported rather than vanish.
+// Reads, rather than counts, at most $7 jobs a redrive would move and at most $7 it would leave in
+// place, so a preview costs the same however large the dead letter queue has grown. Unordered: any
+// $7 of them say the same thing, and an ORDER BY would sort every candidate to pick them.
 export function previewRedrive (schema: string, table: string): string {
-  return `
-    SELECT COALESCE($2, j.source_name) AS destination,
-      (q.name IS NOT NULL) AS routable,
-      count(*)::int AS count
+  const from = `
     FROM ${schema}.${table} j
     LEFT JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
-    WHERE ${redriveWhere(schema, table)}
-    GROUP BY 1, 2
+    WHERE ${redriveWhere(schema, table)}`
+
+  return `
+    (SELECT q.name AS destination ${from} AND q.name IS NOT NULL LIMIT $7)
+    UNION ALL
+    (SELECT NULL AS destination ${from} AND q.name IS NULL LIMIT $7)
   `
 }
 
