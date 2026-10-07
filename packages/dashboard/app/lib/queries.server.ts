@@ -1033,6 +1033,11 @@ export interface QueueThroughputOptions {
   from: Date;
   to: Date;
   bucketSeconds: number;
+  /**
+   * False leaves each bucket's wait and run histograms out, for a caller that only needs them
+   * summed over a whole window: `getLatencyWindows` gives those for far less.
+   */
+  histograms?: boolean;
 }
 
 // Throughput over [from, to), in fixed epoch-aligned buckets of bucketSeconds, for one queue or,
@@ -1049,23 +1054,24 @@ export interface QueueThroughputOptions {
 // no finished jobs comes back all zeros; one they did not measure at all comes back null. The sums
 // are one aggregate per slot in the same pass as the counters, not an unnest: expanding every pass
 // into its 48 slots and sorting them back cost a second for two hours of 70 queues.
-function throughputSql (s: string, oneQueue: boolean, latency: boolean): string {
+function throughputSql (s: string, oneQueue: boolean, latency: boolean, histograms = true): string {
   const byName = oneQueue ? 'AND name = $4' : ''
   const counterBucket = '(floor(extract(epoch from delta_on) / $3) * $3)::float8'
   const counterWhere = `captured_on >= $1 AND captured_on < $2::timestamptz + interval '15 minutes'
         AND delta_on >= $1 AND delta_on < $2
         AND delta_seconds > 0
         ${byName}`
+  const bins = latency && histograms
   const latencyAgg = latency
     ? `,
-        max(ready_oldest_seconds) AS ready_oldest_seconds,
+        max(ready_oldest_seconds) AS ready_oldest_seconds${bins ? `,
         ${slotSums('wait_bins')},
-        ${slotSums('run_bins')}`
+        ${slotSums('run_bins')}` : ''}`
     : ''
   const latencyCols = latency
-    ? `,
+    ? `,${bins ? `
       d.wait_bins                   AS "waitBins",
-      d.run_bins                    AS "runBins",
+      d.run_bins                    AS "runBins",` : ''}
       d.ready_oldest_seconds        AS "readyOldestSeconds"`
     : ''
   return `
@@ -1134,7 +1140,7 @@ async function queryThroughput (
   if (name !== undefined) params.push(name)
   try {
     const latency = await hasLatencyColumns(dbUrl, schema)
-    const rows = await query<LatencyRow>(dbUrl, throughputSql(s, name !== undefined, latency), params)
+    const rows = await query<LatencyRow>(dbUrl, throughputSql(s, name !== undefined, latency, options.histograms ?? true), params)
     if (!latency) return rows
     return rows.map(({ waitBins, runBins, ...row }) => ({
       ...row,
@@ -1176,6 +1182,54 @@ export async function getThroughputOverview (
     else series.push({ name, points: [point] })
   }
   return series
+}
+
+export interface LatencyWindowRow {
+  name: string;
+  window: 'previous' | 'current';
+  waitBins: number[] | null;
+  runBins: number[] | null;
+}
+
+// Every queue's wait and run histograms summed over each of two windows, by when their passes
+// counted, as a list's tiles show them: two histograms a queue rather than one a bucket. [] before
+// the v44 columns.
+export async function getLatencyWindows (
+  dbUrl: string,
+  schema: string,
+  windows: { previous: { from: Date, to: Date }, current: { from: Date, to: Date } }
+): Promise<LatencyWindowRow[]> {
+  const s = validateIdentifier(schema)
+  if (!(await hasLatencyColumns(dbUrl, schema))) return []
+  const sql = `
+    SELECT * FROM (
+      SELECT
+        name,
+        CASE WHEN delta_on >= $3 AND delta_on < $4 THEN 'current'
+             WHEN delta_on >= $1 AND delta_on < $2 THEN 'previous' END AS "window",
+        ${slotSums('wait_bins')},
+        ${slotSums('run_bins')}
+      FROM ${s}.queue_stats
+      WHERE captured_on >= least($1::timestamptz, $3::timestamptz)
+        AND captured_on < greatest($2::timestamptz, $4::timestamptz) + interval '15 minutes'
+        AND delta_on >= least($1::timestamptz, $3::timestamptz)
+        AND delta_on < greatest($2::timestamptz, $4::timestamptz)
+        AND delta_seconds > 0
+      GROUP BY 1, 2
+    ) w
+    WHERE "window" IS NOT NULL
+  `
+  try {
+    const rows = await query<{ name: string, window: 'previous' | 'current', wait_bins: unknown, run_bins: unknown }>(
+      dbUrl, sql, [windows.previous.from, windows.previous.to, windows.current.from, windows.current.to]
+    )
+    return rows.map((row) => ({ name: row.name, window: row.window, waitBins: toBins(row.wait_bins), runBins: toBins(row.run_bins) }))
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err.code === '42P01' || err.code === '42703')) {
+      return []
+    }
+    throw err
+  }
 }
 
 // Whether queue stats are being collected. The queue_stats table is always created at schema v35;
