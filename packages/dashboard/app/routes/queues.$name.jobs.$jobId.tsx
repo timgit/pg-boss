@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useRevalidator } from 'react-router'
 import { Inbox } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
+import { ParentLink } from '~/components/parent-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
 import { ProSlot } from '~/components/pro-slot'
 import {
@@ -168,13 +169,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-2.5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="pgb-eyebrow">Job in</span>
-            <DbLink
-              to={`/queues/${encodeURIComponent(queueName)}`}
-              className="rounded-md border border-[var(--border-default)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
-            >
-              {queueName}
-            </DbLink>
+            <ParentLink to={`/queues/${encodeURIComponent(queueName)}`} label={queueName} />
             {isDeadLetterQueue && (
               <span
                 title="At least one queue sends its failed jobs here"

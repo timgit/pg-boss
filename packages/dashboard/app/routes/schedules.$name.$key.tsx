@@ -1,4 +1,5 @@
 import { DbLink } from '~/components/db-link'
+import { ParentLink } from '~/components/parent-link'
 import type { Route } from './+types/schedules.$name.$key'
 import { ProSlot } from '~/components/pro-slot'
 import { getSchedule } from '~/lib/queries.server'
@@ -43,7 +44,8 @@ export default function ScheduleDetail ({ loaderData }: Route.ComponentProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="flex flex-col gap-1.5">
+          <ParentLink to="/schedules" label="Schedules" />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Schedule: {schedule.name}
             {schedule.key && (

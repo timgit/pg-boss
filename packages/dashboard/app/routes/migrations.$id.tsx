@@ -138,6 +138,7 @@ export default function MigrationDetail ({ loaderData }: Route.ComponentProps) {
   return (
     <div className="space-y-4">
       <PageHeader
+        parent={{ to: '/migrations', label: 'Migrations' }}
         title={`Migration: ${entry.name}`}
         subtitle={(
           <span className="flex flex-wrap items-center gap-2">

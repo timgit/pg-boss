@@ -53,6 +53,7 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
   return (
     <>
       <PageHeader
+        parent={{ to: '/queues', label: 'Queues' }}
         title={`Queue: ${queue.name}`}
         action={
           <div className="flex flex-col items-end gap-2">
