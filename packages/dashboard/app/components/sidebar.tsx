@@ -1,12 +1,9 @@
-import { NavLink, useRouteLoaderData, useSearchParams, useNavigate, useLocation, useMatch } from 'react-router'
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { createPortal } from 'react-dom'
+import { NavLink, useSearchParams, useMatch } from 'react-router'
 import overlay from '~pro'
 import { ProSlot } from '~/components/pro-slot'
 import { proPresent } from '~/lib/pro-present'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
-import type { PublicDatabase } from '~/lib/types'
 import type { ProNavItem } from '~/lib/pro-contract'
 import markWhite from '~/assets/pg-boss-mark-white.svg?raw'
 import {
@@ -22,11 +19,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '~/components/ui/sidebar'
-
-interface RootLoaderData {
-  databases: PublicDatabase[]
-  currentDb: PublicDatabase
-}
 
 const navigation = [
   { name: 'Overview', href: '/', icon: HomeIcon },
@@ -103,130 +95,6 @@ function MigrationsIcon ({ className }: { className?: string }) {
   )
 }
 
-function DatabaseIcon ({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-    </svg>
-  )
-}
-
-function ChevronIcon ({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-    </svg>
-  )
-}
-
-function DatabaseSelector ({
-  databases,
-  currentDb,
-  onSelect,
-}: {
-  databases: PublicDatabase[]
-  currentDb: PublicDatabase
-  onSelect: (db: PublicDatabase) => void
-}) {
-  const [isOpen, setIsOpen] = useState(false)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const [menuPosition, setMenuPosition] = useState<{ top: number, left: number, width: number } | null>(null)
-
-  const updateMenuPosition = useCallback(() => {
-    const rect = buttonRef.current?.getBoundingClientRect()
-    if (rect) {
-      setMenuPosition({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 256) })
-    }
-  }, [])
-
-  // While open, the menu is `fixed` relative to the viewport, so keep it pinned
-  // to the button as the page scrolls or the window resizes. Capture-phase scroll
-  // catches scrolling in any ancestor, not just the window.
-  useEffect(() => {
-    if (!isOpen) return
-    window.addEventListener('scroll', updateMenuPosition, true)
-    window.addEventListener('resize', updateMenuPosition)
-    return () => {
-      window.removeEventListener('scroll', updateMenuPosition, true)
-      window.removeEventListener('resize', updateMenuPosition)
-    }
-  }, [isOpen, updateMenuPosition])
-
-  if (databases.length <= 1) {
-    return null
-  }
-
-  const openMenu = () => {
-    updateMenuPosition()
-    setIsOpen(true)
-  }
-
-  return (
-    <div className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => (isOpen ? setIsOpen(false) : openMenu())}
-        className={cn(
-          // Bordered, so it reads as a control rather than another link in the menu below; the icon
-          // and name spaced as the menu's own buttons are.
-          // One pixel less padding than the menu's 12, for the border, so the icon and name line up with theirs.
-          'w-full flex items-center justify-between gap-2.5 pl-[11px] pr-3 py-2 text-sm rounded-md border border-sidebar-border transition-colors cursor-pointer',
-          'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-        )}
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <DatabaseIcon className="w-5 h-5 flex-shrink-0" />
-          <span className="font-medium truncate">{currentDb.name}</span>
-        </div>
-        <ChevronIcon className={cn('w-4 h-4 flex-shrink-0 transition-transform', isOpen && 'rotate-180')} />
-      </button>
-
-      {isOpen && menuPosition && typeof document !== 'undefined' && createPortal(
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setIsOpen(false)}
-          />
-          {/* Dropdown rendered in a portal so it is not clipped by the sidebar's overflow */}
-          <div
-            className={cn(
-              'fixed rounded-lg shadow-lg z-50 py-1',
-              'bg-sidebar border border-sidebar-border'
-            )}
-            style={{ top: menuPosition.top, left: menuPosition.left, width: menuPosition.width }}
-          >
-            {databases.map((db) => (
-              <button
-                key={db.id}
-                type="button"
-                onClick={() => {
-                  onSelect(db)
-                  setIsOpen(false)
-                }}
-                className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors cursor-pointer text-sidebar-foreground',
-                  db.id === currentDb.id
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                    : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-                )}
-              >
-                <DatabaseIcon className={cn('w-4 h-4 flex-shrink-0')} />
-                <span className="truncate">{db.name}</span>
-                {db.schema !== 'pgboss' && (
-                  <span className="ml-auto text-xs opacity-70">({db.schema})</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
-    </div>
-  )
-}
-
 /*
   One nav row. `render` hands the menu button's props to the NavLink so the row is a
   single <a>: rendered as siblings the way this used to be, the button nested inside
@@ -266,29 +134,10 @@ function NavItem ({
 }
 
 export function AppSidebar () {
-  const rootData = useRouteLoaderData('root') as RootLoaderData | undefined
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const location = useLocation()
   const { setOpenMobile } = useSidebar()
 
-  const databases = rootData?.databases || []
-  const currentDb = rootData?.currentDb
   const dbParam = searchParams.get('db')
-
-  const handleDatabaseSelect = (db: PublicDatabase) => {
-    const params = new URLSearchParams(searchParams)
-    if (db.id === databases[0]?.id) {
-      params.delete('db')
-    } else {
-      params.set('db', db.id)
-    }
-    const newSearch = params.toString()
-    navigate({
-      pathname: location.pathname,
-      search: newSearch ? `?${newSearch}` : '',
-    })
-  }
 
   const buildHref = (path: string) => {
     if (!dbParam) return path
@@ -358,15 +207,6 @@ export function AppSidebar () {
             <span className="pgboss-tier group-data-[state=collapsed]:hidden">Pro</span>
           )}
         </div>
-        {databases && currentDb && databases.length > 1 && (
-          <div className="group-data-[state=collapsed]:hidden">
-            <DatabaseSelector
-              databases={databases}
-              currentDb={currentDb}
-              onSelect={handleDatabaseSelect}
-            />
-          </div>
-        )}
       </SidebarHeader>
 
       <SidebarContent>

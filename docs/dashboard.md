@@ -168,7 +168,7 @@ PGBOSS_SCHEMA="pgboss|jobs" \
 npx pg-boss-dashboard
 ```
 
-When multiple databases are configured, a database selector appears in the sidebar. The selected database is persisted in the URL via the `db` query parameter, making it easy to share links to specific database views.
+The database being shown is named at the start of the top bar on every page, with a colored dot by its place in the configuration. When multiple databases are configured, it opens a menu to switch between them; the switch keeps the page you are on. The selected database is persisted in the URL via the `db` query parameter (left out for the first database), making it easy to share links to specific database views.
 
 ## Production Deployment
 
