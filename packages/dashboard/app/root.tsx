@@ -13,7 +13,6 @@ import { AppSidebar } from "~/components/sidebar";
 import { ThemeToggle } from "~/components/ui/theme-toggle";
 import { LoadingBar } from "~/components/loading-bar";
 import { ThemeProvider } from "~/components/theme-provider";
-import { Breadcrumbs } from "~/components/breadcrumbs";
 import { DatabaseSwitcher } from "~/components/database-switcher";
 import { ProSlot } from "~/components/pro-slot";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
@@ -35,18 +34,16 @@ function MainContent ({ children }: { children: React.ReactNode }) {
       )}
       style={{ background: 'var(--gradient-app)' }}
     >
-      {/* Frosted console topbar: breadcrumbs + global chrome */}
+      {/* Frosted console topbar: the database, then global chrome. Pages name themselves and link up a level. */}
       <div
         className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 px-6 border-b border-[var(--border-subtle)] backdrop-blur-md backdrop-saturate-150"
         style={{ background: 'var(--surface-topbar)', boxShadow: 'var(--topbar-shadow)' }}
       >
-        {/* A container, so the breadcrumbs collapse on the room they have rather than the screen's width. */}
-        <div className="@container flex min-w-0 flex-1 items-center gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Phones only: the sidebar is a sheet there, so its own toggle cannot open it. */}
           <SidebarTrigger className="-ml-2 md:hidden" />
           {/* The database first, as Supabase leads with the project: in view on every page, at every width. */}
           <DatabaseSwitcher />
-          <Breadcrumbs />
           <ProSlot name="topbarStart" />
         </div>
         <div className="flex items-center gap-2">

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { ArrowLeft } from 'lucide-react'
 import type { AlignedData } from 'uplot'
 import type { Route } from './+types/queues.$name.metrics'
 import {
@@ -9,10 +8,8 @@ import {
   resolveAggregate,
 } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
-import { DbLink } from '~/components/db-link'
 import { PageHeader } from '~/components/ui/page-header'
 import { Card, CardContent } from '~/components/ui/card'
-import { Button } from '~/components/ui/button'
 import { FilterSelect } from '~/components/ui/filter-select'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { UplotChart, type UplotSeries } from '~/components/ui/uplot-chart'
@@ -220,18 +217,9 @@ export default function QueueMetrics ({ loaderData }: Route.ComponentProps) {
   return (
     <div className="space-y-4">
       <PageHeader
+        parent={{ to: `/queues/${encodeURIComponent(name)}`, label: name }}
         title={`${name} metrics`}
         subtitle="Queue stats history"
-        action={
-          <Button
-            variant="outline"
-            size="md"
-            render={<DbLink to={`/queues/${encodeURIComponent(name)}`} />}
-          >
-            <ArrowLeft className="h-4 w-4 mr-1.5" aria-hidden="true" />
-            Back to queue
-          </Button>
-        }
       />
 
       {!statsAvailable ? (

@@ -86,6 +86,7 @@ export function InstancePageHeader ({ instance: i, checkedOn }: { instance: Inst
   return (
     <div className="grid gap-2">
       <PageHeader
+        parent={{ to: '/instances', label: 'Instances' }}
         title={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>Instance: <span className={cn(!i.name && 'font-normal italic')}>{instanceName(i.name)}</span></span>
