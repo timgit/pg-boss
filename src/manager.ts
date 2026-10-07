@@ -2096,7 +2096,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const db = this.assertDb(options)
 
-    const { table, policy, singletonsActive } = await this.getQueueCache(name)
+    const { table, policy } = await this.getQueueCache(name)
 
     const fetchOptions = {
       ...options,
@@ -2105,7 +2105,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
       name,
       policy,
       limit: options.batchSize || 1,
-      ignoreSingletons: singletonsActive,
       includeTraceContext: this.#telemetry.enabled
     }
 

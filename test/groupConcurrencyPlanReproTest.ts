@@ -195,7 +195,6 @@ async function explainGroupConcurrencyFetchPlan ({
       limit: batchSize,
       priority: false,
       orderByCreatedOn: true,
-      ignoreSingletons: null,
       groupConcurrency
     })
 
@@ -290,7 +289,6 @@ describeRepro('groupConcurrency fetch plan repro', function () {
       limit: 1,
       priority: false,
       orderByCreatedOn: true,
-      ignoreSingletons: null,
       groupConcurrency: { default: 1, tiers }
     })
 

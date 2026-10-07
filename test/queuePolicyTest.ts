@@ -238,13 +238,7 @@ describe('queuePolicy', function () {
     })
 
     it(`stately policy with singletonKey should not block other values if one is blocked using partition=${partition}`, async function () {
-      const config = {
-        ...ctx.bossConfig,
-        noDefault: true,
-        queueCacheIntervalSeconds: 1,
-        monitorIntervalSeconds: 1
-      }
-      ctx.boss = await helper.start(config)
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'stately', partition })
 
@@ -261,24 +255,12 @@ describe('queuePolicy', function () {
       const jobBId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'b', retryLimit: 1 })
       expect(jobBId).toBeTruthy()
 
-      const [jobB1] = await ctx.boss.fetch(ctx.schema)
-      expect(jobB1).toBe(undefined)
-
-      await ctx.boss.supervise()
-      await delay(1500)
-
       const [jobB] = await ctx.boss.fetch(ctx.schema)
-      expect(jobB).toBeTruthy()
+      expect(jobB?.id).toBe(jobBId)
     })
 
     it(`singleton policy with singletonKey should not block other values if one is blocked using partition=${partition}`, async function () {
-      const config = {
-        ...ctx.bossConfig,
-        noDefault: true,
-        queueCacheIntervalSeconds: 1,
-        monitorIntervalSeconds: 1
-      }
-      ctx.boss = await helper.start(config)
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton', partition })
 
@@ -295,14 +277,34 @@ describe('queuePolicy', function () {
       const jobBId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'b', retryLimit: 1 })
       expect(jobBId).toBeTruthy()
 
-      const [jobB1] = await ctx.boss.fetch(ctx.schema)
-      expect(jobB1).toBe(undefined)
-
-      await ctx.boss.supervise()
-      await delay(1500)
-
       const [jobB] = await ctx.boss.fetch(ctx.schema)
-      expect(jobB).toBeTruthy()
+      expect(jobB?.id).toBe(jobBId)
+    })
+
+    ;(['singleton', 'stately'] as const).forEach(policy => {
+      it(`${policy} policy fetches the next job once the active one completes, even when queue stats captured it as active, using partition=${partition}`, async function () {
+        ctx.boss = await helper.start({
+          ...ctx.bossConfig,
+          noDefault: true,
+          queueCacheIntervalSeconds: 1,
+          monitorIntervalSeconds: 1
+        })
+
+        await ctx.boss.createQueue(ctx.schema, { policy, partition })
+
+        await ctx.boss.send(ctx.schema)
+        const [first] = await ctx.boss.fetch(ctx.schema)
+        assertTruthy(first)
+
+        await ctx.boss.supervise()
+        await ctx.boss.complete(ctx.schema, first.id)
+
+        const nextId = await ctx.boss.send(ctx.schema)
+        await delay(1500)
+
+        const [next] = await ctx.boss.fetch(ctx.schema)
+        expect(next?.id).toBe(nextId)
+      })
     })
 
     it(`singleton policy with multiple singletonKeys in the ctx.schema should only promote 1 of each keep up to the requested batch size using partition=${partition}`, async function () {
