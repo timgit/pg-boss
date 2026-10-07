@@ -1,6 +1,5 @@
 import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
-import * as plans from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 describe('fetch', function () {
@@ -32,31 +31,6 @@ describe('fetch', function () {
     expect(jobs).toEqual([])
 
     spy.mockRestore()
-  })
-  it('fetchNextJob treats a null ignoreSingletons entry as the empty key (no queue-wide stall)', async function () {
-    const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
-    await boss.createQueue(ctx.schema, { policy: 'singleton' })
-
-    // a pending keyed job that should remain fetchable
-    const id = await boss.send(ctx.schema, { v: 1 }, { singletonKey: 'b' })
-    helper.assertTruthy(id)
-
-    // Simulate the queue cache reporting a keyless active singleton job (singletonsActive = [null],
-    // from getQueueStats' array_agg over a NULL singleton_key). Before the fix this rendered
-    // `singleton_key <> ALL(array[NULL])` as NULL for every row, so NOTHING fetched and the whole
-    // queue stalled. The null must be treated as the empty key, blocking only keyless jobs.
-    const query = plans.fetchNextJob({
-      schema: ctx.schema,
-      table: 'job_common',
-      name: ctx.schema,
-      policy: 'singleton',
-      limit: 1,
-      ignoreSingletons: [null as unknown as string]
-    })
-
-    const { rows } = await boss.getDb().executeSql(query.text, query.values)
-    expect(rows.length).toBe(1)
-    expect(rows[0].id).toBe(id)
   })
   it('should reject missing queue argument', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)

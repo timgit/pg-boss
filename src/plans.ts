@@ -2342,7 +2342,6 @@ interface FetchJobOptions {
   priority?: boolean
   orderByCreatedOn?: boolean
   ignoreStartAfter?: boolean
-  ignoreSingletons: string[] | null
   ignoreGroups?: string[] | null
   groupConcurrency?: number | GroupConcurrencyConfig
   minPriority?: number
@@ -2351,7 +2350,6 @@ interface FetchJobOptions {
 
 interface FetchQueryParams {
   values: unknown[]
-  ignoreSingletonsParam: string
   ignoreGroupsParam: string
   defaultGroupLimitParam: string
   tiersParam: string
@@ -2360,8 +2358,7 @@ interface FetchQueryParams {
 }
 
 function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
-  const { ignoreSingletons, ignoreGroups, groupConcurrency, minPriority, maxPriority } = options
-  const hasIgnoreSingletons = ignoreSingletons != null && ignoreSingletons.length > 0
+  const { ignoreGroups, groupConcurrency, minPriority, maxPriority } = options
   const hasIgnoreGroups = ignoreGroups != null && ignoreGroups.length > 0
   const hasGroupConcurrency = groupConcurrency != null
   const hasMinPriority = minPriority != null
@@ -2373,23 +2370,11 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
 
   const values: unknown[] = []
   let paramIndex = 0
-  let ignoreSingletonsParam = ''
   let ignoreGroupsParam = ''
   let defaultGroupLimitParam = ''
   let tiersParam = ''
   let minPriorityParam = ''
   let maxPriorityParam = ''
-
-  if (hasIgnoreSingletons) {
-    paramIndex++
-    ignoreSingletonsParam = `$${paramIndex}::text[]`
-    // job_i2/job_i3 key singleton/stately jobs on the empty key (COALESCE(singleton_key, ''))
-    // as one slot, so a keyless active job must block keyless pending jobs the same way a keyed
-    // one blocks its key. Map null -> '' here so the WHERE clause's COALESCE comparison (below)
-    // never has to compare against a literal NULL array element, which would make `<> ALL(...)`
-    // evaluate to NULL (excluding every row) instead of the intended per-key filter.
-    values.push(ignoreSingletons.map(key => key ?? ''))
-  }
 
   if (hasIgnoreGroups) {
     paramIndex++
@@ -2421,7 +2406,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
     values.push(maxPriority)
   }
 
-  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam, minPriorityParam, maxPriorityParam }
+  return { values, ignoreGroupsParam, defaultGroupLimitParam, tiersParam, minPriorityParam, maxPriorityParam }
 }
 
 /**
@@ -2444,8 +2429,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   const { schema, table, name, policy, limit, includeMetadata, includeTraceContext = false, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
-  const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
-  const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
+  const singletonPolicy = policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately
+  const singletonFetch = limit > 1 && singletonPolicy
   const hasIgnoreGroups = options.ignoreGroups != null && options.ignoreGroups.length > 0
   const hasGroupConcurrency = groupConcurrency != null
   const hasMinPriority = minPriority != null
@@ -2550,7 +2535,19 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
               AND b.id <> j.id
           )`
       : '',
-    hasIgnoreSingletons ? `COALESCE(j.singleton_key, '') <> ALL(${params.ignoreSingletonsParam})` : '',
+    // Skips a key whose active slot is taken, so its pending job does not lose the fetch to a
+    // job_i2/job_i3 conflict and block the keys behind it. Read live: queue stats can be one
+    // monitor interval old or more, and a stale active key would block the key with nothing active.
+    singletonPolicy
+      ? `NOT EXISTS (
+            SELECT 1
+            FROM ${schema}.${table} singleton_probe
+            WHERE singleton_probe.name = j.name
+              AND singleton_probe.state = '${JOB_STATES.active}'
+              AND singleton_probe.policy = '${policy}'
+              AND COALESCE(singleton_probe.singleton_key, '') = COALESCE(j.singleton_key, '')
+          )`
+      : '',
     hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
     hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
     hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
