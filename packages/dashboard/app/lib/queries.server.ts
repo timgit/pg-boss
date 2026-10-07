@@ -1045,8 +1045,10 @@ export interface QueueThroughputOptions {
 //
 // With the v44 columns, each bucket also carries the wait and run histograms of its passes, 48
 // slots each with null where no job landed, summed slot by slot here with those nulls as 0, so a
-// bucket comes back as one histogram however many passes it covers. A bucket whose passes counted no finished jobs comes back all zeros; one they did not
-// measure at all has no row in h and comes back null.
+// bucket comes back as one histogram however many passes it covers. A bucket whose passes counted
+// no finished jobs comes back all zeros; one they did not measure at all comes back null. The sums
+// are one aggregate per slot in the same pass as the counters, not an unnest: expanding every pass
+// into its 48 slots and sorting them back cost a second for two hours of 70 queues.
 function throughputSql (s: string, oneQueue: boolean, latency: boolean): string {
   const byName = oneQueue ? 'AND name = $4' : ''
   const counterBucket = '(floor(extract(epoch from delta_on) / $3) * $3)::float8'
@@ -1056,33 +1058,16 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
         ${byName}`
   const latencyAgg = latency
     ? `,
-        max(ready_oldest_seconds) AS ready_oldest_seconds`
-    : ''
-  const latencyCtes = latency
-    ? `,
-    slots AS (
-      SELECT name, ${counterBucket} AS t, u.slot, coalesce(sum(u.w), 0)::int AS w, coalesce(sum(u.r), 0)::int AS r
-      FROM ${s}.queue_stats, unnest(wait_bins, run_bins) WITH ORDINALITY AS u(w, r, slot)
-      WHERE ${counterWhere}
-      GROUP BY 1, 2, 3
-    ),
-    h AS (
-      SELECT
-        name,
-        t,
-        array_agg(w ORDER BY slot) AS wait_bins,
-        array_agg(r ORDER BY slot) AS run_bins
-      FROM slots
-      GROUP BY 1, 2
-    )`
+        max(ready_oldest_seconds) AS ready_oldest_seconds,
+        ${slotSums('wait_bins')},
+        ${slotSums('run_bins')}`
     : ''
   const latencyCols = latency
     ? `,
-      h.wait_bins                   AS "waitBins",
-      h.run_bins                    AS "runBins",
+      d.wait_bins                   AS "waitBins",
+      d.run_bins                    AS "runBins",
       d.ready_oldest_seconds        AS "readyOldestSeconds"`
     : ''
-  const latencyJoin = latency ? '\n    LEFT JOIN h ON h.name = d.name AND h.t = d.t' : ''
   return `
     WITH d AS (
       SELECT
@@ -1105,7 +1090,7 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
       WHERE captured_on >= $1 AND captured_on < $2
         ${byName}
       GROUP BY 1, 2
-    )${latencyCtes}
+    )
     SELECT
       coalesce(d.name, g.name)      AS name,
       coalesce(d.t, g.t)            AS "bucketStart",
@@ -1113,9 +1098,15 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean): string 
       d.completed / d.secs * 60     AS "completedPerMin",
       d.failed / d.secs * 60        AS "failedPerMin",
       g.ready                       AS "readyCount"${latencyCols}
-    FROM d FULL JOIN g ON g.name = d.name AND g.t = d.t${latencyJoin}
+    FROM d FULL JOIN g ON g.name = d.name AND g.t = d.t
     ORDER BY 1, 2
   `
+}
+
+// One histogram column's 48 slots, each summed over the group with no job as 0, or null when no row
+// in the group measured at all. One aggregate per slot, never an unnest: see throughputSql.
+function slotSums (column: string): string {
+  return `CASE WHEN count(${column}) > 0 THEN ARRAY[${Array.from({ length: LATENCY_SLOTS }, (_, i) => `coalesce(sum(${column}[${i + 1}]), 0)`).join(', ')}]::int[] END AS ${column}`
 }
 
 type ThroughputRow = QueueThroughputPoint & { name: string }
