@@ -1058,6 +1058,10 @@ export interface QueueResult extends Queue {
   table: string;
   createdOn: Date;
   updatedOn: Date;
+  /**
+   * @deprecated Informational only, since fetching checks active jobs directly, and removed in the next major.
+   * The `singletonKey` of each active job in a `singleton` or `stately` queue as of the last monitor pass.
+   */
   singletonsActive: string[] | null;
 }
 

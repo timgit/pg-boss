@@ -276,7 +276,7 @@ In `queue_stats` the histograms are stored as the `int[]` columns `wait_bins` an
 
 **Other fields**
 
-* `singletonsActive`: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none
+* `singletonsActive`, **deprecated**: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none. Since 12.37.1 it is informational only: `fetch()` checks a key's active job directly instead of reading this list. It will be removed in the next major.
 * `table`: the table the queue's jobs are stored in, `job_common` unless the queue is partitioned
 * `createdOn`: when the queue was created
 * `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed it, or when it was created if it never has
