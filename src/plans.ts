@@ -114,6 +114,10 @@ const QUEUE_DEFAULTS = {
   partition: false
 }
 
+// The states job_i14 covers. The monitor's live aggregate repeats this predicate verbatim, so the
+// planner can match the partial index to it.
+const LIVE_STATES = `state IN ('${JOB_STATES.created}', '${JOB_STATES.retry}', '${JOB_STATES.active}', '${JOB_STATES.failed}')`
+
 // The root of the job table hierarchy, under both install shapes: the partitioned parent that
 // COMMON_JOB_TABLE and every per-queue partition attach to, and the plain physical table that
 // carries the rows and indexes itself where noTablePartitioning is set. Also the template every
@@ -204,6 +208,7 @@ export function create (schema: string, version: number, options?: CreateOptions
 
     createTableQueueStats(schema, noPartitioning),
     createIndexQueueStats(schema, noCovering),
+    noPartitioning ? createIndexQueueStatsRetention(schema) : '',
     noPartitioning ? '' : ensureQueueStatsPartitions(schema),
 
     createTableJobDependency(schema),
@@ -239,7 +244,7 @@ function createInline (schema: string, version: number, options: { createSchema?
       createTableJobIndexes(schema, options.noDeferrable, options.noCovering)
     ]),
     inlineIntoCreateTable(createTableWarning(schema), [createIndexWarning(schema)]),
-    inlineIntoCreateTable(createTableQueueStats(schema, true), [createIndexQueueStats(schema, options.noCovering)]),
+    inlineIntoCreateTable(createTableQueueStats(schema, true), [createIndexQueueStats(schema, options.noCovering), createIndexQueueStatsRetention(schema)]),
     inlineIntoCreateTable(createTableJobDependency(schema), [createIndexJobDependencyParent(schema)]),
     createTableInstance(schema),
 
@@ -383,6 +388,10 @@ function createTableVersion (schema: string) {
 // counts (see LATENCY_BINS), and ready_oldest_seconds is how long the oldest job ready to run had
 // waited at the pass. Like the deltas, all of them are null until a pass counts, and a pass that
 // counts writes a value: every slot null when nothing finished, 0 when nothing was waiting.
+// retained_count is the completed and cancelled jobs the last maintenance pass found, which no
+// index covers. total_count is the live jobs (job_i14) counted each monitor pass plus this, so it
+// misses the jobs that completed since that pass. Null until a queue's first maintenance pass after
+// the column was added (see totalCountFromLive).
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -407,6 +416,7 @@ function createTableQueue (schema: string) {
       active_count int NOT NULL default 0,
       failed_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
+      retained_count int,
       created_delta int NOT NULL default 0,
       completed_delta int NOT NULL default 0,
       failed_delta int NOT NULL default 0,
@@ -1020,6 +1030,7 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobBlocking(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobSourceRoot(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobUpsert(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobLive(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -1043,6 +1054,7 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobBlocking(schema)};
     ${createIndexJobSourceRoot(schema)};
     ${createIndexJobUpsert(schema)};
+    ${createIndexJobLive(schema)};
   `
 }
 
@@ -1169,6 +1181,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobBlocking(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobSourceRoot(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobUpsert(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobLive(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -1401,6 +1414,13 @@ function createIndexJobSourceRoot (schema: string) {
 // job never collides with a newer upsert on its way back to retry.
 function createIndexJobUpsert (schema: string) {
   return `CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = '${JOB_STATES.created}' AND upsert_by_key`
+}
+
+// The jobs the monitor's gauges count, with the columns that split them (deferred, blocked, ready,
+// queued, active, failed), so a monitor pass counts them from the index alone rather than reading
+// every job the queue retains. Completed and cancelled jobs, usually most of a queue, stay out of it.
+function createIndexJobLive (schema: string) {
+  return `CREATE INDEX job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE ${LIVE_STATES}`
 }
 
 // The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only
@@ -1934,6 +1954,13 @@ export function createIndexQueueStats (schema: string, noCoveringIndex = false):
     : 'INCLUDE (deferred_count, queued_count, ready_count, active_count, failed_count, total_count)'
 
   return `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats (name, captured_on DESC) ${include}`
+}
+
+// Retention without partitions (noTablePartitioning): finds the rows past retention in capture order,
+// so each pass reads only those rather than the whole table. Partitioned queue_stats drops whole days
+// instead and has no use for it. id makes the order total, for the cursor deleteOldQueueStats carries.
+function createIndexQueueStatsRetention (schema: string): string {
+  return `CREATE INDEX queue_stats_i2 ON ${schema}.queue_stats (captured_on, id)`
 }
 
 // Idempotently create the daily partitions for today and tomorrow (UTC). Both the day suffix and
