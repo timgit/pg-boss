@@ -2030,33 +2030,34 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
   `
 }
 
-// Retention for queue_stats where it is not partitioned by day (noTablePartitioning), one batch of
-// the next `batchSize` primary keys after `after` at a time, walked like the job retention sweep
-// (see deletion). Nothing indexes captured_on on its own, so a LIMIT on the expired rows would
-// rescan the table every batch. The walk reads the whole table, so the supervisor runs it once per
-// maintenance interval.
+// Retention for queue_stats where it is not partitioned by day (noTablePartitioning): deletes at
+// most `batchSize` rows past retention, oldest first, through queue_stats_i2, so a pass reads only the
+// rows it deletes. The supervisor repeats it while a batch comes back with a cursor, which is the
+// last (captured_on, id) deleted, as text joined by '|', so the next batch starts past the rows this
+// one removed rather than stepping over them again (CockroachDB keeps them as tombstones until
+// garbage collection). No cursor once a batch deletes fewer than `batchSize`.
 export function deleteOldQueueStats (schema: string, days: number, options: { after?: string, batchSize?: number } = {}): string {
   const { after, batchSize = DELETION_BATCH_SIZE } = options
-  const cursor = after ? `AND id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
+  const [capturedOn, id] = (after ?? '').replace(SINGLE_QUOTE_REGEX, "''").split('|')
+  const cursor = after ? `AND (captured_on, id) > ('${capturedOn}'::timestamptz, '${id}'::uuid)` : ''
 
   return `
-    WITH edge AS (
-      SELECT id
+    WITH batch AS (
+      SELECT captured_on, id
       FROM ${schema}.queue_stats
-      WHERE true ${cursor}
-      ORDER BY id
-      OFFSET ${batchSize - 1}
-      LIMIT 1
+      WHERE captured_on < ${schema}.job_now() - interval '${days} days' ${cursor}
+      ORDER BY captured_on, id
+      LIMIT ${batchSize}
     ),
     removed AS (
       DELETE FROM ${schema}.queue_stats
-      WHERE true ${cursor}
-        AND id <= COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)
-        AND captured_on < ${schema}.job_now() - interval '${days} days'
+      WHERE id IN (SELECT id FROM batch)
       RETURNING 1
     )
     SELECT
-      (SELECT id FROM edge) AS "walkCursor",
+      CASE WHEN (SELECT count(*) FROM batch) = ${batchSize}
+        THEN (SELECT captured_on::text || '|' || id::text FROM batch ORDER BY captured_on DESC, id DESC LIMIT 1)
+      END AS "walkCursor",
       (SELECT count(*) FROM removed)::int AS deleted
   `
 }

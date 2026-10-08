@@ -309,7 +309,7 @@ Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
 
-With table partitioning, old days are dropped as whole partitions on each supervise pass. Without it (`noTablePartitioning`, as on CockroachDB), each instance deletes old rows once per [`maintenanceIntervalSeconds`](#maintenanceintervalseconds), walking the table 10,000 rows at a time, since doing so reads all of it.
+With table partitioning, old days are dropped as whole partitions on each supervise pass. Without it (`noTablePartitioning`, as on CockroachDB), old rows are deleted on each supervise pass, oldest first, at most 10,000 per transaction, through an index on the capture time, so a pass reads only the rows it deletes.
 
 ### `registerInstance`
 

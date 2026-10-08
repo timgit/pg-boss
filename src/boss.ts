@@ -152,9 +152,6 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // Local rate limit for passes that only report bloat, which deliberately leave the shared interval
   // claim to whichever instance can act on it.
   #detectOnly = 0
-  // Local rate limit for queue_stats retention without partitions. The walk reads the whole table, so
-  // each instance runs it once per maintenance interval rather than on every pass.
-  #queueStatsRetentionDue = 0
   // Latched while a job table is over its autovacuum budget, so a sustained pin warns once rather
   // than every pass. Cleared when every table is back under budget, so a later episode warns again.
   #warnedXminHorizon = false
@@ -325,15 +322,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
     const { schema, queueStatRetentionDays: days } = this.#config
 
     if (this.#config.noTablePartitioning) {
-      if (this.#config.clock.now() < this.#queueStatsRetentionDue) return
-
       const batchSize = this.#config.__test__walk_batch_size
       await this.#walk((after) => plans.deleteOldQueueStats(schema, days, { after, batchSize }))
-
-      // Only once the walk finished, so a pass that failed or stopped partway runs it again.
-      if (!this.#stopping) {
-        this.#queueStatsRetentionDue = this.#config.clock.now() + this.#config.maintenanceIntervalSeconds * 1000
-      }
     } else {
       await this.#executeQuery(plans.dropOldQueueStatsPartitions(schema, days))
     }

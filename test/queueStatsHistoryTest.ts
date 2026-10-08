@@ -598,11 +598,11 @@ describe('queueStatsHistory', function () {
 
     expect(await count()).toBe(2)
 
-    // The walk reads the whole table, so it runs once per maintenance interval, not every pass.
+    // queue_stats_i2 keeps it to the rows past retention, so it runs on every pass.
     await db2.executeSql(
       `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) VALUES ($1, now() - interval '10 days')`, [q])
     await ctx.boss.supervise()
-    expect(await count()).toBe(3)
+    expect(await count()).toBe(2)
 
     await db2.close()
   })
