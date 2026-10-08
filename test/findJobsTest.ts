@@ -173,6 +173,30 @@ describe('findJobs', function () {
     expect(job.startAfter).toBeDefined()
   })
 
+  it('should return at most limit jobs', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, { type: 'email' })
+    await ctx.boss.send(ctx.schema, { type: 'email' })
+    await ctx.boss.send(ctx.schema, { type: 'email' })
+    await ctx.boss.send(ctx.schema, { type: 'sms' })
+
+    expect((await ctx.boss.findJobs(ctx.schema, { limit: 2 })).length).toBe(2)
+
+    const emailJobs = await ctx.boss.findJobs<{ type: string }>(ctx.schema, { data: { type: 'email' }, limit: 2 })
+    expect(emailJobs.length).toBe(2)
+    expect(emailJobs.every(j => j.data?.type === 'email')).toBe(true)
+
+    expect((await ctx.boss.findJobs(ctx.schema, { limit: 10 })).length).toBe(4)
+  })
+
+  it('should reject a limit that is not a positive integer', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await expect(ctx.boss.findJobs(ctx.schema, { limit: 0 })).rejects.toThrow('limit must be an integer >= 1')
+    await expect(ctx.boss.findJobs(ctx.schema, { limit: 1.5 })).rejects.toThrow('limit must be an integer >= 1')
+  })
+
   it('should combine all filters together', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
