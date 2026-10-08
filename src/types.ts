@@ -264,6 +264,10 @@ export interface QueueStats {
   readyCount: number;
   activeCount: number;
   failedCount: number;
+  /**
+   * Queued, active and failed jobs, plus completed and cancelled jobs as of the last maintenance pass.
+   * @see https://pgboss.io/api/queues#getqueues-names
+   */
   totalCount: number;
   /**
    * Jobs completed in the window since the previous monitor pass. Null when `persistQueueStats` is
@@ -1047,6 +1051,10 @@ export interface QueueResult extends Queue {
    * so this is a rolling count of recent failures, not an all-time total.
    */
   failedCount: number;
+  /**
+   * Queued, active and failed jobs, plus completed and cancelled jobs as of the last maintenance pass.
+   * @see https://pgboss.io/api/queues#getqueues-names
+   */
   totalCount: number
   /**
    * Jobs completed in the window the latest counted monitor pass covered. Zero until an instance

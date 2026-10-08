@@ -1,7 +1,7 @@
 import { afterAll, expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
-import { addBins, percentile } from '../src/index.ts'
+import { addBins, percentile, TestClock } from '../src/index.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
@@ -137,6 +137,60 @@ describe('queueStats', function () {
     expect(queueData.queuedCount).toBe(0)
     expect(queueData.readyCount).toBe(0)
     expect(queueData.totalCount).toBe(1)
+  })
+
+  it('should count completed and cancelled jobs in totalCount as of the last maintenance pass', async function () {
+    const clock = new TestClock()
+    // No background pass, so the claims are still open for the supervise() calls below.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1, __test__walk_batch_size: 2 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    const ids = await Promise.all([1, 2, 3, 4, 5, 6].map(() => ctx.boss!.send(queue)))
+    const fetched = await ctx.boss.fetch(queue, { batchSize: 3 })
+    await ctx.boss.complete(queue, fetched.map(job => job.id))
+    const queued = ids.filter(id => !fetched.some(job => job.id === id))
+    await ctx.boss.cancel(queue, queued[0]!)
+
+    // The monitor counts the 2 waiting, then maintenance walks the queue in batches of 2 and counts
+    // the 4 completed and cancelled it keeps.
+    await ctx.boss.supervise(queue)
+
+    let [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.queuedCount).toBe(2)
+    expect(stats.totalCount).toBe(6)
+
+    // Completed after that maintenance pass, so out of totalCount until the next one.
+    const [job] = await ctx.boss.fetch(queue)
+    await ctx.boss.complete(queue, job.id)
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.queuedCount).toBe(1)
+    expect(stats.totalCount).toBe(5)
+
+    // A bulk delete takes what it removed off at once.
+    expect(await ctx.boss.deleteStoredJobs(queue)).toBe(5)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(1)
+  })
+
+  // A drift between job_i14's predicate and the aggregate's would quietly put the monitor back on a
+  // scan of every retained job.
+  helper.itPostgresOnly('counts the live gauges from job_i14', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    const { text } = plans.getQueueStats(ctx.schema, 'job_common', [queue])
+    const literal = text.replaceAll('$1::text[]', plans.serializeArrayParam([queue]))
+
+    const db = await getDb()
+    const result = await db.executeSql(`BEGIN; SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off; EXPLAIN ${literal}; COMMIT`)
+    const plan = (Array.isArray(result) ? result : [result]).flatMap((r: any) => r.rows ?? []).map((r: any) => r['QUERY PLAN']).join('\n')
+
+    expect(plan).toMatch(/Index Only Scan using \w*i14 /)
   })
 
   // Skipped on PGlite, whose adapter does not route through pg-types.

@@ -565,7 +565,13 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const batchSize = this.#config.__test__walk_batch_size
 
       for (const name of queues) {
-        await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, noAdvisoryLocks }))
+        const retention = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, noAdvisoryLocks }))
+
+        // Only a walk that covered the whole queue has counted all of what it kept.
+        if (retention.done) {
+          await this.#executeQuery({ text: plans.setRetainedCount(schema), values: [name, retention.retained] })
+        }
+
         await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'child', { after, batchSize, noAdvisoryLocks }))
         await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'parent', { after, batchSize, noAdvisoryLocks }))
         if (this.#stopping) return
@@ -575,18 +581,24 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
   // Walks one queue's keys a batch at a time (see plans.deletion), carrying each batch's cursor into
   // the next until a batch comes back without one. A stop between batches leaves the rest for the
-  // next pass.
-  async #walk (batch: (after?: string) => string) {
+  // next pass, and says so with done: false. retained totals the batches' "retained", where they
+  // count it. CockroachDB returns counts as strings.
+  async #walk (batch: (after?: string) => string): Promise<{ done: boolean, retained: number }> {
     let after: string | undefined
+    let retained = 0
 
     while (!this.#stopping) {
       const { rows } = await this.#executeQuery(batch(after))
-      const cursor = rows.find((row) => row.walkCursor !== undefined)?.walkCursor
+      const row = rows.find((row) => row.walkCursor !== undefined)
 
-      if (!cursor) return
+      retained += Number(row?.retained ?? 0)
 
-      after = cursor
+      if (!row?.walkCursor) return { done: true, retained }
+
+      after = row.walkCursor
     }
+
+    return { done: false, retained }
   }
 
   /**
