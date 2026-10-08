@@ -273,7 +273,7 @@ export type HttpDeleteQueuedJobsRequest = {
 
 export type HttpDeleteJobsResponse = {
   ok: true
-  result: number | null
+  result: number
 }
 
 export type HttpDeleteQueuedJobsResponse = HttpDeleteJobsResponse
@@ -288,7 +288,10 @@ export type HttpDeleteAllJobsRequest = {
   name?: HttpQueueName
 }
 
-export type HttpDeleteAllJobsResponse = HttpDeleteJobsResponse
+export type HttpDeleteAllJobsResponse = {
+  ok: true
+  result: number | null
+}
 
 export type HttpCompleteRequest = {
   name: HttpQueueName

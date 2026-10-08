@@ -1699,14 +1699,6 @@ export function deleteJobsById (schema: string, table: string, fenced?: boolean)
   `
 }
 
-export function deleteQueuedJobs (schema: string, table: string) {
-  return `DELETE from ${schema}.${table} WHERE name = $1 and state < '${JOB_STATES.active}'`
-}
-
-export function deleteStoredJobs (schema: string, table: string) {
-  return `DELETE from ${schema}.${table} WHERE name = $1 and state > '${JOB_STATES.active}'`
-}
-
 export function truncateTable (schema: string, table: string) {
   return `TRUNCATE ${schema}.${table}`
 }
@@ -1734,10 +1726,6 @@ export function zeroQueueStats (schema: string, one?: boolean) {
     ) q
     WHERE queue.name = q.name
   `
-}
-
-export function deleteAllJobs (schema: string, table: string) {
-  return `DELETE from ${schema}.${table} WHERE name = $1`
 }
 
 // Named and aliased rather than SELECT *, so the timestamp columns and last_job_id reach callers
@@ -3826,30 +3814,55 @@ export function previewRedrive (schema: string, table: string): string {
 export const DELETION_BATCH_SIZE = 10000
 const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 
-// One batch of the retention sweep for one queue: deletes the expired jobs among the next
+// One batch of the retention sweep for one queue, under the table's deletion lock. See
+// deleteJobsBatch for the walk.
+export function deletion (schema: string, table: string, name: string, options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean } = {}): string {
+  const expired = `(
+          (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < ${schema}.job_now())
+          OR
+          (state < '${JOB_STATES.active}' AND keep_until < ${schema}.job_now())
+        )`
+
+  return locked(schema, deleteJobsBatch(schema, table, name, expired, options), table + 'deletion', options.noAdvisoryLocks)
+}
+
+// One batch of the jobs deleteQueuedJobs(), deleteStoredJobs() and deleteAllJobs() remove.
+export function deleteQueuedJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+  return deleteJobsBatch(schema, table, name, `state < '${JOB_STATES.active}'`, options)
+}
+
+export function deleteStoredJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+  return deleteJobsBatch(schema, table, name, `state > '${JOB_STATES.active}'`, options)
+}
+
+export function deleteAllJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+  return deleteJobsBatch(schema, table, name, 'true', options)
+}
+
+// One batch of a delete over one queue: deletes the jobs `predicate` matches among the next
 // `batchSize` primary keys after `after`, and returns the last of those keys as the cursor for the
 // next batch, or null when fewer than `batchSize` were left and the queue is done.
 //
-// Bounded by keys covered rather than rows deleted. Nothing indexes the retention predicate, so a
-// LIMIT on the expired rows themselves would rescan from the start of the queue every batch, past
-// the dead tuples of the batches before it. A walk over (name, id) covers each row once per pass, as
-// a single DELETE does, but no one transaction holds more than a batch of row locks or pins the
+// Bounded by keys covered rather than rows deleted. Nothing indexes the retention predicate or job
+// state, so a LIMIT on the matching rows themselves would rescan from the start of the queue every
+// batch, past the dead tuples of the batches before it. A walk over (name, id) covers each row once,
+// as a single DELETE does, but no one transaction holds more than a batch of row locks or pins the
 // xmin horizon for longer than a batch takes. One queue per walk: an ORDER BY id across
 // name = ANY(...) cannot be served in index order before Postgres 17, so it would sort every
 // candidate row on every batch.
 //
 // The batch's upper key comes from an index-only scan, and the delete covers the id range up to it,
 // which Postgres serves as one bitmap scan rather than a lookup per key. A job inserted into the
-// range after the edge was read is covered too, and is only deleted if it has expired.
+// range after the edge was read is covered too, and is only deleted if the predicate matches it.
 //
-// Literals rather than bind parameters, since locked() wraps the statement in a multi-statement
+// Literals rather than bind parameters, since deletion() wraps the statement in a multi-statement
 // transaction. The result row is told apart from the advisory lock's by "walkCursor".
-export function deletion (schema: string, table: string, name: string, options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean } = {}): string {
-  const { after, batchSize = DELETION_BATCH_SIZE, noAdvisoryLocks } = options
+function deleteJobsBatch (schema: string, table: string, name: string, predicate: string, options: { after?: string, batchSize?: number }): string {
+  const { after, batchSize = DELETION_BATCH_SIZE } = options
   const queue = `'${name.replace(SINGLE_QUOTE_REGEX, "''")}'`
   const cursor = after ? `AND id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
 
-  const sql = `
+  return `
     WITH edge AS (
       SELECT id
       FROM ${schema}.${table}
@@ -3862,20 +3875,13 @@ export function deletion (schema: string, table: string, name: string, options: 
       DELETE FROM ${schema}.${table}
       WHERE name = ${queue} ${cursor}
         AND id <= COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)
-        AND
-        (
-          (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < ${schema}.job_now())
-          OR
-          (state < '${JOB_STATES.active}' AND keep_until < ${schema}.job_now())
-        )
+        AND ${predicate}
       RETURNING 1
     )
     SELECT
       (SELECT id FROM edge) AS "walkCursor",
       (SELECT count(*) FROM removed)::int AS deleted
   `
-
-  return locked(schema, sql, table + 'deletion', noAdvisoryLocks)
 }
 
 // start_after moves up to now, as in resumeJobs.

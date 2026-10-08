@@ -532,7 +532,7 @@ export const deleteQueuedJobsRequestSchema: z.ZodType<types.HttpDeleteQueuedJobs
 
 export const deleteQueuedJobsResponseSchema: z.ZodType<types.HttpDeleteQueuedJobsResponse> = z.object({
   ok: z.literal(true),
-  result: z.number().nullable()
+  result: z.number()
 })
 
 export const deleteStoredJobsRequestSchema: z.ZodType<types.HttpDeleteStoredJobsRequest> = z.object({
@@ -541,7 +541,7 @@ export const deleteStoredJobsRequestSchema: z.ZodType<types.HttpDeleteStoredJobs
 
 export const deleteStoredJobsResponseSchema: z.ZodType<types.HttpDeleteStoredJobsResponse> = z.object({
   ok: z.literal(true),
-  result: z.number().nullable()
+  result: z.number()
 })
 
 export const deleteAllJobsRequestSchema: z.ZodType<types.HttpDeleteAllJobsRequest> = z.object({

@@ -669,9 +669,11 @@ const { total, destinations, unroutable } = await boss.previewRedrive('email-dlq
 
 ### `deleteQueuedJobs(name)`
 
-Deletes all queued jobs in a queue, and resolves to how many it deleted. The number is the row
-count the database reports with the delete; with a [`db`](./constructor.md#db) whose
-`executeSql()` does not return a `rowCount`, it is `null`.
+Deletes all queued jobs in a queue, and resolves to how many it deleted.
+
+The queue is deleted 10,000 jobs at a time, each batch in its own transaction, so a large queue
+never becomes one long transaction. The delete is therefore not atomic: if it fails partway, the
+batches before the failure stay deleted, and a job sent while it runs may or may not be deleted.
 
 ```js
 await boss.deleteQueuedJobs('email-send')
@@ -680,7 +682,7 @@ await boss.deleteQueuedJobs('email-send')
 ### `deleteStoredJobs(name)`
 
 Deletes all jobs in completed, failed, and cancelled state in a queue, and resolves to how many
-it deleted, as `deleteQueuedJobs()` does.
+it deleted. Deletes in batches, as `deleteQueuedJobs()` does.
 
 ```js
 await boss.deleteStoredJobs('email-send')
@@ -692,7 +694,7 @@ Deletes all jobs in a queue, including active jobs.
 
 If no queue name is given, jobs are deleted from all queues.
 
-Resolves to how many jobs it deleted, as `deleteQueuedJobs()` does. A partitioned queue, or every queue when no name is given, is emptied with `TRUNCATE`, which reports no count, so it resolves to `null`; its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, the cached counts catch up at the next monitor pass.
+Resolves to how many jobs it deleted, deleting in batches as `deleteQueuedJobs()` does. A partitioned queue, or every queue when no name is given, is emptied with a single `TRUNCATE` instead, which reports no count, so it resolves to `null`; its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, the cached counts catch up at the next monitor pass.
 
 ```js
 // delete everything in one queue

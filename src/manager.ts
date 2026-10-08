@@ -2758,10 +2758,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Scope the catch to the cache lookup only: a queue that doesn't exist is a no-op. The DELETE
     // and cache eviction must NOT be swallowed. A transient connection error there previously
     // resolved as success while the queue (and its stale cache entry) survived.
+    let queue: types.QueueResult
+
     try {
-      await this.getQueueCache(name)
+      queue = await this.getQueueCache(name)
     } catch {
       return
+    }
+
+    // A queue in the shared table is emptied in batches first, so delete_queue() only removes the
+    // jobs sent since. A queue with its own table is dropped whole.
+    if (!queue.partition) {
+      await this.#deleteInBatches((options) => plans.deleteAllJobs(this.config.schema, queue.table, name, options))
     }
 
     const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks, !this.config.noTablePartitioning)
@@ -2781,24 +2789,34 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#evictQueueCache(name)
   }
 
-  // What a DELETE removed, from the row count the database reports with it, which costs nothing.
-  // Null when the database adapter does not report one: counting instead would cost what the delete did.
-  static #deleted (result: { rowCount?: number | null }): number | null {
-    return typeof result.rowCount === 'number' ? result.rowCount : null
+  // Deletes one queue's jobs a batch of keys at a time (see plans.deleteJobsBatch), each batch its
+  // own statement, and returns how many it deleted. A failure partway leaves the batches before it
+  // deleted. CockroachDB returns the count as a string.
+  async #deleteInBatches (batch: (options: { after?: string, batchSize?: number }) => string): Promise<number> {
+    const batchSize = this.config.__test__walk_batch_size
+    let after: string | undefined
+    let deleted = 0
+
+    for (;;) {
+      const { rows } = await this.db.executeSql(batch({ after, batchSize }))
+      deleted += Number(rows[0].deleted)
+
+      if (!rows[0].walkCursor) return deleted
+
+      after = rows[0].walkCursor
+    }
   }
 
-  async deleteQueuedJobs (name: string): Promise<number | null> {
+  async deleteQueuedJobs (name: string): Promise<number> {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.deleteQueuedJobs(this.config.schema, table)
-    return Manager.#deleted(await this.db.executeSql(sql, [name]))
+    return this.#deleteInBatches((options) => plans.deleteQueuedJobs(this.config.schema, table, name, options))
   }
 
-  async deleteStoredJobs (name: string): Promise<number | null> {
+  async deleteStoredJobs (name: string): Promise<number> {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.deleteStoredJobs(this.config.schema, table)
-    return Manager.#deleted(await this.db.executeSql(sql, [name]))
+    return this.#deleteInBatches((options) => plans.deleteStoredJobs(this.config.schema, table, name, options))
   }
 
   // A truncate leaves nothing to count, so it zeroes the cached counts after itself and returns
@@ -2822,8 +2840,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return null
     }
 
-    const sql = plans.deleteAllJobs(this.config.schema, table)
-    return Manager.#deleted(await this.db.executeSql(sql, [name]))
+    return this.#deleteInBatches((options) => plans.deleteAllJobs(this.config.schema, table, name, options))
   }
 
   // Queue stats are a time series, always returned as an array (newest first).

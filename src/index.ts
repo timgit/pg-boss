@@ -534,11 +534,11 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.previewRedrive(name, options)
   }
 
-  deleteQueuedJobs (name: string): Promise<number | null> {
+  deleteQueuedJobs (name: string): Promise<number> {
     return this.#manager.deleteQueuedJobs(name)
   }
 
-  deleteStoredJobs (name: string): Promise<number | null> {
+  deleteStoredJobs (name: string): Promise<number> {
     return this.#manager.deleteStoredJobs(name)
   }
 

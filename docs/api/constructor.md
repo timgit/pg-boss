@@ -83,8 +83,6 @@ const { rows } = await executeSql(text, values)
 assert(rows[0].input === 'arg1')
 ```
 
-The result may also carry `rowCount`, as `pg` returns it. Without it, [`deleteQueuedJobs()`](./jobs.md#deletequeuedjobs-name), [`deleteStoredJobs()`](./jobs.md#deletestoredjobs-name) and [`deleteAllJobs()`](./jobs.md#deletealljobs-name) resolve to `null` rather than how many they deleted.
-
 See [Custom type parsers](#custom-type-parsers) for how a global `pg-types` parser interacts with pg-boss, whether you bring your own pool or not.
 
 ### `schema`

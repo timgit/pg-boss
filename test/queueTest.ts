@@ -429,6 +429,36 @@ describe('queues', function () {
     expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBe(0)
   })
 
+  it('should delete jobs in batches and count all of them', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__walk_batch_size: 2 })
+
+    await ctx.boss.createQueue(ctx.schema)
+
+    await Promise.all([1, 2, 3].map(() => ctx.boss!.send(ctx.schema)))
+    const fetched = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
+    await ctx.boss.complete(ctx.schema, fetched.map(job => job.id))
+    await Promise.all([1, 2, 3, 4, 5].map(() => ctx.boss!.send(ctx.schema)))
+
+    expect(await ctx.boss.deleteQueuedJobs(ctx.schema)).toBe(5)
+    expect(await ctx.boss.deleteStoredJobs(ctx.schema)).toBe(3)
+
+    await Promise.all([1, 2, 3].map(() => ctx.boss!.send(ctx.schema)))
+    expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBe(3)
+    expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])).toBe(0)
+  })
+
+  it('should delete a queue in the shared table with all its jobs when they span several batches', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__walk_batch_size: 2 })
+
+    await ctx.boss.createQueue(ctx.schema)
+    await Promise.all([1, 2, 3, 4, 5].map(() => ctx.boss!.send(ctx.schema)))
+
+    await ctx.boss.deleteQueue(ctx.schema)
+
+    expect(await ctx.boss.getQueue(ctx.schema)).toBeNull()
+    expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])).toBe(0)
+  })
+
   helper.itPostgresOnly('should delete all jobs from all queues, included partitioned', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
