@@ -4325,6 +4325,25 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
   const statsText = statsQuery.text.replaceAll('$1::text[]', serializeArrayParam(queues))
   const lock = tryAdvisoryLock(schema, 'queue-stats', noAdvisoryLocks)
 
+  // Only when the try-lock was lost. Clearing the claim makes the queue due from monitor_on, which is
+  // already a full interval old, so the next pass claims it again. No other instance can have
+  // claimed it since this pass did, because the claim is not due again yet. The rows are locked in
+  // name order like everywhere else.
+  const release = lock.cte
+    ? `released AS (
+      UPDATE ${schema}.queue SET monitor_claim_on = NULL
+      FROM (
+        SELECT name
+        FROM ${schema}.queue
+        WHERE name = ANY(${serializeArrayParam(queues)}) AND NOT (SELECT got FROM lock)
+        ORDER BY name
+        FOR NO KEY UPDATE
+      ) r
+      WHERE queue.name = r.name
+    ),
+    `
+    : ''
+
   // Two columns in here are not counts and are easy to mistake for incidental:
   //
   // monitor_on is stamped by this statement and by refreshQueueStats - the two that write counts -
@@ -4351,7 +4370,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
   // Its count over stats is there only to finish the aggregate before the first row is locked, so no
   // queue row stays locked through the job table scan.
   const sql = `
-    WITH ${lock.cte}stats AS (SELECT * FROM (${statsText}) agg WHERE true${lock.guard})
+    WITH ${lock.cte}${release}stats AS (SELECT * FROM (${statsText}) agg WHERE true${lock.guard})
     UPDATE ${schema}.queue SET
       deferred_count = COALESCE(stats."deferredCount", 0),
       blocked_count = COALESCE(stats."blockedCount", 0),
@@ -4514,12 +4533,14 @@ function advisoryLock (schema: string, key?: string) {
 // overlapping-analytics regime this whole subsystem exists to prevent, manufactured by the lock
 // meant to prevent duplicate work.
 //
-// So the loser does nothing. trySetQueueMonitorTime stamped monitor_claim_on a statement earlier,
-// when it claimed the interval and before this lock was attempted, so those queues sit out one
-// interval rather than retrying at once - their counts end up at most one monitorIntervalSeconds
-// behind, and monitor_on keeps aging so capturedOn says so.
-// Against a staleness budget measured in hours, losing one sample costs a gap in the sparkline;
-// winning the race to duplicate a scan nobody asked for costs the job table.
+// So the loser does not count. cacheQueueStats also hands back the interval claim that
+// trySetQueueMonitorTime stamped a statement earlier, so those queues are due again on the next
+// pass of any instance instead of a whole monitorIntervalSeconds later. Keeping the claim looked
+// like losing one sample, but it does not stay one. A pass claims and counts one chunk (or one
+// partitioned table) at a time, so a second instance whose pass overlaps claims every queue the
+// first has not reached yet, and loses the lock to the first one's aggregate. Both sets are then
+// stamped together, come due together, and race again the next interval. With 3 instances and
+// 250 queues that was 41% of claims never counted and runs of 10 in a row.
 //
 // The guard is a one-time filter, so a lost race skips the scan rather than running and discarding
 // it, verified on the plan: `Parallel Seq Scan on job (never executed)`. It also has to gate the

@@ -345,8 +345,6 @@ helper.describePostgresOnly('monitor backoff', function () {
 
       await boss.send('backoff', {})
 
-      const claimBefore = await monitorClaimOn(ctx.schema, 'backoff')
-
       const release = await holdStatsLock(ctx.schema)
 
       try {
@@ -371,13 +369,20 @@ helper.describePostgresOnly('monitor backoff', function () {
         // counts really are.
         expect(new Date(after.capturedOn).getTime()).toBe(new Date(before.capturedOn).getTime())
 
-        // The claim did move, which is what makes the queue sit out one interval rather than
-        // retrying immediately against a lock another instance is still holding.
-        const claimAfter = await monitorClaimOn(ctx.schema, 'backoff')
-        expect(claimAfter!.getTime()).toBeGreaterThan(claimBefore!.getTime())
+        // The claim is handed back, so the queue is due on the next pass instead of sitting out a
+        // whole interval. Kept, the loser's claim comes due inside the winner's next aggregate and
+        // loses again, interval after interval.
+        expect(await monitorClaimOn(ctx.schema, 'backoff')).toBeNull()
       } finally {
         await release()
       }
+
+      await boss.supervise()
+
+      const [counted] = await boss.getQueueStats('backoff')
+
+      expect(counted.totalCount).toBe(2)
+      expect(new Date(counted.capturedOn).getTime()).toBeGreaterThan(new Date(before.capturedOn).getTime())
     })
 
     it('runs a never-monitored queue\'s first scan even while losing the race', async function () {
