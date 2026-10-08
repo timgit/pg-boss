@@ -319,10 +319,14 @@ class Boss extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    const sql = this.#config.noTablePartitioning
-      ? plans.deleteOldQueueStats(this.#config.schema, this.#config.queueStatRetentionDays)
-      : plans.dropOldQueueStatsPartitions(this.#config.schema, this.#config.queueStatRetentionDays)
-    await this.#executeQuery(sql)
+    const { schema, queueStatRetentionDays: days } = this.#config
+
+    if (this.#config.noTablePartitioning) {
+      const batchSize = this.#config.__test__walk_batch_size
+      await this.#walk((after) => plans.deleteOldQueueStats(schema, days, { after, batchSize }))
+    } else {
+      await this.#executeQuery(plans.dropOldQueueStatsPartitions(schema, days))
+    }
   }
 
   // Waits for a pass in flight rather than skipping like #onSupervise, since the caller asked for

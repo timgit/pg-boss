@@ -2014,10 +2014,33 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
   `
 }
 
-export function deleteOldQueueStats (schema: string, days: number): string {
+// Retention for queue_stats where it is not partitioned by day (noTablePartitioning), one batch of
+// the next `batchSize` primary keys after `after` at a time, walked like the job retention sweep
+// (see deletion). Nothing indexes captured_on on its own, so a LIMIT on the expired rows would
+// rescan the table every batch.
+export function deleteOldQueueStats (schema: string, days: number, options: { after?: string, batchSize?: number } = {}): string {
+  const { after, batchSize = DELETION_BATCH_SIZE } = options
+  const cursor = after ? `AND id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
+
   return `
-    DELETE FROM ${schema}.queue_stats
-    WHERE captured_on < ${schema}.job_now() - interval '${days} days'
+    WITH edge AS (
+      SELECT id
+      FROM ${schema}.queue_stats
+      WHERE true ${cursor}
+      ORDER BY id
+      OFFSET ${batchSize - 1}
+      LIMIT 1
+    ),
+    removed AS (
+      DELETE FROM ${schema}.queue_stats
+      WHERE true ${cursor}
+        AND id <= COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)
+        AND captured_on < ${schema}.job_now() - interval '${days} days'
+      RETURNING 1
+    )
+    SELECT
+      (SELECT id FROM edge) AS "walkCursor",
+      (SELECT count(*) FROM removed)::int AS deleted
   `
 }
 

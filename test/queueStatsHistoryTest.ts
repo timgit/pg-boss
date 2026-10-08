@@ -577,12 +577,16 @@ describe('queueStatsHistory', function () {
       backend: 'cockroachdb',
       persistQueueStats: true,
       queueStatRetentionDays: 7,
-      noDefault: true
+      noDefault: true,
+      __test__walk_batch_size: 2
     })
 
+    // More old rows than one batch holds, among rows inside the retention.
     const db = await helper.getDb()
     await db.executeSql(
-      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) VALUES ($1, now() - interval '10 days')`, [q])
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) SELECT $1, now() - interval '10 days' FROM generate_series(1, 5)`, [q])
+    await db.executeSql(
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) SELECT $1, now() - interval '1 day' FROM generate_series(1, 2)`, [q])
     await db.close()
 
     // supervise() runs retention in its tail; with no queues it goes straight there
@@ -592,7 +596,7 @@ describe('queueStatsHistory', function () {
     const { rows } = await db2.executeSql(
       `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])
     await db2.close()
-    expect(rows[0].c).toBe(0)
+    expect(rows[0].c).toBe(2)
   })
 
   it('rejects an unknown queue (persistQueueStats off)', async function () {
