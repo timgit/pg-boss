@@ -653,7 +653,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__delay_maint_ms?: number;
   /** @internal */
-  __test__deletion_batch_size?: number;
+  __test__walk_batch_size?: number;
   /** @internal */
   __test__expiry_batch_size?: number;
   /** @internal */

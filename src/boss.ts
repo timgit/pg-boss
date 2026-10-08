@@ -505,21 +505,21 @@ class Boss extends EventEmitter implements types.EventsMixin {
       // route expiry through the manager's split select/delete/re-insert variants instead.
       const limit = this.#config.__test__expiry_batch_size ?? plans.EXPIRY_BATCH_SIZE
 
-      await this.#expire(limit, () => this.#config.noMultiMutationCte
+      await this.#repeatWhileFull(limit, () => this.#config.noMultiMutationCte
         ? this.#manager.failJobsByTimeoutDistributed(table, queues, limit)
         : this.#expiryBatch(plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
 
       if (this.#stopping) return
 
-      await this.#expire(limit, () => this.#config.noMultiMutationCte
+      await this.#repeatWhileFull(limit, () => this.#config.noMultiMutationCte
         ? this.#manager.failJobsByHeartbeatDistributed(table, queues, limit)
         : this.#expiryBatch(plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
     }
   }
 
-  // Runs an expiry sweep a batch at a time until a batch picks fewer than `limit` jobs. A stop
+  // Runs a maintenance sweep a batch at a time until a batch picks fewer than `limit` rows. A stop
   // between batches leaves the rest for the next pass.
-  async #expire (limit: number, batch: () => Promise<number>) {
+  async #repeatWhileFull (limit: number, batch: () => Promise<number>) {
     while (!this.#stopping) {
       if (await batch() < limit) return
     }
@@ -546,30 +546,31 @@ class Boss extends EventEmitter implements types.EventsMixin {
     if (rows.length) {
       const queues = rows.map((q) => q.name)
 
+      const { schema, noAdvisoryLocks } = this.#config
+      const batchSize = this.#config.__test__walk_batch_size
+
       for (const name of queues) {
-        await this.#deleteExpired(table, name)
+        await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, noAdvisoryLocks }))
+        await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'child', { after, batchSize, noAdvisoryLocks }))
+        await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'parent', { after, batchSize, noAdvisoryLocks }))
         if (this.#stopping) return
       }
-
-      const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeQuery(depSql)
     }
   }
 
-  // The retention sweep for one queue, a batch of keys at a time (see plans.deletion). A stop
-  // between batches leaves the rest for the next pass.
-  async #deleteExpired (table: string, name: string) {
-    const batchSize = this.#config.__test__deletion_batch_size ?? plans.DELETION_BATCH_SIZE
+  // Walks one queue's keys a batch at a time (see plans.deletion), carrying each batch's cursor into
+  // the next until a batch comes back without one. A stop between batches leaves the rest for the
+  // next pass.
+  async #walk (batch: (after?: string) => string) {
     let after: string | undefined
 
     while (!this.#stopping) {
-      const sql = plans.deletion(this.#config.schema, table, name, { after, batchSize, noAdvisoryLocks: this.#config.noAdvisoryLocks })
-      const { rows } = await this.#executeQuery(sql)
-      const batch = rows.find((row) => row.deletionCursor !== undefined)
+      const { rows } = await this.#executeQuery(batch(after))
+      const cursor = rows.find((row) => row.walkCursor !== undefined)?.walkCursor
 
-      if (!batch?.deletionCursor) return
+      if (!cursor) return
 
-      after = batch.deletionCursor
+      after = cursor
     }
   }
 

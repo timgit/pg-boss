@@ -78,6 +78,31 @@ describe('flows', function () {
     expect(fetched[0].id).toBe(childId)
   })
 
+  it('should remove the dependencies of deleted jobs in batches during maintenance', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__walk_batch_size: 2 })
+
+    const gone = await ctx.boss.flow([
+      { ref: 'p1', name: ctx.schema },
+      { ref: 'p2', name: ctx.schema },
+      { ref: 'p3', name: ctx.schema },
+      { ref: 'c1', name: ctx.schema, dependsOn: ['p1', 'p2', 'p3'] },
+      { ref: 'c2', name: ctx.schema, dependsOn: ['p1', 'p2'] }
+    ])
+
+    const kept = await ctx.boss.flow([
+      { ref: 'p', name: ctx.schema },
+      { ref: 'c', name: ctx.schema, dependsOn: ['p'] }
+    ])
+
+    expect(await helper.countJobs(ctx.schema, 'job_dependency', 'true')).toBe(6)
+
+    await ctx.boss.deleteJob(ctx.schema, Object.values(gone))
+    await ctx.boss.supervise(ctx.schema)
+
+    expect(await helper.countJobs(ctx.schema, 'job_dependency', 'true')).toBe(1)
+    expect(await ctx.boss.getDependencies(ctx.schema, kept.c)).toEqual([{ name: ctx.schema, id: kept.p }])
+  })
+
   it('should allow getDependencies and getDependents', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

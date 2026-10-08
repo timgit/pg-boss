@@ -78,7 +78,7 @@ describe('delete', function () {
     const config = {
       ...ctx.bossConfig,
       maintenanceIntervalSeconds: 1,
-      __test__deletion_batch_size: 2
+      __test__walk_batch_size: 2
     }
 
     ctx.boss = await helper.start(config)

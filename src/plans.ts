@@ -3815,7 +3815,7 @@ const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 // range after the edge was read is covered too, and is only deleted if it has expired.
 //
 // Literals rather than bind parameters, since locked() wraps the statement in a multi-statement
-// transaction. The result row is told apart from the advisory lock's by "deletionCursor".
+// transaction. The result row is told apart from the advisory lock's by "walkCursor".
 export function deletion (schema: string, table: string, name: string, options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean } = {}): string {
   const { after, batchSize = DELETION_BATCH_SIZE, noAdvisoryLocks } = options
   const queue = `'${name.replace(SINGLE_QUOTE_REGEX, "''")}'`
@@ -3843,8 +3843,8 @@ export function deletion (schema: string, table: string, name: string, options: 
       RETURNING 1
     )
     SELECT
-      (SELECT id FROM edge) AS "deletionCursor",
-      (SELECT count(*) FROM removed)::int AS "deletionDeleted"
+      (SELECT id FROM edge) AS "walkCursor",
+      (SELECT count(*) FROM removed)::int AS deleted
   `
 
   return locked(schema, sql, table + 'deletion', noAdvisoryLocks)
@@ -4698,19 +4698,46 @@ export function getDependents (schema: string) {
   `
 }
 
-export function cleanupDependencies (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
+export const DEPENDENCY_CLEANUP_BATCH_SIZE = 10000
+
+// One batch of the dependency cleanup for one queue and one side of the dependency: deletes the
+// rows among the next `batchSize` whose job on that side no longer exists. A row is orphaned when
+// either job is gone, so each queue is walked twice, once by child (over the primary key) and once
+// by parent (over job_dep_parent_idx). Walked like the retention sweep and for the same reason (see
+// deletion): the anti-join probes every row, so a single statement's cost grows with the table
+// whether or not anything is orphaned.
+export function cleanupDependencies (schema: string, table: string, name: string, side: 'child' | 'parent', options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean } = {}): string {
+  const { after, batchSize = DEPENDENCY_CLEANUP_BATCH_SIZE, noAdvisoryLocks } = options
+  const queue = `'${name.replace(SINGLE_QUOTE_REGEX, "''")}'`
+  const cursor = after ? `AND ${side}_id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
+
+  const jobCursor = after ? `AND j.id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
+  const edge = `COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)`
+
   const sql = `
-    DELETE FROM ${schema}.job_dependency
-    WHERE (child_name = ANY(${serializeArrayParam(queues)})
-      AND NOT EXISTS (
-        SELECT 1 FROM ${schema}.${table} j
-        WHERE j.name = child_name AND j.id = child_id
-      ))
-    OR (parent_name = ANY(${serializeArrayParam(queues)})
-      AND NOT EXISTS (
-        SELECT 1 FROM ${schema}.${table} j
-        WHERE j.name = parent_name AND j.id = parent_id
-      ))
+    WITH edge AS (
+      SELECT ${side}_id AS id
+      FROM ${schema}.job_dependency
+      WHERE ${side}_name = ${queue} ${cursor}
+      ORDER BY ${side}_id
+      OFFSET ${batchSize - 1}
+      LIMIT 1
+    ),
+    removed AS (
+      DELETE FROM ${schema}.job_dependency d
+      WHERE ${side}_name = ${queue} ${cursor}
+        AND ${side}_id <= ${edge}
+        AND NOT EXISTS (
+          SELECT 1 FROM ${schema}.${table} j
+          WHERE j.name = ${queue} ${jobCursor}
+            AND j.id <= ${edge}
+            AND j.id = d.${side}_id
+        )
+      RETURNING 1
+    )
+    SELECT
+      (SELECT id FROM edge) AS "walkCursor",
+      (SELECT count(*) FROM removed)::int AS deleted
   `
 
   return locked(schema, sql, table + 'cleanupDependencies', noAdvisoryLocks)
