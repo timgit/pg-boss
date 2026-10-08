@@ -539,9 +539,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  // CockroachDB returns the count as a string.
   async #expiryBatch (sql: string): Promise<number> {
     const { rows } = await this.#executeQuery(sql)
-    return rows.find((row) => row.expiryPicked !== undefined)?.expiryPicked ?? 0
+    return Number(rows.find((row) => row.expiryPicked !== undefined)?.expiryPicked ?? 0)
   }
 
   async #maintain (table: string, names: string[]) {
