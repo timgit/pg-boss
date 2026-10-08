@@ -5,6 +5,7 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
+  useMatches,
 } from "react-router";
 import type { Route } from "./+types/root";
 import { DocumentTitle } from "~/components/document-title";
@@ -17,6 +18,7 @@ import { DatabaseSwitcher } from "~/components/database-switcher";
 import { ProSlot } from "~/components/pro-slot";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 import { cn } from "~/lib/utils";
+import { showsDatabase } from "~/lib/page-scope";
 import { dbContext } from "~/lib/db-context";
 import { toPublicDatabase } from "~/lib/config.server";
 import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
@@ -25,6 +27,7 @@ import { BRAND_COBALT, COLOR_HEX, DEFAULT_COLOR_THEME } from "~/lib/favicon";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
+  const database = showsDatabase(useMatches())
 
   return (
     <main
@@ -42,8 +45,8 @@ function MainContent ({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Phones only: the sidebar is a sheet there, so its own toggle cannot open it. */}
           <SidebarTrigger className="-ml-2 md:hidden" />
-          {/* The database first, as Supabase leads with the project: in view on every page, at every width. */}
-          <DatabaseSwitcher />
+          {/* The database first, as Supabase leads with the project: in view on every page about one, at every width. */}
+          {database && <DatabaseSwitcher />}
           <ProSlot name="topbarStart" />
         </div>
         <div className="flex items-center gap-2">
