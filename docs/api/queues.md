@@ -245,7 +245,7 @@ The settings, `policy` through `notify`, are the options described under [`creat
 
 As counted by a monitor pass, which runs every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
 
-A monitor pass counts the queued, active and failed jobs from an index that holds only those, so its cost follows the queue's backlog and failures rather than every job it retains. Completed and cancelled jobs, usually most of a queue, are counted by the maintenance pass instead, which reads every job once per [`maintenanceIntervalSeconds`](./constructor.md#maintenanceintervalseconds) as it deletes the expired ones. `totalCount` adds the two, so it leaves out jobs completed or cancelled since the last maintenance pass. Measured on local PostgreSQL with 50,000 queued jobs, a monitor pass counted them in 27 ms whether the queue retained 1,000,000 or 5,000,000 completed jobs, where counting every job took 410 ms and 3.3 s.
+A monitor pass counts each figure through an index that holds only the jobs it needs, so its cost follows the queue's backlog, active and failed jobs, and what finished since the last pass, rather than every job the queue retains. Completed and cancelled jobs, usually most of a queue, are counted once per [`maintenanceIntervalSeconds`](./constructor.md#maintenanceintervalseconds) as the maintenance pass deletes the expired ones, and each monitor pass adds the ones that finished since. A job removed with [`deleteJob()`](./jobs.md#deletejob-name-id-options), or a cancelled job resumed, leaves `totalCount` at the next maintenance pass. Measured on local PostgreSQL with 50,000 queued jobs, a monitor pass counted them in 27 ms whether the queue retained 1,000,000 or 5,000,000 completed jobs, where counting every job took 410 ms and 3.3 s.
 
 * `queuedCount`: jobs waiting to run, **including** deferred jobs and jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
 * `deferredCount`: queued jobs scheduled to start in the future (`startAfter` not yet reached), leaving out blocked jobs
@@ -253,7 +253,7 @@ A monitor pass counts the queued, active and failed jobs from an index that hold
 * `readyCount`: queued jobs ready to be processed now, neither deferred nor blocked; the true runnable backlog
 * `activeCount`: jobs currently being processed
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
-* `totalCount`: the queued, active and failed jobs, plus the completed and cancelled jobs as of the last maintenance pass
+* `totalCount`: all jobs currently stored for the queue
 
 **Monitor pass fields**
 

@@ -265,7 +265,7 @@ export interface QueueStats {
   activeCount: number;
   failedCount: number;
   /**
-   * Queued, active and failed jobs, plus completed and cancelled jobs as of the last maintenance pass.
+   * All jobs stored for the queue. A job removed by `deleteJob()` leaves it at the next maintenance pass.
    * @see https://pgboss.io/api/queues#getqueues-names
    */
   totalCount: number;
@@ -1052,7 +1052,7 @@ export interface QueueResult extends Queue {
    */
   failedCount: number;
   /**
-   * Queued, active and failed jobs, plus completed and cancelled jobs as of the last maintenance pass.
+   * All jobs stored for the queue. A job removed by `deleteJob()` leaves it at the next maintenance pass.
    * @see https://pgboss.io/api/queues#getqueues-names
    */
   totalCount: number

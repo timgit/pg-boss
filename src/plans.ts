@@ -388,10 +388,13 @@ function createTableVersion (schema: string) {
 // counts (see LATENCY_BINS), and ready_oldest_seconds is how long the oldest job ready to run had
 // waited at the pass. Like the deltas, all of them are null until a pass counts, and a pass that
 // counts writes a value: every slot null when nothing finished, 0 when nothing was waiting.
-// retained_count is the completed and cancelled jobs the last maintenance pass found, which no
-// index covers. total_count is the live jobs (job_i14) counted each monitor pass plus this, so it
-// misses the jobs that completed since that pass. Null until a queue's first maintenance pass after
-// the column was added (see totalCountFromLive).
+// retained_count is the completed and cancelled jobs the queue holds, and total_count is the live
+// jobs (job_i14) counted each monitor pass plus this. The maintenance pass counts it outright, as
+// the jobs that finished by retained_on, and each monitor pass then adds the ones that finished after
+// it (job_i16) and moves retained_on up, so between them every finished job is counted once. Jobs that leave that set between maintenance
+// passes without a bulk delete (a deleteJob(), a resumed cancelled job) are corrected at the next one.
+// Both are null until a queue's first maintenance pass after the columns were added (see
+// retainedAssignments).
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -3864,15 +3867,16 @@ export const DELETION_BATCH_SIZE = 10000
 const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 
 // One batch of the retention sweep for one queue, under the table's deletion lock. See
-// deleteJobsBatch for the walk.
-export function deletion (schema: string, table: string, name: string, options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean } = {}): string {
+// deleteJobsBatch for the walk. `retainedBefore` is the epoch milliseconds the sweep counts the
+// completed and cancelled jobs it keeps up to (see createTableQueue).
+export function deletion (schema: string, table: string, name: string, options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean, retainedBefore?: number } = {}): string {
   const expired = `(
           (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < ${schema}.job_now())
           OR
           (state < '${JOB_STATES.active}' AND keep_until < ${schema}.job_now())
         )`
 
-  return locked(schema, deleteJobsBatch(schema, table, name, expired, { ...options, countRetained: true }), table + 'deletion', options.noAdvisoryLocks)
+  return locked(schema, deleteJobsBatch(schema, table, name, expired, options), table + 'deletion', options.noAdvisoryLocks)
 }
 
 // One batch of the jobs deleteQueuedJobs(), deleteStoredJobs() and deleteAllJobs() remove.
@@ -3904,21 +3908,24 @@ export function deleteAllJobs (schema: string, table: string, name: string, opti
 // which Postgres serves as one bitmap scan rather than a lookup per key. A job inserted into the
 // range after the edge was read is covered too, and is only deleted if the predicate matches it.
 //
-// deletedRetained is how many of the deleted jobs were completed or cancelled, which the caller takes
-// off retained_count. With `countRetained` the batch also counts the completed and cancelled jobs it
-// leaves in place, as "retained", for the retention sweep to total across the queue (see
+// deletedRetained is how many of the deleted jobs retained_count holds, the completed and cancelled
+// ones that finished by the queue's retained_on, which the caller takes off it. With
+// `retainedBefore` the batch also counts the completed and cancelled jobs that finished by then
+// and that it leaves in place, as "retained", for the retention sweep to total across the queue (see
 // createTableQueue). That count reads the batch's range a second time, from the snapshot the delete
 // started with, so it subtracts the jobs the delete removed.
 //
 // Literals rather than bind parameters, since deletion() wraps the statement in a multi-statement
 // transaction. The result row is told apart from the advisory lock's by "walkCursor".
-function deleteJobsBatch (schema: string, table: string, name: string, predicate: string, options: { after?: string, batchSize?: number, countRetained?: boolean }): string {
-  const { after, batchSize = DELETION_BATCH_SIZE, countRetained } = options
+function deleteJobsBatch (schema: string, table: string, name: string, predicate: string, options: { after?: string, batchSize?: number, retainedBefore?: number }): string {
+  const { after, batchSize = DELETION_BATCH_SIZE, retainedBefore } = options
   const queue = `'${name.replace(SINGLE_QUOTE_REGEX, "''")}'`
   const cursor = after ? `AND id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
   const range = `name = ${queue} ${cursor}
         AND id <= COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)`
   const retainedStates = `state IN ('${JOB_STATES.completed}', '${JOB_STATES.cancelled}')`
+  const held = `${retainedStates} AND completed_on <= (SELECT retained_on FROM ${schema}.queue WHERE name = ${queue})`
+  const before = `${retainedStates} AND completed_on <= to_timestamp(${Number(retainedBefore)}::float8 / 1000)`
 
   return `
     WITH edge AS (
@@ -3933,15 +3940,15 @@ function deleteJobsBatch (schema: string, table: string, name: string, predicate
       DELETE FROM ${schema}.${table}
       WHERE ${range}
         AND ${predicate}
-      RETURNING state
+      RETURNING state, completed_on
     )
     SELECT
       (SELECT id FROM edge) AS "walkCursor",
       (SELECT count(*) FROM removed)::int AS deleted,
-      (SELECT count(*) FROM removed WHERE ${retainedStates})::int AS "deletedRetained"${countRetained
+      (SELECT count(*) FROM removed WHERE ${held})::int AS "deletedRetained"${retainedBefore !== undefined
         ? `,
-      ((SELECT count(*) FROM ${schema}.${table} WHERE ${range} AND ${retainedStates})
-        - (SELECT count(*) FROM removed WHERE ${retainedStates}))::int AS retained`
+      ((SELECT count(*) FROM ${schema}.${table} WHERE ${range} AND ${before})
+        - (SELECT count(*) FROM removed WHERE ${before}))::int AS retained`
         : ''}
   `
 }
@@ -3949,11 +3956,15 @@ function deleteJobsBatch (schema: string, table: string, name: string, predicate
 // The live jobs as the last monitor pass counted them, which total_count adds retained_count to.
 const CACHED_LIVE_COUNT = 'queued_count + active_count + failed_count'
 
-// The retention sweep's total of the completed and cancelled jobs it left, once it has walked the
-// whole queue, and total_count with it rather than at the next monitor pass. $1 is the queue, $2 the
-// count.
+// The retention sweep's total of the completed and cancelled jobs it left that finished by $3
+// (epoch milliseconds), once it has walked the whole queue, with $3 as the new retained_on and
+// total_count updated with it rather than at the next monitor pass. $1 is the queue, $2 the count.
 export function setRetainedCount (schema: string): string {
-  return `UPDATE ${schema}.queue SET retained_count = $2, total_count = ${CACHED_LIVE_COUNT} + $2 WHERE name = $1`
+  return `
+    UPDATE ${schema}.queue
+    SET retained_count = $2, retained_on = to_timestamp($3::float8 / 1000), total_count = ${CACHED_LIVE_COUNT} + $2
+    WHERE name = $1
+  `
 }
 
 // Takes the completed and cancelled jobs a bulk delete removed off retained_count and total_count, so
@@ -4269,14 +4280,14 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
       GROUP BY w.name, w.h
     ),
     binned AS (
-      SELECT j.name,
-        CASE WHEN j.created_on >= th.h THEN width_bucket(j.created_on, th.t) END AS cb,
-        CASE WHEN j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') AND j.completed_on >= th.h
-          THEN width_bucket(j.completed_on, th.t) END AS fb,
-        j.state
-      FROM ${schema}.${table} j
-      JOIN th ON th.name = j.name
-      WHERE j.name = ANY(${names})
+      SELECT j.name, width_bucket(j.created_on, th.t) AS cb, NULL::int AS fb, j.state
+      FROM th
+      JOIN ${schema}.${table} j ON j.name = th.name AND j.created_on >= th.h
+      UNION ALL
+      SELECT j.name, NULL::int AS cb, width_bucket(j.completed_on, th.t) AS fb, j.state
+      FROM th
+      JOIN ${schema}.${table} j ON j.name = th.name AND j.completed_on >= th.h
+      WHERE j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}')
     ),
     grouped AS (
       SELECT name, cb, fb, state, count(*)::int AS n
@@ -4380,21 +4391,22 @@ function latencyHistogram (which: 'wait' | 'run'): string {
                        FROM unnest(latency.ps, latency.ns) AS u(p, n) GROUP BY 1) c ON c.slot = s.slot)`
 }
 
-// Every count the monitor keeps for a set of queues.
+// Every count the monitor keeps for a set of queues, each read through an index that holds only the
+// jobs it counts, so a pass costs what the queue has in flight and what moved through it, not every
+// job it retains.
 //
-// Seven of them are gauges, what the queue looks like right now, and they come from the live jobs
-// alone: waiting, active and failed, which job_i14 holds with every column the gauges split them by.
-// The aggregate repeats that index's predicate verbatim (LIVE_STATES) so the planner matches it, and
-// counts them with an index-only scan, so a pass costs what the queue has in flight and failed, not
-// what it retains. liveCount is all of them; total_count adds the completed and cancelled jobs the
-// last maintenance pass counted (see createTableQueue).
+// Seven are gauges, what the queue looks like right now, from the live jobs alone: waiting, active
+// and failed, which job_i14 holds with every column the gauges split them by. The aggregate repeats
+// that index's predicate verbatim (LIVE_STATES) so the planner matches it, and counts them with an
+// index-only scan. liveCount is all of them. retainedSince is the jobs completed or cancelled since
+// the queue's retained_on (job_i16), which the caller adds to retained_count (see createTableQueue)
+// only if retained_on is still retainedFrom, the watermark it was counted from.
 //
 // The throughput counters, with persistQueueStats, are not gauges: createdDelta counts the jobs
-// created since the last pass, and completedDelta and failedDelta the jobs that *finished*, which is
-// the only way to answer "how many jobs did this queue get through" from a table of current state.
-// Five hundred arriving and five hundred leaving looks identical to a still queue in every gauge.
-// Nothing indexes created_on or completed_on, so they still read every job the queue retains, in a
-// second aggregate that runs only when they are asked for.
+// created since the last pass (job_i15), and completedDelta and failedDelta the jobs that *finished*
+// (job_i16), which is the only way to answer "how many jobs did this queue get through" from a table
+// of current state. Five hundred arriving and five hundred leaving looks identical to a still queue
+// in every gauge. readyOldestSeconds reads the ready jobs through job_i11.
 //
 // The window is the queue's own `delta_on`, joined in rather than passed as a fixed interval. That
 // watermark is what makes the three counters exact across a skipped or backed-off pass: nothing is
@@ -4402,9 +4414,6 @@ function latencyHistogram (which: 'wait' | 'run'): string {
 // a late pass simply covers a longer window, and says so in delta_seconds. A queue that has never
 // been counted has a null watermark and counts zero, which is the honest answer for a first pass
 // that has nothing to compare against.
-//
-// The join is against `queue`, which holds one row per queue: Postgres hashes it once and probes per
-// row.
 //
 // One row per queue asked for, with zero gauges for a queue that has no live jobs.
 export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, window: DeltaWindowOptions = {}): SqlQuery {
@@ -4415,12 +4424,8 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
   const blocked = `${queued} AND j.blocked`
   const deferred = `${queued} AND NOT j.blocked AND j.start_after > ${schema}.job_now()`
   const ready = `${queued} AND NOT j.blocked AND j.start_after <= ${schema}.job_now()`
+  const finished = `j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}')`
   const end = deltaWindowEnd(schema, window.lag)
-  const inWindow = (column: string) => `j.${column} >= ${deltaWindowStart('q', end, window.resetMax)} AND j.${column} < ${end}`
-  // The true-up check: the same jobs recounted across the windows already recorded (see
-  // trueUpSettled). More than the snapshots hold means something committed after its window was
-  // counted, and the monitor follows up with trueUpQueueStats for this queue.
-  const settled = (column: string) => `j.${column} >= q.h AND j.${column} < q.top`
   const counters = throughput
     ? {
         select: `
@@ -4431,30 +4436,55 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         ${latencyHistogram('run')} as "runBins",
         stats."readyOldestSeconds",
         COALESCE(stats."recount" > stats."settled", false) as "trueUp",`,
+        // The true-up check: the same jobs recounted across the windows already recorded (see
+        // trueUpSettled). More than the snapshots hold means something committed after its window
+        // was counted, and the monitor follows up with trueUpQueueStats for this queue.
         join: `
       LEFT JOIN (
         SELECT
-            j.name,
-            (count(*) FILTER (WHERE ${inWindow('created_on')}))::int as "createdDelta",
-            (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}' AND ${inWindow('completed_on')}))::int as "completedDelta",
-            (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND ${inWindow('completed_on')}))::int as "failedDelta",
-            array_agg(${latencyBin(waitSeconds)} * ${LATENCY_PACK} + ${latencyBin(runSeconds)})
-              FILTER (WHERE j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') AND j.started_on IS NOT NULL AND ${inWindow('completed_on')}) as "latencyBins",
-            round(extract(epoch from (${schema}.job_now() - min(GREATEST(j.created_on, j.start_after))
-              FILTER (WHERE ${ready}))))::int as "readyOldestSeconds",
-            sum(
-              CASE WHEN ${settled('created_on')} THEN 1 ELSE 0 END +
-              CASE WHEN ${settled('completed_on')} AND j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') THEN 1 ELSE 0 END
-            )::int as "recount",
-            max(q.settled) as "settled"
-          FROM ${schema}.${table} j
-          JOIN (
-            SELECT q.name, q.delta_on, a.h, t.top, t.settled
+            q.name,
+            created."createdDelta",
+            done."completedDelta",
+            done."failedDelta",
+            done."latencyBins",
+            oldest."readyOldestSeconds",
+            recreated.n + refinished.n as "recount",
+            q.settled as "settled"
+          FROM (
+            SELECT q.name, a.h, t.top, t.settled,
+              ${deltaWindowStart('q', end, window.resetMax)} AS w_start, ${end} AS w_end
             FROM ${schema}.queue q${trueUpSettled(schema, 'q', window.trueUpMax)}
             WHERE q.name = ANY($1::text[])
-          ) q ON q.name = j.name
-          WHERE j.name = ANY($1::text[])
-          GROUP BY 1
+          ) q
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int as "createdDelta"
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND j.created_on >= q.w_start AND j.created_on < q.w_end
+          ) created ON true
+          LEFT JOIN LATERAL (
+            SELECT
+              (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}'))::int as "completedDelta",
+              (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}'))::int as "failedDelta",
+              array_agg(${latencyBin(waitSeconds)} * ${LATENCY_PACK} + ${latencyBin(runSeconds)})
+                FILTER (WHERE ${finished} AND j.started_on IS NOT NULL) as "latencyBins"
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND j.completed_on >= q.w_start AND j.completed_on < q.w_end
+          ) done ON true
+          LEFT JOIN LATERAL (
+            SELECT round(extract(epoch from (${schema}.job_now() - min(GREATEST(j.created_on, j.start_after)))))::int as "readyOldestSeconds"
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND ${ready}
+          ) oldest ON true
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int AS n
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND j.created_on >= q.h AND j.created_on < q.top
+          ) recreated ON true
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int AS n
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND j.completed_on >= q.h AND j.completed_on < q.top AND ${finished}
+          ) refinished ON true
       ) stats ON stats.name = n.name`,
         lateral: latencyCounts('stats."latencyBins"')
       }
@@ -4470,7 +4500,9 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         COALESCE(live."blockedCount", 0) as "blockedCount",
         COALESCE(live."activeCount", 0) as "activeCount",
         COALESCE(live."failedCount", 0) as "failedCount",
-        COALESCE(live."liveCount", 0) as "liveCount",${counters.select}
+        COALESCE(live."liveCount", 0) as "liveCount",
+        since."retainedSince",
+        since."retainedFrom",${counters.select}
         singletons."singletonsActive"
       FROM unnest($1::text[]) AS n(name)
       LEFT JOIN (
@@ -4487,6 +4519,17 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
           WHERE j.name = ANY($1::text[]) AND ${LIVE_STATES}
           GROUP BY 1
       ) live ON live.name = n.name
+      LEFT JOIN LATERAL (
+        SELECT qr.retained_on as "retainedFrom",
+          (SELECT count(*)::int
+            FROM ${schema}.${table} j
+            WHERE j.name = qr.name
+              AND j.completed_on > qr.retained_on
+              AND j.completed_on <= ${schema}.job_now()
+              AND j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.cancelled}')) as "retainedSince"
+        FROM ${schema}.queue qr
+        WHERE qr.name = n.name
+      ) since ON true
       LEFT JOIN (
         SELECT j.name, array_agg(j.singleton_key) as "singletonsActive"
           FROM ${schema}.${table} j
@@ -4501,12 +4544,20 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
   }
 }
 
-// The live jobs just counted plus the completed and cancelled ones the last maintenance pass found.
-// For a queue that pass has not reached yet (see createTableQueue), the larger of the live jobs and
-// total_count as it was, which is a full count on a queue that predates the column and zero on a
-// new one.
-function totalCountFromLive () {
-  return 'CASE WHEN queue.retained_count IS NULL THEN GREATEST(queue.total_count, COALESCE(stats."liveCount", 0)) ELSE COALESCE(stats."liveCount", 0) + queue.retained_count END'
+// The SET clause for retained_count, retained_on and total_count, from the aggregate's live count and
+// the jobs that finished since retained_on. The finished jobs are added only if retained_on is still
+// the watermark they were counted from: a maintenance pass or a forced refresh that moved it in the
+// meantime has counted them already. For a queue no maintenance pass has reached yet (see
+// createTableQueue), total_count is the larger of the live jobs and total_count as it was, which is
+// a full count on a queue that predates the columns and zero on a new one.
+function retainedAssignments (schema: string) {
+  const counted = 'queue.retained_on IS NOT DISTINCT FROM stats."retainedFrom"'
+  const live = 'COALESCE(stats."liveCount", 0)'
+  const retained = `CASE WHEN ${counted} THEN queue.retained_count + COALESCE(stats."retainedSince", 0) ELSE queue.retained_count END`
+  return `
+      retained_count = ${retained},
+      retained_on = CASE WHEN ${counted} AND queue.retained_on IS NOT NULL THEN GREATEST(queue.retained_on, ${schema}.job_now()) ELSE queue.retained_on END,
+      total_count = CASE WHEN queue.retained_count IS NULL THEN GREATEST(queue.total_count, ${live}) ELSE ${live} + ${retained} END,`
 }
 
 // Length of the recent-ready-count sliding window kept on queue.ready_history for the dashboard
@@ -4581,7 +4632,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
       ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
       failed_count = COALESCE(stats."failedCount", 0),
-      total_count = ${totalCountFromLive()},${throughputSet}
+      ${retainedAssignments(schema)}${throughputSet}
       singletons_active = stats."singletonsActive",
       monitor_on = ${schema}.job_now(),
       ready_history = (
@@ -4660,7 +4711,7 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
       ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
       failed_count = COALESCE(stats."failedCount", 0),
-      total_count = ${totalCountFromLive()},
+      ${retainedAssignments(schema)}
       singletons_active = stats."singletonsActive",
       monitor_on = ${schema}.job_now()
     FROM (

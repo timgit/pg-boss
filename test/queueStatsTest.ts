@@ -139,7 +139,7 @@ describe('queueStats', function () {
     expect(queueData.totalCount).toBe(1)
   })
 
-  it('should count completed and cancelled jobs in totalCount as of the last maintenance pass', async function () {
+  it('should count completed and cancelled jobs in totalCount between maintenance passes', async function () {
     const clock = new TestClock()
     // No background pass, so the claims are still open for the supervise() calls below.
     ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1, __test__walk_batch_size: 2 })
@@ -160,15 +160,16 @@ describe('queueStats', function () {
     expect(stats.queuedCount).toBe(2)
     expect(stats.totalCount).toBe(6)
 
-    // Completed after that maintenance pass, so out of totalCount until the next one.
+    // Completed after that maintenance pass (the clock moves on first, as a real one would): the next
+    // monitor pass moves it from the live jobs to the retained ones, so the total holds.
+    await clock.tick(1001)
     const [job] = await ctx.boss.fetch(queue)
     await ctx.boss.complete(queue, job.id)
-    await clock.tick(1001)
     await ctx.boss.supervise(queue)
 
     ;[stats] = await ctx.boss.getQueueStats(queue)
     expect(stats.queuedCount).toBe(1)
-    expect(stats.totalCount).toBe(5)
+    expect(stats.totalCount).toBe(6)
 
     // A bulk delete takes what it removed off at once.
     expect(await ctx.boss.deleteStoredJobs(queue)).toBe(5)
