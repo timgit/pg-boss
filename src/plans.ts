@@ -417,6 +417,7 @@ function createTableQueue (schema: string) {
       failed_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
       retained_count int,
+      retained_on timestamp with time zone,
       created_delta int NOT NULL default 0,
       completed_delta int NOT NULL default 0,
       failed_delta int NOT NULL default 0,
@@ -1031,6 +1032,8 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobSourceRoot(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobUpsert(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobLive(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobCreated(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobCompleted(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -1055,6 +1058,8 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobSourceRoot(schema)};
     ${createIndexJobUpsert(schema)};
     ${createIndexJobLive(schema)};
+    ${createIndexJobCreated(schema)};
+    ${createIndexJobCompleted(schema)};
   `
 }
 
@@ -1182,6 +1187,8 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobSourceRoot(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobUpsert(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobLive(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobCreated(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobCompleted(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -1421,6 +1428,19 @@ function createIndexJobUpsert (schema: string) {
 // every job the queue retains. Completed and cancelled jobs, usually most of a queue, stay out of it.
 function createIndexJobLive (schema: string) {
   return `CREATE INDEX job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE ${LIVE_STATES}`
+}
+
+// The jobs created in a window, for createdDelta and the true-up recount, which read only the window
+// rather than every job the queue retains.
+function createIndexJobCreated (schema: string) {
+  return `CREATE INDEX job_i15 ON ${schema}.job (name, created_on)`
+}
+
+// The jobs that finished in a window, for completedDelta, failedDelta, the wait and run times, the
+// true-up recount, and the completed and cancelled jobs a monitor pass adds to retained_count. A job
+// enters it when it completes, fails or is cancelled; waiting and active jobs stay out.
+function createIndexJobCompleted (schema: string) {
+  return `CREATE INDEX job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL`
 }
 
 // The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only

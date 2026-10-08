@@ -1326,6 +1326,8 @@ const createQueueFn: Record<number, (schema: string) => string> = {
     EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL$cmd$, tablename);
     EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = 'created' AND upsert_by_key$cmd$, tablename);
     EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE state IN ('created', 'retry', 'active', 'failed')$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i15 ON ${schema}.job (name, created_on)$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL$cmd$, tablename);
 
     IF options->>'policy' = 'short' THEN
     EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'created' AND policy = 'short'$cmd$, tablename);
@@ -2331,20 +2333,24 @@ AS $function$
       release: '12.38.0',
       version: 46,
       previous: 45,
-      // job_i14 is built the way v45 built job_i13: inline without partitioning, otherwise through
-      // create_queue for new partitions and BAM, concurrently, for the tables that already exist. Its
-      // predicate covers every waiting, active and failed job already in the table, so unlike job_i13 it
-      // starts full, and the concurrent build is what keeps that off the upgrade's critical path. Until
-      // it is valid the monitor's live aggregate falls back to a scan of the queue, as before v46.
+      // job_i14, job_i15 and job_i16 are built the way v45 built job_i13: inline without partitioning,
+      // otherwise through create_queue for new partitions and BAM, concurrently, for the tables that
+      // already exist. Unlike job_i13 they start full (job_i15 holds every job), and the concurrent
+      // build is what keeps that off the upgrade's critical path. Until one is valid the monitor's
+      // aggregate reads the queue without it, as before v46.
       // queue_stats_i2 exists only without partitions, where retention deletes rows instead of
       // dropping day partitions, and is built inline: queue_stats there is one plain table.
-      // retained_count is nullable with no default, so adding it rewrites no rows, and it is not seeded:
-      // each queue's next maintenance pass counts it, and until then the monitor keeps total_count.
+      // retained_count and retained_on are nullable with no default, so adding them rewrites no rows,
+      // and they are not seeded: each queue's next maintenance pass counts them, and until then the
+      // monitor keeps total_count.
       install: [
         `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS retained_count int`,
+        `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS retained_on timestamp with time zone`,
         ...(noPartitioning
           ? [
               `CREATE INDEX job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE state IN ('created', 'retry', 'active', 'failed')`,
+              `CREATE INDEX job_i15 ON ${schema}.job (name, created_on)`,
+              `CREATE INDEX job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL`,
               `CREATE INDEX queue_stats_i2 ON ${schema}.queue_stats (captured_on, id)`
             ]
           : [createQueueFn[46](schema)])
@@ -2355,18 +2361,31 @@ AS $function$
             {
               name: 'live_index_build',
               command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE state IN ('created', 'retry', 'active', 'failed')`
+            },
+            {
+              name: 'created_index_build',
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i15 ON ${schema}.job (name, created_on)`
+            },
+            {
+              name: 'completed_index_build',
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL`
             }
           ],
       uninstall: [
         ...(noPartitioning
           ? [
               `DROP INDEX IF EXISTS ${schema}.queue_stats_i2`,
+              `DROP INDEX IF EXISTS ${schema}.job_i16`,
+              `DROP INDEX IF EXISTS ${schema}.job_i15`,
               `DROP INDEX IF EXISTS ${schema}.job_i14`
             ]
           : [
               createQueueFn[45](schema),
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i16$cmd$)`,
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i15$cmd$)`,
               `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i14$cmd$)`
             ]),
+        `ALTER TABLE ${schema}.queue DROP COLUMN retained_on`,
         `ALTER TABLE ${schema}.queue DROP COLUMN retained_count`
       ]
     }
