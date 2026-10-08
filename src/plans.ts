@@ -3045,28 +3045,52 @@ export function failJobsById (schema: string, table: string, fenced?: boolean) {
   const where = `name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}' ${fenced ? attemptFence(4) : ''}`
   const output = '$3::jsonb'
 
-  return failJobs(schema, table, where, output, true)
+  return failJobs(schema, table, where, output)
 }
 
-export function failJobsByTimeout (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
-  const where = `state = '${JOB_STATES.active}'
+export const EXPIRY_BATCH_SIZE = 1000
+
+function timedOut (schema: string, queues: string[]) {
+  return `state = '${JOB_STATES.active}'
             AND (started_on + expire_seconds * interval '1s') < ${schema}.job_now()
             AND name = ANY(${serializeArrayParam(queues)})`
-
-  const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
-
-  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout', noAdvisoryLocks)
 }
 
-export function failJobsByHeartbeat (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
-  const where = `state = '${JOB_STATES.active}'
+function heartbeatLost (schema: string, queues: string[]) {
+  return `state = '${JOB_STATES.active}'
             AND heartbeat_seconds IS NOT NULL
             AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.job_now()
             AND name = ANY(${serializeArrayParam(queues)})`
+}
 
+export function failJobsByTimeout (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, limit = EXPIRY_BATCH_SIZE): string {
+  const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
+
+  return locked(schema, expireJobs(schema, table, timedOut(schema, queues), output, limit), table + 'failJobsByTimeout', noAdvisoryLocks)
+}
+
+export function failJobsByHeartbeat (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, limit = EXPIRY_BATCH_SIZE): string {
   const output = '\'{ "value": { "message": "job heartbeat timeout" } }\'::jsonb'
 
-  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByHeartbeat', noAdvisoryLocks)
+  return locked(schema, expireJobs(schema, table, heartbeatLost(schema, queues), output, limit), table + 'failJobsByHeartbeat', noAdvisoryLocks)
+}
+
+// One batch of a supervisor expiry sweep: fails at most `limit` of the jobs `predicate` matches.
+// The caller repeats it while a batch picks a full `limit`, so a fleet that crashed with every job
+// active is failed a batch per transaction rather than all in one. Unordered: nothing indexes the
+// predicate, and an ORDER BY would sort every match to pick a batch. A failed job is re-inserted in
+// a state the predicate no longer matches, so the next batch cannot pick it again.
+//
+// The predicate is repeated on the DELETE so that a job a worker settled after it was picked is
+// left alone, as before. "expiryPicked" is told apart from the advisory lock's row by its name.
+function expireJobs (schema: string, table: string, predicate: string, output: string, limit: number) {
+  return `
+    WITH picked AS (
+      SELECT id FROM ${schema}.${table} WHERE ${predicate} LIMIT ${limit}
+    ),
+    ${failJobsBody(schema, table, `${predicate} AND id IN (SELECT id FROM picked)`, output)}
+    SELECT (SELECT count(*) FROM picked)::int AS "expiryPicked"
+  `
 }
 
 export function touchJobs (schema: string, table: string, fenced?: boolean) {
@@ -3084,12 +3108,10 @@ export function touchJobs (schema: string, table: string, fenced?: boolean) {
   `
 }
 
-// `returnIds` is off for the supervisor's bulk maintenance (failJobsByTimeout/failJobsByHeartbeat),
-// which only ever reads the count and would otherwise ship a whole sweep's worth of ids back.
-function failJobs (schema: string, table: string, where: string, output: string, returnIds = false) {
+function failJobs (schema: string, table: string, where: string, output: string) {
   return `
     WITH ${failJobsBody(schema, table, where, output)}
-    ${returnIds ? settledCountAndIds() : 'SELECT COUNT(*) FROM results'}
+    ${settledCountAndIds()}
   `
 }
 
@@ -3101,7 +3123,7 @@ function settledCountAndIds () {
   return "SELECT COUNT(*), COALESCE(array_agg(id), '{}'::uuid[]) AS ids FROM results"
 }
 
-// The CTE chain shared by failJobs() and failJobsByIdWithOutputs(): delete the matched jobs and
+// The CTE chain shared by failJobs(), expireJobs() and failJobsByIdWithOutputs(): delete the matched jobs and
 // re-insert them as retry (when retries remain) or failed (+ dead letter). `where` selects the rows
 // to fail and `output` is the SQL expression stored on each re-inserted job. Returned without the
 // leading `WITH` or trailing `SELECT` so callers can prepend extra CTEs (e.g. an output map).
@@ -3401,27 +3423,25 @@ export function deleteJobsToFail (schema: string, table: string): SqlQuery {
 
 // Distributed mode: the predicate-based maintenance expiry equivalents of selectJobsToFailById.
 // The supervisor's failJobsByTimeout/failJobsByHeartbeat use the multi-mutation failJobs() CTE,
-// which CockroachDB rejects, so in distributed mode we select the timed-out jobs here and re-insert
-// them separately (delete via deleteJobsByIds, re-insert via insertRetryJob), all in one transaction.
-export function selectJobsToFailByTimeout (schema: string, table: string, queues: string[]): SqlQuery {
+// which CockroachDB rejects, so in distributed mode we select a batch of the timed-out jobs here and
+// re-insert them separately (delete via deleteJobsByIds, re-insert via insertRetryJob), all in one
+// transaction. The supervisor repeats it while a batch comes back full, as with expireJobs().
+export function selectJobsToFailByTimeout (schema: string, table: string, queues: string[], limit = EXPIRY_BATCH_SIZE): SqlQuery {
   return {
     text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
       FROM ${schema}.${table}
-      WHERE state = '${JOB_STATES.active}'
-        AND (started_on + expire_seconds * interval '1s') < ${schema}.job_now()
-        AND name = ANY(${serializeArrayParam(queues)})`,
+      WHERE ${timedOut(schema, queues)}
+      LIMIT ${limit}`,
     values: []
   }
 }
 
-export function selectJobsToFailByHeartbeat (schema: string, table: string, queues: string[]): SqlQuery {
+export function selectJobsToFailByHeartbeat (schema: string, table: string, queues: string[], limit = EXPIRY_BATCH_SIZE): SqlQuery {
   return {
     text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
       FROM ${schema}.${table}
-      WHERE state = '${JOB_STATES.active}'
-        AND heartbeat_seconds IS NOT NULL
-        AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.job_now()
-        AND name = ANY(${serializeArrayParam(queues)})`,
+      WHERE ${heartbeatLost(schema, queues)}
+      LIMIT ${limit}`,
     values: []
   }
 }

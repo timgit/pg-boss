@@ -2301,14 +2301,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // Distributed equivalents of the supervisor's failJobsByTimeout/failJobsByHeartbeat maintenance.
   // Those use the multi-mutation failJobs() CTE, which CockroachDB rejects, so on a distributed
   // database we select the expired/timed-out jobs, delete them, and re-insert as retry/failed in a
-  // single transaction (the same split as failDistributed). Always run on the pooled connection.
-  async failJobsByTimeoutDistributed (table: string, queues: string[]): Promise<number> {
-    const select = plans.selectJobsToFailByTimeout(this.config.schema, table, queues)
+  // single transaction (the same split as failDistributed), a batch of at most `limit` jobs per call.
+  // Always run on the pooled connection.
+  async failJobsByTimeoutDistributed (table: string, queues: string[], limit?: number): Promise<number> {
+    const select = plans.selectJobsToFailByTimeout(this.config.schema, table, queues, limit)
     return this.expireJobsDistributed(table, select, { value: { message: 'job timed out' } })
   }
 
-  async failJobsByHeartbeatDistributed (table: string, queues: string[]): Promise<number> {
-    const select = plans.selectJobsToFailByHeartbeat(this.config.schema, table, queues)
+  async failJobsByHeartbeatDistributed (table: string, queues: string[], limit?: number): Promise<number> {
+    const select = plans.selectJobsToFailByHeartbeat(this.config.schema, table, queues, limit)
     return this.expireJobsDistributed(table, select, { value: { message: 'job heartbeat timeout' } })
   }
 

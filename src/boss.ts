@@ -503,22 +503,31 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       // CockroachDB rejects the multi-mutation failJobs() CTE these use, so under noMultiMutationCte
       // route expiry through the manager's split select/delete/re-insert variants instead.
-      if (this.#config.noMultiMutationCte) {
-        await this.#manager.failJobsByTimeoutDistributed(table, queues)
-      } else {
-        const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(sql)
-      }
+      const limit = this.#config.__test__expiry_batch_size ?? plans.EXPIRY_BATCH_SIZE
+
+      await this.#expire(limit, () => this.#config.noMultiMutationCte
+        ? this.#manager.failJobsByTimeoutDistributed(table, queues, limit)
+        : this.#expiryBatch(plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
 
       if (this.#stopping) return
 
-      if (this.#config.noMultiMutationCte) {
-        await this.#manager.failJobsByHeartbeatDistributed(table, queues)
-      } else {
-        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(heartbeatSql)
-      }
+      await this.#expire(limit, () => this.#config.noMultiMutationCte
+        ? this.#manager.failJobsByHeartbeatDistributed(table, queues, limit)
+        : this.#expiryBatch(plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
     }
+  }
+
+  // Runs an expiry sweep a batch at a time until a batch picks fewer than `limit` jobs. A stop
+  // between batches leaves the rest for the next pass.
+  async #expire (limit: number, batch: () => Promise<number>) {
+    while (!this.#stopping) {
+      if (await batch() < limit) return
+    }
+  }
+
+  async #expiryBatch (sql: string): Promise<number> {
+    const { rows } = await this.#executeQuery(sql)
+    return rows.find((row) => row.expiryPicked !== undefined)?.expiryPicked ?? 0
   }
 
   async #maintain (table: string, names: string[]) {
