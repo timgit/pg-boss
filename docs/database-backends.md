@@ -572,8 +572,8 @@ These apply when running with `noSkipLocked` (the atomic-UPDATE fetch path).
 ### Serialization errors (CockroachDB)
 
 CockroachDB uses SERIALIZABLE isolation by default. Under high contention, transactions may fail with
-serialization errors and need to retry. pg-boss's fetch operation treats all errors as "no jobs
-available" and returns empty results; the worker retries on the next poll cycle.
+serialization errors (`40001`) and need to retry. `fetch()` rejects with that error. A worker emits it
+as an `error` event and fetches again on its next poll, so no job is lost.
 
 ### Empty results under contention
 
