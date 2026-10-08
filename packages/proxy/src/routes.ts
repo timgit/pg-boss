@@ -185,7 +185,8 @@ const findJobsQuerySchema = z.object({
   key: z.string().optional(),
   queued: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   dataKey: z.string().optional(),
-  dataValue: z.string().optional()
+  dataValue: z.string().optional(),
+  limit: z.coerce.number().int().positive().optional()
 }).refine((q) => !q.dataValue || q.dataKey, {
   message: 'dataKey is required when dataValue is provided'
 })
@@ -312,6 +313,7 @@ export const getMethods: RouteEntry[] = [
     if (q.key) options.key = q.key
     if (q.queued !== undefined) options.queued = q.queued
     if (q.dataKey) options.data = { [q.dataKey as string]: q.dataValue ?? null }
+    if (q.limit !== undefined) options.limit = q.limit
     if (Object.keys(options).length > 0) args.push(options)
     return args
   })
