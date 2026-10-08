@@ -188,11 +188,15 @@ Int, default 1 day
 
 How often maintenance will be run against queue tables to drop queued and completed jobs.
 
+Maintenance walks each queue 10,000 jobs at a time, each batch in its own transaction, deleting the expired jobs among them and then the flow dependencies left behind by deleted jobs. However large the backlog, no single transaction holds more than one batch of row locks or holds back vacuum for longer than a batch takes. A full pass reads every job in the queue once, and takes longer in total than a single statement would. Measured on local PostgreSQL, deleting 500,000 expired jobs from a queue of 1,000,000 took 2.8 s in batches against 0.8 s as one statement, and no batch took more than 70 ms.
+
 ### `monitorIntervalSeconds`
 
 Int, default 60 seconds
 
 How often each queue is monitored for backlogs, expired jobs, and calculating stats.
+
+Jobs past their expiration or heartbeat are failed at most 1,000 per transaction, repeated until none remain, so a fleet that stopped with many jobs active recovers in a series of short transactions rather than one long one.
 
 ### `queueCacheIntervalSeconds`
 
@@ -304,6 +308,8 @@ Each monitor pass then also counts the jobs created and finished since the previ
 Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
+
+With table partitioning, old days are dropped as whole partitions on each supervise pass. Without it (`noTablePartitioning`, as on CockroachDB), each instance deletes old rows once per [`maintenanceIntervalSeconds`](#maintenanceintervalseconds), walking the table 10,000 rows at a time, since doing so reads all of it.
 
 ### `registerInstance`
 
