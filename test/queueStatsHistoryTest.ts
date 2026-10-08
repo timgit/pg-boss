@@ -593,10 +593,18 @@ describe('queueStatsHistory', function () {
     await ctx.boss.supervise()
 
     const db2 = await helper.getDb()
-    const { rows } = await db2.executeSql(
-      `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])
+    const count = async () => (await db2.executeSql(
+      `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])).rows[0].c
+
+    expect(await count()).toBe(2)
+
+    // The walk reads the whole table, so it runs once per maintenance interval, not every pass.
+    await db2.executeSql(
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) VALUES ($1, now() - interval '10 days')`, [q])
+    await ctx.boss.supervise()
+    expect(await count()).toBe(3)
+
     await db2.close()
-    expect(rows[0].c).toBe(2)
   })
 
   it('rejects an unknown queue (persistQueueStats off)', async function () {

@@ -2017,7 +2017,8 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
 // Retention for queue_stats where it is not partitioned by day (noTablePartitioning), one batch of
 // the next `batchSize` primary keys after `after` at a time, walked like the job retention sweep
 // (see deletion). Nothing indexes captured_on on its own, so a LIMIT on the expired rows would
-// rescan the table every batch.
+// rescan the table every batch. The walk reads the whole table, so the supervisor runs it once per
+// maintenance interval.
 export function deleteOldQueueStats (schema: string, days: number, options: { after?: string, batchSize?: number } = {}): string {
   const { after, batchSize = DELETION_BATCH_SIZE } = options
   const cursor = after ? `AND id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
