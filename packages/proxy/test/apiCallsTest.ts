@@ -462,8 +462,8 @@ describe('proxy api routes', () => {
       },
       {
         method: 'previewRedrive',
-        body: { name: 'dlq', options: { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: '2026-09-01T00:00:00.000Z' } },
-        expected: ['dlq', { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: new Date('2026-09-01T00:00:00.000Z') }]
+        body: { name: 'dlq', options: { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: '2026-09-01T00:00:00.000Z', limit: 50 } },
+        expected: ['dlq', { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: new Date('2026-09-01T00:00:00.000Z'), limit: 50 }]
       },
       {
         method: 'deleteQueuedJobs',

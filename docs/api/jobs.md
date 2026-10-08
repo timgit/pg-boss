@@ -638,12 +638,19 @@ do {
 ### `previewRedrive(name, options)`
 
 Reports what [`redrive()`](#redrive-name-options) would do with the same options,
-without moving anything. Takes every `redrive()` option except `limit`, and uses the
-same matching, so the numbers agree with what a redrive would move at that moment.
+without moving anything. Takes every `redrive()` filter, and uses the same matching,
+so the numbers agree with what a redrive would move at that moment.
 
-Returns `{ total, destinations, unroutable }`:
+It reads matching jobs rather than counting them, so it costs the same however large
+the dead letter queue has grown:
 
-- `total`: every job the filter matches.
+- `limit`: most jobs to read of each kind, those a redrive would move and those it
+  would leave in place (default `1000`). A count that reaches it means at least that
+  many.
+
+Returns `{ total, destinations, unroutable }`, each counting the jobs read:
+
+- `total`: the matching jobs read, routable or not.
 - `destinations`: `{ name, count }` for each queue the matching jobs would land in,
   largest first. Without `destination` this is the fan-out back to each source queue.
 - `unroutable`: matching jobs a redrive would leave in place, because they have no
@@ -662,7 +669,9 @@ const { total, destinations, unroutable } = await boss.previewRedrive('email-dlq
 
 ### `deleteQueuedJobs(name)`
 
-Deletes all queued jobs in a queue.
+Deletes all queued jobs in a queue, and resolves to how many it deleted. The number is the row
+count the database reports with the delete; with a [`db`](./constructor.md#db) whose
+`executeSql()` does not return a `rowCount`, it is `null`.
 
 ```js
 await boss.deleteQueuedJobs('email-send')
@@ -670,7 +679,8 @@ await boss.deleteQueuedJobs('email-send')
 
 ### `deleteStoredJobs(name)`
 
-Deletes all jobs in completed, failed, and cancelled state in a queue.
+Deletes all jobs in completed, failed, and cancelled state in a queue, and resolves to how many
+it deleted, as `deleteQueuedJobs()` does.
 
 ```js
 await boss.deleteStoredJobs('email-send')
@@ -682,7 +692,7 @@ Deletes all jobs in a queue, including active jobs.
 
 If no queue name is given, jobs are deleted from all queues.
 
-A partitioned queue, or every queue when no name is given, is emptied with `TRUNCATE`, and its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, the cached counts catch up at the next monitor pass.
+Resolves to how many jobs it deleted, as `deleteQueuedJobs()` does. A partitioned queue, or every queue when no name is given, is emptied with `TRUNCATE`, which reports no count, so it resolves to `null`; its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, the cached counts catch up at the next monitor pass.
 
 ```js
 // delete everything in one queue

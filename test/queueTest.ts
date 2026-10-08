@@ -413,8 +413,20 @@ describe('queues', function () {
 
     await ctx.boss.createQueue(ctx.schema, { partition: true })
     await ctx.boss.send(ctx.schema)
-    await ctx.boss.deleteAllJobs(ctx.schema)
+    // A truncate reports no count, and pg-boss does not count to find one.
+    expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBeNull()
     await ctx.boss.deleteQueue(ctx.schema)
+  })
+
+  it('should say how many jobs a delete removed', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+
+    expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBe(2)
+    expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBe(0)
   })
 
   helper.itPostgresOnly('should delete all jobs from all queues, included partitioned', async function () {
@@ -452,7 +464,7 @@ describe('queues', function () {
 
     expect(await getCount()).toBe(1)
 
-    await ctx.boss.deleteQueuedJobs(ctx.schema)
+    expect(await ctx.boss.deleteQueuedJobs(ctx.schema)).toBe(1)
 
     expect(await getCount()).toBe(0)
   })
@@ -478,7 +490,7 @@ describe('queues', function () {
 
     expect(await getCount()).toBe(2)
 
-    await ctx.boss.deleteStoredJobs(ctx.schema)
+    expect(await ctx.boss.deleteStoredJobs(ctx.schema)).toBe(2)
 
     expect(await getCount()).toBe(0)
   })

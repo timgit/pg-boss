@@ -19,7 +19,7 @@ export type Events = {
 }
 
 export interface IDatabase {
-  executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
+  executeSql(text: string, values?: unknown[]): Promise<{ rows: any[], rowCount?: number | null }>;
   /**
    * Optional capability for LISTEN/NOTIFY support. When present, pg-boss can hold a
    * dedicated session-pinned connection to receive notifications. The built-in pool-based
@@ -853,7 +853,7 @@ export interface FindJobsOptions extends ConnectionOptions {
 
 /**
  * Which dead-lettered jobs a redrive is about, and where they go. Shared by
- * `redrive()` and `previewRedrive()`, so a preview counts exactly what the
+ * `redrive()` and `previewRedrive()`, so a preview matches exactly what the
  * redrive would move.
  */
 export interface RedriveFilter extends ConnectionOptions {
@@ -888,14 +888,23 @@ export interface RedriveOptions extends RedriveFilter {
   limit?: number;
 }
 
+export interface RedrivePreviewOptions extends RedriveFilter {
+  /**
+   * Most jobs to read of each kind, those a redrive would move and those it would leave in place.
+   * A count that reaches it means at least that many.
+   * @default 1000
+   */
+  limit?: number;
+}
+
 export interface RedrivePreview {
-  /** Every job the filter matches, routable or not. */
+  /** Every matching job read, routable or not. */
   total: number;
-  /** Where the routable jobs would go, most first. */
+  /** Where the routable jobs read would go, most first. */
   destinations: { name: string; count: number }[];
   /**
-   * Matching jobs a redrive would leave in place: no recorded source queue and no `destination`,
-   * or a source queue that no longer exists.
+   * Matching jobs read that a redrive would leave in place: no recorded source queue and no
+   * `destination`, or a source queue that no longer exists.
    */
   unroutable: number;
 }

@@ -2559,29 +2559,32 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return Number(result.rows[0].moved)
   }
 
-  async previewRedrive (name: string, options: types.RedriveFilter = {}): Promise<types.RedrivePreview> {
+  async previewRedrive (name: string, options: types.RedrivePreviewOptions = {}): Promise<types.RedrivePreview> {
     Attorney.assertQueueName(name)
 
+    const { limit = 1000 } = options
     const filter = this.#redriveFilterValues(options)
+
+    assert(Number.isInteger(limit) && limit >= 1, 'limit must be an integer >= 1')
+
     const db = this.assertDb(options)
     const { table } = await this.getQueueCache(name)
     const sql = plans.previewRedrive(this.config.schema, table)
-    const { rows } = await db.executeSql(sql, [name, ...filter])
+    const { rows } = await db.executeSql(sql, [name, ...filter, limit])
 
-    const destinations: { name: string; count: number }[] = []
+    const counts = new Map<string, number>()
     let unroutable = 0
 
     for (const row of rows) {
-      // CockroachDB returns counts as strings.
-      const count = Number(row.count)
-      if (row.routable) destinations.push({ name: row.destination, count })
-      else unroutable += count
+      if (row.destination === null) unroutable++
+      else counts.set(row.destination, (counts.get(row.destination) ?? 0) + 1)
     }
 
+    const destinations = [...counts].map(([name, count]) => ({ name, count }))
     destinations.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 
     return {
-      total: destinations.reduce((sum, d) => sum + d.count, unroutable),
+      total: rows.length,
       destinations,
       unroutable
     }
@@ -2778,29 +2781,35 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#evictQueueCache(name)
   }
 
-  async deleteQueuedJobs (name: string) {
+  // What a DELETE removed, from the row count the database reports with it, which costs nothing.
+  // Null when the database adapter does not report one: counting instead would cost what the delete did.
+  static #deleted (result: { rowCount?: number | null }): number | null {
+    return typeof result.rowCount === 'number' ? result.rowCount : null
+  }
+
+  async deleteQueuedJobs (name: string): Promise<number | null> {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteQueuedJobs(this.config.schema, table)
-    await this.db.executeSql(sql, [name])
+    return Manager.#deleted(await this.db.executeSql(sql, [name]))
   }
 
-  async deleteStoredJobs (name: string) {
+  async deleteStoredJobs (name: string): Promise<number | null> {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteStoredJobs(this.config.schema, table)
-    await this.db.executeSql(sql, [name])
+    return Manager.#deleted(await this.db.executeSql(sql, [name]))
   }
 
-  // A truncate leaves nothing to count, so it zeroes the cached counts after itself. A monitor pass
-  // that read the table first holds it until done, so the truncate and then the zeroes land after
-  // that pass's write.
-  async deleteAllJobs (name?: string) {
+  // A truncate leaves nothing to count, so it zeroes the cached counts after itself and returns
+  // null. A monitor pass that read the table first holds it until done, so the truncate and then
+  // the zeroes land after that pass's write.
+  async deleteAllJobs (name?: string): Promise<number | null> {
     if (!name) {
       const sql = plans.truncateTable(this.config.schema, plans.BASE_JOB_TABLE)
       await this.db.executeSql(sql)
       await this.db.executeSql(plans.zeroQueueStats(this.config.schema))
-      return
+      return null
     }
 
     Attorney.assertQueueName(name)
@@ -2810,10 +2819,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const sql = plans.truncateTable(this.config.schema, table)
       await this.db.executeSql(sql)
       await this.db.executeSql(plans.zeroQueueStats(this.config.schema, true), [name])
-    } else {
-      const sql = plans.deleteAllJobs(this.config.schema, table)
-      await this.db.executeSql(sql, [name])
+      return null
     }
+
+    const sql = plans.deleteAllJobs(this.config.schema, table)
+    return Manager.#deleted(await this.db.executeSql(sql, [name]))
   }
 
   // Queue stats are a time series, always returned as an array (newest first).
