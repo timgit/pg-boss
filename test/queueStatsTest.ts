@@ -1307,9 +1307,9 @@ describe('queueStats', function () {
 
         // Past the retention of the three completed jobs, not of the open send.
         await new Promise(resolve => setTimeout(resolve, 2_900))
-        const deleted = await db.executeSql(plans.deletion(schema, table, [queue], true))
-        const affected = Array.isArray(deleted) ? deleted.reduce((n, r) => n + (r.rowCount ?? 0), 0) : deleted.rowCount
-        expect(affected).toBe(3)
+        const deleted = await db.executeSql(plans.deletion(schema, table, queue, { noAdvisoryLocks: true }))
+        const batch = (Array.isArray(deleted) ? deleted : [deleted]).flatMap(r => r.rows ?? []).find(r => r.deletionCursor !== undefined)
+        expect(batch.deletionDeleted).toBe(3)
         await tx.query('COMMIT')
       } finally {
         await tx.end()

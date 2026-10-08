@@ -536,11 +536,31 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)
-      const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeQuery(sql)
+
+      for (const name of queues) {
+        await this.#deleteExpired(table, name)
+        if (this.#stopping) return
+      }
 
       const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeQuery(depSql)
+    }
+  }
+
+  // The retention sweep for one queue, a batch of keys at a time (see plans.deletion). A stop
+  // between batches leaves the rest for the next pass.
+  async #deleteExpired (table: string, name: string) {
+    const batchSize = this.#config.__test__deletion_batch_size ?? plans.DELETION_BATCH_SIZE
+    let after: string | undefined
+
+    while (!this.#stopping) {
+      const sql = plans.deletion(this.#config.schema, table, name, { after, batchSize, noAdvisoryLocks: this.#config.noAdvisoryLocks })
+      const { rows } = await this.#executeQuery(sql)
+      const batch = rows.find((row) => row.deletionCursor !== undefined)
+
+      if (!batch?.deletionCursor) return
+
+      after = batch.deletionCursor
     }
   }
 
