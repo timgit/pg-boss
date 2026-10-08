@@ -40,12 +40,12 @@ describe('DatabaseSwitcher', () => {
     expect(navigate).toHaveBeenCalledWith({ pathname: '/queues/emails', search: '?state=failed&db=reporting' })
   })
 
-  it('drops the parameter when switching back to the first database', async () => {
+  it('names the first database too when switching back, so a remembered cookie cannot win', async () => {
     const navigate = renderAt('/queues', '?db=reporting', [main, reporting], reporting)
 
     fireEvent.click(screen.getByRole('button', { name: /Switch database/ }))
     fireEvent.click(await screen.findByText('pgboss_dev'))
 
-    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '' })
+    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '?db=pgboss' })
   })
 })

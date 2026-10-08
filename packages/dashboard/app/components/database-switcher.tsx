@@ -44,14 +44,11 @@ export function DatabaseSwitcher () {
     </>
   )
 
-  // The first database is the default and needs no `?db=`, so links stay short for most people.
+  // Named even for the first database: without `?db=` a remembered `pgboss_db` cookie would win, and
+  // switching back to the first would land on the database just left. Links elsewhere stay short.
   const select = (id: string) => {
     const next = new URLSearchParams(params)
-    if (id === databases[0]?.id) {
-      next.delete('db')
-    } else {
-      next.set('db', id)
-    }
+    next.set('db', id)
     const search = next.toString()
     navigate({ pathname: location.pathname, search: search ? `?${search}` : '' })
   }
