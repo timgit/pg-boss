@@ -1445,6 +1445,11 @@ describe('migration', function () {
 
     while (await contractor.schemaVersion() as number >= CLOCK_VERSION) {
       await contractor.rollback(await contractor.schemaVersion() as number)
+      // CockroachDB finishes a schema change in a job after the migration commits, and the next
+      // rollback in a chain this long collides with it often enough (40001) to fail the case.
+      if (isCockroachDb) {
+        await db.executeSql("SHOW JOBS WHEN COMPLETE (SELECT job_id FROM [SHOW JOBS] WHERE job_type IN ('SCHEMA CHANGE', 'NEW SCHEMA CHANGE') AND status IN ('pending', 'running'))")
+      }
     }
 
     expect(await hasClockFunction()).toBe(false)
