@@ -569,17 +569,6 @@ to distribute write load across ranges. This helps avoid hotspots when inserting
 
 These apply when running with `noSkipLocked` (the atomic-UPDATE fetch path).
 
-### Cache staleness
-
-pg-boss caches queue metadata (including active singleton keys) with a configurable refresh interval
-(`queueCacheIntervalSeconds`, default 60s). Under high concurrency:
-
-- Two workers may both see stale cache showing no active singletons
-- Both attempt to claim jobs with the same singleton key
-- The `state < 'active'` recheck prevents duplicate claims, but one worker receives empty results
-
-This is a performance issue, not a correctness issue. No job is processed twice.
-
 ### Serialization errors (CockroachDB)
 
 CockroachDB uses SERIALIZABLE isolation by default. Under high contention, transactions may fail with
