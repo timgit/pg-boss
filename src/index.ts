@@ -796,6 +796,7 @@ export type {
   RedriveFilter,
   RedriveOptions,
   RedrivePreview,
+  RedrivePreviewOptions,
   ReindexOptions,
   Request,
   Schedule,
