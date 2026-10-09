@@ -4827,8 +4827,8 @@ export function assertMigration (schema: string, version: number) {
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
 
-export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean, limited: boolean }) {
-  const { queued, byKey, byData, byId, limited } = options
+export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean }) {
+  const { queued, byKey, byData, byId } = options
 
   let paramIndex = 1
   const whereConditions = []
@@ -4852,15 +4852,13 @@ export function findJobs (schema: string, table: string, options: { queued: bool
     whereConditions.push(`AND state < '${JOB_STATES.active}'`)
   }
 
-  const limitClause = limited ? `LIMIT $${++paramIndex}` : ''
-
   return `
     SELECT ${JOB_COLUMNS_ALL}
     FROM ${schema}.${table}
     WHERE name = $1
       ${whereConditions.join('\n      ')}
     ORDER BY created_on, id
-    ${limitClause}
+    LIMIT $${++paramIndex}
     `
 }
 

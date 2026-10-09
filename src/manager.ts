@@ -3074,12 +3074,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async findJobs<T>(name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
     Attorney.assertQueueName(name)
 
-    const { id, key, data, queued = false, limit } = options
+    const { id, key, data, queued = false, limit = 1000 } = options
 
-    if (limit !== undefined) {
-      assert(Number.isInteger(limit) && limit >= 1 && limit <= 100_000,
-        'findJobs: limit must be an integer between 1 and 100000')
-    }
+    assert(Number.isInteger(limit) && limit >= 1 && limit <= 100_000,
+      'findJobs: limit must be an integer between 1 and 100000')
 
     const db = this.assertDb(options)
 
@@ -3089,15 +3087,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
       byId: id !== undefined,
       byKey: key !== undefined,
       byData: data !== undefined,
-      queued,
-      limited: limit !== undefined
+      queued
     })
 
     const values: unknown[] = [name]
     if (id !== undefined) values.push(id)
     if (key !== undefined) values.push(key)
     if (data !== undefined) values.push(JSON.stringify(data))
-    if (limit !== undefined) values.push(limit)
+    values.push(limit)
 
     const result = await db.executeSql(sql, values)
 
