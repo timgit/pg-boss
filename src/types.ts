@@ -848,6 +848,13 @@ export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
 
+export interface ListOptions {
+  /**
+   * Most rows to return, from 1 to 100,000. Defaults to 1000.
+   */
+  limit?: number;
+}
+
 export interface FindJobsOptions extends ConnectionOptions {
   id?: string;
   key?: string;

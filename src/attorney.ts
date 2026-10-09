@@ -717,6 +717,17 @@ function assertPostgresObjectName (name: string) {
   assert(!/^\d/.test(name), `Schema name ${JSON.stringify(name)} cannot start with a number when unquoted.${remedy}`)
 }
 
+const LIST_LIMIT_DEFAULT = 1000
+const LIST_LIMIT_MAX = 100_000
+
+// The limit of a public list read: an integer from 1 to LIST_LIMIT_MAX, LIST_LIMIT_DEFAULT when
+// left out. Internal callers that need every row call below the public method instead.
+function assertListLimit (method: string, limit: number = LIST_LIMIT_DEFAULT): number {
+  assert(Number.isInteger(limit) && limit >= 1 && limit <= LIST_LIMIT_MAX,
+    `${method}: limit must be an integer between 1 and ${LIST_LIMIT_MAX}`)
+  return limit
+}
+
 function assertQueueName (name: string) {
   assert(name, 'Name is required')
   assert(typeof name === 'string', 'Name must be a string')
@@ -920,6 +931,7 @@ function applyFlowConfig (config: any) {
 
 export {
   assertKey,
+  assertListLimit,
   COMPATIBILITY_FLAGS,
   assertPostgresObjectName,
   assertQueueName,

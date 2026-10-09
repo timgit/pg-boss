@@ -952,7 +952,7 @@ const jobs = await boss.findJobs('my-queue', {
 
 ### `getDependencies(name, id, options)`
 
-Returns an array of parent job references that the specified job depends on, sorted by queue name and id.
+Returns an array of parent job references that the specified job depends on, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000.
 
 ```js
 const parents = await boss.getDependencies('aggregate-results', jobId)
@@ -961,7 +961,7 @@ const parents = await boss.getDependencies('aggregate-results', jobId)
 
 ### `getDependents(name, id, options)`
 
-Returns an array of child job references that depend on the specified job, sorted by queue name and id.
+Returns an array of child job references that depend on the specified job, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000.
 
 ```js
 const children = await boss.getDependents('process-data', parentJobId)

@@ -110,8 +110,8 @@ class Registrar extends EventEmitter implements types.EventsMixin {
     } catch {}
   }
 
-  async getInstances (): Promise<types.Instance[]> {
-    const { rows } = await this.#db.executeSql(plans.getInstances(this.#config.schema))
+  async getInstances (limit: number): Promise<types.Instance[]> {
+    const { rows } = await this.#db.executeSql(plans.getInstances(this.#config.schema), [limit])
 
     // CockroachDB returns its INT8 columns as strings.
     const num = (v: unknown) => (v === null || v === undefined ? null : Number(v))
