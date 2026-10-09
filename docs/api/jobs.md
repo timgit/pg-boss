@@ -917,6 +917,12 @@ Finds jobs in a queue by id, singleton key, and/or data. Returns an array of job
 
   If `true`, only return jobs in queued state (created or retry). If `false`, return jobs in any state.
 
+* **limit**, int, *default: no limit*
+
+  Most jobs to return. Without it, a call with no other filter returns every job in the queue,
+  and its cost grows with the queue. The results are not sorted, so which of the matching jobs a
+  limited call returns is unspecified, and the next call does not continue where it stopped.
+
 * **db**, object, see notes in `send()`
 
 **Examples**
@@ -933,6 +939,9 @@ const jobs = await boss.findJobs('my-queue', { data: { type: 'email' } })
 
 // Find queued jobs only
 const jobs = await boss.findJobs('my-queue', { key: 'user-123', queued: true })
+
+// At most 100 jobs from a large queue
+const jobs = await boss.findJobs('my-queue', { data: { type: 'email' }, limit: 100 })
 
 // Combine filters
 const jobs = await boss.findJobs('my-queue', {

@@ -594,10 +594,18 @@ describe('proxy api routes', () => {
     const { boss, calls } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
-    const findReq = new Request('http://local/api/findJobs?name=queue&id=1&queued=true', { method: 'GET' })
+    const findReq = new Request('http://local/api/findJobs?name=queue&id=1&queued=true&limit=50', { method: 'GET' })
     const findRes = await app.fetch(findReq)
     expect(findRes.status).toBe(200)
-    expect(calls.get('findJobs')?.[0]).toEqual(['queue', { id: '1', queued: true }])
+    expect(calls.get('findJobs')?.[0]).toEqual(['queue', { id: '1', queued: true, limit: 50 }])
+  })
+
+  it('GET findJobs rejects a limit that is not a positive integer', async () => {
+    const { boss } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const findRes = await app.fetch(new Request('http://local/api/findJobs?name=queue&limit=0', { method: 'GET' }))
+    expect(findRes.status).toBe(400)
   })
 
   it('GET findJobs with dataKey and dataValue builds data filter', async () => {

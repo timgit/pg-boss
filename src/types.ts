@@ -853,6 +853,11 @@ export interface FindJobsOptions extends ConnectionOptions {
   key?: string;
   data?: object;
   queued?: boolean;
+  /**
+   * Most jobs to return. Which matching jobs a limited call returns is unspecified. No limit by default.
+   * @see https://pgboss.io/api/jobs#findjobs-name-options
+   */
+  limit?: number;
 }
 
 /**
