@@ -114,6 +114,13 @@ const QUEUE_DEFAULTS = {
   partition: false
 }
 
+// The states job_i14 covers. The monitor's live aggregate repeats this predicate verbatim, so the
+// planner can match the partial index to it.
+const LIVE_STATES = `state IN ('${JOB_STATES.created}', '${JOB_STATES.retry}', '${JOB_STATES.active}', '${JOB_STATES.failed}')`
+
+// The finished states retained_count counts (see createTableQueue). Failed jobs are live.
+const RETAINED_STATES = `state IN ('${JOB_STATES.completed}', '${JOB_STATES.cancelled}')`
+
 // The root of the job table hierarchy, under both install shapes: the partitioned parent that
 // COMMON_JOB_TABLE and every per-queue partition attach to, and the plain physical table that
 // carries the rows and indexes itself where noTablePartitioning is set. Also the template every
@@ -204,6 +211,7 @@ export function create (schema: string, version: number, options?: CreateOptions
 
     createTableQueueStats(schema, noPartitioning),
     createIndexQueueStats(schema, noCovering),
+    noPartitioning ? createIndexQueueStatsRetention(schema) : '',
     noPartitioning ? '' : ensureQueueStatsPartitions(schema),
 
     createTableJobDependency(schema),
@@ -239,7 +247,7 @@ function createInline (schema: string, version: number, options: { createSchema?
       createTableJobIndexes(schema, options.noDeferrable, options.noCovering)
     ]),
     inlineIntoCreateTable(createTableWarning(schema), [createIndexWarning(schema)]),
-    inlineIntoCreateTable(createTableQueueStats(schema, true), [createIndexQueueStats(schema, options.noCovering)]),
+    inlineIntoCreateTable(createTableQueueStats(schema, true), [createIndexQueueStats(schema, options.noCovering), createIndexQueueStatsRetention(schema)]),
     inlineIntoCreateTable(createTableJobDependency(schema), [createIndexJobDependencyParent(schema)]),
     createTableInstance(schema),
 
@@ -383,6 +391,14 @@ function createTableVersion (schema: string) {
 // counts (see LATENCY_BINS), and ready_oldest_seconds is how long the oldest job ready to run had
 // waited at the pass. Like the deltas, all of them are null until a pass counts, and a pass that
 // counts writes a value: every slot null when nothing finished, 0 when nothing was waiting.
+// retained_count is the completed and cancelled jobs the queue holds, and total_count is the live
+// jobs (job_i14) counted each monitor pass plus this. The maintenance pass counts it outright, as
+// the jobs that finished by retained_on, and each monitor pass then adds the ones that finished after
+// it (job_i16) and moves retained_on up, so between them every finished job is counted once. The bulk
+// deletes, deleteJob() and resume() take the jobs they move out of that set off it at once (see
+// reduceRetainedCount).
+// Both are null until a queue's first maintenance pass after the columns were added (see
+// retainedAssignments).
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -407,6 +423,8 @@ function createTableQueue (schema: string) {
       active_count int NOT NULL default 0,
       failed_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
+      retained_count int,
+      retained_on timestamp with time zone,
       created_delta int NOT NULL default 0,
       completed_delta int NOT NULL default 0,
       failed_delta int NOT NULL default 0,
@@ -729,7 +747,9 @@ export function deleteOldInstances (schema: string, days: number) {
   `
 }
 
-export function getInstances (schema: string) {
+// With `after`, $1 is the previous page's last instance id, whose started_on is read back from its
+// row, and the limit moves to $2.
+export function getInstances (schema: string, after = false) {
   return `
     SELECT
       id,
@@ -759,8 +779,14 @@ export function getInstances (schema: string) {
       stopped_on as "stoppedOn",
       stopped_on IS NULL AND heartbeat_on >= ${schema}.job_now() - heartbeat_seconds * ${INSTANCE_QUIET_BEATS} * interval '1 second' as live
     FROM ${schema}.instance
+    ${after ? `WHERE (started_on, id) > ((SELECT started_on FROM ${schema}.instance WHERE id = $1::uuid), $1::uuid)` : ''}
     ORDER BY started_on, id
+    LIMIT ${after ? '$2' : '$1'}
   `
+}
+
+export function instanceExists (schema: string) {
+  return `SELECT 1 FROM ${schema}.instance WHERE id = $1::uuid`
 }
 
 export function createIndexJobDependencyParent (schema: string) {
@@ -1020,6 +1046,10 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobBlocking(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobSourceRoot(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobUpsert(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobLive(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobCreated(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobCompleted(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobQueuedKey(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -1043,6 +1073,10 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobBlocking(schema)};
     ${createIndexJobSourceRoot(schema)};
     ${createIndexJobUpsert(schema)};
+    ${createIndexJobLive(schema)};
+    ${createIndexJobCreated(schema)};
+    ${createIndexJobCompleted(schema)};
+    ${createIndexJobQueuedKey(schema)};
   `
 }
 
@@ -1169,6 +1203,10 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobBlocking(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobSourceRoot(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobUpsert(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobLive(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobCreated(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobCompleted(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobQueuedKey(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -1401,6 +1439,33 @@ function createIndexJobSourceRoot (schema: string) {
 // job never collides with a newer upsert on its way back to retry.
 function createIndexJobUpsert (schema: string) {
   return `CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = '${JOB_STATES.created}' AND upsert_by_key`
+}
+
+// The jobs the monitor's gauges count, with the columns that split them (deferred, blocked, ready,
+// queued, active, failed), so a monitor pass counts them from the index alone rather than reading
+// every job the queue retains. Completed and cancelled jobs, usually most of a queue, stay out of it.
+function createIndexJobLive (schema: string) {
+  return `CREATE INDEX job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE ${LIVE_STATES}`
+}
+
+// The jobs created in a window, for createdDelta and the true-up recount, which read only the window
+// rather than every job the queue retains.
+function createIndexJobCreated (schema: string) {
+  return `CREATE INDEX job_i15 ON ${schema}.job (name, created_on)`
+}
+
+// The jobs that finished in a window, for completedDelta, failedDelta, the wait and run times, the
+// true-up recount, and the completed and cancelled jobs a monitor pass adds to retained_count. A job
+// enters it when it completes, fails or is cancelled; waiting and active jobs stay out.
+function createIndexJobCompleted (schema: string) {
+  return `CREATE INDEX job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL`
+}
+
+// The queued jobs that carry a singleton key, newest and oldest first per key, for update() and
+// upsert() by singletonKey. Every policy needs it: a job sent with a key but not by upsert() has no
+// upsert_by_key, so job_i13 does not hold it, and a standard queue has no other index on the key.
+function createIndexJobQueuedKey (schema: string) {
+  return `CREATE INDEX job_i17 ON ${schema}.job (name, singleton_key, created_on) WHERE state < '${JOB_STATES.active}' AND singleton_key IS NOT NULL`
 }
 
 // The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only
@@ -1641,8 +1706,17 @@ export function currentDatabase () {
   return 'SELECT current_database() AS name'
 }
 
-export function getQueues (schema: string, names?: string[]): SqlQuery {
+// `limit` and `after` are for the public getQueues(). Supervision and the queue cache read every
+// queue. `after` is the previous page's last queue name.
+export function getQueues (schema: string, names?: string[], limit?: number, after?: string): SqlQuery {
   const hasNames = names && names.length > 0
+  const values: unknown[] = hasNames ? [names] : []
+  const conditions = hasNames ? ['q.name = ANY($1::text[])'] : []
+  if (after !== undefined) {
+    values.push(after)
+    conditions.push(`q.name > $${values.length}`)
+  }
+  if (limit !== undefined) values.push(limit)
   return {
     text: `
     SELECT
@@ -1680,12 +1754,17 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
       q.created_on as "createdOn",
       q.updated_on as "updatedOn"
     FROM ${schema}.queue q
-    ${hasNames ? 'WHERE q.name = ANY($1::text[])' : ''}
+    ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+    ORDER BY q.name
+    ${limit !== undefined ? `LIMIT $${values.length}` : ''}
    `,
-    values: hasNames ? [names] : []
+    values
   }
 }
 
+// "retained" is how many of the deleted jobs the queue's retained_count holds, the completed and
+// cancelled ones that finished by its retained_on, which the caller takes off it with
+// reduceRetainedCount (see createTableQueue).
 export function deleteJobsById (schema: string, table: string, fenced?: boolean) {
   return `
     WITH results as (
@@ -1693,18 +1772,19 @@ export function deleteJobsById (schema: string, table: string, fenced?: boolean)
       WHERE name = $1
         AND id = ANY($2::uuid[])
         ${fenced ? attemptFence(3) : ''}
-      RETURNING id
+      RETURNING id, state, completed_on
     )
-    ${settledCountAndIds()}
+    SELECT COUNT(*), COALESCE(array_agg(id), '{}'::uuid[]) AS ids,
+      (COUNT(*) FILTER (WHERE state IN ('${JOB_STATES.completed}', '${JOB_STATES.cancelled}')
+        AND completed_on <= ${retainedOn(schema)}))::int AS retained
+    FROM results
   `
 }
 
-export function deleteQueuedJobs (schema: string, table: string) {
-  return `DELETE from ${schema}.${table} WHERE name = $1 and state < '${JOB_STATES.active}'`
-}
-
-export function deleteStoredJobs (schema: string, table: string) {
-  return `DELETE from ${schema}.${table} WHERE name = $1 and state > '${JOB_STATES.active}'`
+// The queue's retained_on, for the statements that tell whether a job they move out of the completed
+// and cancelled set was counted in retained_count. $1 is the queue's name.
+function retainedOn (schema: string) {
+  return `(SELECT retained_on FROM ${schema}.queue WHERE name = $1)`
 }
 
 export function truncateTable (schema: string, table: string) {
@@ -1725,6 +1805,7 @@ export function zeroQueueStats (schema: string, one?: boolean) {
       active_count = 0,
       failed_count = 0,
       total_count = 0,
+      retained_count = 0,
       singletons_active = NULL,
       monitor_on = ${schema}.job_now()
     FROM (
@@ -1734,10 +1815,6 @@ export function zeroQueueStats (schema: string, one?: boolean) {
     ) q
     WHERE queue.name = q.name
   `
-}
-
-export function deleteAllJobs (schema: string, table: string) {
-  return `DELETE from ${schema}.${table} WHERE name = $1`
 }
 
 // Named and aliased rather than SELECT *, so the timestamp columns and last_job_id reach callers
@@ -1761,12 +1838,26 @@ const SCHEDULE_COLUMNS = `
   last_job_id as "lastJobId"
 `
 
-export function getSchedules (schema: string) {
-  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule ORDER BY name, key`
+// `limited` and `after` are for the public getSchedules(). The cron pass reads every schedule.
+// `after` takes two parameters, the name and key of the previous page's last schedule, and the
+// limit follows them.
+export function getSchedules (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule
+    ${after ? 'WHERE (name, key) > ($1, $2)' : ''}
+    ORDER BY name, key
+    ${limited ? `LIMIT $${after ? 3 : 1}` : ''}
+  `
 }
 
-export function getSchedulesByQueue (schema: string) {
-  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule WHERE name = $1 ORDER BY key`
+export function getSchedulesByQueue (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule
+    WHERE name = $1
+      ${after ? 'AND (name, key) > ($2, $3)' : ''}
+    ORDER BY key
+    ${limited ? `LIMIT $${after ? 4 : 2}` : ''}
+  `
 }
 
 export function getSchedulesByQueueAndKey (schema: string) {
@@ -1948,6 +2039,13 @@ export function createIndexQueueStats (schema: string, noCoveringIndex = false):
   return `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats (name, captured_on DESC) ${include}`
 }
 
+// Retention without partitions (noTablePartitioning): finds the rows past retention in capture order,
+// so each pass reads only those rather than the whole table. Partitioned queue_stats drops whole days
+// instead and has no use for it. id makes the order total, for the cursor deleteOldQueueStats carries.
+function createIndexQueueStatsRetention (schema: string): string {
+  return `CREATE INDEX queue_stats_i2 ON ${schema}.queue_stats (captured_on, id)`
+}
+
 // Idempotently create the daily partitions for today and tomorrow (UTC). Both the day suffix and
 // the range bounds are derived in SQL from the UTC calendar date, and the bounds are emitted as
 // explicit `+00` timestamptz literals. This keeps partitioning correct regardless of the database
@@ -2014,10 +2112,35 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
   `
 }
 
-export function deleteOldQueueStats (schema: string, days: number): string {
+// Retention for queue_stats where it is not partitioned by day (noTablePartitioning): deletes at
+// most `batchSize` rows past retention, oldest first, through queue_stats_i2, so a pass reads only the
+// rows it deletes. The supervisor repeats it while a batch comes back with a cursor, which is the
+// last (captured_on, id) deleted, as text joined by '|', so the next batch starts past the rows this
+// one removed rather than stepping over them again (CockroachDB keeps them as tombstones until
+// garbage collection). No cursor once a batch deletes fewer than `batchSize`.
+export function deleteOldQueueStats (schema: string, days: number, options: { after?: string, batchSize?: number } = {}): string {
+  const { after, batchSize = DELETION_BATCH_SIZE } = options
+  const [capturedOn, id] = (after ?? '').replace(SINGLE_QUOTE_REGEX, "''").split('|')
+  const cursor = after ? `AND (captured_on, id) > ('${capturedOn}'::timestamptz, '${id}'::uuid)` : ''
+
   return `
-    DELETE FROM ${schema}.queue_stats
-    WHERE captured_on < ${schema}.job_now() - interval '${days} days'
+    WITH batch AS (
+      SELECT captured_on, id
+      FROM ${schema}.queue_stats
+      WHERE captured_on < ${schema}.job_now() - interval '${days} days' ${cursor}
+      ORDER BY captured_on, id
+      LIMIT ${batchSize}
+    ),
+    removed AS (
+      DELETE FROM ${schema}.queue_stats
+      WHERE id IN (SELECT id FROM batch)
+      RETURNING 1
+    )
+    SELECT
+      CASE WHEN (SELECT count(*) FROM batch) = ${batchSize}
+        THEN (SELECT captured_on::text || '|' || id::text FROM batch ORDER BY captured_on DESC, id DESC LIMIT 1)
+      END AS "walkCursor",
+      (SELECT count(*) FROM removed)::int AS deleted
   `
 }
 
@@ -2826,20 +2949,33 @@ export function cancelJobs (schema: string, table: string, fenced?: boolean) {
 // from when it was first sent. A start_after still in the future is kept. It also loses upsert_by_key,
 // here and in restoreJobs, so it never collides in job_i13 with a newer job upserted by the same key,
 // and queues beside it.
+//
+// "retained" is how many of the resumed jobs the queue's retained_count held, read from the
+// completed_on each had before the update, which the caller takes off it with reduceRetainedCount.
+// The next monitor pass then counts them among the live jobs.
 export function resumeJobs (schema: string, table: string) {
   return `
-    WITH results as (
-      UPDATE ${schema}.${table}
-      SET completed_on = NULL,
-        state = '${JOB_STATES.created}',
-        upsert_by_key = NULL,
-        start_after = GREATEST(start_after, ${schema}.job_now())
+    WITH resumable as (
+      SELECT id, completed_on
+      FROM ${schema}.${table}
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.cancelled}'
-      RETURNING 1
+    ),
+    results as (
+      UPDATE ${schema}.${table} j
+      SET completed_on = NULL,
+        state = '${JOB_STATES.created}',
+        upsert_by_key = NULL,
+        start_after = GREATEST(j.start_after, ${schema}.job_now())
+      FROM resumable r
+      WHERE j.name = $1
+        AND j.id = r.id
+        AND j.state = '${JOB_STATES.cancelled}'
+      RETURNING r.completed_on
     )
-    SELECT COUNT(*) from results
+    SELECT COUNT(*), (COUNT(*) FILTER (WHERE completed_on <= ${retainedOn(schema)}))::int AS retained
+    FROM results
   `
 }
 
@@ -3045,28 +3181,52 @@ export function failJobsById (schema: string, table: string, fenced?: boolean) {
   const where = `name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}' ${fenced ? attemptFence(4) : ''}`
   const output = '$3::jsonb'
 
-  return failJobs(schema, table, where, output, true)
+  return failJobs(schema, table, where, output)
 }
 
-export function failJobsByTimeout (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
-  const where = `state = '${JOB_STATES.active}'
+export const EXPIRY_BATCH_SIZE = 1000
+
+function timedOut (schema: string, queues: string[]) {
+  return `state = '${JOB_STATES.active}'
             AND (started_on + expire_seconds * interval '1s') < ${schema}.job_now()
             AND name = ANY(${serializeArrayParam(queues)})`
-
-  const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
-
-  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout', noAdvisoryLocks)
 }
 
-export function failJobsByHeartbeat (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
-  const where = `state = '${JOB_STATES.active}'
+function heartbeatLost (schema: string, queues: string[]) {
+  return `state = '${JOB_STATES.active}'
             AND heartbeat_seconds IS NOT NULL
             AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.job_now()
             AND name = ANY(${serializeArrayParam(queues)})`
+}
 
+export function failJobsByTimeout (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, limit = EXPIRY_BATCH_SIZE): string {
+  const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
+
+  return locked(schema, expireJobs(schema, table, timedOut(schema, queues), output, limit), table + 'failJobsByTimeout', noAdvisoryLocks)
+}
+
+export function failJobsByHeartbeat (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, limit = EXPIRY_BATCH_SIZE): string {
   const output = '\'{ "value": { "message": "job heartbeat timeout" } }\'::jsonb'
 
-  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByHeartbeat', noAdvisoryLocks)
+  return locked(schema, expireJobs(schema, table, heartbeatLost(schema, queues), output, limit), table + 'failJobsByHeartbeat', noAdvisoryLocks)
+}
+
+// One batch of a supervisor expiry sweep: fails at most `limit` of the jobs `predicate` matches.
+// The caller repeats it while a batch picks a full `limit`, so a fleet that crashed with every job
+// active is failed a batch per transaction rather than all in one. Unordered: nothing indexes the
+// predicate, and an ORDER BY would sort every match to pick a batch. A failed job is re-inserted in
+// a state the predicate no longer matches, so the next batch cannot pick it again.
+//
+// The predicate is repeated on the DELETE so that a job a worker settled after it was picked is
+// left alone, as before. "expiryPicked" is told apart from the advisory lock's row by its name.
+function expireJobs (schema: string, table: string, predicate: string, output: string, limit: number) {
+  return `
+    WITH picked AS (
+      SELECT id FROM ${schema}.${table} WHERE ${predicate} LIMIT ${limit}
+    ),
+    ${failJobsBody(schema, table, `${predicate} AND id IN (SELECT id FROM picked)`, output)}
+    SELECT (SELECT count(*) FROM picked)::int AS "expiryPicked"
+  `
 }
 
 export function touchJobs (schema: string, table: string, fenced?: boolean) {
@@ -3084,12 +3244,10 @@ export function touchJobs (schema: string, table: string, fenced?: boolean) {
   `
 }
 
-// `returnIds` is off for the supervisor's bulk maintenance (failJobsByTimeout/failJobsByHeartbeat),
-// which only ever reads the count and would otherwise ship a whole sweep's worth of ids back.
-function failJobs (schema: string, table: string, where: string, output: string, returnIds = false) {
+function failJobs (schema: string, table: string, where: string, output: string) {
   return `
     WITH ${failJobsBody(schema, table, where, output)}
-    ${returnIds ? settledCountAndIds() : 'SELECT COUNT(*) FROM results'}
+    ${settledCountAndIds()}
   `
 }
 
@@ -3101,7 +3259,7 @@ function settledCountAndIds () {
   return "SELECT COUNT(*), COALESCE(array_agg(id), '{}'::uuid[]) AS ids FROM results"
 }
 
-// The CTE chain shared by failJobs() and failJobsByIdWithOutputs(): delete the matched jobs and
+// The CTE chain shared by failJobs(), expireJobs() and failJobsByIdWithOutputs(): delete the matched jobs and
 // re-insert them as retry (when retries remain) or failed (+ dead letter). `where` selects the rows
 // to fail and `output` is the SQL expression stored on each re-inserted job. Returned without the
 // leading `WITH` or trailing `SELECT` so callers can prepend extra CTEs (e.g. an output map).
@@ -3401,27 +3559,25 @@ export function deleteJobsToFail (schema: string, table: string): SqlQuery {
 
 // Distributed mode: the predicate-based maintenance expiry equivalents of selectJobsToFailById.
 // The supervisor's failJobsByTimeout/failJobsByHeartbeat use the multi-mutation failJobs() CTE,
-// which CockroachDB rejects, so in distributed mode we select the timed-out jobs here and re-insert
-// them separately (delete via deleteJobsByIds, re-insert via insertRetryJob), all in one transaction.
-export function selectJobsToFailByTimeout (schema: string, table: string, queues: string[]): SqlQuery {
+// which CockroachDB rejects, so in distributed mode we select a batch of the timed-out jobs here and
+// re-insert them separately (delete via deleteJobsByIds, re-insert via insertRetryJob), all in one
+// transaction. The supervisor repeats it while a batch comes back full, as with expireJobs().
+export function selectJobsToFailByTimeout (schema: string, table: string, queues: string[], limit = EXPIRY_BATCH_SIZE): SqlQuery {
   return {
     text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
       FROM ${schema}.${table}
-      WHERE state = '${JOB_STATES.active}'
-        AND (started_on + expire_seconds * interval '1s') < ${schema}.job_now()
-        AND name = ANY(${serializeArrayParam(queues)})`,
+      WHERE ${timedOut(schema, queues)}
+      LIMIT ${limit}`,
     values: []
   }
 }
 
-export function selectJobsToFailByHeartbeat (schema: string, table: string, queues: string[]): SqlQuery {
+export function selectJobsToFailByHeartbeat (schema: string, table: string, queues: string[], limit = EXPIRY_BATCH_SIZE): SqlQuery {
   return {
     text: `SELECT *, ${REBOUND_TIMESTAMPS_AS_TEXT}
       FROM ${schema}.${table}
-      WHERE state = '${JOB_STATES.active}'
-        AND heartbeat_seconds IS NOT NULL
-        AND (heartbeat_on + heartbeat_seconds * interval '1s') < ${schema}.job_now()
-        AND name = ANY(${serializeArrayParam(queues)})`,
+      WHERE ${heartbeatLost(schema, queues)}
+      LIMIT ${limit}`,
     values: []
   }
 }
@@ -3763,31 +3919,146 @@ export function failRedriveConflicts (schema: string, table: string): string {
 // What a redrive with the same filter would do, without doing it: matching jobs grouped by the
 // queue each would land in. The LEFT JOIN keeps jobs the redrive would leave behind (no source
 // and no override, or a source queue since deleted) so they can be reported rather than vanish.
+// Reads, rather than counts, at most $7 jobs a redrive would move and at most $7 it would leave in
+// place, so a preview costs the same however large the dead letter queue has grown. Unordered: any
+// $7 of them say the same thing, and an ORDER BY would sort every candidate to pick them.
 export function previewRedrive (schema: string, table: string): string {
-  return `
-    SELECT COALESCE($2, j.source_name) AS destination,
-      (q.name IS NOT NULL) AS routable,
-      count(*)::int AS count
+  const from = `
     FROM ${schema}.${table} j
     LEFT JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
-    WHERE ${redriveWhere(schema, table)}
-    GROUP BY 1, 2
+    WHERE ${redriveWhere(schema, table)}`
+
+  return `
+    (SELECT q.name AS destination ${from} AND q.name IS NOT NULL LIMIT $7)
+    UNION ALL
+    (SELECT NULL AS destination ${from} AND q.name IS NULL LIMIT $7)
   `
 }
 
-export function deletion (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
-  const sql = `
-    DELETE FROM ${schema}.${table}
-    WHERE name = ANY(${serializeArrayParam(queues)})
-      AND
-      (
-        (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < ${schema}.job_now())
-        OR
-        (state < '${JOB_STATES.active}' AND keep_until < ${schema}.job_now())
-      )
-  `
+export const DELETION_BATCH_SIZE = 10000
+const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 
-  return locked(schema, sql, table + 'deletion', noAdvisoryLocks)
+// One batch of the retention sweep for one queue, under the table's deletion lock. See
+// deleteJobsBatch for the walk. `retainedBefore` is the epoch milliseconds the sweep counts the
+// completed and cancelled jobs it keeps up to (see createTableQueue).
+export function deletion (schema: string, table: string, name: string, options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean, retainedBefore?: number } = {}): string {
+  const expired = `(
+          (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < ${schema}.job_now())
+          OR
+          (state < '${JOB_STATES.active}' AND keep_until < ${schema}.job_now())
+        )`
+
+  return locked(schema, deleteJobsBatch(schema, table, name, expired, options), table + 'deletion', options.noAdvisoryLocks)
+}
+
+// One batch of the jobs deleteQueuedJobs(), deleteStoredJobs() and deleteAllJobs() remove.
+export function deleteQueuedJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+  return deleteJobsBatch(schema, table, name, `state < '${JOB_STATES.active}'`, options)
+}
+
+export function deleteStoredJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+  return deleteJobsBatch(schema, table, name, `state > '${JOB_STATES.active}'`, options)
+}
+
+export function deleteAllJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+  return deleteJobsBatch(schema, table, name, 'true', options)
+}
+
+// One batch of a delete over one queue: deletes the jobs `predicate` matches among the next
+// `batchSize` primary keys after `after`, and returns the last of those keys as the cursor for the
+// next batch, or null when fewer than `batchSize` were left and the queue is done.
+//
+// Bounded by keys covered rather than rows deleted. Nothing indexes the retention predicate or job
+// state, so a LIMIT on the matching rows themselves would rescan from the start of the queue every
+// batch, past the dead tuples of the batches before it. A walk over (name, id) covers each row once,
+// as a single DELETE does, but no one transaction holds more than a batch of row locks or pins the
+// xmin horizon for longer than a batch takes. One queue per walk: an ORDER BY id across
+// name = ANY(...) cannot be served in index order before Postgres 17, so it would sort every
+// candidate row on every batch.
+//
+// The batch's upper key comes from an index-only scan, and the delete covers the id range up to it,
+// which Postgres serves as one bitmap scan rather than a lookup per key. A job inserted into the
+// range after the edge was read is covered too, and is only deleted if the predicate matches it.
+//
+// deletedRetained is how many of the deleted jobs retained_count holds, the completed and cancelled
+// ones that finished by the queue's retained_on, which the caller takes off it. With
+// `retainedBefore` the batch also counts the completed and cancelled jobs that finished by then
+// and that it leaves in place, as "retained", for the retention sweep to total across the queue (see
+// createTableQueue). That count reads the batch's range a second time, from the snapshot the delete
+// started with, so it subtracts the jobs the delete removed.
+//
+// Literals rather than bind parameters, since deletion() wraps the statement in a multi-statement
+// transaction. The result row is told apart from the advisory lock's by "walkCursor".
+function deleteJobsBatch (schema: string, table: string, name: string, predicate: string, options: { after?: string, batchSize?: number, retainedBefore?: number }): string {
+  const { after, batchSize = DELETION_BATCH_SIZE, retainedBefore } = options
+  const queue = `'${name.replace(SINGLE_QUOTE_REGEX, "''")}'`
+  const cursor = after ? `AND id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
+  const range = `name = ${queue} ${cursor}
+        AND id <= COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)`
+  const held = `${RETAINED_STATES} AND completed_on <= (SELECT retained_on FROM ${schema}.queue WHERE name = ${queue})`
+  const before = `${RETAINED_STATES} AND completed_on <= to_timestamp(${Number(retainedBefore)}::float8 / 1000)`
+
+  return `
+    WITH edge AS (
+      SELECT id
+      FROM ${schema}.${table}
+      WHERE name = ${queue} ${cursor}
+      ORDER BY id
+      OFFSET ${batchSize - 1}
+      LIMIT 1
+    ),
+    removed AS (
+      DELETE FROM ${schema}.${table}
+      WHERE ${range}
+        AND ${predicate}
+      RETURNING state, completed_on
+    )
+    SELECT
+      (SELECT id FROM edge) AS "walkCursor",
+      (SELECT count(*) FROM removed)::int AS deleted,
+      (SELECT count(*) FROM removed WHERE ${held})::int AS "deletedRetained"${retainedBefore !== undefined
+        ? `,
+      ((SELECT count(*) FROM ${schema}.${table} WHERE ${range} AND ${before})
+        - (SELECT count(*) FROM removed WHERE ${before}))::int AS retained`
+        : ''}
+  `
+}
+
+// The live jobs as the last monitor pass counted them, which total_count adds retained_count to.
+const CACHED_LIVE_COUNT = 'queued_count + active_count + failed_count'
+
+// The retention sweep's total of the completed and cancelled jobs it left that finished by $3
+// (epoch milliseconds), once it has walked the whole queue, with $3 as the new retained_on and
+// total_count updated with it rather than at the next monitor pass. $1 is the queue, $2 the count.
+// total_count also takes the jobs that finished after $3, which the next monitor pass adds to
+// retained_count once they are DELTA_LAG old (see retainedAssignments).
+export function setRetainedCount (schema: string, table: string): string {
+  return `
+    UPDATE ${schema}.queue
+    SET retained_count = $2,
+      retained_on = to_timestamp($3::float8 / 1000),
+      total_count = ${CACHED_LIVE_COUNT} + $2 + (
+        SELECT count(*)::int
+        FROM ${schema}.${table} j
+        WHERE j.name = $1
+          AND j.completed_on > to_timestamp($3::float8 / 1000)
+          AND j.completed_on <= ${schema}.job_now()
+          AND ${RETAINED_STATES}
+      )
+    WHERE name = $1
+  `
+}
+
+// Takes the jobs a delete or resume moved off the queue's counts at once rather than at the next
+// pass: $2 off retained_count, the completed and cancelled jobs it held, and $3 off total_count, every
+// job removed. $1 is the queue. A queue the retention sweep has not counted yet stays null.
+export function reduceRetainedCount (schema: string): string {
+  return `
+    UPDATE ${schema}.queue
+    SET retained_count = GREATEST(retained_count - $2, 0),
+      total_count = GREATEST(total_count - $3, 0)
+    WHERE name = $1 AND retained_count IS NOT NULL
+  `
 }
 
 // start_after moves up to now, as in resumeJobs.
@@ -3926,7 +4197,8 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // under a mixed load whose longest routine transactions held 5s, a lag of 0 or 1s set off a true-up
 // on 90-97% of passes, and 5s or more on none. Ten seconds leaves headroom over that and puts the
 // counters within a pass of the gauges. See research/delta-true-up.md on planning.
-const DELTA_LAG = "interval '10 seconds'"
+export const DELTA_LAG_SECONDS = 10
+const DELTA_LAG = `interval '${DELTA_LAG_SECONDS} seconds'`
 const DELTA_RESET_MAX_SECONDS = 2 * 60 * 60
 const DELTA_RESET_MAX = `interval '${DELTA_RESET_MAX_SECONDS} seconds'`
 const DELTA_TRUE_UP_MAX = "interval '1 hour'"
@@ -4091,14 +4363,14 @@ export function trueUpQueueStats (schema: string, table: string, queues: string[
       GROUP BY w.name, w.h
     ),
     binned AS (
-      SELECT j.name,
-        CASE WHEN j.created_on >= th.h THEN width_bucket(j.created_on, th.t) END AS cb,
-        CASE WHEN j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') AND j.completed_on >= th.h
-          THEN width_bucket(j.completed_on, th.t) END AS fb,
-        j.state
-      FROM ${schema}.${table} j
-      JOIN th ON th.name = j.name
-      WHERE j.name = ANY(${names})
+      SELECT j.name, width_bucket(j.created_on, th.t) AS cb, NULL::int AS fb, j.state
+      FROM th
+      JOIN ${schema}.${table} j ON j.name = th.name AND j.created_on >= th.h
+      UNION ALL
+      SELECT j.name, NULL::int AS cb, width_bucket(j.completed_on, th.t) AS fb, j.state
+      FROM th
+      JOIN ${schema}.${table} j ON j.name = th.name AND j.completed_on >= th.h
+      WHERE j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}')
     ),
     grouped AS (
       SELECT name, cb, fb, state, count(*)::int AS n
@@ -4202,28 +4474,31 @@ function latencyHistogram (which: 'wait' | 'run'): string {
                        FROM unnest(latency.ps, latency.ns) AS u(p, n) GROUP BY 1) c ON c.slot = s.slot)`
 }
 
-// Every count the monitor keeps, from one pass over the queue's table.
+// Every count the monitor keeps for a set of queues, each read through an index that holds only the
+// jobs it counts, so a pass costs what the queue has in flight and what moved through it, not every
+// job it retains.
 //
-// Six of them are gauges — what the queue looks like right now. Three are not:
-// createdDelta counts the jobs created since the last pass, and completedDelta
-// and failedDelta the jobs that *finished*, which is the only way to answer
-// "how many jobs did this queue get through" from a table of current state.
-// Five hundred arriving and five hundred leaving looks identical to a still
-// queue in every gauge here.
+// Seven are gauges, what the queue looks like right now, from the live jobs alone: waiting, active
+// and failed, which job_i14 holds with every column the gauges split them by. The aggregate repeats
+// that index's predicate verbatim (LIVE_STATES) so the planner matches it, and counts them with an
+// index-only scan. liveCount is all of them. retainedSince is the jobs completed or cancelled since
+// the queue's retained_on (job_i16), which the caller adds to retained_count (see createTableQueue)
+// only if retained_on is still retainedFrom, the watermark it was counted from.
 //
-// The window is the queue's own `delta_on`, joined in
-// rather than passed as a fixed interval. That watermark is what makes the three
-// counters exact across a skipped or backed-off pass: nothing is counted twice,
-// because the window starts where the last one ended, and nothing is missed,
-// because a late pass simply covers a longer window, and says so in
-// delta_seconds. A queue that has never been counted has a null watermark and
-// counts zero, which is the honest answer for a first pass that has nothing to
-// compare against.
+// The throughput counters, with persistQueueStats, are not gauges: createdDelta counts the jobs
+// created since the last pass (job_i15), and completedDelta and failedDelta the jobs that *finished*
+// (job_i16), which is the only way to answer "how many jobs did this queue get through" from a table
+// of current state. Five hundred arriving and five hundred leaving looks identical to a still queue
+// in every gauge. readyOldestSeconds reads the ready jobs through job_i11.
 //
-// The join is against `queue`, which holds one row per queue — Postgres hashes
-// it once and probes per row. The alternative, a second pass over the job table
-// filtered on completed_on, would be a whole extra scan of the largest table in
-// the schema, and there is no index on that column to make it cheaper.
+// The window is the queue's own `delta_on`, joined in rather than passed as a fixed interval. That
+// watermark is what makes the three counters exact across a skipped or backed-off pass: nothing is
+// counted twice, because the window starts where the last one ended, and nothing is missed, because
+// a late pass simply covers a longer window, and says so in delta_seconds. A queue that has never
+// been counted has a null watermark and counts zero, which is the honest answer for a first pass
+// that has nothing to compare against.
+//
+// One row per queue asked for, with zero gauges for a queue that has no live jobs.
 export function getQueueStats (schema: string, table: string, queues: string[], throughput = false, window: DeltaWindowOptions = {}): SqlQuery {
   // A queued job is exactly one of blocked (waiting on a flow parent), deferred (start_after still
   // ahead) or ready, so the three add up to queuedCount. Blocked wins over deferred: a job whose
@@ -4232,59 +4507,89 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
   const blocked = `${queued} AND j.blocked`
   const deferred = `${queued} AND NOT j.blocked AND j.start_after > ${schema}.job_now()`
   const ready = `${queued} AND NOT j.blocked AND j.start_after <= ${schema}.job_now()`
-  // Counted only with persistQueueStats. Otherwise the aggregate does what it did before throughput
-  // existed: no join, no extra counts, no cost. The measured price is in the `persistQueueStats` docs.
+  const finished = `j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}')`
   const end = deltaWindowEnd(schema, window.lag)
-  const inWindow = (column: string) => `j.${column} >= ${deltaWindowStart('q', end, window.resetMax)} AND j.${column} < ${end}`
-  // The true-up check: the same jobs recounted across the windows already recorded (see
-  // trueUpSettled). More than the snapshots hold means something committed after its window was
-  // counted, and the monitor follows up with trueUpQueueStats for this queue.
-  const settled = (column: string) => `j.${column} >= q.h AND j.${column} < q.top`
   const counters = throughput
     ? {
         select: `
-        "createdDelta",
-        "completedDelta",
-        "failedDelta",
+        stats."createdDelta",
+        stats."completedDelta",
+        stats."failedDelta",
         ${latencyHistogram('wait')} as "waitBins",
         ${latencyHistogram('run')} as "runBins",
-        "readyOldestSeconds",
-        COALESCE("recount" > "settled", false) as "trueUp",`,
-        counts: `
-            (count(*) FILTER (WHERE ${inWindow('created_on')}))::int as "createdDelta",
-            (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}' AND ${inWindow('completed_on')}))::int as "completedDelta",
-            (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}' AND ${inWindow('completed_on')}))::int as "failedDelta",
-            array_agg(${latencyBin(waitSeconds)} * ${LATENCY_PACK} + ${latencyBin(runSeconds)})
-              FILTER (WHERE j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') AND j.started_on IS NOT NULL AND ${inWindow('completed_on')}) as "latencyBins",
-            round(extract(epoch from (${schema}.job_now() - min(GREATEST(j.created_on, j.start_after))
-              FILTER (WHERE ${ready}))))::int as "readyOldestSeconds",
-            sum(
-              CASE WHEN ${settled('created_on')} THEN 1 ELSE 0 END +
-              CASE WHEN ${settled('completed_on')} AND j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.failed}') THEN 1 ELSE 0 END
-            )::int as "recount",
-            max(q.settled) as "settled",`,
-        join: `JOIN (
-            SELECT q.name, q.delta_on, a.h, t.top, t.settled
+        stats."readyOldestSeconds",
+        COALESCE(stats."recount" > stats."settled", false) as "trueUp",`,
+        // The true-up check: the same jobs recounted across the windows already recorded (see
+        // trueUpSettled). More than the snapshots hold means something committed after its window
+        // was counted, and the monitor follows up with trueUpQueueStats for this queue.
+        join: `
+      LEFT JOIN (
+        SELECT
+            q.name,
+            created."createdDelta",
+            done."completedDelta",
+            done."failedDelta",
+            done."latencyBins",
+            oldest."readyOldestSeconds",
+            recreated.n + refinished.n as "recount",
+            q.settled as "settled"
+          FROM (
+            SELECT q.name, a.h, t.top, t.settled,
+              ${deltaWindowStart('q', end, window.resetMax)} AS w_start, ${end} AS w_end
             FROM ${schema}.queue q${trueUpSettled(schema, 'q', window.trueUpMax)}
             WHERE q.name = ANY($1::text[])
-          ) q ON q.name = j.name`,
+          ) q
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int as "createdDelta"
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND j.created_on >= q.w_start AND j.created_on < q.w_end
+          ) created ON true
+          LEFT JOIN LATERAL (
+            SELECT
+              (count(*) FILTER (WHERE j.state = '${JOB_STATES.completed}'))::int as "completedDelta",
+              (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}'))::int as "failedDelta",
+              array_agg(${latencyBin(waitSeconds)} * ${LATENCY_PACK} + ${latencyBin(runSeconds)})
+                FILTER (WHERE ${finished} AND j.started_on IS NOT NULL) as "latencyBins"
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND j.completed_on >= q.w_start AND j.completed_on < q.w_end
+          ) done ON true
+          LEFT JOIN LATERAL (
+            SELECT round(extract(epoch from (${schema}.job_now() - min(GREATEST(j.created_on, j.start_after)))))::int as "readyOldestSeconds"
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND ${ready}
+          ) oldest ON true
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int AS n
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND j.created_on >= q.h AND j.created_on < q.top
+          ) recreated ON true
+          LEFT JOIN LATERAL (
+            SELECT count(*)::int AS n
+            FROM ${schema}.${table} j
+            WHERE j.name = q.name AND j.completed_on >= q.h AND j.completed_on < q.top AND ${finished}
+          ) refinished ON true
+      ) stats ON stats.name = n.name`,
         lateral: latencyCounts('stats."latencyBins"')
       }
-    : { select: '', counts: '', join: '', lateral: '' }
+    : { select: '', join: '', lateral: '' }
 
   return {
     text: `
     SELECT
-        name,
-        "deferredCount",
-        "queuedCount",
-        "readyCount",
-        "blockedCount",
-        "activeCount",
-        "failedCount",
-        "totalCount",${counters.select}
-        "singletonsActive"
-      FROM (
+        n.name,
+        COALESCE(live."deferredCount", 0) as "deferredCount",
+        COALESCE(live."queuedCount", 0) as "queuedCount",
+        COALESCE(live."readyCount", 0) as "readyCount",
+        COALESCE(live."blockedCount", 0) as "blockedCount",
+        COALESCE(live."activeCount", 0) as "activeCount",
+        COALESCE(live."failedCount", 0) as "failedCount",
+        COALESCE(live."liveCount", 0) as "liveCount",
+        since."retainedSince",
+        since."retainedRecent",
+        since."retainedFrom",${counters.select}
+        singletons."singletonsActive"
+      FROM unnest($1::text[]) AS n(name)
+      LEFT JOIN (
         SELECT
             j.name,
             (count(*) FILTER (WHERE ${deferred}))::int as "deferredCount",
@@ -4293,17 +4598,66 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
             (count(*) FILTER (WHERE ${queued}))::int as "queuedCount",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.active}'))::int as "activeCount",
             (count(*) FILTER (WHERE j.state = '${JOB_STATES.failed}'))::int as "failedCount",
-            count(*)::int as "totalCount",${counters.counts}
-            array_agg(j.singleton_key) FILTER (WHERE j.policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND j.state = '${JOB_STATES.active}') as "singletonsActive"
+            count(*)::int as "liveCount"
           FROM ${schema}.${table} j
-          ${counters.join}
-          WHERE j.name = ANY($1::text[])
+          WHERE j.name = ANY($1::text[]) AND ${LIVE_STATES}
           GROUP BY 1
-      ) stats
+      ) live ON live.name = n.name
+      LEFT JOIN LATERAL (
+        SELECT qr.retained_on as "retainedFrom",
+          (SELECT count(*)::int
+            FROM ${schema}.${table} j
+            WHERE j.name = qr.name
+              AND j.completed_on > qr.retained_on
+              AND j.completed_on <= ${end}
+              AND ${RETAINED_STATES}) as "retainedSince",
+          (SELECT count(*)::int
+            FROM ${schema}.${table} j
+            WHERE j.name = qr.name
+              AND j.completed_on > GREATEST(qr.retained_on, ${end})
+              AND j.completed_on <= ${schema}.job_now()
+              AND ${RETAINED_STATES}) as "retainedRecent"
+        FROM ${schema}.queue qr
+        WHERE qr.name = n.name
+      ) since ON true
+      LEFT JOIN (
+        SELECT j.name, array_agg(j.singleton_key) as "singletonsActive"
+          FROM ${schema}.${table} j
+          WHERE j.name = ANY($1::text[])
+            AND j.state = '${JOB_STATES.active}'
+            AND j.policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}')
+          GROUP BY 1
+      ) singletons ON singletons.name = n.name${counters.join}
       ${counters.lateral}
   `,
     values: [queues]
   }
+}
+
+// The SET clause for retained_count, retained_on and total_count, from the aggregate's live count and
+// the jobs that finished since retained_on. retained_count takes in the finished jobs only up to
+// `end`, the throughput window's end, DELTA_LAG behind the pass, and retained_on moves up to it: a
+// completion stamped before a pass but committed after it is still ahead of retained_on, so a later
+// pass counts it (see DELTA_LAG). total_count adds the jobs that finished since then too
+// (retainedRecent), which the next pass counts again rather than keeps.
+//
+// The finished jobs are added only if retained_on is still the watermark they were counted from: a
+// maintenance pass or a forced refresh that moved it in the meantime has counted them already, and
+// set total_count with them. For a queue no maintenance pass has reached yet (see createTableQueue),
+// total_count is the larger of the live jobs and total_count as it was, which is a full count on a
+// queue that predates the columns and zero on a new one.
+function retainedAssignments (end: string) {
+  const counted = 'queue.retained_on IS NOT DISTINCT FROM stats."retainedFrom"'
+  const live = 'COALESCE(stats."liveCount", 0)'
+  const retained = `CASE WHEN ${counted} THEN queue.retained_count + COALESCE(stats."retainedSince", 0) ELSE queue.retained_count END`
+  return `
+      retained_count = ${retained},
+      retained_on = CASE WHEN ${counted} AND queue.retained_on IS NOT NULL THEN GREATEST(queue.retained_on, ${end}) ELSE queue.retained_on END,
+      total_count = CASE
+        WHEN queue.retained_count IS NULL THEN GREATEST(queue.total_count, ${live})
+        WHEN ${counted} THEN ${live} + ${retained} + COALESCE(stats."retainedRecent", 0)
+        ELSE queue.total_count
+      END,`
 }
 
 // Length of the recent-ready-count sliding window kept on queue.ready_history for the dashboard
@@ -4378,7 +4732,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
       ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
       failed_count = COALESCE(stats."failedCount", 0),
-      total_count = COALESCE(stats."totalCount", 0),${throughputSet}
+      ${retainedAssignments(deltaWindowEnd(schema, window.lag))}${throughputSet}
       singletons_active = stats."singletonsActive",
       monitor_on = ${schema}.job_now(),
       ready_history = (
@@ -4445,7 +4799,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
 // this leaves delta_on alone and the next monitor pass counts across it.
 export function refreshQueueStats (schema: string, table: string, name: string, options: { noAdvisoryLocks?: boolean, firstCapture?: boolean } = {}): string {
   const statsQuery = getQueueStats(schema, table, [name])
-  const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam([name]))
+  const statsText = statsQuery.text.replaceAll('$1::text[]', serializeArrayParam([name]))
   const lock = tryAdvisoryLock(schema, 'queue-stats', options.noAdvisoryLocks || options.firstCapture)
 
   return `
@@ -4457,7 +4811,7 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
       ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
       failed_count = COALESCE(stats."failedCount", 0),
-      total_count = COALESCE(stats."totalCount", 0),
+      ${retainedAssignments(deltaWindowEnd(schema))}
       singletons_active = stats."singletonsActive",
       monitor_on = ${schema}.job_now()
     FROM (
@@ -4562,10 +4916,13 @@ export function assertMigration (schema: string, version: number) {
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
 
-// The limit has no ORDER BY to go with it: any matching jobs will do, and an ORDER BY would sort
-// every match to pick them.
-export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean, limited: boolean }) {
-  const { queued, byKey, byData, byId, limited } = options
+// Ordered by created_on, then id: jobs written in one transaction share a created_on, and id keeps
+// their order the same on every page. job_i15 (or job_i17 by key) supplies created_on, so only the
+// jobs that share one are sorted. With `after`, a page continues past that job, read back by id so
+// its created_on keeps the microseconds a JS Date drops. The created_on bound beside the row
+// comparison is what lets the index scan start there.
+export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean, after?: boolean }) {
+  const { queued, byKey, byData, byId, after } = options
 
   let paramIndex = 1
   const whereConditions = []
@@ -4589,14 +4946,20 @@ export function findJobs (schema: string, table: string, options: { queued: bool
     whereConditions.push(`AND state < '${JOB_STATES.active}'`)
   }
 
-  const limitClause = limited ? `LIMIT $${++paramIndex}` : ''
+  if (after) {
+    ++paramIndex
+    const anchor = `(SELECT created_on FROM ${schema}.${table} WHERE name = $1 AND id = $${paramIndex}::uuid)`
+    whereConditions.push(`AND created_on >= ${anchor}`)
+    whereConditions.push(`AND (created_on, id) > (${anchor}, $${paramIndex}::uuid)`)
+  }
 
   return `
     SELECT ${JOB_COLUMNS_ALL}
     FROM ${schema}.${table}
     WHERE name = $1
       ${whereConditions.join('\n      ')}
-    ${limitClause}
+    ORDER BY created_on, id
+    LIMIT $${++paramIndex}
     `
 }
 
@@ -4627,47 +4990,92 @@ export function insertDependencies (schema: string, deps?: unknown[]) {
   return deps ? sql.replace('$1', () => serializeJsonParam(deps)) : sql
 }
 
-export function getDependencies (schema: string) {
+// With `after`, $3 and $4 are the name and id of the previous page's last job, and the limit moves
+// to $5. The same for getDependents.
+export function getDependencies (schema: string, after = false) {
   return `
     SELECT parent_name as "parentName", parent_id as "parentId"
     FROM ${schema}.job_dependency
     WHERE child_name = $1 AND child_id = $2
+      ${after ? 'AND (parent_name, parent_id) > ($3, $4::uuid)' : ''}
+    ORDER BY parent_name, parent_id
+    LIMIT ${after ? '$5' : '$3'}
   `
 }
 
-export function getDependents (schema: string) {
+export function getDependents (schema: string, after = false) {
   return `
     SELECT child_name as "childName", child_id as "childId"
     FROM ${schema}.job_dependency
     WHERE parent_name = $1 AND parent_id = $2
+      ${after ? 'AND (child_name, child_id) > ($3, $4::uuid)' : ''}
+    ORDER BY child_name, child_id
+    LIMIT ${after ? '$5' : '$3'}
   `
 }
 
-export function cleanupDependencies (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
+export const DEPENDENCY_CLEANUP_BATCH_SIZE = 10000
+
+// One batch of the dependency cleanup for one queue and one side of the dependency: deletes the
+// rows among the next `batchSize` whose job on that side no longer exists. A row is orphaned when
+// either job is gone, so each queue is walked twice, once by child (over the primary key) and once
+// by parent (over job_dep_parent_idx). Walked like the retention sweep and for the same reason (see
+// deletion): the anti-join probes every row, so a single statement's cost grows with the table
+// whether or not anything is orphaned.
+export function cleanupDependencies (schema: string, table: string, name: string, side: 'child' | 'parent', options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean } = {}): string {
+  const { after, batchSize = DEPENDENCY_CLEANUP_BATCH_SIZE, noAdvisoryLocks } = options
+  const queue = `'${name.replace(SINGLE_QUOTE_REGEX, "''")}'`
+  const cursor = after ? `AND ${side}_id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
+
+  const jobCursor = after ? `AND j.id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
+  const edge = `COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)`
+
   const sql = `
-    DELETE FROM ${schema}.job_dependency
-    WHERE (child_name = ANY(${serializeArrayParam(queues)})
-      AND NOT EXISTS (
-        SELECT 1 FROM ${schema}.${table} j
-        WHERE j.name = child_name AND j.id = child_id
-      ))
-    OR (parent_name = ANY(${serializeArrayParam(queues)})
-      AND NOT EXISTS (
-        SELECT 1 FROM ${schema}.${table} j
-        WHERE j.name = parent_name AND j.id = parent_id
-      ))
+    WITH edge AS (
+      SELECT ${side}_id AS id
+      FROM ${schema}.job_dependency
+      WHERE ${side}_name = ${queue} ${cursor}
+      ORDER BY ${side}_id
+      OFFSET ${batchSize - 1}
+      LIMIT 1
+    ),
+    removed AS (
+      DELETE FROM ${schema}.job_dependency d
+      WHERE ${side}_name = ${queue} ${cursor}
+        AND ${side}_id <= ${edge}
+        AND NOT EXISTS (
+          SELECT 1 FROM ${schema}.${table} j
+          WHERE j.name = ${queue} ${jobCursor}
+            AND j.id <= ${edge}
+            AND j.id = d.${side}_id
+        )
+      RETURNING 1
+    )
+    SELECT
+      (SELECT id FROM edge) AS "walkCursor",
+      (SELECT count(*) FROM removed)::int AS deleted
   `
 
   return locked(schema, sql, table + 'cleanupDependencies', noAdvisoryLocks)
 }
 
-export function getBlockedKeys (schema: string, table: string) {
+// Whether the row a list read's `after` names still exists, asked only when a page comes back empty,
+// to tell the end of the list from a row deleted between pages. $1 and $2 are the queue and job id.
+export function jobExists (schema: string, table: string) {
+  return `SELECT 1 FROM ${schema}.${table} WHERE name = $1 AND id = $2::uuid`
+}
+
+// With `after`, $2 is the last key of the previous page and the limit moves to $3.
+export function getBlockedKeys (schema: string, table: string, after = false) {
   return `
     SELECT DISTINCT singleton_key as "singletonKey"
     FROM ${schema}.${table}
     WHERE name = $1
       AND state = '${JOB_STATES.failed}'
       AND policy = '${QUEUE_POLICIES.key_strict_fifo}'
+      ${after ? 'AND singleton_key > $2' : ''}
+    ORDER BY "singletonKey"
+    LIMIT ${after ? '$3' : '$2'}
     `
 }
 
@@ -4877,16 +5285,26 @@ export function getBamStatus (schema: string) {
     SELECT status, count(*)::int as count, max(created_on) as "lastCreatedOn"
     FROM ${schema}.bam
     GROUP BY status
+    ORDER BY status
   `
 }
 
-export function getBamEntries (schema: string) {
+// With `after`, $1 is the previous page's last entry id, whose version and created_on are read back
+// from its row, and the limit moves to $2.
+export function getBamEntries (schema: string, after = false) {
+  const anchor = (column: string) => `(SELECT ${column} FROM ${schema}.bam WHERE id = $1::uuid)`
   return `
     SELECT id, name, version, status, queue, table_name as "table", command, error,
            created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
     FROM ${schema}.bam
-    ORDER BY version, created_on
+    ${after ? `WHERE (version, created_on, id) > (${anchor('version')}, ${anchor('created_on')}, $1::uuid)` : ''}
+    ORDER BY version, created_on, id
+    LIMIT ${after ? '$2' : '$1'}
   `
+}
+
+export function bamEntryExists (schema: string) {
+  return `SELECT 1 FROM ${schema}.bam WHERE id = $1::uuid`
 }
 
 // --- drift detection: live-catalog probes ---

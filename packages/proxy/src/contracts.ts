@@ -115,24 +115,23 @@ export const findJobsOptionsSchema = z.object({
   data: jsonRecordSchema.optional(),
   queued: z.boolean().optional(),
   limit: z.number().optional(),
+  after: z.string().optional(),
 }) satisfies z.ZodType<types.HttpFindJobsOptions>
 
-// Shared by redrive and previewRedrive, which take the same filter. createdBefore travels as an
-// ISO string and becomes the Date the option type expects.
+// Shared by redrive and previewRedrive, which take the same filter and a limit. createdBefore
+// travels as an ISO string and becomes the Date the option type expects.
 const redriveFilterShape = {
   destination: queueNameSchema.optional(),
   sourceName: queueNameSchema.optional(),
   data: jsonRecordSchema.optional(),
   createdBefore: z.iso.datetime().transform((val) => new Date(val)).optional(),
   ids: z.array(z.string()).optional(),
+  limit: z.number().optional(),
 }
 
-export const redriveFilterSchema = z.object(redriveFilterShape) satisfies z.ZodType<types.HttpRedriveFilter>
+export const redriveOptionsSchema = z.object(redriveFilterShape) satisfies z.ZodType<types.HttpRedriveOptions>
 
-export const redriveOptionsSchema = z.object({
-  ...redriveFilterShape,
-  limit: z.number().optional(),
-}) satisfies z.ZodType<types.HttpRedriveOptions>
+export const redrivePreviewOptionsSchema = z.object(redriveFilterShape) satisfies z.ZodType<types.HttpRedrivePreviewOptions>
 
 export const insertOptionsSchema = z.object({
   returnId: z.boolean().optional(),
@@ -517,7 +516,7 @@ export const redriveResponseSchema: z.ZodType<types.HttpRedriveResponse> = z.obj
 
 export const previewRedriveRequestSchema: z.ZodType<types.HttpPreviewRedriveRequest> = z.object({
   name: queueNameSchema,
-  options: redriveFilterSchema.optional()
+  options: redrivePreviewOptionsSchema.optional()
 })
 
 export const previewRedriveResponseSchema: z.ZodType<types.HttpPreviewRedriveResponse> = z.object({
@@ -535,7 +534,7 @@ export const deleteQueuedJobsRequestSchema: z.ZodType<types.HttpDeleteQueuedJobs
 
 export const deleteQueuedJobsResponseSchema: z.ZodType<types.HttpDeleteQueuedJobsResponse> = z.object({
   ok: z.literal(true),
-  result: z.null()
+  result: z.number()
 })
 
 export const deleteStoredJobsRequestSchema: z.ZodType<types.HttpDeleteStoredJobsRequest> = z.object({
@@ -544,7 +543,7 @@ export const deleteStoredJobsRequestSchema: z.ZodType<types.HttpDeleteStoredJobs
 
 export const deleteStoredJobsResponseSchema: z.ZodType<types.HttpDeleteStoredJobsResponse> = z.object({
   ok: z.literal(true),
-  result: z.null()
+  result: z.number()
 })
 
 export const deleteAllJobsRequestSchema: z.ZodType<types.HttpDeleteAllJobsRequest> = z.object({
@@ -553,7 +552,7 @@ export const deleteAllJobsRequestSchema: z.ZodType<types.HttpDeleteAllJobsReques
 
 export const deleteAllJobsResponseSchema: z.ZodType<types.HttpDeleteAllJobsResponse> = z.object({
   ok: z.literal(true),
-  result: z.null()
+  result: z.number().nullable()
 })
 
 export const completeRequestSchema: z.ZodType<types.HttpCompleteRequest> = z.object({

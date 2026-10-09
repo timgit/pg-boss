@@ -264,6 +264,10 @@ export interface QueueStats {
   readyCount: number;
   activeCount: number;
   failedCount: number;
+  /**
+   * All jobs stored for the queue.
+   * @see https://pgboss.io/api/queues#getqueues-names
+   */
   totalCount: number;
   /**
    * Jobs completed in the window since the previous monitor pass. Null when `persistQueueStats` is
@@ -653,6 +657,10 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__delay_maint_ms?: number;
   /** @internal */
+  __test__walk_batch_size?: number;
+  /** @internal */
+  __test__expiry_batch_size?: number;
+  /** @internal */
   __test__delay_bam_ms?: number;
   /** @internal */
   __test__delay_bam_claim_ms?: number;
@@ -840,21 +848,38 @@ export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
 
+export interface ListOptions<After = string> {
+  /**
+   * Most rows to return, from 1 to 100,000. Defaults to 1000.
+   */
+  limit?: number;
+  /**
+   * Continue after this row, the last one of the previous page: a name, key or id, or the row itself
+   * for schedules and dependencies.
+   */
+  after?: After;
+}
+
 export interface FindJobsOptions extends ConnectionOptions {
   id?: string;
   key?: string;
   data?: object;
   queued?: boolean;
   /**
-   * Most jobs to return. Which matching jobs a limited call returns is unspecified. No limit by default.
+   * Most jobs to return, oldest first, from 1 to 100,000. Defaults to 1000.
    * @see https://pgboss.io/api/jobs#findjobs-name-options
    */
   limit?: number;
+  /**
+   * Continue after this job id, the last one of the previous page. Rejects if that job no longer exists.
+   * @see https://pgboss.io/api/jobs#findjobs-name-options
+   */
+  after?: string;
 }
 
 /**
  * Which dead-lettered jobs a redrive is about, and where they go. Shared by
- * `redrive()` and `previewRedrive()`, so a preview counts exactly what the
+ * `redrive()` and `previewRedrive()`, so a preview matches exactly what the
  * redrive would move.
  */
 export interface RedriveFilter extends ConnectionOptions {
@@ -889,14 +914,23 @@ export interface RedriveOptions extends RedriveFilter {
   limit?: number;
 }
 
+export interface RedrivePreviewOptions extends RedriveFilter {
+  /**
+   * Most jobs to read of each kind, those a redrive would move and those it would leave in place,
+   * from 1 to 100,000. A count that reaches it means at least that many.
+   * @default 1000
+   */
+  limit?: number;
+}
+
 export interface RedrivePreview {
-  /** Every job the filter matches, routable or not. */
+  /** Every matching job read, routable or not. */
   total: number;
-  /** Where the routable jobs would go, most first. */
+  /** Where the routable jobs read would go, most first. */
   destinations: { name: string; count: number }[];
   /**
-   * Matching jobs a redrive would leave in place: no recorded source queue and no `destination`,
-   * or a source queue that no longer exists.
+   * Matching jobs read that a redrive would leave in place: no recorded source queue and no
+   * `destination`, or a source queue that no longer exists.
    */
   unroutable: number;
 }
@@ -1039,6 +1073,10 @@ export interface QueueResult extends Queue {
    * so this is a rolling count of recent failures, not an all-time total.
    */
   failedCount: number;
+  /**
+   * All jobs stored for the queue.
+   * @see https://pgboss.io/api/queues#getqueues-names
+   */
   totalCount: number
   /**
    * Jobs completed in the window the latest counted monitor pass covered. Zero until an instance
@@ -1601,7 +1639,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry' | 'handler_overrun'
 
 export interface PersistedWarning {
   id: number;

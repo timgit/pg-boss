@@ -181,6 +181,8 @@ Deletes a queue and all jobs.
 await boss.deleteQueue('email-send')
 ```
 
+A queue in the shared job table has its jobs deleted in batches first, as [`deleteAllJobs()`](./jobs.md#deletealljobs-name) does, and then the queue itself. If it fails partway, the jobs already deleted stay deleted and the queue remains.
+
 A queue created with `partition: true` has its own table, and dropping it needs brief exclusive locks on the job tables. `deleteQueue()` takes them without waiting, so it never deadlocks with work in flight: while they are busy it tries again, for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue as it was.
 
 Other instances find out on their next write to it: `send()`, `insert()`, `upsert()` and `flow()` reject with `Queue <name> does not exist`, as for a queue that was never created, and a job naming it as its `deadLetter` rejects with `Dead letter queue <name> does not exist`.
@@ -191,10 +193,13 @@ A queue deleted and created again elsewhere with a different `partition` setting
 
 ### `getQueues(names?)`
 
-Returns all queues, or only the named queues when an array of names is provided.
+Returns all queues, or only the named queues when an array of names is provided, sorted by name. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last queue's name as `options.after` to read the next page.
 
 ```js
 const queues = await boss.getQueues(['email-send'])
+
+// The first 50 queues by name
+const first = await boss.getQueues(undefined, { limit: 50 })
 ```
 
 Each queue is a `QueueResult`:
@@ -241,15 +246,17 @@ The settings, `policy` through `notify`, are the options described under [`creat
 
 **Counts**
 
-As counted by a monitor pass, which runs every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
+Each monitor pass updates the counts, every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
 
-* `queuedCount`: jobs waiting to run, **including** deferred jobs and jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
-* `deferredCount`: queued jobs scheduled to start in the future (`startAfter` not yet reached), leaving out blocked jobs
-* `blockedCount`: queued jobs waiting on a flow parent, whatever their `startAfter` (`getQueues()` and `getQueue()` only)
-* `readyCount`: queued jobs ready to be processed now, neither deferred nor blocked; the true runnable backlog
+* `queuedCount`: jobs waiting to run. The queue backlog warning is based on it
+* `deferredCount`: queued jobs whose `startAfter` is in the future
+* `blockedCount`: queued jobs waiting on a [`flow()`](./jobs.md#flow-jobs-options) parent (`getQueues()` and `getQueue()` only)
+* `readyCount`: queued jobs that can run now
 * `activeCount`: jobs currently being processed
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
 * `totalCount`: all jobs currently stored for the queue
+
+`totalCount` is the jobs the monitor pass counts as waiting, active or failed, plus the completed and cancelled jobs the maintenance pass counts as it walks the queue. Each monitor pass adds the jobs that finished since, so the total stays current between maintenance passes. A job completed in a transaction that commits more than 10 seconds after it began can be left out until the next maintenance pass. Until a queue's first maintenance pass after upgrading to 12.38, `totalCount` keeps the count it had before the upgrade, or the live jobs if there are more.
 
 **Monitor pass fields**
 
@@ -414,7 +421,7 @@ const series = await boss.getQueueStats('email-send', {
 
 ### `getBlockedKeys(name)`
 
-Returns an array of `singletonKey` values that are currently blocked due to failed jobs. This is only available for queues with the `key_strict_fifo` policy.
+Returns an array of `singletonKey` values that are currently blocked due to failed jobs, sorted. This is only available for queues with the `key_strict_fifo` policy. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last key as `options.after` to read the next page.
 
 ```js
 const blockedKeys = await boss.getBlockedKeys('my-queue')

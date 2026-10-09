@@ -319,10 +319,14 @@ class Boss extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    const sql = this.#config.noTablePartitioning
-      ? plans.deleteOldQueueStats(this.#config.schema, this.#config.queueStatRetentionDays)
-      : plans.dropOldQueueStatsPartitions(this.#config.schema, this.#config.queueStatRetentionDays)
-    await this.#executeQuery(sql)
+    const { schema, queueStatRetentionDays: days } = this.#config
+
+    if (this.#config.noTablePartitioning) {
+      const batchSize = this.#config.__test__walk_batch_size
+      await this.#walk((after) => plans.deleteOldQueueStats(schema, days, { after, batchSize }))
+    } else {
+      await this.#executeQuery(plans.dropOldQueueStatsPartitions(schema, days))
+    }
   }
 
   // Waits for a pass in flight rather than skipping like #onSupervise, since the caller asked for
@@ -503,22 +507,32 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       // CockroachDB rejects the multi-mutation failJobs() CTE these use, so under noMultiMutationCte
       // route expiry through the manager's split select/delete/re-insert variants instead.
-      if (this.#config.noMultiMutationCte) {
-        await this.#manager.failJobsByTimeoutDistributed(table, queues)
-      } else {
-        const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(sql)
-      }
+      const limit = this.#config.__test__expiry_batch_size ?? plans.EXPIRY_BATCH_SIZE
+
+      await this.#repeatWhileFull(limit, () => this.#config.noMultiMutationCte
+        ? this.#manager.failJobsByTimeoutDistributed(table, queues, limit)
+        : this.#expiryBatch(plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
 
       if (this.#stopping) return
 
-      if (this.#config.noMultiMutationCte) {
-        await this.#manager.failJobsByHeartbeatDistributed(table, queues)
-      } else {
-        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(heartbeatSql)
-      }
+      await this.#repeatWhileFull(limit, () => this.#config.noMultiMutationCte
+        ? this.#manager.failJobsByHeartbeatDistributed(table, queues, limit)
+        : this.#expiryBatch(plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
     }
+  }
+
+  // Runs a maintenance sweep a batch at a time until a batch picks fewer than `limit` rows. A stop
+  // between batches leaves the rest for the next pass.
+  async #repeatWhileFull (limit: number, batch: () => Promise<number>) {
+    while (!this.#stopping) {
+      if (await batch() < limit) return
+    }
+  }
+
+  // CockroachDB returns the count as a string.
+  async #expiryBatch (sql: string): Promise<number> {
+    const { rows } = await this.#executeQuery(sql)
+    return Number(rows.find((row) => row.expiryPicked !== undefined)?.expiryPicked ?? 0)
   }
 
   async #maintain (table: string, names: string[]) {
@@ -536,12 +550,50 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)
-      const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeQuery(sql)
 
-      const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeQuery(depSql)
+      const { schema, noAdvisoryLocks } = this.#config
+      const batchSize = this.#config.__test__walk_batch_size
+
+      for (const name of queues) {
+        // The walk counts the completed and cancelled jobs that finished by DELTA_LAG before it
+        // started, so a completion committed late is still ahead of the watermark, and the monitor
+        // counts the rest after that (see plans.createTableQueue).
+        const { rows: [{ time }] } = await this.#executeQuery(plans.getTime(schema))
+        const retainedBefore = Number(time) - plans.DELTA_LAG_SECONDS * 1000
+        const retention = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, noAdvisoryLocks, retainedBefore }))
+
+        // Only a walk that covered the whole queue has counted all of what it kept.
+        if (retention.done) {
+          await this.#executeQuery({ text: plans.setRetainedCount(schema, table), values: [name, retention.retained, retainedBefore] })
+        }
+
+        await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'child', { after, batchSize, noAdvisoryLocks }))
+        await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'parent', { after, batchSize, noAdvisoryLocks }))
+        if (this.#stopping) return
+      }
     }
+  }
+
+  // Walks one queue's keys a batch at a time (see plans.deletion), carrying each batch's cursor into
+  // the next until a batch comes back without one. A stop between batches leaves the rest for the
+  // next pass, and says so with done: false. retained totals the batches' "retained", where they
+  // count it. CockroachDB returns counts as strings.
+  async #walk (batch: (after?: string) => string): Promise<{ done: boolean, retained: number }> {
+    let after: string | undefined
+    let retained = 0
+
+    while (!this.#stopping) {
+      const { rows } = await this.#executeQuery(batch(after))
+      const row = rows.find((row) => row.walkCursor !== undefined)
+
+      retained += Number(row?.retained ?? 0)
+
+      if (!row?.walkCursor) return { done: true, retained }
+
+      after = row.walkCursor
+    }
+
+    return { done: false, retained }
   }
 
   /**

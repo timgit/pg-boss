@@ -52,6 +52,10 @@ Do not write a test per migration. `test/migrationTest.ts` rolls back the newest
 - VitePress slugs headings its own way: `fetch(name, options)` becomes `#fetch-name-options`. `npm run docs:anchors` checks every anchor link in `docs/` and every `pgboss.io` link in `src/`, and CI runs it. Add `-- --fix` to rewrite a broken anchor that has a single matching heading.
 - Write separate sentences instead of em or en dashes.
 
+## Branches
+
+Name a branch `<type>/<topic>`, with the commit prefix as the type and a few words that say what changes, like `chore/dashboard-proxy-pg-boss-12.37.1` or `fix/schedule-dst-skip`. No generated names. Keep one concern per branch.
+
 ## Commits
 
 One line, with the conventional-commit prefix the history uses (`feat:`, `fix(schedule):`, `docs:`, `test:`, `ci:`). No body and no trailers. If it does not fit on one line, split the commit.

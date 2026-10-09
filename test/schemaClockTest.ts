@@ -15,7 +15,7 @@ describe('schema clock', function () {
       fetchNextJob: plans.fetchNextJob({ schema, table: 'job', name: 'q', policy: 'standard', limit: 1, includeMetadata: false } as any).text,
       failJobsByTimeout: plans.failJobsByTimeout(schema, 'job', ['q']),
       failJobsByHeartbeat: plans.failJobsByHeartbeat(schema, 'job', ['q']),
-      deletion: plans.deletion(schema, 'job', ['q']),
+      deletion: plans.deletion(schema, 'job', 'q'),
       retryJobs: plans.retryJobs(schema, 'job'),
       trySetCronTime: plans.trySetCronTime(schema, 60),
       schedule: plans.schedule(schema),

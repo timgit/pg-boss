@@ -577,22 +577,34 @@ describe('queueStatsHistory', function () {
       backend: 'cockroachdb',
       persistQueueStats: true,
       queueStatRetentionDays: 7,
-      noDefault: true
+      noDefault: true,
+      __test__walk_batch_size: 2
     })
 
+    // More old rows than one batch holds, among rows inside the retention.
     const db = await helper.getDb()
     await db.executeSql(
-      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) VALUES ($1, now() - interval '10 days')`, [q])
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) SELECT $1, now() - interval '10 days' FROM generate_series(1, 5)`, [q])
+    await db.executeSql(
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) SELECT $1, now() - interval '1 day' FROM generate_series(1, 2)`, [q])
     await db.close()
 
     // supervise() runs retention in its tail; with no queues it goes straight there
     await ctx.boss.supervise()
 
     const db2 = await helper.getDb()
-    const { rows } = await db2.executeSql(
-      `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])
+    const count = async () => (await db2.executeSql(
+      `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])).rows[0].c
+
+    expect(await count()).toBe(2)
+
+    // queue_stats_i2 keeps it to the rows past retention, so it runs on every pass.
+    await db2.executeSql(
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) VALUES ($1, now() - interval '10 days')`, [q])
+    await ctx.boss.supervise()
+    expect(await count()).toBe(2)
+
     await db2.close()
-    expect(rows[0].c).toBe(0)
   })
 
   it('rejects an unknown queue (persistQueueStats off)', async function () {

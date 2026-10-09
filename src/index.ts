@@ -530,19 +530,19 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.redrive(name, options)
   }
 
-  previewRedrive (name: string, options?: types.RedriveFilter): Promise<types.RedrivePreview> {
+  previewRedrive (name: string, options?: types.RedrivePreviewOptions): Promise<types.RedrivePreview> {
     return this.#manager.previewRedrive(name, options)
   }
 
-  deleteQueuedJobs (name: string): Promise<void> {
+  deleteQueuedJobs (name: string): Promise<number> {
     return this.#manager.deleteQueuedJobs(name)
   }
 
-  deleteStoredJobs (name: string): Promise<void> {
+  deleteStoredJobs (name: string): Promise<number> {
     return this.#manager.deleteStoredJobs(name)
   }
 
-  deleteAllJobs (name?: string): Promise<void> {
+  deleteAllJobs (name?: string): Promise<number | null> {
     return this.#manager.deleteAllJobs(name)
   }
 
@@ -573,15 +573,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.createQueue(name, options)
   }
 
-  getBlockedKeys (name: string): Promise<string[]> {
-    return this.#manager.getBlockedKeys(name)
+  getBlockedKeys (name: string, options?: types.ListOptions): Promise<string[]> {
+    return this.#manager.getBlockedKeys(name, options)
   }
 
-  getDependencies (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+  getDependencies (name: string, id: string, options?: types.ConnectionOptions & types.ListOptions<types.DependencyRef>): Promise<types.DependencyRef[]> {
     return this.#manager.getDependencies(name, id, options)
   }
 
-  getDependents (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+  getDependents (name: string, id: string, options?: types.ConnectionOptions & types.ListOptions<types.DependencyRef>): Promise<types.DependencyRef[]> {
     return this.#manager.getDependents(name, id, options)
   }
 
@@ -593,8 +593,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.deleteQueue(name)
   }
 
-  getQueues (names?: string[]): Promise<types.QueueResult[]> {
-    return this.#manager.getQueues(names)
+  async getQueues (names?: string[], options?: types.ListOptions): Promise<types.QueueResult[]> {
+    const limit = Attorney.assertListLimit('getQueues', options?.limit)
+    Attorney.assertListAfter('getQueues', options?.after)
+    return this.#manager.getQueues(names, limit, options?.after)
   }
 
   getQueue (name: string): Promise<types.QueueResult | null> {
@@ -605,8 +607,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.getQueueStats(name, options)
   }
 
-  getInstances (): Promise<types.Instance[]> {
-    return this.#registrar.getInstances()
+  async getInstances (options?: types.ListOptions): Promise<types.Instance[]> {
+    const limit = Attorney.assertListLimit('getInstances', options?.limit)
+    Attorney.assertListAfter('getInstances', options?.after)
+    return this.#registrar.getInstances(limit, options?.after)
   }
 
   isMaintaining (): boolean {
@@ -689,8 +693,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.unschedule(name, key, options)
   }
 
-  getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
-    return this.#timekeeper.getSchedules(name, key)
+  async getSchedules (name?: string, key?: string, options?: types.ListOptions<Pick<types.Schedule, 'name' | 'key'>>): Promise<types.Schedule[]> {
+    const limit = Attorney.assertListLimit('getSchedules', options?.limit)
+    Attorney.assertListAfterRow('getSchedules', options?.after, ['name', 'key'])
+    return this.#timekeeper.getSchedules(name, key, limit, options?.after)
   }
 
   getSchedule (name: string, key?: string): Promise<types.Schedule | null> {
@@ -707,9 +713,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return rows
   }
 
-  async getBamEntries (): Promise<types.BamEntry[]> {
-    const sql = plans.getBamEntries(this.#config.schema)
-    const { rows } = await this.#db.executeSql(sql)
+  async getBamEntries (options?: types.ListOptions): Promise<types.BamEntry[]> {
+    const limit = Attorney.assertListLimit('getBamEntries', options?.limit)
+    const after = options?.after
+    Attorney.assertListAfter('getBamEntries', after)
+    const sql = plans.getBamEntries(this.#config.schema, after !== undefined)
+    const { rows } = await this.#db.executeSql(sql, after !== undefined ? [after, limit] : [limit])
+
+    if (after !== undefined && rows.length === 0) {
+      const { rows: found } = await this.#db.executeSql(plans.bamEntryExists(this.#config.schema), [after])
+      assert(found.length > 0, 'getBamEntries: after names a row that no longer exists')
+    }
+
     return rows
   }
 
@@ -796,6 +811,7 @@ export type {
   RedriveFilter,
   RedriveOptions,
   RedrivePreview,
+  RedrivePreviewOptions,
   ReindexOptions,
   Request,
   Schedule,

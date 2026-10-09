@@ -754,6 +754,23 @@ describe('failure', function () {
       })
     })
 
+    it('previews by reading at most limit jobs of each kind, never counting them all', async function () {
+      const { deadLetter, queueA } = await setup()
+      await deadLetterAll(queueA, deadLetter, [{ n: 1 }, { n: 2 }, { n: 3 }])
+      await ctx.boss!.send(deadLetter, { n: 4 })
+      await ctx.boss!.send(deadLetter, { n: 5 })
+
+      // Each kind stops at the limit, so a count that reaches it means at least that many.
+      expect(await ctx.boss!.previewRedrive(deadLetter, { limit: 2 })).toEqual({
+        total: 4,
+        destinations: [{ name: queueA, count: 2 }],
+        unroutable: 2
+      })
+      for (const limit of [0, 1.5, 100_001]) {
+        await expect(ctx.boss!.previewRedrive(deadLetter, { limit })).rejects.toThrow('previewRedrive: limit must be an integer between 1 and 100000')
+      }
+    })
+
     it('rejects filters that would silently match nothing or everything', async function () {
       const { deadLetter } = await setup()
       await expect(ctx.boss!.redrive(deadLetter, { ids: [] })).rejects.toThrow('ids must be a non-empty array of strings')

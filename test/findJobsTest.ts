@@ -193,8 +193,29 @@ describe('findJobs', function () {
   it('should reject a limit that is not a positive integer', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    await expect(ctx.boss.findJobs(ctx.schema, { limit: 0 })).rejects.toThrow('limit must be an integer >= 1')
-    await expect(ctx.boss.findJobs(ctx.schema, { limit: 1.5 })).rejects.toThrow('limit must be an integer >= 1')
+    for (const limit of [0, 1.5, 100_001]) {
+      await expect(ctx.boss.findJobs(ctx.schema, { limit })).rejects.toThrow('findJobs: limit must be an integer between 1 and 100000')
+    }
+  })
+
+  it('should return at most 1000 jobs by default', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.insert(ctx.schema, Array.from({ length: 1001 }, (_, i) => ({ data: { i } })))
+
+    expect((await ctx.boss.findJobs(ctx.schema)).length).toBe(1000)
+  })
+
+  it('should return jobs oldest first, so a limit takes the oldest', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const ids: string[] = []
+    for (let i = 0; i < 3; i++) {
+      ids.push((await ctx.boss.send(ctx.schema, { i }))!)
+    }
+
+    expect((await ctx.boss.findJobs(ctx.schema)).map(j => j.id)).toEqual(ids)
+    expect((await ctx.boss.findJobs(ctx.schema, { limit: 2 })).map(j => j.id)).toEqual(ids.slice(0, 2))
   })
 
   it('should combine all filters together', async function () {

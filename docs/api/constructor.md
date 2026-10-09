@@ -188,11 +188,15 @@ Int, default 1 day
 
 How often maintenance will be run against queue tables to drop queued and completed jobs.
 
+Maintenance deletes expired jobs, and the flow dependencies they leave behind, in batches, each in its own transaction, so a large backlog never becomes one long transaction.
+
 ### `monitorIntervalSeconds`
 
 Int, default 60 seconds
 
 How often each queue is monitored for backlogs, expired jobs, and calculating stats.
+
+Jobs past their expiration or heartbeat are failed in batches too, so a fleet that stopped with many jobs active recovers in short transactions.
 
 ### `queueCacheIntervalSeconds`
 
@@ -297,13 +301,13 @@ Bool, default false
 
 If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
-Each monitor pass then also counts the jobs created and finished since the previous pass, and records the wait and run times of the finished ones, in the same read of the job table. The wait and run times cost more the more jobs finished since the previous pass, whatever the size of the table. Measured on one queue on PostgreSQL 18, they added about 0.4 s to a 2.4 s pass with 100,000 finished jobs, and about 1.1 s to a 3.7 s pass with 1,000,000, with about 9 MB of memory per million finished jobs held for the length of the pass. On CockroachDB they added about 0.7 s with 100,000.
-
 ### `queueStatRetentionDays`
 
 Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
+
+With table partitioning, old days are dropped as whole partitions on each supervise pass. Without it (`noTablePartitioning`, as on CockroachDB), old rows are deleted in batches on each supervise pass, oldest first, through an index on the capture time.
 
 ### `registerInstance`
 

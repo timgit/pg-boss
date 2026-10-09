@@ -638,12 +638,18 @@ do {
 ### `previewRedrive(name, options)`
 
 Reports what [`redrive()`](#redrive-name-options) would do with the same options,
-without moving anything. Takes every `redrive()` option except `limit`, and uses the
-same matching, so the numbers agree with what a redrive would move at that moment.
+without moving anything. Takes every `redrive()` filter, and uses the same matching,
+so the numbers agree with what a redrive would move at that moment.
 
-Returns `{ total, destinations, unroutable }`:
+It reads at most `limit` matching jobs of each kind rather than counting them all:
 
-- `total`: every job the filter matches.
+- `limit`: most jobs to read of each kind, those a redrive would move and those it
+  would leave in place, from 1 to 100,000 (default `1000`). A count that reaches it
+  means at least that many.
+
+Returns `{ total, destinations, unroutable }`, each counting the jobs read:
+
+- `total`: the matching jobs read, routable or not.
 - `destinations`: `{ name, count }` for each queue the matching jobs would land in,
   largest first. Without `destination` this is the fan-out back to each source queue.
 - `unroutable`: matching jobs a redrive would leave in place, because they have no
@@ -662,7 +668,11 @@ const { total, destinations, unroutable } = await boss.previewRedrive('email-dlq
 
 ### `deleteQueuedJobs(name)`
 
-Deletes all queued jobs in a queue.
+Deletes all queued jobs in a queue, and resolves to how many it deleted.
+
+Jobs are deleted in batches, each in its own transaction, so the delete is not atomic: if it fails
+partway, the batches before the failure stay deleted, and a job sent while it runs may or may not
+be deleted.
 
 ```js
 await boss.deleteQueuedJobs('email-send')
@@ -670,7 +680,8 @@ await boss.deleteQueuedJobs('email-send')
 
 ### `deleteStoredJobs(name)`
 
-Deletes all jobs in completed, failed, and cancelled state in a queue.
+Deletes all jobs in completed, failed, and cancelled state in a queue, and resolves to how many
+it deleted. Deletes in batches, as `deleteQueuedJobs()` does.
 
 ```js
 await boss.deleteStoredJobs('email-send')
@@ -682,7 +693,7 @@ Deletes all jobs in a queue, including active jobs.
 
 If no queue name is given, jobs are deleted from all queues.
 
-A partitioned queue, or every queue when no name is given, is emptied with `TRUNCATE`, and its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, the cached counts catch up at the next monitor pass.
+Resolves to how many jobs it deleted, deleting in batches as `deleteQueuedJobs()` does. A partitioned queue, or every queue when no name is given, is emptied with a single `TRUNCATE` instead, which reports no count, so it resolves to `null`; its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, `totalCount` drops by the jobs deleted at once, and the other cached counts catch up at the next monitor pass.
 
 ```js
 // delete everything in one queue
@@ -741,7 +752,7 @@ await boss.retry('email-send', jobId)
 Retries a set of failed jobs.
 
 ```js
-// requeue all failed jobs for another attempt
+// requeue failed jobs for another attempt
 const failed = await boss.findJobs('email-send')
 const ids = failed.filter(job => job.state === 'failed').map(job => job.id)
 
@@ -881,7 +892,7 @@ Retrieves a job with all metadata by name and id
 
 ### `findJobs(name, options)`
 
-Finds jobs in a queue by id, singleton key, and/or data. Returns an array of jobs with all metadata.
+Finds jobs in a queue by id, singleton key, and/or data. Returns an array of jobs with all metadata, oldest first.
 
 **Arguments**
 - `name`: string, *required*
@@ -905,11 +916,14 @@ Finds jobs in a queue by id, singleton key, and/or data. Returns an array of job
 
   If `true`, only return jobs in queued state (created or retry). If `false`, return jobs in any state.
 
-* **limit**, int, *default: no limit*
+* **limit**, int, *default: 1000*
 
-  Most jobs to return. Without it, a call with no other filter returns every job in the queue,
-  and its cost grows with the queue. The results are not sorted, so which of the matching jobs a
-  limited call returns is unspecified, and the next call does not continue where it stopped.
+  Most jobs to return, from 1 to 100,000.
+
+* **after**, string
+
+  The id of the last job of the previous page, to read the next one. Rejects if that job no
+  longer exists.
 
 * **db**, object, see notes in `send()`
 
@@ -931,6 +945,14 @@ const jobs = await boss.findJobs('my-queue', { key: 'user-123', queued: true })
 // At most 100 jobs from a large queue
 const jobs = await boss.findJobs('my-queue', { data: { type: 'email' }, limit: 100 })
 
+// Every job, 500 at a time
+let after
+for (;;) {
+  const page = await boss.findJobs('my-queue', { limit: 500, after })
+  if (page.length === 0) break
+  after = page.at(-1).id
+}
+
 // Combine filters
 const jobs = await boss.findJobs('my-queue', {
   key: 'user-123',
@@ -943,7 +965,7 @@ const jobs = await boss.findJobs('my-queue', {
 
 ### `getDependencies(name, id, options)`
 
-Returns an array of parent job references that the specified job depends on.
+Returns an array of parent job references that the specified job depends on, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last reference as `options.after` to read the next page.
 
 ```js
 const parents = await boss.getDependencies('aggregate-results', jobId)
@@ -952,7 +974,7 @@ const parents = await boss.getDependencies('aggregate-results', jobId)
 
 ### `getDependents(name, id, options)`
 
-Returns an array of child job references that depend on the specified job.
+Returns an array of child job references that depend on the specified job, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last reference as `options.after` to read the next page.
 
 ```js
 const children = await boss.getDependents('process-data', parentJobId)
