@@ -641,8 +641,7 @@ Reports what [`redrive()`](#redrive-name-options) would do with the same options
 without moving anything. Takes every `redrive()` filter, and uses the same matching,
 so the numbers agree with what a redrive would move at that moment.
 
-It reads matching jobs rather than counting them, so it costs the same however large
-the dead letter queue has grown:
+It reads at most `limit` matching jobs of each kind rather than counting them all:
 
 - `limit`: most jobs to read of each kind, those a redrive would move and those it
   would leave in place (default `1000`). A count that reaches it means at least that
@@ -671,9 +670,9 @@ const { total, destinations, unroutable } = await boss.previewRedrive('email-dlq
 
 Deletes all queued jobs in a queue, and resolves to how many it deleted.
 
-The queue is deleted 10,000 jobs at a time, each batch in its own transaction, so a large queue
-never becomes one long transaction. The delete is therefore not atomic: if it fails partway, the
-batches before the failure stay deleted, and a job sent while it runs may or may not be deleted.
+Jobs are deleted in batches, each in its own transaction, so the delete is not atomic: if it fails
+partway, the batches before the failure stay deleted, and a job sent while it runs may or may not
+be deleted.
 
 ```js
 await boss.deleteQueuedJobs('email-send')

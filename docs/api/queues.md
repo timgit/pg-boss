@@ -181,7 +181,7 @@ Deletes a queue and all jobs.
 await boss.deleteQueue('email-send')
 ```
 
-A queue in the shared job table has its jobs deleted 10,000 at a time first, as [`deleteAllJobs()`](./jobs.md#deletealljobs-name) does, and then the queue itself. If it fails partway, the jobs already deleted stay deleted and the queue remains.
+A queue in the shared job table has its jobs deleted in batches first, as [`deleteAllJobs()`](./jobs.md#deletealljobs-name) does, and then the queue itself. If it fails partway, the jobs already deleted stay deleted and the queue remains.
 
 A queue created with `partition: true` has its own table, and dropping it needs brief exclusive locks on the job tables. `deleteQueue()` takes them without waiting, so it never deadlocks with work in flight: while they are busy it tries again, for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue as it was.
 
@@ -245,7 +245,7 @@ The settings, `policy` through `notify`, are the options described under [`creat
 
 As counted by a monitor pass, which runs every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
 
-A monitor pass counts each figure through an index that holds only the jobs it needs, so its cost follows the queue's backlog, active and failed jobs, and what finished since the last pass, rather than every job the queue retains. Completed and cancelled jobs, usually most of a queue, are counted once per [`maintenanceIntervalSeconds`](./constructor.md#maintenanceintervalseconds) as the maintenance pass deletes the expired ones, and each monitor pass adds the ones that finished since. A job removed with [`deleteJob()`](./jobs.md#deletejob-name-id-options), or a cancelled job resumed, leaves `totalCount` at the next maintenance pass. Measured on local PostgreSQL with 50,000 queued jobs, a monitor pass counted them in 27 ms whether the queue retained 1,000,000 or 5,000,000 completed jobs, where counting every job took 410 ms and 3.3 s.
+A monitor pass counts each figure through an index that holds only the jobs it needs, so its cost follows the queue's backlog, active and failed jobs, and what finished since the last pass, rather than every job the queue retains. Completed and cancelled jobs, usually most of a queue, are counted once per [`maintenanceIntervalSeconds`](./constructor.md#maintenanceintervalseconds) as the maintenance pass deletes the expired ones, and each monitor pass adds the ones that finished since. A job removed with [`deleteJob()`](./jobs.md#deletejob-name-id-options), or a cancelled job resumed, leaves `totalCount` at the next maintenance pass.
 
 * `queuedCount`: jobs waiting to run, **including** deferred jobs and jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
 * `deferredCount`: queued jobs scheduled to start in the future (`startAfter` not yet reached), leaving out blocked jobs

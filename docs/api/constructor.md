@@ -188,7 +188,7 @@ Int, default 1 day
 
 How often maintenance will be run against queue tables to drop queued and completed jobs.
 
-Maintenance walks each queue 10,000 jobs at a time, each batch in its own transaction, deleting the expired jobs among them and then the flow dependencies left behind by deleted jobs. However large the backlog, no single transaction holds more than one batch of row locks or holds back vacuum for longer than a batch takes. A full pass reads every job in the queue once, and takes longer in total than a single statement would. Measured on local PostgreSQL, deleting 500,000 expired jobs from a queue of 1,000,000 took 2.8 s in batches against 0.8 s as one statement, and no batch took more than 70 ms.
+Maintenance deletes expired jobs, and the flow dependencies they leave behind, in batches, each in its own transaction, so a large backlog never becomes one long transaction.
 
 ### `monitorIntervalSeconds`
 
@@ -196,7 +196,7 @@ Int, default 60 seconds
 
 How often each queue is monitored for backlogs, expired jobs, and calculating stats.
 
-Jobs past their expiration or heartbeat are failed at most 1,000 per transaction, repeated until none remain, so a fleet that stopped with many jobs active recovers in a series of short transactions rather than one long one.
+Jobs past their expiration or heartbeat are failed in batches too, so a fleet that stopped with many jobs active recovers in short transactions.
 
 ### `queueCacheIntervalSeconds`
 
@@ -301,9 +301,9 @@ Bool, default false
 
 If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
-Each monitor pass then also counts the jobs created and finished since the previous pass, and records the wait and run times of the finished ones. Indexes on the creation and completion times let it read only those jobs, so its cost follows how many jobs moved through the queue since the previous pass, not how many it retains, with about 9 MB of memory per million finished jobs held for the length of the pass. Measured on local PostgreSQL with 10,000 jobs created and finished in the window and 50,000 queued, a pass with these counts took 23 ms on a queue retaining 1,000,000 completed jobs and 114 ms on one retaining 5,000,000, where reading every job took 1.7 s and 6.5 s.
+Each monitor pass then also counts the jobs created and finished since the previous pass, and records the wait and run times of the finished ones. Indexes on the creation and completion times let it read only those jobs, so its cost follows how many jobs moved through the queue since the previous pass, not how many it retains.
 
-The indexes behind the counts are kept on every job table whether or not this option is on. Measured on local PostgreSQL, they lowered `insert()` of 1,000-job batches by about 12% (35,000 jobs a second against 40,000) and left single `send()` calls and fetch and complete throughput unchanged within noise.
+The indexes behind the counts are kept on every job table whether or not this option is on, which adds a small cost to large `insert()` batches.
 
 ### `queueStatRetentionDays`
 
@@ -311,7 +311,7 @@ Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
 
-With table partitioning, old days are dropped as whole partitions on each supervise pass. Without it (`noTablePartitioning`, as on CockroachDB), old rows are deleted on each supervise pass, oldest first, at most 10,000 per transaction, through an index on the capture time, so a pass reads only the rows it deletes.
+With table partitioning, old days are dropped as whole partitions on each supervise pass. Without it (`noTablePartitioning`, as on CockroachDB), old rows are deleted in batches on each supervise pass, oldest first, through an index on the capture time.
 
 ### `registerInstance`
 
