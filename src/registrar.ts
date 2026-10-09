@@ -1,3 +1,4 @@
+import assert from 'node:assert'
 import EventEmitter from 'node:events'
 import os from 'node:os'
 import packageJson from '../package.json' with { type: 'json' }
@@ -110,8 +111,16 @@ class Registrar extends EventEmitter implements types.EventsMixin {
     } catch {}
   }
 
-  async getInstances (limit: number): Promise<types.Instance[]> {
-    const { rows } = await this.#db.executeSql(plans.getInstances(this.#config.schema), [limit])
+  async getInstances (limit: number, after?: string): Promise<types.Instance[]> {
+    const sql = plans.getInstances(this.#config.schema, after !== undefined)
+    const { rows } = await this.#db.executeSql(sql, after !== undefined ? [after, limit] : [limit])
+
+    // An empty page is the end of the list, unless the instance `after` names was pruned since the
+    // previous page.
+    if (after !== undefined && rows.length === 0) {
+      const { rows: found } = await this.#db.executeSql(plans.instanceExists(this.#config.schema), [after])
+      assert(found.length > 0, 'getInstances: after names a row that no longer exists')
+    }
 
     // CockroachDB returns its INT8 columns as strings.
     const num = (v: unknown) => (v === null || v === undefined ? null : Number(v))

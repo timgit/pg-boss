@@ -193,7 +193,7 @@ A queue deleted and created again elsewhere with a different `partition` setting
 
 ### `getQueues(names?)`
 
-Returns all queues, or only the named queues when an array of names is provided, sorted by name. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000.
+Returns all queues, or only the named queues when an array of names is provided, sorted by name. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last queue's name as `options.after` to read the next page.
 
 ```js
 const queues = await boss.getQueues(['email-send'])
@@ -419,7 +419,7 @@ const series = await boss.getQueueStats('email-send', {
 
 ### `getBlockedKeys(name)`
 
-Returns an array of `singletonKey` values that are currently blocked due to failed jobs, sorted. This is only available for queues with the `key_strict_fifo` policy. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000.
+Returns an array of `singletonKey` values that are currently blocked due to failed jobs, sorted. This is only available for queues with the `key_strict_fifo` policy. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last key as `options.after` to read the next page.
 
 ```js
 const blockedKeys = await boss.getBlockedKeys('my-queue')

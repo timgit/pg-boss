@@ -728,6 +728,20 @@ function assertListLimit (method: string, limit: number = LIST_LIMIT_DEFAULT): n
   return limit
 }
 
+// The `after` of a list read that pages by one value: a queue name, a key or an id.
+function assertListAfter (method: string, after: unknown): void {
+  assert(after === undefined || (typeof after === 'string' && after.length > 0),
+    `${method}: after must be a non-empty string`)
+}
+
+// The `after` of a list read that pages by a row: the previous page's last row, of which only the
+// two named fields are read.
+function assertListAfterRow (method: string, after: unknown, fields: [string, string]): void {
+  assert(after === undefined || (typeof after === 'object' && after !== null &&
+    fields.every(field => typeof (after as Record<string, unknown>)[field] === 'string')),
+  `${method}: after must be an object with string ${fields.join(' and ')}`)
+}
+
 function assertQueueName (name: string) {
   assert(name, 'Name is required')
   assert(typeof name === 'string', 'Name must be a string')
@@ -931,6 +945,8 @@ function applyFlowConfig (config: any) {
 
 export {
   assertKey,
+  assertListAfter,
+  assertListAfterRow,
   assertListLimit,
   COMPATIBILITY_FLAGS,
   assertPostgresObjectName,

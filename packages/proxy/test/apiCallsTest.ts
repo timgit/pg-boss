@@ -611,7 +611,12 @@ describe('proxy api routes', () => {
       ['getSchedules', 'name=q&limit=5', ['q', undefined, { limit: 5 }]],
       ['getBlockedKeys', 'name=q&limit=5', ['q', { limit: 5 }]],
       ['getDependencies', 'name=q&id=1&limit=5', ['q', '1', { limit: 5 }]],
-      ['getDependents', 'name=q&id=1&limit=5', ['q', '1', { limit: 5 }]]
+      ['getDependents', 'name=q&id=1&limit=5', ['q', '1', { limit: 5 }]],
+      ['getQueues', 'after=a', [undefined, { after: 'a' }]],
+      ['getBlockedKeys', 'name=q&limit=5&after=k', ['q', { limit: 5, after: 'k' }]],
+      ['getSchedules', 'afterName=q&afterKey=k', [undefined, undefined, { after: { name: 'q', key: 'k' } }]],
+      ['getDependencies', 'name=q&id=1&afterName=p&afterId=2', ['q', '1', { after: { name: 'p', id: '2' } }]],
+      ['findJobs', 'name=q&limit=5&after=j', ['q', { limit: 5, after: 'j' }]]
     ]
 
     for (const [method, query, args] of cases) {
@@ -625,11 +630,11 @@ describe('proxy api routes', () => {
     expect(calls.get('getQueues')?.at(-1)).toEqual([])
   })
 
-  it('GET list reads reject a limit outside 1 to 100000', async () => {
+  it('GET list reads reject a limit outside 1 to 100000, and half an after pair', async () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
-    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0']) {
+    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0', 'getSchedules?afterName=q', 'getDependents?name=q&id=1&afterId=2']) {
       const res = await app.fetch(new Request(`http://local/api/${query}`, { method: 'GET' }))
       expect(res.status, query).toBe(400)
     }

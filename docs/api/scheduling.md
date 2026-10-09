@@ -181,7 +181,7 @@ An optional third argument takes a `db` to run the removal on, as `schedule()` d
 
 ### `getSchedules()`
 
-Returns scheduled jobs, sorted by queue name and key. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass it as the third argument, after the name and key, as `getSchedules(undefined, undefined, { limit: 50 })`.
+Returns scheduled jobs, sorted by queue name and key. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last schedule as `options.after` to read the next page. Pass it as the third argument, after the name and key, as `getSchedules(undefined, undefined, { limit: 50 })`.
 
 Each schedule carries the expression in `cron`, the format it is in as `kind` (`cron` or `rrule`), the time zone it is evaluated in, and the `data` and `options` its jobs are sent with.
 
@@ -234,7 +234,7 @@ complete firing record: the queue's job history is the authority on what actuall
 
 ### `getSchedules(name)`
 
-Returns a queue's scheduled jobs, sorted by key. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000.
+Returns a queue's scheduled jobs, sorted by key. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last schedule as `options.after` to read the next page.
 
 ```js
 const schedules = await boss.getSchedules('report')

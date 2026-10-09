@@ -152,18 +152,36 @@ const nameQuerySchema = z.object({
 // The limit of the bounded list reads, as core's ListOptions takes it: 1 to 100,000.
 const limitQuery = z.coerce.number().int().positive().max(100000).optional()
 
-// The ListOptions argument for a route's call, left out when the request gave no limit.
-const listOptions = (q: { limit?: number }) => (q.limit !== undefined ? [{ limit: q.limit }] : [])
+// Where a page starts: the previous page's last name, key or id. Schedules and dependencies page
+// by a pair, sent as afterName with afterKey or afterId.
+const afterQuery = z.string().min(1).optional()
+
+// The ListOptions argument for a route's call, left out when the request gave neither a limit nor
+// an after.
+const listOptions = (q: { limit?: number }, after?: unknown) => {
+  const options: Record<string, unknown> = {}
+  if (q.limit !== undefined) options.limit = q.limit
+  if (after !== undefined) options.after = after
+  return Object.keys(options).length > 0 ? [options] : []
+}
+
+const afterPair = (name: unknown, other: unknown, field: 'key' | 'id') =>
+  typeof name === 'string' && typeof other === 'string' ? { name, [field]: other } : undefined
 
 const namesQuerySchema = z.object({
   names: z.union([z.array(z.string()), z.string().transform((s) => [s])]).optional(),
-  limit: limitQuery
+  limit: limitQuery,
+  after: afterQuery
 })
 
 const schedulesQuerySchema = z.object({
   name: z.string().optional(),
   key: z.string().optional(),
-  limit: limitQuery
+  limit: limitQuery,
+  afterName: afterQuery,
+  afterKey: z.string().optional()
+}).refine((q) => (q.afterName === undefined) === (q.afterKey === undefined), {
+  message: 'afterName and afterKey go together'
 })
 
 // getSchedule reads one row by its primary key, so unlike getSchedules the name is required. The
@@ -194,14 +212,16 @@ const findJobsQuerySchema = z.object({
   queued: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   dataKey: z.string().optional(),
   dataValue: z.string().optional(),
-  limit: limitQuery
+  limit: limitQuery,
+  after: afterQuery
 }).refine((q) => !q.dataValue || q.dataKey, {
   message: 'dataKey is required when dataValue is provided'
 })
 
 const blockedKeysQuerySchema = z.object({
   name: z.string().min(1),
-  limit: limitQuery
+  limit: limitQuery,
+  after: afterQuery
 })
 
 // getQueueStats query params map onto pg-boss QueueStatsOptions. GET params arrive as strings, so
@@ -232,7 +252,11 @@ const reindexCommandsQuerySchema = z.object({
 const dependencyQuerySchema = z.object({
   name: z.string().min(1),
   id: z.string().min(1),
-  limit: limitQuery
+  limit: limitQuery,
+  afterName: afterQuery,
+  afterId: afterQuery
+}).refine((q) => (q.afterName === undefined) === (q.afterId === undefined), {
+  message: 'afterName and afterId go together'
 })
 
 export const postMethods: RouteEntry[] = [
@@ -287,9 +311,9 @@ export const getMethods: RouteEntry[] = [
     return Object.keys(options).length > 0 ? [options] : []
   }),
   get('queues', 'getQueue', getQueueResponseSchema, nameQuerySchema, (q) => [q.name]),
-  get('queues', 'getBlockedKeys', getBlockedKeysResponseSchema, blockedKeysQuerySchema, (q) => [q.name, ...listOptions(q)]),
+  get('queues', 'getBlockedKeys', getBlockedKeysResponseSchema, blockedKeysQuerySchema, (q) => [q.name, ...listOptions(q, q.after)]),
   get('queues', 'getQueues', getQueuesResponseSchema, namesQuerySchema, (q) => {
-    const options = listOptions(q)
+    const options = listOptions(q, q.after)
     return q.names || options.length ? [q.names, ...options] : []
   }),
   get('queues', 'getQueueStats', getQueueStatsResponseSchema, queueStatsQuerySchema, (q) => {
@@ -305,7 +329,7 @@ export const getMethods: RouteEntry[] = [
     return Object.keys(options).length > 0 ? [q.name, options] : [q.name]
   }),
   get('schedules', 'getSchedules', getSchedulesResponseSchema, schedulesQuerySchema, (q) => {
-    const options = listOptions(q)
+    const options = listOptions(q, afterPair(q.afterName, q.afterKey, 'key'))
     if (q.name && q.key) return [q.name, q.key, ...options]
     if (q.name) return options.length ? [q.name, undefined, ...options] : [q.name]
     return options.length ? [undefined, undefined, ...options] : []
@@ -318,8 +342,8 @@ export const getMethods: RouteEntry[] = [
     if (q.count !== undefined) options.count = q.count
     return Object.keys(options).length > 0 ? [q.cron, options] : [q.cron]
   }),
-  get('jobs', 'getDependencies', getDependenciesResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q)]),
-  get('jobs', 'getDependents', getDependentsResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q)]),
+  get('jobs', 'getDependencies', getDependenciesResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q, afterPair(q.afterName, q.afterId, 'id'))]),
+  get('jobs', 'getDependents', getDependentsResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q, afterPair(q.afterName, q.afterId, 'id'))]),
   get('jobs', 'findJobs', findJobsResponseSchema, findJobsQuerySchema, (q) => {
     const args: unknown[] = [q.name]
     const options: Record<string, unknown> = {}
@@ -328,6 +352,7 @@ export const getMethods: RouteEntry[] = [
     if (q.queued !== undefined) options.queued = q.queued
     if (q.dataKey) options.data = { [q.dataKey as string]: q.dataValue ?? null }
     if (q.limit !== undefined) options.limit = q.limit
+    if (q.after !== undefined) options.after = q.after
     if (Object.keys(options).length > 0) args.push(options)
     return args
   })

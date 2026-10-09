@@ -2730,6 +2730,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async getBlockedKeys (name: string, options: types.ListOptions = {}): Promise<string[]> {
     Attorney.assertQueueName(name)
     const limit = Attorney.assertListLimit('getBlockedKeys', options.limit)
+    const { after } = options
+    Attorney.assertListAfter('getBlockedKeys', after)
 
     const { table, policy } = await this.getQueueCache(name)
 
@@ -2737,15 +2739,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
       throw new Error(`getBlockedKeys is only available for ${plans.QUEUE_POLICIES.key_strict_fifo} queues`)
     }
 
-    const sql = plans.getBlockedKeys(this.config.schema, table)
-    const { rows } = await this.db.executeSql(sql, [name, limit])
+    const sql = plans.getBlockedKeys(this.config.schema, table, after !== undefined)
+    const { rows } = await this.db.executeSql(sql, after !== undefined ? [name, after, limit] : [name, limit])
 
     return rows.map(row => row.singletonKey)
   }
 
-  // Every queue unless `limit` is passed: the public getQueues() passes its limit, and supervision
-  // and the queue cache read them all.
-  async getQueues (names?: string | string[], limit?: number): Promise<types.QueueResult[]> {
+  // Every queue unless `limit` is passed: the public getQueues() passes its limit and `after`, and
+  // supervision and the queue cache read them all.
+  async getQueues (names?: string | string[], limit?: number, after?: string): Promise<types.QueueResult[]> {
     names = Array.isArray(names) ? names : typeof names === 'string' ? [names] : undefined
     if (names) {
       for (const name of names) {
@@ -2753,7 +2755,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
-    const query = plans.getQueues(this.config.schema, names, limit)
+    const query = plans.getQueues(this.config.schema, names, limit, after)
     const { rows } = await this.db.executeSql(query.text, query.values)
 
     // CockroachDB returns integer columns as strings; normalize the numeric queue fields.
@@ -3091,8 +3093,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async findJobs<T>(name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
     Attorney.assertQueueName(name)
 
-    const { id, key, data, queued = false } = options
+    const { id, key, data, queued = false, after } = options
     const limit = Attorney.assertListLimit('findJobs', options.limit)
+    Attorney.assertListAfter('findJobs', after)
 
     const db = this.assertDb(options)
 
@@ -3102,18 +3105,32 @@ class Manager extends EventEmitter implements types.EventsMixin {
       byId: id !== undefined,
       byKey: key !== undefined,
       byData: data !== undefined,
-      queued
+      queued,
+      after: after !== undefined
     })
 
     const values: unknown[] = [name]
     if (id !== undefined) values.push(id)
     if (key !== undefined) values.push(key)
     if (data !== undefined) values.push(JSON.stringify(data))
+    if (after !== undefined) values.push(after)
     values.push(limit)
 
     const result = await db.executeSql(sql, values)
+    const rows = result?.rows || []
 
-    return this.#numericJobFields(result?.rows || [])
+    if (after !== undefined && rows.length === 0) {
+      await this.#assertAfterExists(db, 'findJobs', plans.jobExists(this.config.schema, table), [name, after])
+    }
+
+    return this.#numericJobFields(rows)
+  }
+
+  // An empty page after `after` is the end of the list, unless the row `after` names was deleted
+  // since the previous page, which would end it early without saying so.
+  async #assertAfterExists (db: types.IDatabase, method: string, sql: string, values: unknown[]) {
+    const { rows } = await db.executeSql(sql, values)
+    assert(rows.length > 0, `${method}: after names a row that no longer exists`)
   }
 
   // CockroachDB returns integer columns (INT8) as strings. Every read that hands job rows to a
@@ -3131,21 +3148,25 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return rows
   }
 
-  async getDependencies (name: string, id: string, options: types.ConnectionOptions & types.ListOptions = {}): Promise<types.DependencyRef[]> {
+  async getDependencies (name: string, id: string, options: types.ConnectionOptions & types.ListOptions<types.DependencyRef> = {}): Promise<types.DependencyRef[]> {
     Attorney.assertQueueName(name)
     const limit = Attorney.assertListLimit('getDependencies', options.limit)
+    const { after } = options
+    Attorney.assertListAfterRow('getDependencies', after, ['name', 'id'])
     const db = this.assertDb(options)
-    const sql = plans.getDependencies(this.config.schema)
-    const { rows } = await db.executeSql(sql, [name, id, limit])
+    const sql = plans.getDependencies(this.config.schema, after !== undefined)
+    const { rows } = await db.executeSql(sql, after ? [name, id, after.name, after.id, limit] : [name, id, limit])
     return rows.map((r: any) => ({ name: r.parentName, id: r.parentId }))
   }
 
-  async getDependents (name: string, id: string, options: types.ConnectionOptions & types.ListOptions = {}): Promise<types.DependencyRef[]> {
+  async getDependents (name: string, id: string, options: types.ConnectionOptions & types.ListOptions<types.DependencyRef> = {}): Promise<types.DependencyRef[]> {
     Attorney.assertQueueName(name)
     const limit = Attorney.assertListLimit('getDependents', options.limit)
+    const { after } = options
+    Attorney.assertListAfterRow('getDependents', after, ['name', 'id'])
     const db = this.assertDb(options)
-    const sql = plans.getDependents(this.config.schema)
-    const { rows } = await db.executeSql(sql, [name, id, limit])
+    const sql = plans.getDependents(this.config.schema, after !== undefined)
+    const { rows } = await db.executeSql(sql, after ? [name, id, after.name, after.id, limit] : [name, id, limit])
     return rows.map((r: any) => ({ name: r.childName, id: r.childId }))
   }
 

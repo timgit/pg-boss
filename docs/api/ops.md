@@ -194,7 +194,7 @@ const { rows } = await db.executeSql('SELECT now()')
 
 ### `getInstances()`
 
-Returns the pg-boss instances registered in this database, oldest first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never says it stopped, so its row goes quiet instead: `live` turns false once it has missed three heartbeats. Rows whose heartbeat has not moved for 7 days are deleted during maintenance.
+Returns the pg-boss instances registered in this database, oldest first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last instance's `id` as `options.after` to read the next page; it rejects if that instance has been deleted since. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never says it stopped, so its row goes quiet instead: `live` turns false once it has missed three heartbeats. Rows whose heartbeat has not moved for 7 days are deleted during maintenance.
 
 Every `start()` of a new `PgBoss` object is a new row, so a crash loop, or a deploy whose processes exit without calling `stop()`, leaves a quiet row per life. To keep that bounded, an instance deletes all but the 20 newest stopped or quiet rows with its name when it registers (with its host, when it has no name), and maintenance keeps the 1,000 newest stopped or quiet rows in all. Calling `stop()` on `SIGTERM` marks a row stopped rather than quiet, which tells a deploy apart from a crash. `crashRestarts` survives that pruning.
 
@@ -274,7 +274,7 @@ Array of objects with the following properties:
 
 ### `getBamEntries()`
 
-Returns boss async migration (BAM) command entries with full details, oldest version first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000.
+Returns boss async migration (BAM) command entries with full details, oldest version first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last entry's `id` as `options.after` to read the next page.
 
 Use this function when you need to inspect individual BAM commands, troubleshoot failures, or review the command history.
 
