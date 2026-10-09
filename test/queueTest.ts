@@ -531,20 +531,17 @@ describe('queues', function () {
     expect(queue).toBe(null)
   })
 
-  it('getQueues() returns queues array', async function () {
+  it('getQueues() returns queues array sorted by name', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue1 = `${ctx.bossConfig.schema}_1`
     const queue2 = `${ctx.bossConfig.schema}_2`
 
-    await ctx.boss.createQueue(queue1)
     await ctx.boss.createQueue(queue2)
+    await ctx.boss.createQueue(queue1)
 
     const queues = await ctx.boss.getQueues()
 
-    expect(queues.length).toBe(2)
-
-    expect(queues.some(q => q.name === queue1)).toBeTruthy()
-    expect(queues.some(q => q.name === queue2)).toBeTruthy()
+    expect(queues.map(q => q.name)).toEqual([queue1, queue2])
   })
 
   it('getQueues(names) filters to the requested queues', async function () {
