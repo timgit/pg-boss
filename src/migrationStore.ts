@@ -1328,6 +1328,7 @@ const createQueueFn: Record<number, (schema: string) => string> = {
     EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE state IN ('created', 'retry', 'active', 'failed')$cmd$, tablename);
     EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i15 ON ${schema}.job (name, created_on)$cmd$, tablename);
     EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i17 ON ${schema}.job (name, singleton_key, created_on) WHERE state < 'active' AND singleton_key IS NOT NULL$cmd$, tablename);
 
     IF options->>'policy' = 'short' THEN
     EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'created' AND policy = 'short'$cmd$, tablename);
@@ -2333,11 +2334,12 @@ AS $function$
       release: '12.38.0',
       version: 46,
       previous: 45,
-      // job_i14, job_i15 and job_i16 are built the way v45 built job_i13: inline without partitioning,
-      // otherwise through create_queue for new partitions and BAM, concurrently, for the tables that
-      // already exist. Unlike job_i13 they start full (job_i15 holds every job), and the concurrent
-      // build is what keeps that off the upgrade's critical path. Until one is valid the monitor's
-      // aggregate reads the queue without it, as before v46.
+      // job_i14, job_i15, job_i16 and job_i17 are built the way v45 built job_i13: inline without
+      // partitioning, otherwise through create_queue for new partitions and BAM, concurrently, for the
+      // tables that already exist. Unlike job_i13 they start full (job_i15 holds every job, job_i17
+      // every queued job with a key), and the concurrent build is what keeps that off the upgrade's
+      // critical path. Until one is valid, the monitor's aggregate, and update() and upsert() by key,
+      // read the queue without it, as before v46.
       // queue_stats_i2 exists only without partitions, where retention deletes rows instead of
       // dropping day partitions, and is built inline: queue_stats there is one plain table.
       // retained_count and retained_on are nullable with no default, so adding them rewrites no rows,
@@ -2351,6 +2353,7 @@ AS $function$
               `CREATE INDEX job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE state IN ('created', 'retry', 'active', 'failed')`,
               `CREATE INDEX job_i15 ON ${schema}.job (name, created_on)`,
               `CREATE INDEX job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL`,
+              `CREATE INDEX job_i17 ON ${schema}.job (name, singleton_key, created_on) WHERE state < 'active' AND singleton_key IS NOT NULL`,
               `CREATE INDEX queue_stats_i2 ON ${schema}.queue_stats (captured_on, id)`
             ]
           : [createQueueFn[46](schema)])
@@ -2369,18 +2372,24 @@ AS $function$
             {
               name: 'completed_index_build',
               command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL`
+            },
+            {
+              name: 'queued_key_index_build',
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i17 ON ${schema}.job (name, singleton_key, created_on) WHERE state < 'active' AND singleton_key IS NOT NULL`
             }
           ],
       uninstall: [
         ...(noPartitioning
           ? [
               `DROP INDEX IF EXISTS ${schema}.queue_stats_i2`,
+              `DROP INDEX IF EXISTS ${schema}.job_i17`,
               `DROP INDEX IF EXISTS ${schema}.job_i16`,
               `DROP INDEX IF EXISTS ${schema}.job_i15`,
               `DROP INDEX IF EXISTS ${schema}.job_i14`
             ]
           : [
               createQueueFn[45](schema),
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i17$cmd$)`,
               `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i16$cmd$)`,
               `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i15$cmd$)`,
               `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i14$cmd$)`

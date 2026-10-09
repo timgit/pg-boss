@@ -1037,6 +1037,7 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobLive(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobCreated(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobCompleted(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobQueuedKey(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -1063,6 +1064,7 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobLive(schema)};
     ${createIndexJobCreated(schema)};
     ${createIndexJobCompleted(schema)};
+    ${createIndexJobQueuedKey(schema)};
   `
 }
 
@@ -1192,6 +1194,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobLive(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobCreated(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobCompleted(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobQueuedKey(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -1444,6 +1447,13 @@ function createIndexJobCreated (schema: string) {
 // enters it when it completes, fails or is cancelled; waiting and active jobs stay out.
 function createIndexJobCompleted (schema: string) {
   return `CREATE INDEX job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL`
+}
+
+// The queued jobs that carry a singleton key, newest and oldest first per key, for update() and
+// upsert() by singletonKey. Every policy needs it: a job sent with a key but not by upsert() has no
+// upsert_by_key, so job_i13 does not hold it, and a standard queue has no other index on the key.
+function createIndexJobQueuedKey (schema: string) {
+  return `CREATE INDEX job_i17 ON ${schema}.job (name, singleton_key, created_on) WHERE state < '${JOB_STATES.active}' AND singleton_key IS NOT NULL`
 }
 
 // The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only
