@@ -2517,6 +2517,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       const sql = plans.deleteJobsById(this.config.schema, table, !!attempts)
       const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
+      await this.#reduceRetained(db, name, result)
       const response = this.mapCommandResponse(ids, result)
 
       this.#trackHandlerSettle(options, response)
@@ -2657,7 +2658,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const sql = plans.resumeJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
+    await this.#reduceRetained(db, name, result)
     return this.mapCommandResponse(ids, result)
+  }
+
+  // deleteJob() and resume() take the completed and cancelled jobs they moved out of the queue's
+  // retained_count off it, so totalCount does not wait for the next maintenance pass. On the caller's
+  // db, so it commits or rolls back with the statement, and only when one was counted, so settling a
+  // live job never touches the queue row. CockroachDB returns the count as a string.
+  async #reduceRetained (db: types.IDatabase, name: string, result: { rows: any[] } | null) {
+    const retained = Number(result?.rows?.[0]?.retained ?? 0)
+
+    if (retained > 0) {
+      await db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained])
+    }
   }
 
   async restore (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
