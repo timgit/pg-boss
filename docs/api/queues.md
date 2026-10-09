@@ -251,7 +251,7 @@ Each monitor pass updates the counts, every `monitorIntervalSeconds`. A queued j
 * `readyCount`: queued jobs that can run now
 * `activeCount`: jobs currently being processed
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
-* `totalCount`: all jobs currently stored for the queue. A job removed with [`deleteJob()`](./jobs.md#deletejob-name-id-options) leaves it at the next maintenance pass (every [`maintenanceIntervalSeconds`](./constructor.md#maintenanceintervalseconds), 1 day by default)
+* `totalCount`: all jobs currently stored for the queue
 
 **Monitor pass fields**
 

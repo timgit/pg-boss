@@ -391,8 +391,9 @@ function createTableVersion (schema: string) {
 // retained_count is the completed and cancelled jobs the queue holds, and total_count is the live
 // jobs (job_i14) counted each monitor pass plus this. The maintenance pass counts it outright, as
 // the jobs that finished by retained_on, and each monitor pass then adds the ones that finished after
-// it (job_i16) and moves retained_on up, so between them every finished job is counted once. Jobs that leave that set between maintenance
-// passes without a bulk delete (a deleteJob(), a resumed cancelled job) are corrected at the next one.
+// it (job_i16) and moves retained_on up, so between them every finished job is counted once. The bulk
+// deletes, deleteJob() and resume() take the jobs they move out of that set off it at once (see
+// reduceRetainedCount).
 // Both are null until a queue's first maintenance pass after the columns were added (see
 // retainedAssignments).
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
@@ -1740,6 +1741,9 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
   }
 }
 
+// "retained" is how many of the deleted jobs the queue's retained_count holds, the completed and
+// cancelled ones that finished by its retained_on, which the caller takes off it with
+// reduceRetainedCount (see createTableQueue).
 export function deleteJobsById (schema: string, table: string, fenced?: boolean) {
   return `
     WITH results as (
@@ -1747,10 +1751,19 @@ export function deleteJobsById (schema: string, table: string, fenced?: boolean)
       WHERE name = $1
         AND id = ANY($2::uuid[])
         ${fenced ? attemptFence(3) : ''}
-      RETURNING id
+      RETURNING id, state, completed_on
     )
-    ${settledCountAndIds()}
+    SELECT COUNT(*), COALESCE(array_agg(id), '{}'::uuid[]) AS ids,
+      (COUNT(*) FILTER (WHERE state IN ('${JOB_STATES.completed}', '${JOB_STATES.cancelled}')
+        AND completed_on <= ${retainedOn(schema)}))::int AS retained
+    FROM results
   `
+}
+
+// The queue's retained_on, for the statements that tell whether a job they move out of the completed
+// and cancelled set was counted in retained_count. $1 is the queue's name.
+function retainedOn (schema: string) {
+  return `(SELECT retained_on FROM ${schema}.queue WHERE name = $1)`
 }
 
 export function truncateTable (schema: string, table: string) {
@@ -2901,20 +2914,33 @@ export function cancelJobs (schema: string, table: string, fenced?: boolean) {
 // from when it was first sent. A start_after still in the future is kept. It also loses upsert_by_key,
 // here and in restoreJobs, so it never collides in job_i13 with a newer job upserted by the same key,
 // and queues beside it.
+//
+// "retained" is how many of the resumed jobs the queue's retained_count held, read from the
+// completed_on each had before the update, which the caller takes off it with reduceRetainedCount.
+// The next monitor pass then counts them among the live jobs.
 export function resumeJobs (schema: string, table: string) {
   return `
-    WITH results as (
-      UPDATE ${schema}.${table}
-      SET completed_on = NULL,
-        state = '${JOB_STATES.created}',
-        upsert_by_key = NULL,
-        start_after = GREATEST(start_after, ${schema}.job_now())
+    WITH resumable as (
+      SELECT id, completed_on
+      FROM ${schema}.${table}
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.cancelled}'
-      RETURNING 1
+    ),
+    results as (
+      UPDATE ${schema}.${table} j
+      SET completed_on = NULL,
+        state = '${JOB_STATES.created}',
+        upsert_by_key = NULL,
+        start_after = GREATEST(j.start_after, ${schema}.job_now())
+      FROM resumable r
+      WHERE j.name = $1
+        AND j.id = r.id
+        AND j.state = '${JOB_STATES.cancelled}'
+      RETURNING r.completed_on
     )
-    SELECT COUNT(*) from results
+    SELECT COUNT(*), (COUNT(*) FILTER (WHERE completed_on <= ${retainedOn(schema)}))::int AS retained
+    FROM results
   `
 }
 

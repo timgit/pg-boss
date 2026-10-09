@@ -177,6 +177,45 @@ describe('queueStats', function () {
     expect(stats.totalCount).toBe(1)
   })
 
+  it('should keep totalCount right when deleteJob() or resume() moves a completed or cancelled job', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    const ids = await Promise.all([1, 2, 3, 4].map(() => ctx.boss!.send(queue)))
+    const fetched = await ctx.boss.fetch(queue, { batchSize: 2 })
+    await ctx.boss.complete(queue, fetched.map(job => job.id))
+    const cancelled = ids.filter(id => !fetched.some(job => job.id === id)) as string[]
+    await ctx.boss.cancel(queue, cancelled)
+
+    // Maintenance counts the 4 completed and cancelled jobs.
+    await ctx.boss.supervise(queue)
+    let [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(4)
+
+    // A deleted completed job leaves the total at once.
+    await ctx.boss.deleteJob(queue, fetched[0].id)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(3)
+
+    // A resumed job leaves the retained jobs at once, and the next monitor pass (maintenance is not
+    // due yet) counts it as queued, so it is counted once.
+    await ctx.boss.resume(queue, cancelled[0])
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.queuedCount).toBe(1)
+    expect(stats.totalCount).toBe(3)
+
+    // Deleting a live job leaves retained_count alone.
+    await ctx.boss.deleteJob(queue, cancelled[0])
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(2)
+  })
+
   // A drift between job_i14's predicate and the aggregate's would quietly put the monitor back on a
   // scan of every retained job.
   helper.itPostgresOnly('counts the live gauges from job_i14', async function () {
