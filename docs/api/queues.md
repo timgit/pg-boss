@@ -243,17 +243,15 @@ The settings, `policy` through `notify`, are the options described under [`creat
 
 **Counts**
 
-As counted by a monitor pass, which runs every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
+Each monitor pass updates the counts, every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
 
-A monitor pass counts each figure through an index that holds only the jobs it needs, so its cost follows the queue's backlog, active and failed jobs, and what finished since the last pass, rather than every job the queue retains. Completed and cancelled jobs, usually most of a queue, are counted once per [`maintenanceIntervalSeconds`](./constructor.md#maintenanceintervalseconds) as the maintenance pass deletes the expired ones, and each monitor pass adds the ones that finished since. A job removed with [`deleteJob()`](./jobs.md#deletejob-name-id-options), or a cancelled job resumed, leaves `totalCount` at the next maintenance pass.
-
-* `queuedCount`: jobs waiting to run, **including** deferred jobs and jobs blocked by a [`flow()`](./jobs.md#flow-jobs-options) parent; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
-* `deferredCount`: queued jobs scheduled to start in the future (`startAfter` not yet reached), leaving out blocked jobs
-* `blockedCount`: queued jobs waiting on a flow parent, whatever their `startAfter` (`getQueues()` and `getQueue()` only)
-* `readyCount`: queued jobs ready to be processed now, neither deferred nor blocked; the true runnable backlog
+* `queuedCount`: jobs waiting to run. The queue backlog warning is based on it
+* `deferredCount`: queued jobs whose `startAfter` is in the future
+* `blockedCount`: queued jobs waiting on a [`flow()`](./jobs.md#flow-jobs-options) parent (`getQueues()` and `getQueue()` only)
+* `readyCount`: queued jobs that can run now
 * `activeCount`: jobs currently being processed
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
-* `totalCount`: all jobs currently stored for the queue
+* `totalCount`: all jobs currently stored for the queue. A job removed with [`deleteJob()`](./jobs.md#deletejob-name-id-options) leaves it at the next maintenance pass (every [`maintenanceIntervalSeconds`](./constructor.md#maintenanceintervalseconds), 1 day by default)
 
 **Monitor pass fields**
 
