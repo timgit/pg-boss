@@ -48,8 +48,9 @@ class Worker<T = unknown> {
   // the signal alone says nothing, and the timeout wired into the same controller trips it on every
   // ordinary completion. Reset per batch by the manager, beside abortController.
   aborted = false
-  // Set by failWip() once stop() has spent its grace: a claim landing after this is refused.
-  graceExpired = false
+  // Aborted by failWip() once stop() has spent its grace: a claim landing after this is refused, and
+  // a handler that outran its timeout is no longer waited for.
+  private readonly grace = new AbortController()
   private loopDelayPromise: AbortablePromise<void> | null = null
   private beenNotified = false
   private runPromise: Promise<void> | null = null
@@ -152,6 +153,18 @@ class Worker<T = unknown> {
     }
 
     await this.runPromise
+  }
+
+  get graceExpired (): boolean {
+    return this.grace.signal.aborted
+  }
+
+  get graceSignal (): AbortSignal {
+    return this.grace.signal
+  }
+
+  expireGrace (): void {
+    this.grace.abort()
   }
 
   abort (): void {

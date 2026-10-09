@@ -39,7 +39,8 @@ const DEFAULT_POOL_MAX = 10
 
 const WARNING_TYPES = {
   TRANSACTIONAL_POOL_HEADROOM: 'transactional_pool_headroom',
-  TRANSACTION_TIMEOUT_PROBE: 'transaction_timeout_probe'
+  TRANSACTION_TIMEOUT_PROBE: 'transaction_timeout_probe',
+  HANDLER_OVERRUN: 'handler_overrun'
 } as const
 
 const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
@@ -709,6 +710,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // is idempotent, so the catch can settle it without tracking whether the commit got there
     // first.
     let transaction: types.TransactionHandle | null = null
+    // The handler's own promise, kept past the race below so the batch can tell a handler that
+    // outran its timeout from one that returned.
+    let handling: Promise<unknown> | undefined
+    let handlerSettled = false
 
     try {
       // A per-job heartbeatSeconds, or updateQueue() after the worker registered, can put a
@@ -747,11 +752,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
         throw new Error('pg-boss shut down before the handler started')
       }
 
-      const handling = transaction
+      const handler = Promise.resolve(transaction
         ? (callback as unknown as types.TransactionalWorkHandler<T>)(jobs, untracked(transaction.db))
-        : callback(jobs)
+        : callback(jobs))
 
-      const result = await resolveWithinSeconds(this.config.clock, handling, maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+      handling = handler
+      handler.then(() => { handlerSettled = true }, () => { handlerSettled = true })
+
+      const result = await resolveWithinSeconds(this.config.clock, handler, maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
 
       // An abort resolves the race rather than rejecting it, so on this line an abandoned handler
       // looks exactly like one that returned. failWip() aborts after failing the batch, so
@@ -828,7 +836,39 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
+    if (handling && !handlerSettled) {
+      await this.#awaitHandlerOverrun(name, jobIds, maxExpiration, handling, worker)
+    }
+
     return didFail ? (failedError ?? new Error('handler rejected without a reason')) : perJobError
+  }
+
+  // The timeout only stops the wait for a handler, not the handler, so one that ignores job.signal is
+  // still running after its batch was failed. Holding the worker until it returns keeps
+  // localConcurrency and localGroupConcurrency a bound on the handlers actually running, and keeps the
+  // worker from fetching a retry of the same job beside it. A shutdown whose grace has run out stops
+  // waiting, as it does for every other handler.
+  async #awaitHandlerOverrun (name: string, jobIds: string[], expireInSeconds: number, handling: Promise<unknown>, worker?: Worker<any>): Promise<void> {
+    const grace = worker?.graceSignal
+
+    if (grace?.aborted) return
+
+    this.emit(events.warning, {
+      message: `a handler on queue ${name} is still running after exceeding ${expireInSeconds}s. Its jobs were failed and their signals aborted, and this worker fetches nothing until it returns. Stop the handler on job.signal.`,
+      data: { type: WARNING_TYPES.HANDLER_OVERRUN, queue: name, jobs: jobIds, expireInSeconds }
+    })
+
+    let onGrace: (() => void) | undefined
+
+    try {
+      await new Promise<void>(resolve => {
+        onGrace = resolve
+        grace?.addEventListener('abort', onGrace, { once: true })
+        handling.then(() => resolve(), () => resolve())
+      })
+    } finally {
+      if (onGrace) grace?.removeEventListener('abort', onGrace)
+    }
   }
 
   /**
@@ -1130,7 +1170,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Every worker is marked before any fail below is awaited, so a claim landing on a later worker
     // while an earlier one's fail is in flight is refused too.
     for (const worker of this.workers.values()) {
-      worker.graceExpired = true
+      worker.expireGrace()
     }
 
     for (const worker of this.workers.values()) {
