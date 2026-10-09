@@ -667,7 +667,8 @@ describe('migration', function () {
     await contractor.migrate(rolledBackTo)
     expect(await contractor.schemaVersion()).toBe(currentSchemaVersion)
 
-    // Migrations defer index work to BAM, so the schema has not converged until BAM drains.
+    // Migrations defer index work to BAM, so the schema has not converged until BAM drains. BAM runs
+    // one command per poll, and v46 alone enqueues four builds for each of the seven job tables here.
     const boss = ctx.boss = await start({
       ...config,
       noDefault: true,
@@ -677,7 +678,7 @@ describe('migration', function () {
     await expect.poll(async () => {
       const status = await boss.getBamStatus()
       return status.filter(item => item.status !== 'completed').reduce((sum, item) => sum + item.count, 0)
-    }, { timeout: 45000 }).toBe(0)
+    }, { timeout: 100000 }).toBe(0)
     await boss.stop()
 
     const replayed = await getSchemaDefs([config.schema])
@@ -689,7 +690,7 @@ describe('migration', function () {
   }
 
   for (let depth = 1; depth <= MIGRATION_DEPTH; depth++) {
-    itPostgresOnly(`converges on the fresh-install schema after rolling back ${depth} and replaying`, { timeout: 90000 }, async function () {
+    itPostgresOnly(`converges on the fresh-install schema after rolling back ${depth} and replaying`, { timeout: 150000 }, async function () {
       await assertRoundTripConverges(depth)
     })
   }
