@@ -149,13 +149,21 @@ const nameQuerySchema = z.object({
   name: z.string().min(1)
 })
 
+// The limit of the bounded list reads, as core's ListOptions takes it: 1 to 100,000.
+const limitQuery = z.coerce.number().int().positive().max(100000).optional()
+
+// The ListOptions argument for a route's call, left out when the request gave no limit.
+const listOptions = (q: { limit?: number }) => (q.limit !== undefined ? [{ limit: q.limit }] : [])
+
 const namesQuerySchema = z.object({
-  names: z.union([z.array(z.string()), z.string().transform((s) => [s])]).optional()
+  names: z.union([z.array(z.string()), z.string().transform((s) => [s])]).optional(),
+  limit: limitQuery
 })
 
 const schedulesQuerySchema = z.object({
   name: z.string().optional(),
-  key: z.string().optional()
+  key: z.string().optional(),
+  limit: limitQuery
 })
 
 // getSchedule reads one row by its primary key, so unlike getSchedules the name is required. The
@@ -186,13 +194,14 @@ const findJobsQuerySchema = z.object({
   queued: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   dataKey: z.string().optional(),
   dataValue: z.string().optional(),
-  limit: z.coerce.number().int().positive().max(100000).optional()
+  limit: limitQuery
 }).refine((q) => !q.dataValue || q.dataKey, {
   message: 'dataKey is required when dataValue is provided'
 })
 
 const blockedKeysQuerySchema = z.object({
-  name: z.string().min(1)
+  name: z.string().min(1),
+  limit: limitQuery
 })
 
 // getQueueStats query params map onto pg-boss QueueStatsOptions. GET params arrive as strings, so
@@ -222,7 +231,8 @@ const reindexCommandsQuerySchema = z.object({
 
 const dependencyQuerySchema = z.object({
   name: z.string().min(1),
-  id: z.string().min(1)
+  id: z.string().min(1),
+  limit: limitQuery
 })
 
 export const postMethods: RouteEntry[] = [
@@ -277,8 +287,11 @@ export const getMethods: RouteEntry[] = [
     return Object.keys(options).length > 0 ? [options] : []
   }),
   get('queues', 'getQueue', getQueueResponseSchema, nameQuerySchema, (q) => [q.name]),
-  get('queues', 'getBlockedKeys', getBlockedKeysResponseSchema, blockedKeysQuerySchema, (q) => [q.name]),
-  get('queues', 'getQueues', getQueuesResponseSchema, namesQuerySchema, (q) => (q.names ? [q.names] : [])),
+  get('queues', 'getBlockedKeys', getBlockedKeysResponseSchema, blockedKeysQuerySchema, (q) => [q.name, ...listOptions(q)]),
+  get('queues', 'getQueues', getQueuesResponseSchema, namesQuerySchema, (q) => {
+    const options = listOptions(q)
+    return q.names || options.length ? [q.names, ...options] : []
+  }),
   get('queues', 'getQueueStats', getQueueStatsResponseSchema, queueStatsQuerySchema, (q) => {
     const options: Record<string, unknown> = {}
     if (q.from !== undefined) options.from = q.from
@@ -292,9 +305,10 @@ export const getMethods: RouteEntry[] = [
     return Object.keys(options).length > 0 ? [q.name, options] : [q.name]
   }),
   get('schedules', 'getSchedules', getSchedulesResponseSchema, schedulesQuerySchema, (q) => {
-    if (q.name && q.key) return [q.name, q.key]
-    if (q.name) return [q.name]
-    return []
+    const options = listOptions(q)
+    if (q.name && q.key) return [q.name, q.key, ...options]
+    if (q.name) return options.length ? [q.name, undefined, ...options] : [q.name]
+    return options.length ? [undefined, undefined, ...options] : []
   }),
   get('schedules', 'getSchedule', getScheduleResponseSchema, scheduleQuerySchema, (q) => (q.key !== undefined ? [q.name, q.key] : [q.name])),
   get('schedules', 'previewSchedule', previewScheduleResponseSchema, previewScheduleQuerySchema, (q) => {
@@ -304,8 +318,8 @@ export const getMethods: RouteEntry[] = [
     if (q.count !== undefined) options.count = q.count
     return Object.keys(options).length > 0 ? [q.cron, options] : [q.cron]
   }),
-  get('jobs', 'getDependencies', getDependenciesResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id]),
-  get('jobs', 'getDependents', getDependentsResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id]),
+  get('jobs', 'getDependencies', getDependenciesResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q)]),
+  get('jobs', 'getDependents', getDependentsResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q)]),
   get('jobs', 'findJobs', findJobsResponseSchema, findJobsQuerySchema, (q) => {
     const args: unknown[] = [q.name]
     const options: Record<string, unknown> = {}

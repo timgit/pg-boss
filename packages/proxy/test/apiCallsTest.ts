@@ -600,6 +600,41 @@ describe('proxy api routes', () => {
     expect(calls.get('findJobs')?.[0]).toEqual(['queue', { id: '1', queued: true, limit: 50 }])
   })
 
+  it('GET list reads pass a limit through as ListOptions', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const cases: Array<[string, string, unknown[]]> = [
+      ['getQueues', 'limit=5', [undefined, { limit: 5 }]],
+      ['getQueues', 'names=a&limit=5', [['a'], { limit: 5 }]],
+      ['getSchedules', 'limit=5', [undefined, undefined, { limit: 5 }]],
+      ['getSchedules', 'name=q&limit=5', ['q', undefined, { limit: 5 }]],
+      ['getBlockedKeys', 'name=q&limit=5', ['q', { limit: 5 }]],
+      ['getDependencies', 'name=q&id=1&limit=5', ['q', '1', { limit: 5 }]],
+      ['getDependents', 'name=q&id=1&limit=5', ['q', '1', { limit: 5 }]]
+    ]
+
+    for (const [method, query, args] of cases) {
+      const res = await app.fetch(new Request(`http://local/api/${method}?${query}`, { method: 'GET' }))
+      expect(res.status, `${method}?${query}`).toBe(200)
+      expect(calls.get(method)?.at(-1), `${method}?${query}`).toEqual(args)
+    }
+
+    // No limit leaves the call as it was, so core applies its default.
+    await app.fetch(new Request('http://local/api/getQueues', { method: 'GET' }))
+    expect(calls.get('getQueues')?.at(-1)).toEqual([])
+  })
+
+  it('GET list reads reject a limit outside 1 to 100000', async () => {
+    const { boss } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0']) {
+      const res = await app.fetch(new Request(`http://local/api/${query}`, { method: 'GET' }))
+      expect(res.status, query).toBe(400)
+    }
+  })
+
   it('GET findJobs rejects a limit outside 1 to 100000', async () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })

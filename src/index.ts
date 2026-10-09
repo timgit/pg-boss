@@ -573,15 +573,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.createQueue(name, options)
   }
 
-  getBlockedKeys (name: string): Promise<string[]> {
-    return this.#manager.getBlockedKeys(name)
+  getBlockedKeys (name: string, options?: types.ListOptions): Promise<string[]> {
+    return this.#manager.getBlockedKeys(name, options)
   }
 
-  getDependencies (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+  getDependencies (name: string, id: string, options?: types.ConnectionOptions & types.ListOptions): Promise<types.DependencyRef[]> {
     return this.#manager.getDependencies(name, id, options)
   }
 
-  getDependents (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+  getDependents (name: string, id: string, options?: types.ConnectionOptions & types.ListOptions): Promise<types.DependencyRef[]> {
     return this.#manager.getDependents(name, id, options)
   }
 
@@ -593,8 +593,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.deleteQueue(name)
   }
 
-  getQueues (names?: string[]): Promise<types.QueueResult[]> {
-    return this.#manager.getQueues(names)
+  async getQueues (names?: string[], options?: types.ListOptions): Promise<types.QueueResult[]> {
+    return this.#manager.getQueues(names, Attorney.assertListLimit('getQueues', options?.limit))
   }
 
   getQueue (name: string): Promise<types.QueueResult | null> {
@@ -605,8 +605,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.getQueueStats(name, options)
   }
 
-  getInstances (): Promise<types.Instance[]> {
-    return this.#registrar.getInstances()
+  async getInstances (options?: types.ListOptions): Promise<types.Instance[]> {
+    return this.#registrar.getInstances(Attorney.assertListLimit('getInstances', options?.limit))
   }
 
   isMaintaining (): boolean {
@@ -689,8 +689,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.unschedule(name, key, options)
   }
 
-  getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
-    return this.#timekeeper.getSchedules(name, key)
+  async getSchedules (name?: string, key?: string, options?: types.ListOptions): Promise<types.Schedule[]> {
+    return this.#timekeeper.getSchedules(name, key, Attorney.assertListLimit('getSchedules', options?.limit))
   }
 
   getSchedule (name: string, key?: string): Promise<types.Schedule | null> {
@@ -707,9 +707,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return rows
   }
 
-  async getBamEntries (): Promise<types.BamEntry[]> {
+  async getBamEntries (options?: types.ListOptions): Promise<types.BamEntry[]> {
+    const limit = Attorney.assertListLimit('getBamEntries', options?.limit)
     const sql = plans.getBamEntries(this.#config.schema)
-    const { rows } = await this.#db.executeSql(sql)
+    const { rows } = await this.#db.executeSql(sql, [limit])
     return rows
   }
 

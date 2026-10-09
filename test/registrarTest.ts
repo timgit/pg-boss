@@ -139,7 +139,7 @@ describe('registrar', function () {
       })
     }))
 
-    const [row] = await registrar.getInstances()
+    const [row] = await registrar.getInstances(1000)
 
     expect(row.pid).toBe(42)
     expect(row.poolMax).toBe(10)

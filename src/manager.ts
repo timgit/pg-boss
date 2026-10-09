@@ -2727,8 +2727,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.#reloadQueueCache(name)
   }
 
-  async getBlockedKeys (name: string): Promise<string[]> {
+  async getBlockedKeys (name: string, options: types.ListOptions = {}): Promise<string[]> {
     Attorney.assertQueueName(name)
+    const limit = Attorney.assertListLimit('getBlockedKeys', options.limit)
 
     const { table, policy } = await this.getQueueCache(name)
 
@@ -2737,12 +2738,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const sql = plans.getBlockedKeys(this.config.schema, table)
-    const { rows } = await this.db.executeSql(sql, [name])
+    const { rows } = await this.db.executeSql(sql, [name, limit])
 
     return rows.map(row => row.singletonKey)
   }
 
-  async getQueues (names?: string | string[]): Promise<types.QueueResult[]> {
+  // Every queue unless `limit` is passed: the public getQueues() passes its limit, and supervision
+  // and the queue cache read them all.
+  async getQueues (names?: string | string[], limit?: number): Promise<types.QueueResult[]> {
     names = Array.isArray(names) ? names : typeof names === 'string' ? [names] : undefined
     if (names) {
       for (const name of names) {
@@ -2750,7 +2753,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
-    const query = plans.getQueues(this.config.schema, names)
+    const query = plans.getQueues(this.config.schema, names, limit)
     const { rows } = await this.db.executeSql(query.text, query.values)
 
     // CockroachDB returns integer columns as strings; normalize the numeric queue fields.
@@ -3088,10 +3091,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async findJobs<T>(name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
     Attorney.assertQueueName(name)
 
-    const { id, key, data, queued = false, limit = 1000 } = options
-
-    assert(Number.isInteger(limit) && limit >= 1 && limit <= 100_000,
-      'findJobs: limit must be an integer between 1 and 100000')
+    const { id, key, data, queued = false } = options
+    const limit = Attorney.assertListLimit('findJobs', options.limit)
 
     const db = this.assertDb(options)
 
@@ -3130,19 +3131,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return rows
   }
 
-  async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+  async getDependencies (name: string, id: string, options: types.ConnectionOptions & types.ListOptions = {}): Promise<types.DependencyRef[]> {
     Attorney.assertQueueName(name)
+    const limit = Attorney.assertListLimit('getDependencies', options.limit)
     const db = this.assertDb(options)
     const sql = plans.getDependencies(this.config.schema)
-    const { rows } = await db.executeSql(sql, [name, id])
+    const { rows } = await db.executeSql(sql, [name, id, limit])
     return rows.map((r: any) => ({ name: r.parentName, id: r.parentId }))
   }
 
-  async getDependents (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+  async getDependents (name: string, id: string, options: types.ConnectionOptions & types.ListOptions = {}): Promise<types.DependencyRef[]> {
     Attorney.assertQueueName(name)
+    const limit = Attorney.assertListLimit('getDependents', options.limit)
     const db = this.assertDb(options)
     const sql = plans.getDependents(this.config.schema)
-    const { rows } = await db.executeSql(sql, [name, id])
+    const { rows } = await db.executeSql(sql, [name, id, limit])
     return rows.map((r: any) => ({ name: r.childName, id: r.childId }))
   }
 

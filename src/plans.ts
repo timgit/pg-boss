@@ -775,6 +775,7 @@ export function getInstances (schema: string) {
       stopped_on IS NULL AND heartbeat_on >= ${schema}.job_now() - heartbeat_seconds * ${INSTANCE_QUIET_BEATS} * interval '1 second' as live
     FROM ${schema}.instance
     ORDER BY started_on, id
+    LIMIT $1
   `
 }
 
@@ -1695,8 +1696,11 @@ export function currentDatabase () {
   return 'SELECT current_database() AS name'
 }
 
-export function getQueues (schema: string, names?: string[]): SqlQuery {
+// `limit` is for the public getQueues(). Supervision and the queue cache read every queue.
+export function getQueues (schema: string, names?: string[], limit?: number): SqlQuery {
   const hasNames = names && names.length > 0
+  const values: unknown[] = hasNames ? [names] : []
+  if (limit !== undefined) values.push(limit)
   return {
     text: `
     SELECT
@@ -1736,8 +1740,9 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
     FROM ${schema}.queue q
     ${hasNames ? 'WHERE q.name = ANY($1::text[])' : ''}
     ORDER BY q.name
+    ${limit !== undefined ? `LIMIT $${values.length}` : ''}
    `,
-    values: hasNames ? [names] : []
+    values
   }
 }
 
@@ -1817,12 +1822,14 @@ const SCHEDULE_COLUMNS = `
   last_job_id as "lastJobId"
 `
 
-export function getSchedules (schema: string) {
-  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule ORDER BY name, key`
+// `limited` adds a LIMIT for the public getSchedules(), as the last parameter. The cron pass reads
+// every schedule.
+export function getSchedules (schema: string, limited = false) {
+  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule ORDER BY name, key${limited ? ' LIMIT $1' : ''}`
 }
 
-export function getSchedulesByQueue (schema: string) {
-  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule WHERE name = $1 ORDER BY key`
+export function getSchedulesByQueue (schema: string, limited = false) {
+  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule WHERE name = $1 ORDER BY key${limited ? ' LIMIT $2' : ''}`
 }
 
 export function getSchedulesByQueueAndKey (schema: string) {
@@ -4921,6 +4928,7 @@ export function getDependencies (schema: string) {
     FROM ${schema}.job_dependency
     WHERE child_name = $1 AND child_id = $2
     ORDER BY parent_name, parent_id
+    LIMIT $3
   `
 }
 
@@ -4930,6 +4938,7 @@ export function getDependents (schema: string) {
     FROM ${schema}.job_dependency
     WHERE parent_name = $1 AND parent_id = $2
     ORDER BY child_name, child_id
+    LIMIT $3
   `
 }
 
@@ -4986,6 +4995,7 @@ export function getBlockedKeys (schema: string, table: string) {
       AND state = '${JOB_STATES.failed}'
       AND policy = '${QUEUE_POLICIES.key_strict_fifo}'
     ORDER BY "singletonKey"
+    LIMIT $2
     `
 }
 
@@ -5205,6 +5215,7 @@ export function getBamEntries (schema: string) {
            created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
     FROM ${schema}.bam
     ORDER BY version, created_on
+    LIMIT $1
   `
 }
 

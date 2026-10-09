@@ -884,16 +884,19 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
-    let sql = plans.getSchedules(this.config.schema)
-    let params: unknown[] = []
+  // Every schedule unless `limit` is passed: the public getSchedules() passes its limit, and the
+  // cron pass reads them all. A name and key read one row by the primary key, so it needs none.
+  async getSchedules (name?: string, key?: string, limit?: number): Promise<types.Schedule[]> {
+    const limited = limit !== undefined
+    let sql = plans.getSchedules(this.config.schema, limited)
+    let params: unknown[] = limited ? [limit] : []
 
     if (name && key !== undefined) {
       sql = plans.getSchedulesByQueueAndKey(this.config.schema)
       params = [name, key]
     } else if (name) {
-      sql = plans.getSchedulesByQueue(this.config.schema)
-      params = [name]
+      sql = plans.getSchedulesByQueue(this.config.schema, limited)
+      params = limited ? [name, limit] : [name]
     }
 
     const { rows } = await this.db.executeSql(sql, params)
