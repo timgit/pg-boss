@@ -766,7 +766,9 @@ describe('failure', function () {
         destinations: [{ name: queueA, count: 2 }],
         unroutable: 2
       })
-      await expect(ctx.boss!.previewRedrive(deadLetter, { limit: 0 })).rejects.toThrow('limit must be an integer >= 1')
+      for (const limit of [0, 1.5, 100_001]) {
+        await expect(ctx.boss!.previewRedrive(deadLetter, { limit })).rejects.toThrow('previewRedrive: limit must be an integer between 1 and 100000')
+      }
     })
 
     it('rejects filters that would silently match nothing or everything', async function () {

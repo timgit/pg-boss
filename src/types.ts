@@ -916,8 +916,8 @@ export interface RedriveOptions extends RedriveFilter {
 
 export interface RedrivePreviewOptions extends RedriveFilter {
   /**
-   * Most jobs to read of each kind, those a redrive would move and those it would leave in place.
-   * A count that reaches it means at least that many.
+   * Most jobs to read of each kind, those a redrive would move and those it would leave in place,
+   * from 1 to 100,000. A count that reaches it means at least that many.
    * @default 1000
    */
   limit?: number;

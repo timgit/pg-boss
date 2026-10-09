@@ -189,7 +189,8 @@ describe('queueStats', function () {
     const cancelled = ids.filter(id => !fetched.some(job => job.id === id)) as string[]
     await ctx.boss.cancel(queue, cancelled)
 
-    // Maintenance counts the 4 completed and cancelled jobs.
+    // Maintenance counts the 4 completed and cancelled jobs, once they finished DELTA_LAG ago.
+    await clock.tick(plans.DELTA_LAG_SECONDS * 1000 + 1000)
     await ctx.boss.supervise(queue)
     let [stats] = await ctx.boss.getQueueStats(queue)
     expect(stats.totalCount).toBe(4)
@@ -214,6 +215,51 @@ describe('queueStats', function () {
     await ctx.boss.supervise(queue)
     ;[stats] = await ctx.boss.getQueueStats(queue)
     expect(stats.totalCount).toBe(2)
+  })
+
+  // A completion is stamped with its transaction's start. One that commits after a monitor pass has
+  // already counted past that stamp would be in neither the live jobs nor the finished ones.
+  helper.describeMultiConnectionOnly('with a completion committed after a monitor pass', function () {
+    it('still counts it in totalCount', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, monitorIntervalSeconds: 1 })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.send(queue)
+      const [done] = await ctx.boss.fetch(queue)
+      await ctx.boss.complete(queue, done.id)
+      await ctx.boss.supervise(queue)
+
+      await ctx.boss.send(queue)
+      const [late] = await ctx.boss.fetch(queue)
+
+      const tx = new pg.Client({ connectionString: helper.getConnectionString() })
+      await tx.connect()
+
+      try {
+        await tx.query('BEGIN')
+        await ctx.boss.complete(queue, late.id, null, { db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) } })
+
+        await new Promise(resolve => setTimeout(resolve, 1_100))
+        await ctx.boss.supervise(queue)
+        expect((await ctx.boss.getQueue(queue))!.totalCount).toBe(2)
+
+        await tx.query('COMMIT')
+      } finally {
+        await tx.end()
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1_100))
+      await ctx.boss.supervise(queue)
+      expect((await ctx.boss.getQueue(queue))!.totalCount).toBe(2)
+
+      // Once its stamp is behind the window's end, a pass takes it into retained_count.
+      const db = await getDb()
+      const { table } = (await ctx.boss.getQueue(queue))!
+      await db.executeSql(plans.cacheQueueStats(ctx.schema, table, [queue], true, false, { lag: "interval '0'" }))
+      const { rows } = await db.executeSql(`SELECT retained_count, total_count FROM ${ctx.schema}.queue WHERE name = $1`, [queue])
+      expect(rows[0]).toEqual({ retained_count: 2, total_count: 2 })
+    })
   })
 
   // A drift between job_i14's predicate and the aggregate's would quietly put the monitor back on a

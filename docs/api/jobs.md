@@ -644,8 +644,8 @@ so the numbers agree with what a redrive would move at that moment.
 It reads at most `limit` matching jobs of each kind rather than counting them all:
 
 - `limit`: most jobs to read of each kind, those a redrive would move and those it
-  would leave in place (default `1000`). A count that reaches it means at least that
-  many.
+  would leave in place, from 1 to 100,000 (default `1000`). A count that reaches it
+  means at least that many.
 
 Returns `{ total, destinations, unroutable }`, each counting the jobs read:
 
@@ -693,7 +693,7 @@ Deletes all jobs in a queue, including active jobs.
 
 If no queue name is given, jobs are deleted from all queues.
 
-Resolves to how many jobs it deleted, deleting in batches as `deleteQueuedJobs()` does. A partitioned queue, or every queue when no name is given, is emptied with a single `TRUNCATE` instead, which reports no count, so it resolves to `null`; its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, the cached counts catch up at the next monitor pass.
+Resolves to how many jobs it deleted, deleting in batches as `deleteQueuedJobs()` does. A partitioned queue, or every queue when no name is given, is emptied with a single `TRUNCATE` instead, which reports no count, so it resolves to `null`; its cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, `totalCount` drops by the jobs deleted at once, and the other cached counts catch up at the next monitor pass.
 
 ```js
 // delete everything in one queue
