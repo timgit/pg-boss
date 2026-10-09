@@ -345,6 +345,8 @@ await boss.work('process-video', async ([ job ]) => {
 
 Each job has its own signal. On a queue with `heartbeatSeconds`, a heartbeat that finds a job no longer active under this worker's claim aborts that job's signal. Either the job was failed after its heartbeat went stale or it expired (and may already be running elsewhere), or it was completed, failed, cancelled or deleted, including by the handler itself. The rest of the batch keeps running. Whatever the handler returns for a job it no longer holds is discarded, so stopping early only saves the work. A heartbeat that fails to reach the database does not abort anything.
 
+A handler that runs past `expireInSeconds` has its batch failed and every signal in it aborted. Aborting cannot stop a handler that ignores its signal, so the worker waits for the handler to return before it fetches again, and emits a [`handler_overrun`](./events.md#warning) warning while it waits. `localConcurrency` and `localGroupConcurrency` therefore count a handler that outran its timeout until it actually stops, and its worker does not pick up the job's retry while the abandoned attempt is still running. A handler that never returns holds its worker until [`stop()`](./ops.md#stop-options) spends its grace.
+
 ### `getWipData(options)`
 
 Returns a snapshot of all workers in this instance of pg-boss with state `created`, `active`, or `stopping`. This is the same data payload emitted by the `wip` event, but available on-demand without waiting for a job transition.
