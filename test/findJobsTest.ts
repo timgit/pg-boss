@@ -198,6 +198,14 @@ describe('findJobs', function () {
     }
   })
 
+  it('should return at most 1000 jobs by default', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.insert(ctx.schema, Array.from({ length: 1001 }, (_, i) => ({ data: { i } })))
+
+    expect((await ctx.boss.findJobs(ctx.schema)).length).toBe(1000)
+  })
+
   it('should return jobs oldest first, so a limit takes the oldest', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

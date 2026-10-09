@@ -854,7 +854,7 @@ export interface FindJobsOptions extends ConnectionOptions {
   data?: object;
   queued?: boolean;
   /**
-   * Most jobs to return, oldest first, from 1 to 100,000. No limit by default.
+   * Most jobs to return, oldest first, from 1 to 100,000. Defaults to 1000.
    * @see https://pgboss.io/api/jobs#findjobs-name-options
    */
   limit?: number;

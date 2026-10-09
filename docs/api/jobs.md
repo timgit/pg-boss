@@ -752,7 +752,7 @@ await boss.retry('email-send', jobId)
 Retries a set of failed jobs.
 
 ```js
-// requeue all failed jobs for another attempt
+// requeue failed jobs for another attempt
 const failed = await boss.findJobs('email-send')
 const ids = failed.filter(job => job.state === 'failed').map(job => job.id)
 
@@ -916,10 +916,9 @@ Finds jobs in a queue by id, singleton key, and/or data. Returns an array of job
 
   If `true`, only return jobs in queued state (created or retry). If `false`, return jobs in any state.
 
-* **limit**, int, *default: no limit*
+* **limit**, int, *default: 1000*
 
-  Most jobs to return, from 1 to 100,000. Without it, a call with no other filter returns every
-  job in the queue, and its cost grows with the queue.
+  Most jobs to return, from 1 to 100,000.
 
 * **db**, object, see notes in `send()`
 
