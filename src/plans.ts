@@ -744,7 +744,9 @@ export function deleteOldInstances (schema: string, days: number) {
   `
 }
 
-export function getInstances (schema: string) {
+// With `after`, $1 is the previous page's last instance id, whose started_on is read back from its
+// row, and the limit moves to $2.
+export function getInstances (schema: string, after = false) {
   return `
     SELECT
       id,
@@ -774,9 +776,14 @@ export function getInstances (schema: string) {
       stopped_on as "stoppedOn",
       stopped_on IS NULL AND heartbeat_on >= ${schema}.job_now() - heartbeat_seconds * ${INSTANCE_QUIET_BEATS} * interval '1 second' as live
     FROM ${schema}.instance
+    ${after ? `WHERE (started_on, id) > ((SELECT started_on FROM ${schema}.instance WHERE id = $1::uuid), $1::uuid)` : ''}
     ORDER BY started_on, id
-    LIMIT $1
+    LIMIT ${after ? '$2' : '$1'}
   `
+}
+
+export function instanceExists (schema: string) {
+  return `SELECT 1 FROM ${schema}.instance WHERE id = $1::uuid`
 }
 
 export function createIndexJobDependencyParent (schema: string) {
@@ -1696,10 +1703,16 @@ export function currentDatabase () {
   return 'SELECT current_database() AS name'
 }
 
-// `limit` is for the public getQueues(). Supervision and the queue cache read every queue.
-export function getQueues (schema: string, names?: string[], limit?: number): SqlQuery {
+// `limit` and `after` are for the public getQueues(). Supervision and the queue cache read every
+// queue. `after` is the previous page's last queue name.
+export function getQueues (schema: string, names?: string[], limit?: number, after?: string): SqlQuery {
   const hasNames = names && names.length > 0
   const values: unknown[] = hasNames ? [names] : []
+  const conditions = hasNames ? ['q.name = ANY($1::text[])'] : []
+  if (after !== undefined) {
+    values.push(after)
+    conditions.push(`q.name > $${values.length}`)
+  }
   if (limit !== undefined) values.push(limit)
   return {
     text: `
@@ -1738,7 +1751,7 @@ export function getQueues (schema: string, names?: string[], limit?: number): Sq
       q.created_on as "createdOn",
       q.updated_on as "updatedOn"
     FROM ${schema}.queue q
-    ${hasNames ? 'WHERE q.name = ANY($1::text[])' : ''}
+    ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
     ORDER BY q.name
     ${limit !== undefined ? `LIMIT $${values.length}` : ''}
    `,
@@ -1822,14 +1835,26 @@ const SCHEDULE_COLUMNS = `
   last_job_id as "lastJobId"
 `
 
-// `limited` adds a LIMIT for the public getSchedules(), as the last parameter. The cron pass reads
-// every schedule.
-export function getSchedules (schema: string, limited = false) {
-  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule ORDER BY name, key${limited ? ' LIMIT $1' : ''}`
+// `limited` and `after` are for the public getSchedules(). The cron pass reads every schedule.
+// `after` takes two parameters, the name and key of the previous page's last schedule, and the
+// limit follows them.
+export function getSchedules (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule
+    ${after ? 'WHERE (name, key) > ($1, $2)' : ''}
+    ORDER BY name, key
+    ${limited ? `LIMIT $${after ? 3 : 1}` : ''}
+  `
 }
 
-export function getSchedulesByQueue (schema: string, limited = false) {
-  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule WHERE name = $1 ORDER BY key${limited ? ' LIMIT $2' : ''}`
+export function getSchedulesByQueue (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule
+    WHERE name = $1
+      ${after ? 'AND (name, key) > ($2, $3)' : ''}
+    ORDER BY key
+    ${limited ? `LIMIT $${after ? 4 : 2}` : ''}
+  `
 }
 
 export function getSchedulesByQueueAndKey (schema: string) {
@@ -4860,8 +4885,13 @@ export function assertMigration (schema: string, version: number) {
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
 
-export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean }) {
-  const { queued, byKey, byData, byId } = options
+// Ordered by created_on, then id: jobs written in one transaction share a created_on, and id keeps
+// their order the same on every page. job_i15 (or job_i17 by key) supplies created_on, so only the
+// jobs that share one are sorted. With `after`, a page continues past that job, read back by id so
+// its created_on keeps the microseconds a JS Date drops. The created_on bound beside the row
+// comparison is what lets the index scan start there.
+export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean, after?: boolean }) {
+  const { queued, byKey, byData, byId, after } = options
 
   let paramIndex = 1
   const whereConditions = []
@@ -4885,12 +4915,19 @@ export function findJobs (schema: string, table: string, options: { queued: bool
     whereConditions.push(`AND state < '${JOB_STATES.active}'`)
   }
 
+  if (after) {
+    ++paramIndex
+    const anchor = `(SELECT created_on FROM ${schema}.${table} WHERE name = $1 AND id = $${paramIndex}::uuid)`
+    whereConditions.push(`AND created_on >= ${anchor}`)
+    whereConditions.push(`AND (created_on, id) > (${anchor}, $${paramIndex}::uuid)`)
+  }
+
   return `
     SELECT ${JOB_COLUMNS_ALL}
     FROM ${schema}.${table}
     WHERE name = $1
       ${whereConditions.join('\n      ')}
-    ORDER BY created_on
+    ORDER BY created_on, id
     LIMIT $${++paramIndex}
     `
 }
@@ -4922,23 +4959,27 @@ export function insertDependencies (schema: string, deps?: unknown[]) {
   return deps ? sql.replace('$1', () => serializeJsonParam(deps)) : sql
 }
 
-export function getDependencies (schema: string) {
+// With `after`, $3 and $4 are the name and id of the previous page's last job, and the limit moves
+// to $5. The same for getDependents.
+export function getDependencies (schema: string, after = false) {
   return `
     SELECT parent_name as "parentName", parent_id as "parentId"
     FROM ${schema}.job_dependency
     WHERE child_name = $1 AND child_id = $2
+      ${after ? 'AND (parent_name, parent_id) > ($3, $4::uuid)' : ''}
     ORDER BY parent_name, parent_id
-    LIMIT $3
+    LIMIT ${after ? '$5' : '$3'}
   `
 }
 
-export function getDependents (schema: string) {
+export function getDependents (schema: string, after = false) {
   return `
     SELECT child_name as "childName", child_id as "childId"
     FROM ${schema}.job_dependency
     WHERE parent_name = $1 AND parent_id = $2
+      ${after ? 'AND (child_name, child_id) > ($3, $4::uuid)' : ''}
     ORDER BY child_name, child_id
-    LIMIT $3
+    LIMIT ${after ? '$5' : '$3'}
   `
 }
 
@@ -4987,15 +5028,23 @@ export function cleanupDependencies (schema: string, table: string, name: string
   return locked(schema, sql, table + 'cleanupDependencies', noAdvisoryLocks)
 }
 
-export function getBlockedKeys (schema: string, table: string) {
+// Whether the row a list read's `after` names still exists, asked only when a page comes back empty,
+// to tell the end of the list from a row deleted between pages. $1 and $2 are the queue and job id.
+export function jobExists (schema: string, table: string) {
+  return `SELECT 1 FROM ${schema}.${table} WHERE name = $1 AND id = $2::uuid`
+}
+
+// With `after`, $2 is the last key of the previous page and the limit moves to $3.
+export function getBlockedKeys (schema: string, table: string, after = false) {
   return `
     SELECT DISTINCT singleton_key as "singletonKey"
     FROM ${schema}.${table}
     WHERE name = $1
       AND state = '${JOB_STATES.failed}'
       AND policy = '${QUEUE_POLICIES.key_strict_fifo}'
+      ${after ? 'AND singleton_key > $2' : ''}
     ORDER BY "singletonKey"
-    LIMIT $2
+    LIMIT ${after ? '$3' : '$2'}
     `
 }
 
@@ -5209,14 +5258,22 @@ export function getBamStatus (schema: string) {
   `
 }
 
-export function getBamEntries (schema: string) {
+// With `after`, $1 is the previous page's last entry id, whose version and created_on are read back
+// from its row, and the limit moves to $2.
+export function getBamEntries (schema: string, after = false) {
+  const anchor = (column: string) => `(SELECT ${column} FROM ${schema}.bam WHERE id = $1::uuid)`
   return `
     SELECT id, name, version, status, queue, table_name as "table", command, error,
            created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
     FROM ${schema}.bam
-    ORDER BY version, created_on
-    LIMIT $1
+    ${after ? `WHERE (version, created_on, id) > (${anchor('version')}, ${anchor('created_on')}, $1::uuid)` : ''}
+    ORDER BY version, created_on, id
+    LIMIT ${after ? '$2' : '$1'}
   `
+}
+
+export function bamEntryExists (schema: string) {
+  return `SELECT 1 FROM ${schema}.bam WHERE id = $1::uuid`
 }
 
 // --- drift detection: live-catalog probes ---

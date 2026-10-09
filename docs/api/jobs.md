@@ -920,6 +920,11 @@ Finds jobs in a queue by id, singleton key, and/or data. Returns an array of job
 
   Most jobs to return, from 1 to 100,000.
 
+* **after**, string
+
+  The id of the last job of the previous page, to read the next one. Rejects if that job no
+  longer exists.
+
 * **db**, object, see notes in `send()`
 
 **Examples**
@@ -940,6 +945,14 @@ const jobs = await boss.findJobs('my-queue', { key: 'user-123', queued: true })
 // At most 100 jobs from a large queue
 const jobs = await boss.findJobs('my-queue', { data: { type: 'email' }, limit: 100 })
 
+// Every job, 500 at a time
+let after
+for (;;) {
+  const page = await boss.findJobs('my-queue', { limit: 500, after })
+  if (page.length === 0) break
+  after = page.at(-1).id
+}
+
 // Combine filters
 const jobs = await boss.findJobs('my-queue', {
   key: 'user-123',
@@ -952,7 +965,7 @@ const jobs = await boss.findJobs('my-queue', {
 
 ### `getDependencies(name, id, options)`
 
-Returns an array of parent job references that the specified job depends on, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000.
+Returns an array of parent job references that the specified job depends on, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last reference as `options.after` to read the next page.
 
 ```js
 const parents = await boss.getDependencies('aggregate-results', jobId)
@@ -961,7 +974,7 @@ const parents = await boss.getDependencies('aggregate-results', jobId)
 
 ### `getDependents(name, id, options)`
 
-Returns an array of child job references that depend on the specified job, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000.
+Returns an array of child job references that depend on the specified job, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last reference as `options.after` to read the next page.
 
 ```js
 const children = await boss.getDependents('process-data', parentJobId)

@@ -115,6 +115,7 @@ export const findJobsOptionsSchema = z.object({
   data: jsonRecordSchema.optional(),
   queued: z.boolean().optional(),
   limit: z.number().optional(),
+  after: z.string().optional(),
 }) satisfies z.ZodType<types.HttpFindJobsOptions>
 
 // Shared by redrive and previewRedrive, which take the same filter and a limit. createdBefore

@@ -848,11 +848,16 @@ export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
 
-export interface ListOptions {
+export interface ListOptions<After = string> {
   /**
    * Most rows to return, from 1 to 100,000. Defaults to 1000.
    */
   limit?: number;
+  /**
+   * Continue after this row, the last one of the previous page: a name, key or id, or the row itself
+   * for schedules and dependencies.
+   */
+  after?: After;
 }
 
 export interface FindJobsOptions extends ConnectionOptions {
@@ -865,6 +870,11 @@ export interface FindJobsOptions extends ConnectionOptions {
    * @see https://pgboss.io/api/jobs#findjobs-name-options
    */
   limit?: number;
+  /**
+   * Continue after this job id, the last one of the previous page. Rejects if that job no longer exists.
+   * @see https://pgboss.io/api/jobs#findjobs-name-options
+   */
+  after?: string;
 }
 
 /**
