@@ -555,15 +555,16 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const batchSize = this.#config.__test__walk_batch_size
 
       for (const name of queues) {
-        // The walk counts the completed and cancelled jobs that finished by the time it started, and
-        // the monitor counts the rest after that (see plans.createTableQueue).
+        // The walk counts the completed and cancelled jobs that finished by DELTA_LAG before it
+        // started, so a completion committed late is still ahead of the watermark, and the monitor
+        // counts the rest after that (see plans.createTableQueue).
         const { rows: [{ time }] } = await this.#executeQuery(plans.getTime(schema))
-        const retainedBefore = Number(time)
+        const retainedBefore = Number(time) - plans.DELTA_LAG_SECONDS * 1000
         const retention = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, noAdvisoryLocks, retainedBefore }))
 
         // Only a walk that covered the whole queue has counted all of what it kept.
         if (retention.done) {
-          await this.#executeQuery({ text: plans.setRetainedCount(schema), values: [name, retention.retained, retainedBefore] })
+          await this.#executeQuery({ text: plans.setRetainedCount(schema, table), values: [name, retention.retained, retainedBefore] })
         }
 
         await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'child', { after, batchSize, noAdvisoryLocks }))

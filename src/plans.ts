@@ -118,6 +118,9 @@ const QUEUE_DEFAULTS = {
 // planner can match the partial index to it.
 const LIVE_STATES = `state IN ('${JOB_STATES.created}', '${JOB_STATES.retry}', '${JOB_STATES.active}', '${JOB_STATES.failed}')`
 
+// The finished states retained_count counts (see createTableQueue). Failed jobs are live.
+const RETAINED_STATES = `state IN ('${JOB_STATES.completed}', '${JOB_STATES.cancelled}')`
+
 // The root of the job table hierarchy, under both install shapes: the partitioned parent that
 // COMMON_JOB_TABLE and every per-queue partition attach to, and the plain physical table that
 // carries the rows and indexes itself where noTablePartitioning is set. Also the template every
@@ -3992,9 +3995,8 @@ function deleteJobsBatch (schema: string, table: string, name: string, predicate
   const cursor = after ? `AND id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
   const range = `name = ${queue} ${cursor}
         AND id <= COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)`
-  const retainedStates = `state IN ('${JOB_STATES.completed}', '${JOB_STATES.cancelled}')`
-  const held = `${retainedStates} AND completed_on <= (SELECT retained_on FROM ${schema}.queue WHERE name = ${queue})`
-  const before = `${retainedStates} AND completed_on <= to_timestamp(${Number(retainedBefore)}::float8 / 1000)`
+  const held = `${RETAINED_STATES} AND completed_on <= (SELECT retained_on FROM ${schema}.queue WHERE name = ${queue})`
+  const before = `${RETAINED_STATES} AND completed_on <= to_timestamp(${Number(retainedBefore)}::float8 / 1000)`
 
   return `
     WITH edge AS (
@@ -4028,22 +4030,33 @@ const CACHED_LIVE_COUNT = 'queued_count + active_count + failed_count'
 // The retention sweep's total of the completed and cancelled jobs it left that finished by $3
 // (epoch milliseconds), once it has walked the whole queue, with $3 as the new retained_on and
 // total_count updated with it rather than at the next monitor pass. $1 is the queue, $2 the count.
-export function setRetainedCount (schema: string): string {
+// total_count also takes the jobs that finished after $3, which the next monitor pass adds to
+// retained_count once they are DELTA_LAG old (see retainedAssignments).
+export function setRetainedCount (schema: string, table: string): string {
   return `
     UPDATE ${schema}.queue
-    SET retained_count = $2, retained_on = to_timestamp($3::float8 / 1000), total_count = ${CACHED_LIVE_COUNT} + $2
+    SET retained_count = $2,
+      retained_on = to_timestamp($3::float8 / 1000),
+      total_count = ${CACHED_LIVE_COUNT} + $2 + (
+        SELECT count(*)::int
+        FROM ${schema}.${table} j
+        WHERE j.name = $1
+          AND j.completed_on > to_timestamp($3::float8 / 1000)
+          AND j.completed_on <= ${schema}.job_now()
+          AND ${RETAINED_STATES}
+      )
     WHERE name = $1
   `
 }
 
-// Takes the completed and cancelled jobs a bulk delete removed off retained_count and total_count, so
-// both are right at once rather than at the next maintenance pass. $1 is the queue, $2 the count. A
-// queue the retention sweep has not counted yet stays null.
+// Takes the jobs a delete or resume moved off the queue's counts at once rather than at the next
+// pass: $2 off retained_count, the completed and cancelled jobs it held, and $3 off total_count, every
+// job removed. $1 is the queue. A queue the retention sweep has not counted yet stays null.
 export function reduceRetainedCount (schema: string): string {
   return `
     UPDATE ${schema}.queue
     SET retained_count = GREATEST(retained_count - $2, 0),
-      total_count = ${CACHED_LIVE_COUNT} + GREATEST(retained_count - $2, 0)
+      total_count = GREATEST(total_count - $3, 0)
     WHERE name = $1 AND retained_count IS NOT NULL
   `
 }
@@ -4184,7 +4197,8 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
 // under a mixed load whose longest routine transactions held 5s, a lag of 0 or 1s set off a true-up
 // on 90-97% of passes, and 5s or more on none. Ten seconds leaves headroom over that and puts the
 // counters within a pass of the gauges. See research/delta-true-up.md on planning.
-const DELTA_LAG = "interval '10 seconds'"
+export const DELTA_LAG_SECONDS = 10
+const DELTA_LAG = `interval '${DELTA_LAG_SECONDS} seconds'`
 const DELTA_RESET_MAX_SECONDS = 2 * 60 * 60
 const DELTA_RESET_MAX = `interval '${DELTA_RESET_MAX_SECONDS} seconds'`
 const DELTA_TRUE_UP_MAX = "interval '1 hour'"
@@ -4571,6 +4585,7 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
         COALESCE(live."failedCount", 0) as "failedCount",
         COALESCE(live."liveCount", 0) as "liveCount",
         since."retainedSince",
+        since."retainedRecent",
         since."retainedFrom",${counters.select}
         singletons."singletonsActive"
       FROM unnest($1::text[]) AS n(name)
@@ -4594,8 +4609,14 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
             FROM ${schema}.${table} j
             WHERE j.name = qr.name
               AND j.completed_on > qr.retained_on
+              AND j.completed_on <= ${end}
+              AND ${RETAINED_STATES}) as "retainedSince",
+          (SELECT count(*)::int
+            FROM ${schema}.${table} j
+            WHERE j.name = qr.name
+              AND j.completed_on > GREATEST(qr.retained_on, ${end})
               AND j.completed_on <= ${schema}.job_now()
-              AND j.state IN ('${JOB_STATES.completed}', '${JOB_STATES.cancelled}')) as "retainedSince"
+              AND ${RETAINED_STATES}) as "retainedRecent"
         FROM ${schema}.queue qr
         WHERE qr.name = n.name
       ) since ON true
@@ -4614,19 +4635,29 @@ export function getQueueStats (schema: string, table: string, queues: string[], 
 }
 
 // The SET clause for retained_count, retained_on and total_count, from the aggregate's live count and
-// the jobs that finished since retained_on. The finished jobs are added only if retained_on is still
-// the watermark they were counted from: a maintenance pass or a forced refresh that moved it in the
-// meantime has counted them already. For a queue no maintenance pass has reached yet (see
-// createTableQueue), total_count is the larger of the live jobs and total_count as it was, which is
-// a full count on a queue that predates the columns and zero on a new one.
-function retainedAssignments (schema: string) {
+// the jobs that finished since retained_on. retained_count takes in the finished jobs only up to
+// `end`, the throughput window's end, DELTA_LAG behind the pass, and retained_on moves up to it: a
+// completion stamped before a pass but committed after it is still ahead of retained_on, so a later
+// pass counts it (see DELTA_LAG). total_count adds the jobs that finished since then too
+// (retainedRecent), which the next pass counts again rather than keeps.
+//
+// The finished jobs are added only if retained_on is still the watermark they were counted from: a
+// maintenance pass or a forced refresh that moved it in the meantime has counted them already, and
+// set total_count with them. For a queue no maintenance pass has reached yet (see createTableQueue),
+// total_count is the larger of the live jobs and total_count as it was, which is a full count on a
+// queue that predates the columns and zero on a new one.
+function retainedAssignments (end: string) {
   const counted = 'queue.retained_on IS NOT DISTINCT FROM stats."retainedFrom"'
   const live = 'COALESCE(stats."liveCount", 0)'
   const retained = `CASE WHEN ${counted} THEN queue.retained_count + COALESCE(stats."retainedSince", 0) ELSE queue.retained_count END`
   return `
       retained_count = ${retained},
-      retained_on = CASE WHEN ${counted} AND queue.retained_on IS NOT NULL THEN GREATEST(queue.retained_on, ${schema}.job_now()) ELSE queue.retained_on END,
-      total_count = CASE WHEN queue.retained_count IS NULL THEN GREATEST(queue.total_count, ${live}) ELSE ${live} + ${retained} END,`
+      retained_on = CASE WHEN ${counted} AND queue.retained_on IS NOT NULL THEN GREATEST(queue.retained_on, ${end}) ELSE queue.retained_on END,
+      total_count = CASE
+        WHEN queue.retained_count IS NULL THEN GREATEST(queue.total_count, ${live})
+        WHEN ${counted} THEN ${live} + ${retained} + COALESCE(stats."retainedRecent", 0)
+        ELSE queue.total_count
+      END,`
 }
 
 // Length of the recent-ready-count sliding window kept on queue.ready_history for the dashboard
@@ -4701,7 +4732,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
       ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
       failed_count = COALESCE(stats."failedCount", 0),
-      ${retainedAssignments(schema)}${throughputSet}
+      ${retainedAssignments(deltaWindowEnd(schema, window.lag))}${throughputSet}
       singletons_active = stats."singletonsActive",
       monitor_on = ${schema}.job_now(),
       ready_history = (
@@ -4780,7 +4811,7 @@ export function refreshQueueStats (schema: string, table: string, name: string, 
       ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
       failed_count = COALESCE(stats."failedCount", 0),
-      ${retainedAssignments(schema)}
+      ${retainedAssignments(deltaWindowEnd(schema))}
       singletons_active = stats."singletonsActive",
       monitor_on = ${schema}.job_now()
     FROM (

@@ -2517,7 +2517,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       const sql = plans.deleteJobsById(this.config.schema, table, !!attempts)
       const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
-      await this.#reduceRetained(db, name, result)
+      await this.#reduceRetained(db, name, result, true)
       const response = this.mapCommandResponse(ids, result)
 
       this.#trackHandlerSettle(options, response)
@@ -2603,10 +2603,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async previewRedrive (name: string, options: types.RedrivePreviewOptions = {}): Promise<types.RedrivePreview> {
     Attorney.assertQueueName(name)
 
-    const { limit = 1000 } = options
+    const limit = Attorney.assertListLimit('previewRedrive', options.limit)
     const filter = this.#redriveFilterValues(options)
-
-    assert(Number.isInteger(limit) && limit >= 1, 'limit must be an integer >= 1')
 
     const db = this.assertDb(options)
     const { table } = await this.getQueueCache(name)
@@ -2658,19 +2656,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const sql = plans.resumeJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
-    await this.#reduceRetained(db, name, result)
+    await this.#reduceRetained(db, name, result, false)
     return this.mapCommandResponse(ids, result)
   }
 
   // deleteJob() and resume() take the completed and cancelled jobs they moved out of the queue's
-  // retained_count off it, so totalCount does not wait for the next maintenance pass. On the caller's
-  // db, so it commits or rolls back with the statement, and only when one was counted, so settling a
-  // live job never touches the queue row. CockroachDB returns the count as a string.
-  async #reduceRetained (db: types.IDatabase, name: string, result: { rows: any[] } | null) {
+  // retained_count off it, so totalCount does not wait for the next maintenance pass. A deleted job
+  // leaves totalCount too, and a resumed one stays in it as a live job. On the caller's db, so it
+  // commits or rolls back with the statement, and only when one was counted, so settling a live job
+  // never touches the queue row. CockroachDB returns the count as a string.
+  async #reduceRetained (db: types.IDatabase, name: string, result: { rows: any[] } | null, deleted: boolean) {
     const retained = Number(result?.rows?.[0]?.retained ?? 0)
 
     if (retained > 0) {
-      await db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained])
+      await db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained, deleted ? retained : 0])
     }
   }
 
@@ -2850,8 +2849,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   // Deletes one queue's jobs a batch of keys at a time (see plans.deleteJobsBatch), each batch its
   // own statement, and returns how many it deleted. A failure partway leaves the batches before it
-  // deleted. The completed and cancelled jobs among them come off the queue's retained_count, so its
-  // total_count is right from the next monitor pass. CockroachDB returns the counts as strings.
+  // deleted. Every job it deleted comes off the queue's total_count at once, and the completed and
+  // cancelled ones it held off its retained_count. CockroachDB returns the counts as strings.
   async #deleteInBatches (name: string, batch: (options: { after?: string, batchSize?: number }) => string): Promise<number> {
     const batchSize = this.config.__test__walk_batch_size
     let after: string | undefined
@@ -2869,8 +2868,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         after = rows[0].walkCursor
       }
     } finally {
-      if (retained) {
-        await this.db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained])
+      if (deleted) {
+        await this.db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained, deleted])
       }
     }
   }
