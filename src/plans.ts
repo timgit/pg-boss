@@ -4857,7 +4857,7 @@ export function findJobs (schema: string, table: string, options: { queued: bool
     FROM ${schema}.${table}
     WHERE name = $1
       ${whereConditions.join('\n      ')}
-    ORDER BY created_on, id
+    ORDER BY created_on
     LIMIT $${++paramIndex}
     `
 }
