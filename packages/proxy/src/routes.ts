@@ -186,7 +186,7 @@ const findJobsQuerySchema = z.object({
   queued: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   dataKey: z.string().optional(),
   dataValue: z.string().optional(),
-  limit: z.coerce.number().int().positive().optional()
+  limit: z.coerce.number().int().positive().max(100000).optional()
 }).refine((q) => !q.dataValue || q.dataKey, {
   message: 'dataKey is required when dataValue is provided'
 })

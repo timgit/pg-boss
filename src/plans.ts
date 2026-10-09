@@ -1734,6 +1734,7 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
       q.updated_on as "updatedOn"
     FROM ${schema}.queue q
     ${hasNames ? 'WHERE q.name = ANY($1::text[])' : ''}
+    ORDER BY q.name
    `,
     values: hasNames ? [names] : []
   }
@@ -4826,8 +4827,6 @@ export function assertMigration (schema: string, version: number) {
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
 
-// The limit has no ORDER BY to go with it: any matching jobs will do, and an ORDER BY would sort
-// every match to pick them.
 export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean, limited: boolean }) {
   const { queued, byKey, byData, byId, limited } = options
 
@@ -4860,6 +4859,7 @@ export function findJobs (schema: string, table: string, options: { queued: bool
     FROM ${schema}.${table}
     WHERE name = $1
       ${whereConditions.join('\n      ')}
+    ORDER BY created_on, id
     ${limitClause}
     `
 }
@@ -4896,6 +4896,7 @@ export function getDependencies (schema: string) {
     SELECT parent_name as "parentName", parent_id as "parentId"
     FROM ${schema}.job_dependency
     WHERE child_name = $1 AND child_id = $2
+    ORDER BY parent_name, parent_id
   `
 }
 
@@ -4904,6 +4905,7 @@ export function getDependents (schema: string) {
     SELECT child_name as "childName", child_id as "childId"
     FROM ${schema}.job_dependency
     WHERE parent_name = $1 AND parent_id = $2
+    ORDER BY child_name, child_id
   `
 }
 
@@ -4959,6 +4961,7 @@ export function getBlockedKeys (schema: string, table: string) {
     WHERE name = $1
       AND state = '${JOB_STATES.failed}'
       AND policy = '${QUEUE_POLICIES.key_strict_fifo}'
+    ORDER BY "singletonKey"
     `
 }
 
@@ -5168,6 +5171,7 @@ export function getBamStatus (schema: string) {
     SELECT status, count(*)::int as count, max(created_on) as "lastCreatedOn"
     FROM ${schema}.bam
     GROUP BY status
+    ORDER BY status
   `
 }
 

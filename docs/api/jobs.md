@@ -892,7 +892,7 @@ Retrieves a job with all metadata by name and id
 
 ### `findJobs(name, options)`
 
-Finds jobs in a queue by id, singleton key, and/or data. Returns an array of jobs with all metadata.
+Finds jobs in a queue by id, singleton key, and/or data. Returns an array of jobs with all metadata, oldest first.
 
 **Arguments**
 - `name`: string, *required*
@@ -918,9 +918,8 @@ Finds jobs in a queue by id, singleton key, and/or data. Returns an array of job
 
 * **limit**, int, *default: no limit*
 
-  Most jobs to return. Without it, a call with no other filter returns every job in the queue,
-  and its cost grows with the queue. The results are not sorted, so which of the matching jobs a
-  limited call returns is unspecified, and the next call does not continue where it stopped.
+  Most jobs to return, from 1 to 100,000. Without it, a call with no other filter returns every
+  job in the queue, and its cost grows with the queue.
 
 * **db**, object, see notes in `send()`
 
@@ -954,7 +953,7 @@ const jobs = await boss.findJobs('my-queue', {
 
 ### `getDependencies(name, id, options)`
 
-Returns an array of parent job references that the specified job depends on.
+Returns an array of parent job references that the specified job depends on, sorted by queue name and id.
 
 ```js
 const parents = await boss.getDependencies('aggregate-results', jobId)
@@ -963,7 +962,7 @@ const parents = await boss.getDependencies('aggregate-results', jobId)
 
 ### `getDependents(name, id, options)`
 
-Returns an array of child job references that depend on the specified job.
+Returns an array of child job references that depend on the specified job, sorted by queue name and id.
 
 ```js
 const children = await boss.getDependents('process-data', parentJobId)

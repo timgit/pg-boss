@@ -3077,7 +3077,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { id, key, data, queued = false, limit } = options
 
     if (limit !== undefined) {
-      assert(Number.isInteger(limit) && limit >= 1, 'limit must be an integer >= 1')
+      assert(Number.isInteger(limit) && limit >= 1 && limit <= 100_000,
+        'findJobs: limit must be an integer between 1 and 100000')
     }
 
     const db = this.assertDb(options)
