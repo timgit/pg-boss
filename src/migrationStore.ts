@@ -2232,6 +2232,21 @@ AS $function$
             ]),
         `ALTER TABLE ${schema}.job DROP COLUMN upsert_by_key`
       ]
+    },
+    {
+      release: '12.38.0',
+      version: 46,
+      previous: 45,
+      // sent_on is the latest occurrence an instance has sent for a `missed: 'once'` schedule, which a
+      // catch-up reads so it does not send that occurrence again. Nullable with no default, so adding
+      // it rewrites nothing, and a row nothing has recorded reads as the claim alone, which is what
+      // every earlier release caught up from.
+      install: [
+        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS sent_on timestamp with time zone`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.schedule DROP COLUMN sent_on`
+      ]
     }
   ]
 }

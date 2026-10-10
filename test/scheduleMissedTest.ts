@@ -2,9 +2,9 @@ import { expect } from 'vitest'
 import { delay } from '../src/tools.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
-import Timekeeper from '../src/timekeeper.ts'
+import Timekeeper, { QUEUES } from '../src/timekeeper.ts'
 import { systemClock } from '../src/clock.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 import type { Job } from '../src/types.ts'
 import { ctx } from './hooks.ts'
 
@@ -39,6 +39,11 @@ function makeTk () {
 /** The 60-second throttle slot a forwarded job lands in, as the insert files it: UTC, zoneless. */
 function slotOf (epochMs: number) {
   return new Date(Math.floor(epochMs / MINUTE) * MINUTE).toISOString().replace('T', ' ').slice(0, 19)
+}
+
+/** The one-second throttle slot a cron expression with a seconds field files an occurrence in. */
+function secondSlotOf (epochMs: number) {
+  return new Date(Math.floor(epochMs / 1000) * 1000).toISOString().replace('T', ' ').slice(0, 19)
 }
 
 /** The iCalendar spelling of an instant, for a DTSTART built around the clock. */
@@ -81,6 +86,15 @@ function row (cron: string, missed?: string, extra: Record<string, unknown> = {}
 /** The slots a pass filed jobs in, a catch-up occurrence's before the due one's. */
 function slots (inserted: any[]) {
   return inserted.map(job => job.__singletonSlot)
+}
+
+// Real-time wait for I/O a tick started; tick itself never waits on I/O.
+async function until (predicate: () => Promise<boolean>, ms = 10_000): Promise<void> {
+  const deadline = Date.now() + ms
+  while (!(await predicate())) {
+    if (Date.now() > deadline) throw new Error('until: condition not met')
+    await delay(10)
+  }
 }
 
 async function waitForJobs (boss: PgBoss, count: number): Promise<Job[]> {
@@ -236,9 +250,19 @@ describe('schedule missed', function () {
     // is never a gap between two passes to catch up on and the policy costs nothing: the due
     // occurrence, and nothing behind it.
     for (const seconds of [1, 30, 45, 60]) {
-      const inserted = await pass(tk, now, new Date(now - seconds * 1000), [row('* * * * * *', 'once')])
+      const inserted = await pass(tk, now, new Date(now - seconds * 1000), [row('* * * * *', 'once')])
 
       expect(slots(inserted)).toEqual([slotOf(minute)])
+    }
+
+    // An expression with a seconds field is owed every occurrence since the last pass, filed by the
+    // second, and still nothing from before the window. A fresh Timekeeper for each, since one that
+    // has evaluated the row reads on from where it left off.
+    for (const seconds of [1, 30, 45, 60]) {
+      const inserted = await pass(makeTk(), now, new Date(now - seconds * 1000), [row('* * * * * *', 'once')])
+      const owed = Array.from({ length: seconds }, (_, i) => secondSlotOf(now - (seconds - 1 - i) * 1000))
+
+      expect(slots(inserted)).toEqual(owed)
     }
   })
 
@@ -538,5 +562,158 @@ describe('schedule missed', function () {
     const [{ params }] = tk.executed.filter(({ sql }) => sql.includes('last_job_id'))
 
     expect(JSON.parse(params[0] as string)).toEqual([{ name: 'q', key: '', jobId: 'job-0' }])
+  })
+
+  it('records the latest occurrence it sends for a schedule under once, and nothing under skip', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30_000
+
+    await pass(tk, now, new Date(now - 10 * MINUTE), [
+      row('* * * * *', 'once'),
+      row('* * * * *', 'skip', { name: 'skipped' }),
+      row('*/10 * * * * *', 'once', { name: 'seconds', timezone: 'America/Chicago' })
+    ])
+
+    const [{ params }] = tk.executed.filter(({ sql }) => sql.includes('sent_on'))
+
+    // The newest of the due occurrence and the missed one, with the definition it was read from.
+    expect(JSON.parse(params[0] as string)).toEqual([
+      { name: 'q', key: '', cron: '* * * * *', timezone: 'UTC', sentOn: new Date(minute).toISOString() },
+      { name: 'seconds', key: '', cron: '*/10 * * * * *', timezone: 'America/Chicago', sentOn: new Date(now).toISOString() }
+    ])
+  })
+
+  it('catches up from after the latest occurrence sent, rather than from the last pass', async function () {
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30_000
+
+    // An instance that held the claim sent on past it before it stopped, up to the newest
+    // occurrence the gap holds. The catch-up reads from there, so the gap owes nothing and the due
+    // occurrence is all the pass sends.
+    const sentToTheEnd = await pass(makeTk(), now, new Date(now - 10 * MINUTE), [
+      row('* * * * *', 'once', { __sentOn: new Date(minute - MINUTE) })
+    ])
+
+    expect(slots(sentToTheEnd)).toEqual([slotOf(minute)])
+
+    // Sent only partway into the gap: the newest occurrence after it is still owed.
+    const sentPartway = await pass(makeTk(), now, new Date(now - 10 * MINUTE), [
+      row('* * * * *', 'once', { __sentOn: new Date(minute - 4 * MINUTE) })
+    ])
+
+    expect(slots(sentPartway)).toEqual([slotOf(minute - MINUTE), slotOf(minute)])
+  })
+
+  it('moves sent_on forward only, under the definition the occurrence was read from', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, schedule: false })
+
+    await ctx.boss.schedule(ctx.schema, '0 3 * * *', null, { missed: 'once', tz: 'America/Chicago' })
+
+    const db = await helper.getDb()
+
+    try {
+      const sentOn = async () => {
+        const { rows } = await db.executeSql(plans.getSchedules(ctx.schema, true))
+
+        return rows[0].__sentOn === null ? null : new Date(rows[0].__sentOn).toISOString()
+      }
+
+      const write = async (cron: string, timezone: string, at: string) => {
+        await db.executeSql(plans.setScheduleSentOn(ctx.schema), [JSON.stringify([{ name: ctx.schema, key: '', cron, timezone, sentOn: at }])])
+      }
+
+      const [before] = await ctx.boss.getSchedules()
+
+      await write('0 3 * * *', 'America/Chicago', '2026-01-02T09:00:00.000Z')
+      await write('0 3 * * *', 'America/Chicago', '2026-01-01T09:00:00.000Z')
+      expect(await sentOn()).toBe('2026-01-02T09:00:00.000Z')
+
+      // A write for an expression or zone the row no longer holds is an occurrence of a definition
+      // schedule() has since replaced, and does not land.
+      await write('0 4 * * *', 'America/Chicago', '2026-01-03T10:00:00.000Z')
+      await write('0 3 * * *', 'UTC', '2026-01-03T03:00:00.000Z')
+      expect(await sentOn()).toBe('2026-01-02T09:00:00.000Z')
+
+      // Not an edit of the definition, and not part of what getSchedules() hands a caller.
+      const [after] = await ctx.boss.getSchedules()
+      expect(after.updatedOn.getTime()).toBe(before.updatedOn.getTime())
+      expect(Object.keys(after)).toEqual(Object.keys(before))
+
+      // Registering the same definition again keeps it, as a deployment that schedules on every boot
+      // does; a new expression or zone clears it.
+      await ctx.boss.schedule(ctx.schema, '0 3 * * *', { changed: 'data' }, { missed: 'once', tz: 'America/Chicago' })
+      expect(await sentOn()).toBe('2026-01-02T09:00:00.000Z')
+
+      await ctx.boss.schedule(ctx.schema, '0 3 * * *', null, { missed: 'once', tz: 'UTC' })
+      expect(await sentOn()).toBeNull()
+
+      // A row an older release stored with no zone is read as UTC, and written in the same terms.
+      await db.executeSql(`UPDATE ${ctx.schema}.schedule SET timezone = NULL`)
+      await write('0 3 * * *', 'UTC', '2026-01-02T03:00:00.000Z')
+      expect(await sentOn()).toBe('2026-01-02T03:00:00.000Z')
+
+      await ctx.boss.schedule(ctx.schema, '0 4 * * *', null, { missed: 'once', tz: 'UTC' })
+      expect(await sentOn()).toBeNull()
+    } finally {
+      await db.close()
+    }
+  })
+
+  it('does not send an occurrence again once its send-it job has been deleted', async function () {
+    const SECOND = 1000
+    const T0 = Date.parse('2026-01-01T03:00:00Z')
+    const clock = new TestClock(T0)
+
+    // An instance that only deletes, as an instance running with `schedule: false` does while the
+    // ones that schedule are down.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    const db = await helper.getDb()
+
+    const cronOn = async () => new Date((await db.executeSql(`SELECT cron_on FROM ${ctx.schema}.version`)).rows[0].cron_on ?? 0).getTime()
+    const delivered = async () => Number((await db.executeSql(`SELECT count(*)::int AS n FROM ${ctx.schema}.job WHERE name = $1`, [ctx.schema])).rows[0].n)
+    const open = async () => Number((await db.executeSql(`SELECT count(*)::int AS n FROM ${ctx.schema}.job WHERE name = $1 AND state <> 'completed'`, [QUEUES.SEND_IT])).rows[0].n)
+    const scheduler = () => new PgBoss(helper.getConfig({ ...ctx.bossConfig, clock, schedule: true, cronMonitorIntervalSeconds: 30, cronWorkerIntervalSeconds: 1 }))
+
+    let x: PgBoss | undefined
+    let y: PgBoss | undefined
+
+    try {
+      await ctx.boss.createQueue(QUEUES.SEND_IT, { deleteAfterSeconds: 3600 })
+      await ctx.boss.schedule(ctx.schema, '30 0 3 * * *', null, { missed: 'once' })
+
+      // X claims at 03:00:15, sends 03:00:30 on the second while it holds the claim, and stops at
+      // 03:00:40, before its next claim: the claim still reads 03:00:15.
+      await clock.setTime(T0 + 15 * SECOND)
+      x = scheduler()
+      await x.start()
+      await until(async () => await cronOn() === T0 + 15 * SECOND)
+
+      while (clock.now() < T0 + 40 * SECOND) await clock.tick(SECOND)
+      await until(async () => await open() === 0 && await delivered() === 1)
+
+      await x.stop({ graceful: false })
+      x = undefined
+
+      // Two hours down, longer than send-it keeps a completed job, which is then deleted.
+      await clock.setTime(clock.now() + 2 * 60 * MINUTE)
+      await ctx.boss.supervise(QUEUES.SEND_IT)
+
+      // Y's catch-up reads the gap from 03:00:15. 03:00:30 lies in it, and is the occurrence X sent.
+      y = scheduler()
+      await y.start()
+      await until(async () => await cronOn() > T0 + 15 * SECOND)
+
+      for (let i = 0; i < 5; i++) await clock.tick(SECOND)
+      await until(async () => await open() === 0)
+
+      expect(await delivered()).toBe(1)
+    } finally {
+      await x?.stop({ graceful: false })
+      await y?.stop({ graceful: false })
+      await db.close()
+    }
   })
 })
