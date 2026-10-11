@@ -116,8 +116,35 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     }
   }
 
-  async executeSql (text: string, values?: unknown[]) {
+  // signal is internal to BAM. Aborting it drops this statement's connection, so stop() can close the
+  // pool without waiting for a statement the server goes on to finish or cancel by itself.
+  async executeSql (text: string, values?: unknown[], { signal }: { signal?: AbortSignal } = {}) {
     assert(this.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
+
+    if (signal) {
+      signal.throwIfAborted()
+
+      const client = await this.pool.connect()
+
+      if (signal.aborted) {
+        client.release()
+        signal.throwIfAborted()
+      }
+
+      let dropped = false
+      const drop = () => {
+        dropped = true
+        client.release(new Error('connection dropped by stop()'))
+      }
+      signal.addEventListener('abort', drop, { once: true })
+
+      try {
+        return await client.query(text, values)
+      } finally {
+        signal.removeEventListener('abort', drop)
+        if (!dropped) client.release()
+      }
+    }
 
     // if (this.config.debug === true) {
     //   console.log(`${new Date().toISOString()}: DEBUG SQL`)

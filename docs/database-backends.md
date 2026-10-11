@@ -168,9 +168,12 @@ Internally that enables atomic-`UPDATE` fetch (`noSkipLocked`), split-statement 
 queued as a [BAM](api/ops#getbamstatus) command and runs after the migration, on an instance with
 `migrate` enabled, so `start()` does not wait for it. Until a build finishes, queries run without
 that index. A unique index that a write depends on, such as the one behind `upsert()` by key, is
-still built inside the migration. If the instance running a build stops, CockroachDB finishes the
-build on its own, but its BAM row is not marked done for up to 24 hours, and the commands queued
-behind it wait that long. The [CLI](cli#migrate) runs the same builds directly after the migration.
+still built inside the migration. If [`stop()`](api/ops#stop-options) times out during a build,
+pg-boss closes the connection waiting on it and marks the row failed. CockroachDB finishes the build
+on its own, and the next attempt completes the row. A command that is not a schema change, such as a
+data migration, is cancelled when its connection closes, and runs again. If the instance crashes instead, its BAM row is not
+marked done for up to 24 hours, and the commands queued behind it wait that long. The
+[CLI](cli#migrate) runs the same builds directly after the migration.
 
 **Transactional workers on CockroachDB** work, with two differences from PostgreSQL:
 

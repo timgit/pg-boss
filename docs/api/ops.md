@@ -61,8 +61,16 @@ A job a worker is still claiming when `stop()` is called gets its handler if it 
 
     Default: 30000. Maximum time (in milliseconds) to allow active handlers to finish before failing and aborting their jobs. Pending claims and database cleanup are still awaited before shutdown completes.
 
+    The same timeout bounds a [BAM](#getbamstatus) command that is still running. With `graceful: false` it applies at once. What happens to the command depends on what it is:
+
+    - A concurrent index build or drop on PostgreSQL keeps running on the server after its connection is closed. Its row stays `in_progress` until the build ends, and then the next instance with `migrate` enabled marks it completed, or rebuilds the index if the build failed.
+    - Any other command, such as a data migration, is cancelled and rolls back. Its row is marked `failed`, and the next instance with `migrate` enabled runs it again.
+    - On CockroachDB the connection is closed. A schema change keeps running as a CockroachDB job, and any other statement is cancelled. The row is marked `failed` and runs again.
+
+    With a custom [`db`](./constructor.md#db) adapter, pg-boss has no connection to close, so it cancels every command on PostgreSQL, and waits for the command on CockroachDB. A cancel needs the connecting role to be allowed to cancel the command's backend. If it is not, `stop()` emits one `error` and waits for the command.
+
     > [!WARNING]
-    > This option is ignored when `graceful` is set to `false`.
+    > This option is ignored for handlers when `graceful` is set to `false`.
 
 ```js
 // graceful shutdown: wait for active jobs to finish (up to the timeout)

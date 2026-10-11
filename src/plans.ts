@@ -5293,6 +5293,36 @@ export function setBamCompleted (schema: string, id: string) {
   `
 }
 
+// Whether a BAM statement is a concurrent index build or drop. Postgres finishes one whose client has
+// gone, and it holds a ShareUpdateExclusiveLock on its table until it ends, which the liveness check
+// in getNextBamCommand reads. Any other statement left running without its client may commit or roll
+// back, and nothing reads that it is still running.
+export function isConcurrentIndexCommand (command: string) {
+  return /^\s*(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY\b/i.test(command)
+}
+
+// A leading comment naming the row, prepended to a BAM statement where cancelBamCommand can find it.
+// pg_stat_activity truncates query text at track_activity_query_size, so the tag goes first.
+export function bamCommandTag (id: string) {
+  return `/* pgboss bam ${id} */`
+}
+
+// Cancels the backend running the statement tagged with bamCommandTag(id). state = 'active' skips a
+// pooled connection that has since gone idle with the tagged statement as its last query. If the
+// statement finishes between the read and the cancel, the cancel can hit that connection's next
+// statement, such as the UPDATE that marks the row completed. The row is then marked failed, and the
+// next attempt finds the index valid and completes it.
+export function cancelBamCommand (id: string) {
+  return `
+    SELECT pg_cancel_backend(pid) AS cancelled
+    FROM pg_stat_activity
+    WHERE datname = current_database()
+      AND pid <> pg_backend_pid()
+      AND state = 'active'
+      AND query LIKE '${bamCommandTag(id)}%'
+  `
+}
+
 export function setBamFailed (schema: string, id: string, error: string) {
   const escapedError = error.replace(/'/g, "''")
   return `

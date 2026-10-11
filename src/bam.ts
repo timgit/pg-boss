@@ -1,5 +1,6 @@
 import EventEmitter from 'node:events'
 import { ClaimTimer } from './claimTimer.ts'
+import Db from './db.ts'
 import * as plans from './plans.ts'
 import { delay } from './tools.ts'
 import * as types from './types.ts'
@@ -18,10 +19,43 @@ type BamClaim = types.BamEntry & {
   claimedStartedOn: string
 }
 
+// How a statement still running at the stop() deadline ends, chosen by #execute as it starts:
+// - 'abandon': a concurrent index build or drop on Postgres through pg-boss's own pool. The connection
+//   is dropped and the server finishes the statement, so no build progress is lost. The row stays
+//   in_progress, and the liveness check reads the statement's table lock and holds the row until it
+//   ends, so no other instance runs it meanwhile.
+// - 'drop': CockroachDB through pg-boss's own pool. The connection is dropped. A schema change
+//   finishes as its own job, and any other statement is cancelled with the session. The row is marked
+//   failed and runs again.
+// - 'cancel': anything else on Postgres, including any statement through a custom database adapter.
+//   pg_cancel_backend rolls it back as one transaction. A dropped connection would leave it running
+//   unseen until it committed or rolled back. The row is marked failed and runs again.
+// - 'wait': a custom database adapter on CockroachDB, with no connection to drop and no
+//   pg_cancel_backend, or a cancel that failed. stop() waits for the statement.
+type Ending = 'abandon' | 'drop' | 'cancel' | 'wait'
+
+// The claimed row whose statements are in flight, for stop() to end once its deadline passes.
+type Running = {
+  id: string
+  // Set by stop() at its deadline. No statement of the row starts after it.
+  stopped: boolean
+  // Set once stop() has ended the statement in flight: a cancel reached its backend, or its connection
+  // was dropped. A failure after it is the stop's doing, not an error.
+  ended: boolean
+  ending: Ending
+  abort: AbortController
+}
+
+// How often stop() repeats a cancel that found nothing to cancel. It can land between two statements
+// of one row, or before the statement reaches the server. It also finds nothing when the role cannot
+// see the statement in pg_stat_activity, and then stop() keeps trying until the statement ends.
+const CANCEL_RETRY_MS = 1000
+
 class Bam extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #working: boolean
   #pollTimer: ClaimTimer | undefined
+  #running: Running | undefined
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
 
@@ -57,14 +91,79 @@ class Bam extends EventEmitter implements types.EventsMixin {
     this.#pollTimer.start()
   }
 
-  async stop () {
+  // Waits for a running command until deadline resolves, then ends it (see Ending) and waits for
+  // that to land, so the row is recorded before index.ts closes the pool. Without a deadline it waits
+  // for the command to finish.
+  async stop (deadline?: Promise<void>) {
     if (this.#stopped) return
     this.#stopped = true
     this.#pollTimer!.stop()
     this.#pollTimer = undefined
+
+    let expired = false
+    deadline?.then(() => { expired = true })
+
+    let endedAt = 0
+
     while (this.#working) {
+      const running = this.#running
+
+      if (expired && running) {
+        running.stopped = true
+
+        if (!running.ended && running.ending !== 'wait' && Date.now() - endedAt >= CANCEL_RETRY_MS) {
+          endedAt = Date.now()
+          await this.#end(running)
+        }
+      }
+
       await delay(10)
     }
+  }
+
+  async #end (running: Running) {
+    if (running.ending === 'abandon' || running.ending === 'drop') {
+      running.abort.abort()
+      running.ended = true
+      return
+    }
+
+    try {
+      const { rows } = await this.#db.executeSql(plans.cancelBamCommand(running.id))
+      running.ended = rows.some(row => row.cancelled)
+    } catch (err) {
+      // Usually a role that can see the statement but not signal its backend, which a retry will not
+      // change. Report it once and wait for the statement.
+      running.ending = 'wait'
+      this.emit(events.error, err)
+    }
+  }
+
+  // Runs one of a claimed row's statements so stop() can end it. See Ending.
+  async #execute (running: Running, sql: string) {
+    if (running.stopped) {
+      // Nothing is left running for the row to wait on, whatever the previous statement was.
+      running.ending = 'wait'
+      running.ended = true
+      throw new Error('stop() ended the command before it ran')
+    }
+
+    const cockroach = this.#config.backend === 'cockroachdb'
+
+    if (!(this.#db instanceof Db)) {
+      running.ending = cockroach ? 'wait' : 'cancel'
+    } else if (cockroach) {
+      running.ending = 'drop'
+    } else {
+      running.ending = !this.#config.noIndexProgressView && plans.isConcurrentIndexCommand(sql) ? 'abandon' : 'cancel'
+    }
+
+    // CockroachDB drops comments from the statement text it reports, so the tag only serves Postgres.
+    const text = cockroach ? sql : `${plans.bamCommandTag(running.id)}\n${sql}`
+
+    return this.#db instanceof Db && (running.ending === 'abandon' || running.ending === 'drop')
+      ? await this.#db.executeSql(text, undefined, { signal: running.abort.signal })
+      : await this.#db.executeSql(text)
   }
 
   async #onPoll () {
@@ -135,6 +234,9 @@ class Bam extends EventEmitter implements types.EventsMixin {
       return false
     }
 
+    const running: Running = { id: entry.id, stopped: false, ended: false, ending: 'wait', abort: new AbortController() }
+    this.#running = running
+
     this.emit(events.bam, {
       id: entry.id,
       name: entry.name,
@@ -163,7 +265,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
             // DROP ... CONCURRENTLY isn't their model.
             if (!this.#config.noIndexProgressView) {
               // Non-null wherever the probe was: both recognise the same CONCURRENTLY commands.
-              await this.#db.executeSql(plans.bamHealDrop(this.#config.schema, entry.command)!)
+              await this.#execute(running, plans.bamHealDrop(this.#config.schema, entry.command)!)
             }
           } else if (rows[0]) {
             // The index is VALID, so the build already succeeded and only the row was never marked (a
@@ -180,7 +282,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
       }
 
       if (!alreadyBuilt) {
-        await this.#db.executeSql(entry.command)
+        await this.#execute(running, entry.command)
       }
 
       // Record the outcome even when a stop landed while the command was running. stop() waits out
@@ -201,6 +303,12 @@ class Bam extends EventEmitter implements types.EventsMixin {
         table: entry.table
       })
     } catch (err) {
+      // The one failure that leaves the row in_progress: stop() dropped the connection under a
+      // concurrent index statement that the server is still running. See Ending.
+      if (running.ended && running.ending === 'abandon') {
+        return true
+      }
+
       // Same reasoning as the completed path: a stop must not leave the row in_progress. This write
       // is guarded because it commonly runs on the connection that just failed - a terminated backend
       // or dropped connection fails the command AND the UPDATE that would record it. Letting that
@@ -212,7 +320,11 @@ class Bam extends EventEmitter implements types.EventsMixin {
         this.emit(events.error, markErr)
       }
 
-      this.emit(events.error, err)
+      // A failure stop() caused is not an error. The row still records it, so the next attempt runs
+      // as a reattempt and heals what the cancel left.
+      if (!running.ended) {
+        this.emit(events.error, err)
+      }
 
       this.emit(events.bam, {
         id: entry.id,
@@ -222,6 +334,8 @@ class Bam extends EventEmitter implements types.EventsMixin {
         table: entry.table,
         error: String(err)
       })
+    } finally {
+      this.#running = undefined
     }
 
     return true

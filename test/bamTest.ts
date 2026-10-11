@@ -1036,8 +1036,8 @@ describe('bam', function () {
   })
 
   // A stop that lands while a command is running must not throw the result away. stop() waits out the
-  // in-flight command and the pool is closed only after bam.stop() resolves, so the row can - and must
-  // - be marked. An unmarked row behind a VALID index is the orphan every "already exists" retry loop
+  // in-flight command up to its timeout, and the pool is closed only after bam.stop() resolves, so the
+  // row can - and must - be marked. An unmarked row behind a VALID index is the orphan every "already exists" retry loop
   // starts from, and on the timeout-only backends it blocks the whole BAM queue for 24 hours.
   helper.describeMultiConnectionOnly('stop during an in-flight command', function () {
     it('should mark a command completed when a stop lands after it succeeds', async function () {
@@ -1089,6 +1089,182 @@ describe('bam', function () {
       expect(rows[0].status).toBe('completed')
       expect(rows[0].error).toBeNull()
     }, 20000)
+  })
+
+  // The timeout bounds a command still running at the stop() deadline. A concurrent index statement on
+  // Postgres is left running on the server with its row in_progress. Anything else is cancelled and
+  // rolls back, and its row is marked failed without an error event and runs again.
+  helper.describePglite('stop deadline', function () {
+    async function startCommand (name: string, command: string, options = {}) {
+      const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, ...options })
+      const errors: Error[] = []
+      boss.on('error', err => errors.push(err))
+
+      await insertBamRow(ctx.schema, name, 'pending', command)
+
+      const started = waitForBamEvent(boss, name, 'in_progress')
+      await triggerBamPoll(ctx.schema)
+      await started
+      await delay(500)
+
+      return { boss, errors }
+    }
+
+    async function readRow (name: string) {
+      const db = await helper.getDb()
+      const { rows } = await db.executeSql(`SELECT status, error FROM ${ctx.schema}.bam WHERE name = $1`, [name])
+      await db.close()
+      return rows[0]
+    }
+
+    async function holdOpen (sql: string) {
+      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
+      await holder.connect()
+      await holder.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
+      await holder.query(sql)
+      return holder
+    }
+
+    it('should cancel a command still running when the timeout passes', async function () {
+      const { boss, errors } = await startCommand('sleep_cmd', 'SELECT pg_sleep(60)')
+
+      const begun = Date.now()
+      await boss.stop({ timeout: 1000 })
+
+      expect(Date.now() - begun).toBeLessThan(10000)
+      expect((await readRow('sleep_cmd')).status).toBe('failed')
+      expect(errors).toEqual([])
+    }, 30000)
+
+    it('should cancel a running command at once without graceful', async function () {
+      const { boss, errors } = await startCommand('sleep_cmd', 'SELECT pg_sleep(60)')
+
+      const begun = Date.now()
+      await boss.stop({ graceful: false, timeout: 20000 })
+
+      expect(Date.now() - begun).toBeLessThan(10000)
+      expect((await readRow('sleep_cmd')).status).toBe('failed')
+      expect(errors).toEqual([])
+    }, 30000)
+
+    // Left running without its client, the UPDATE would apply once the lock is released, while its row
+    // read failed and was due to run it again.
+    it('should roll back a data migration it stops instead of leaving it to commit', async function () {
+      const db = await helper.getDb()
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.migrate_test (id int PRIMARY KEY, n int)`)
+      await db.executeSql(`INSERT INTO ${ctx.schema}.migrate_test VALUES (1, 0)`)
+      await ctx.boss.stop()
+
+      const holder = await holdOpen(`SELECT * FROM ${ctx.schema}.migrate_test FOR UPDATE`)
+
+      try {
+        const { boss, errors } = await startCommand('migrate_cmd', `UPDATE ${ctx.schema}.migrate_test SET n = n + 1`)
+
+        await boss.stop({ timeout: 1000 })
+
+        expect((await readRow('migrate_cmd')).status).toBe('failed')
+        expect(errors).toEqual([])
+      } finally {
+        await holder.query('ROLLBACK')
+        await holder.end()
+      }
+
+      await delay(1000)
+
+      const { rows } = await db.executeSql(`SELECT n FROM ${ctx.schema}.migrate_test`)
+      await db.close()
+
+      expect(Number(rows[0].n)).toBe(0)
+    }, 30000)
+
+    // The cancel goes through a role that can read the statement in pg_stat_activity but not signal
+    // its backend, so pg_cancel_backend fails. stop() reports that once, waits for the command, and
+    // still reports the command's own failure.
+    helper.itPostgresOnly('should report a cancel it is not allowed to make once and wait for the command', async function () {
+      const role = `bam_cancel_${Math.random().toString(36).slice(2, 10)}`
+      const config = helper.getConfig()
+      const pool = await helper.getDb()
+      await pool.executeSql(`CREATE ROLE ${role} LOGIN PASSWORD 'p'`)
+      await pool.executeSql(`GRANT pg_read_all_stats TO ${role}`)
+
+      const canceller = new pg.Client({ host: config.host, port: Number(config.port), database: config.database, user: role, password: 'p' })
+      await canceller.connect()
+
+      try {
+        const db = {
+          executeSql: (text: string, values?: unknown[]) => text.includes('pg_cancel_backend')
+            ? canceller.query(text, values)
+            : pool.executeSql(text, values)
+        }
+        const command = "DO $$ BEGIN PERFORM pg_sleep(3); RAISE EXCEPTION 'command failed'; END $$"
+        const { boss, errors } = await startCommand('denied_cmd', command, { db })
+
+        const begun = Date.now()
+        await boss.stop({ timeout: 1000 })
+
+        expect(Date.now() - begun).toBeGreaterThan(1500)
+        expect(errors.map(err => err.message)).toEqual([
+          'permission denied to cancel query',
+          'command failed'
+        ])
+
+        const row = await readRow('denied_cmd')
+        expect(row.status).toBe('failed')
+        expect(row.error).toContain('command failed')
+      } finally {
+        await canceller.end()
+        await pool.executeSql(`DROP ROLE ${role}`)
+        await pool.close()
+      }
+    }, 30000)
+
+    // CockroachDB index builds do not wait on open snapshots, so only Postgres can park one.
+    helper.itPostgresOnly('should leave an index build running on the server and complete its row once it finishes', async function () {
+      const db = await helper.getDb()
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.abandon_test (a int)`)
+      await ctx.boss.stop()
+
+      // A snapshot on the table parks CREATE INDEX CONCURRENTLY in its wait phase.
+      const holder = await holdOpen(`SELECT * FROM ${ctx.schema}.abandon_test`)
+
+      try {
+        const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS abandon_idx ON ${ctx.schema}.abandon_test (a)`
+        const { boss, errors } = await startCommand('abandon_cmd', command)
+
+        const begun = Date.now()
+        await boss.stop({ timeout: 1000 })
+
+        expect(Date.now() - begun).toBeLessThan(10000)
+        expect((await readRow('abandon_cmd')).status).toBe('in_progress')
+        expect(errors).toEqual([])
+
+        // Past the grace window, so only the build's table lock keeps another instance off the row.
+        await db.executeSql(`UPDATE ${ctx.schema}.bam SET started_on = now() - interval '1 hour' WHERE name = 'abandon_cmd'`)
+
+        const restarted = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
+        restarted.on('error', () => {})
+        await triggerBamPoll(ctx.schema)
+        await delay(2500)
+
+        expect((await readRow('abandon_cmd')).status).toBe('in_progress')
+      } finally {
+        await holder.query('ROLLBACK')
+        await holder.end()
+      }
+
+      // The build finishes on the server, and the next attempt finds the index valid.
+      await triggerBamPoll(ctx.schema)
+      await waitForBamStatus(ctx.schema, 'abandon_cmd', 'completed', 10000)
+
+      const { rows } = await db.executeSql(
+        `SELECT indisvalid AS valid FROM pg_index WHERE indexrelid = '${ctx.schema}.abandon_idx'::regclass`
+      )
+      await db.close()
+
+      expect(rows[0].valid).toBe(true)
+    }, 30000)
   })
 
   describe('successful execution', function () {

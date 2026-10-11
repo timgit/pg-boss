@@ -363,12 +363,25 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   async #doStop (close: boolean, graceful: boolean, timeout: number): Promise<void> {
-    await this.#notifier.stop()
-    await this.#manager.stop()
-    await this.#timekeeper.stop()
-    await this.#boss.stop()
-    await this.#navigator.stop()
-    await this.#bam.stop()
+    // Real time, not the configured clock: these deadlines bound a running BAM command and
+    // active-handler grace, and under a test clock nothing would tick them while the test is blocked
+    // inside stop(). The BAM deadline counts from here, and without graceful it has passed already,
+    // so a running command is cancelled at once.
+    let bamTimer: ReturnType<typeof setTimeout> | undefined
+    const bamDeadline = graceful
+      ? new Promise<void>(resolve => { bamTimer = setTimeout(resolve, timeout) })
+      : Promise.resolve()
+
+    try {
+      await this.#notifier.stop()
+      await this.#manager.stop()
+      await this.#timekeeper.stop()
+      await this.#boss.stop()
+      await this.#navigator.stop()
+      await this.#bam.stop(bamDeadline)
+    } finally {
+      clearTimeout(bamTimer)
+    }
 
     const shutdown = async () => {
       await this.#manager.failWip()
@@ -412,8 +425,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       return
     }
 
-    // Real time, not the configured clock: the deadline bounds active-handler grace, and under a test
-    // clock nothing would tick it while the test is blocked inside stop().
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<void>(resolve => { deadlineTimer = setTimeout(resolve, timeout) })
 
