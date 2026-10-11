@@ -56,10 +56,12 @@ Do not write a test per migration. `test/migrationTest.ts` rolls back the newest
 
 ## Branches
 
-Name a branch `<type>/<topic>`, with the commit prefix as the type and a few words that say what changes, like `chore/dashboard-proxy-pg-boss-12.37.1` or `fix/schedule-dst-skip`. No generated names. Keep one concern per branch.
+Name a branch `<type>/<topic>`, with a conventional-commit type (`fix`, `chore`, `docs`) and a few words that say what changes, like `chore/dashboard-proxy-pg-boss-12.37.1` or `fix/schedule-dst-skip`. No generated names. Keep one concern per branch.
 
 ## Commits
 
-One line, with the conventional-commit prefix the history uses (`feat:`, `fix(schedule):`, `docs:`, `test:`, `ci:`). No body and no trailers. If it does not fit on one line, split the commit.
+One line. No body and no trailers. If it does not fit on one line, split the commit.
+
+A conventional-commit prefix the history uses (`fix(schedule):`, `docs:`, `test:`, `ci:`) is optional. Use one when the type says something, and leave it off, `feat:` especially, for a commit that is just a task, like `bam runs pending commands back to back once a poll finds one`.
 
 Never put a closing keyword (`fixes #N`, `closes #N`, `resolves #N`) in a commit message: GitHub closes the issue as soon as the commit reaches the default branch. `refs #N` is fine. `closes #N` belongs in the PR description.
