@@ -248,12 +248,15 @@ class Bam extends EventEmitter implements types.EventsMixin {
     try {
       let alreadyBuilt = false
 
+      // Non-null for a CONCURRENTLY index build, which is checked against the catalog before a
+      // re-attempt and after the build returns.
+      const probeSql = plans.bamHealProbe(this.#config.schema, entry.command)
+
       // A re-attempted command (a stale in_progress reclaim, or a retry of a prior 'failed', including
       // failed rows left by older releases) needs the catalog consulted before the command is re-run,
       // because the row keeps the text it was enqueued with and that text may not be idempotent.
       // Probe indisvalid on every backend: pg_index is readable everywhere, and both outcomes matter.
       if (entry.reattempt) {
-        const probeSql = plans.bamHealProbe(this.#config.schema, entry.command)
         if (probeSql) {
           const { rows } = await this.#db.executeSql(probeSql)
 
@@ -283,6 +286,25 @@ class Bam extends EventEmitter implements types.EventsMixin {
 
       if (!alreadyBuilt) {
         await this.#execute(running, entry.command)
+
+        // A build can return without leaving a valid index. On CockroachDB, a retry of a build whose
+        // connection stop() dropped returns at once while the first build still runs as a schema
+        // change job, because IF NOT EXISTS matches the index it is adding, which pg_index does not
+        // list yet. On Postgres, IF NOT EXISTS skips over an INVALID index of the same name. Marking
+        // the row completed then would release the commands behind it, and nothing would build the
+        // index again if that job failed. Failing the row has a later attempt check again, where the
+        // probe completes it or heals the INVALID index. Without liveness there is no heal, so an
+        // INVALID index would fail every retry, and the row completes as before.
+        if (probeSql) {
+          const { rows } = await this.#db.executeSql(probeSql)
+
+          if (!rows[0] || (rows[0].invalid && !this.#config.noIndexProgressView)) {
+            const name = plans.bamCommandIndexName(entry.command)
+            throw new Error(rows[0]
+              ? `index ${name} is invalid after the build`
+              : `index ${name} does not exist after the build. An earlier build of it may still be running.`)
+          }
+        }
       }
 
       // Record the outcome even when a stop landed while the command was running. stop() waits out

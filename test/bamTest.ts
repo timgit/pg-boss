@@ -341,6 +341,41 @@ describe('bam', function () {
       expect(rows[0].indexdef).not.toContain('(a)')
     }, 10000)
 
+    // A first attempt's IF NOT EXISTS skips an INVALID index of the same name and returns without
+    // building anything. The row fails instead of completing, and the retry heals the index. Postgres
+    // only, since CockroachDB does not let a test mark an index INVALID.
+    helper.itPostgresOnly('should fail a build that leaves an invalid index and heal it on retry', async function () {
+      const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
+      const errors: Error[] = []
+      boss.on('error', err => errors.push(err))
+
+      const db = await helper.getDb()
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
+      await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
+      await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.heal_idx'::regclass`)
+
+      const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (b)`
+      await insertBamRow(ctx.schema, 'invalid_cmd', 'pending', command)
+
+      const failed = waitForBamEvent(boss, 'invalid_cmd', 'failed')
+      await triggerBamPoll(ctx.schema)
+      await failed
+
+      expect(errors.map(err => err.message)).toEqual(['index heal_idx is invalid after the build'])
+
+      const done = waitForBamEvent(boss, 'invalid_cmd', 'completed')
+      await triggerBamPoll(ctx.schema)
+      await done
+
+      const { rows } = await db.executeSql(
+        `SELECT indexdef FROM pg_indexes WHERE schemaname = '${ctx.schema}' AND indexname = 'heal_idx'`
+      )
+      await db.close()
+
+      expect(rows).toHaveLength(1)
+      expect(rows[0].indexdef).toContain('(b)')
+    }, 10000)
+
     it('does NOT drop a VALID leftover index on reattempt (build succeeded but row was never marked)', async function () {
       // The dangerous case: a CREATE INDEX CONCURRENTLY that actually succeeded (VALID index, in use)
       // but whose bam row stayed in_progress because a graceful stop landed between the CREATE and
