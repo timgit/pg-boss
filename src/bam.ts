@@ -101,11 +101,21 @@ class Bam extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  // Runs commands back to back once a poll finds one, rather than one per bamIntervalSeconds, so a
+  // migration's builds land one after another. The first claim may retry a failed or stale row; the
+  // rest take pending rows only, and the burst ends when none is left or the runner stops.
   async #processCommands () {
-    if (this.#stopped) return
+    let pendingOnly = false
 
-    const entry = await this.#getNextCommand()
-    if (!entry) return
+    while (!this.#stopped && await this.#processNextCommand(pendingOnly)) {
+      pendingOnly = true
+    }
+  }
+
+  // Claims and runs one command. Returns whether a command was claimed, whatever its outcome.
+  async #processNextCommand (pendingOnly: boolean): Promise<boolean> {
+    const entry = await this.#getNextCommand(pendingOnly)
+    if (!entry) return false
 
     if (this.#config.__test__delay_bam_claim_ms) {
       await delay(this.#config.__test__delay_bam_claim_ms)
@@ -122,7 +132,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
       } catch (err) {
         this.emit(events.error, err)
       }
-      return
+      return false
     }
 
     this.emit(events.bam, {
@@ -213,10 +223,12 @@ class Bam extends EventEmitter implements types.EventsMixin {
         error: String(err)
       })
     }
+
+    return true
   }
 
-  async #getNextCommand (): Promise<BamClaim | null> {
-    const sql = plans.getNextBamCommand(this.#config.schema, { useLiveness: !this.#config.noIndexProgressView })
+  async #getNextCommand (pendingOnly: boolean): Promise<BamClaim | null> {
+    const sql = plans.getNextBamCommand(this.#config.schema, { useLiveness: !this.#config.noIndexProgressView, pendingOnly })
     const { rows } = await this.#db.executeSql(sql)
     return rows[0] || null
   }

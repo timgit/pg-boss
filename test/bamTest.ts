@@ -224,11 +224,9 @@ describe('bam', function () {
       const failPromise = waitForBamEvent(boss, 'test_fail', 'failed')
       const successPromise = waitForBamEvent(boss, 'test_success', 'completed', 10000)
 
+      // One poll: the burst moves on to the second command after the first fails.
       await triggerBamPoll(ctx.schema)
       await failPromise
-
-      // Trigger another poll for the second command
-      await triggerBamPoll(ctx.schema)
       await successPromise
 
       const bamStatus = await boss.getBamEntries()
@@ -843,6 +841,88 @@ describe('bam', function () {
       expect(plans.bamHealProbe('s', 'CREATE INDEX i ON s.t (a)')).toBeNull()
       expect(plans.bamHealDrop('s', 'CREATE INDEX i ON s.t (a)')).toBeNull()
     })
+  })
+
+  // Once a poll claims a command, the runner keeps claiming until no pending row is left, rather than
+  // waiting bamIntervalSeconds between commands. The interval here is 60 seconds, so a second poll
+  // cannot land inside the test: every row completing proves they ran in one burst.
+  describe('burst', function () {
+    async function startRunner () {
+      // Only here to build the schema; its own runner would race the one under test.
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
+
+      const db = await helper.getDb()
+      const bam = new Bam(db, {
+        schema: ctx.schema,
+        bamIntervalSeconds: 60,
+        migrate: true,
+        clock: systemClock,
+        noIndexProgressView: helper.isCockroachDb
+      } as any)
+
+      const events: any[] = []
+      bam.on('bam', event => events.push(event))
+      bam.on('error', () => {})
+
+      return { db, bam, events }
+    }
+
+    it('should run every pending command from one poll', async function () {
+      const { db, bam } = await startRunner()
+
+      try {
+        await db.executeSql(`
+          INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
+          VALUES ('burst_1', 27, 'pending', 'job_common', 'SELECT 1', now() - interval '3 minutes'),
+                 ('burst_2', 27, 'pending', 'job_common', 'SELECT 2', now() - interval '2 minutes'),
+                 ('burst_3', 27, 'pending', 'job_common', 'SELECT 3', now() - interval '1 minute')
+        `)
+        await db.executeSql(`UPDATE ${ctx.schema}.version SET bam_on = NULL`)
+
+        await bam.start()
+        await waitForBamStatus(ctx.schema, 'burst_3', 'completed')
+
+        const { rows } = await db.executeSql(
+          `SELECT name, status FROM ${ctx.schema}.bam WHERE name LIKE 'burst_%' ORDER BY completed_on`
+        )
+        expect(rows).toEqual([
+          { name: 'burst_1', status: 'completed' },
+          { name: 'burst_2', status: 'completed' },
+          { name: 'burst_3', status: 'completed' }
+        ])
+      } finally {
+        await bam.stop()
+        await db.close()
+      }
+    }, 15000)
+
+    it('should not retry a command that failed earlier in the same burst', async function () {
+      const { db, bam, events } = await startRunner()
+
+      try {
+        await db.executeSql(`
+          INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
+          VALUES ('burst_fail', 27, 'pending', 'job_common', 'SELECT 1/0', now() - interval '2 minutes'),
+                 ('burst_after', 27, 'pending', 'job_common', 'SELECT 1', now() - interval '1 minute')
+        `)
+        await db.executeSql(`UPDATE ${ctx.schema}.version SET bam_on = NULL`)
+
+        await bam.start()
+        await waitForBamStatus(ctx.schema, 'burst_after', 'completed')
+        // Long enough for a looping burst to have claimed the failed row again.
+        await delay(500)
+
+        const attempts = events.filter(e => e.name === 'burst_fail' && e.status === 'in_progress')
+        expect(attempts).toHaveLength(1)
+
+        const { rows } = await db.executeSql(`SELECT status FROM ${ctx.schema}.bam WHERE name = 'burst_fail'`)
+        expect(rows[0].status).toBe('failed')
+      } finally {
+        await bam.stop()
+        await db.close()
+      }
+    }, 15000)
   })
 
   describe('start and stop', function () {

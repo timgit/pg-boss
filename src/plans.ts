@@ -5079,11 +5079,15 @@ export function getBlockedKeys (schema: string, table: string, after = false) {
     `
 }
 
-export function getNextBamCommand (schema: string, { useLiveness = false }: { useLiveness?: boolean } = {}) {
+export function getNextBamCommand (schema: string, { useLiveness = false, pendingOnly = false }: { useLiveness?: boolean, pendingOnly?: boolean } = {}) {
   // Head-of-line note (shared by both variants): process all 'pending' commands (oldest first)
   // before retrying any 'failed' or stale 'in_progress' one, so a permanently-failing (or
   // crashed-mid-flight) command can't sit at the head of the queue and starve everything behind it.
   // Within a status, created_on preserves enqueue order.
+  //
+  // pendingOnly is for the claims after the first in a burst (bam.ts #processCommands): they take the
+  // rest of the pending rows and leave failed and stale ones to the next poll, so a command that just
+  // failed is not retried at once in a loop.
   if (!useLiveness) {
     // Timeout-only path for engines without pg_stat_progress_create_index (CockroachDB/YugabyteDB):
     // a stuck in_progress row is reclaimed purely on the 24h fallback. No CONCURRENTLY healing, so no
@@ -5092,10 +5096,12 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
       WITH candidate AS (
         SELECT c.id, c.status AS prior_status, c.started_on AS prior_started_on
         FROM ${schema}.bam c
-        WHERE (
+        WHERE ${pendingOnly
+          ? "c.status = 'pending'"
+          : `(
           c.status IN ('pending', 'failed')
           OR (c.status = 'in_progress' AND c.started_on < ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds')
-        )
+        )`}
         AND NOT EXISTS (
           SELECT 1 FROM ${schema}.bam g
           WHERE g.status = 'in_progress' AND g.started_on >= ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds'
@@ -5174,10 +5180,12 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
     WITH candidate AS (
       SELECT c.id, c.status AS prior_status, c.started_on AS prior_started_on
       FROM ${schema}.bam c
-      WHERE (
+      WHERE ${pendingOnly
+        ? "c.status = 'pending'"
+        : `(
         c.status IN ('pending', 'failed')
         OR (c.status = 'in_progress' AND ${stale('c.started_on', 'c.table_name')})
-      )
+      )`}
       AND NOT EXISTS (
         SELECT 1 FROM ${schema}.bam g
         WHERE g.status = 'in_progress' AND NOT ${stale('g.started_on', 'g.table_name')}
