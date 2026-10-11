@@ -29,7 +29,9 @@ type BamClaim = types.BamEntry & {
 //   failed and runs again.
 // - 'cancel': anything else on Postgres, including any statement through a custom database adapter.
 //   pg_cancel_backend rolls it back as one transaction. A dropped connection would leave it running
-//   unseen until it committed or rolled back. The row is marked failed and runs again.
+//   unseen until it committed or rolled back. The row is marked failed and runs again. Through
+//   pg-boss's own pool the statement's connection is closed once it ends, never returned to the pool,
+//   so the cancel cannot land on the statement that would have run on it next.
 // - 'wait': a custom database adapter on CockroachDB, with no connection to drop and no
 //   pg_cancel_backend, or a cancel that failed. stop() waits for the statement.
 type Ending = 'abandon' | 'drop' | 'cancel' | 'wait'
@@ -128,6 +130,10 @@ class Bam extends EventEmitter implements types.EventsMixin {
       return
     }
 
+    // Before the cancel reads pg_stat_activity, so a statement that ends after the read closes its
+    // connection rather than returning it to the pool with the cancel still on its way.
+    running.abort.abort()
+
     try {
       const { rows } = await this.#db.executeSql(plans.cancelBamCommand(running.id))
       running.ended = rows.some(row => row.cancelled)
@@ -161,9 +167,13 @@ class Bam extends EventEmitter implements types.EventsMixin {
     // CockroachDB drops comments from the statement text it reports, so the tag only serves Postgres.
     const text = cockroach ? sql : `${plans.bamCommandTag(running.id)}\n${sql}`
 
-    return this.#db instanceof Db && (running.ending === 'abandon' || running.ending === 'drop')
-      ? await this.#db.executeSql(text, undefined, { signal: running.abort.signal })
-      : await this.#db.executeSql(text)
+    if (!(this.#db instanceof Db)) {
+      return await this.#db.executeSql(text)
+    }
+
+    return await this.#db.executeSql(text, undefined, running.ending === 'cancel'
+      ? { retire: running.abort.signal }
+      : { signal: running.abort.signal })
   }
 
   async #onPoll () {

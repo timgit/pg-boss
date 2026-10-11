@@ -5309,9 +5309,11 @@ export function bamCommandTag (id: string) {
 
 // Cancels the backend running the statement tagged with bamCommandTag(id). state = 'active' skips a
 // pooled connection that has since gone idle with the tagged statement as its last query. If the
-// statement finishes between the read and the cancel, the cancel can hit that connection's next
-// statement, such as the UPDATE that marks the row completed. The row is then marked failed, and the
-// next attempt finds the index valid and completes it.
+// statement finishes between the read and the cancel, the cancel reaches that connection's next
+// statement. bam.ts closes pg-boss's own connection instead of reusing it, so this is only possible
+// through a custom database adapter, where the next statement can be any query, such as a job
+// completion or the UPDATE that marks the row completed. In that last case the row is marked failed
+// and the command runs again, as it does after any failed completion write.
 export function cancelBamCommand (id: string) {
   return `
     SELECT pg_cancel_backend(pid) AS cancelled

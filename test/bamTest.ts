@@ -1182,6 +1182,34 @@ describe('bam', function () {
       expect(errors).toEqual([])
     }, 30000)
 
+    // pg_cancel_backend reaches whatever statement the backend runs when the signal lands. A command
+    // that ends just before then goes back to the pool and the signal hits the next query on that
+    // connection, so stop() closes it instead. Catching the cancel stands in for a command that ends
+    // without it: the command succeeds and its connection still has to close.
+    helper.itPostgresOnly('should close the connection of a command it set out to cancel instead of returning it to the pool', async function () {
+      const command = 'DO $$ BEGIN PERFORM pg_sleep(60); EXCEPTION WHEN query_canceled THEN NULL; END $$'
+      const { boss, errors } = await startCommand('caught_cmd', command)
+
+      const db = await helper.getDb()
+      const { rows } = await db.executeSql("SELECT pid FROM pg_stat_activity WHERE query LIKE '/* pgboss bam %' AND state = 'active'")
+      expect(rows).toHaveLength(1)
+
+      await boss.stop({ timeout: 1000, close: false })
+
+      expect((await readRow('caught_cmd')).status).toBe('completed')
+      expect(errors).toEqual([])
+
+      let alive = true
+      for (let i = 0; i < 50 && alive; i++) {
+        const { rows: found } = await db.executeSql('SELECT 1 FROM pg_stat_activity WHERE pid = $1', [rows[0].pid])
+        alive = found.length > 0
+        if (alive) await delay(100)
+      }
+      await db.close()
+
+      expect(alive).toBe(false)
+    }, 30000)
+
     // Left running without its client, the UPDATE would apply once the lock is released, while its row
     // read failed and was due to run it again.
     it('should roll back a data migration it stops instead of leaving it to commit', async function () {

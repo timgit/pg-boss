@@ -116,17 +116,20 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     }
   }
 
-  // signal is internal to BAM. Aborting it drops this statement's connection, so stop() can close the
-  // pool without waiting for a statement the server goes on to finish or cancel by itself.
-  async executeSql (text: string, values?: unknown[], { signal }: { signal?: AbortSignal } = {}) {
+  // signal and retire are internal to BAM. Aborting signal drops this statement's connection, so
+  // stop() can close the pool without waiting for a statement the server goes on to finish or cancel
+  // by itself. If retire is aborted by the time the statement ends, its connection is closed instead
+  // of returned to the pool, so a pg_cancel_backend aimed at the statement cannot reach whatever runs
+  // on that connection next.
+  async executeSql (text: string, values?: unknown[], { signal, retire }: { signal?: AbortSignal, retire?: AbortSignal } = {}) {
     assert(this.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
 
-    if (signal) {
-      signal.throwIfAborted()
+    if (signal || retire) {
+      signal?.throwIfAborted()
 
       const client = await this.pool.connect()
 
-      if (signal.aborted) {
+      if (signal?.aborted) {
         client.release()
         signal.throwIfAborted()
       }
@@ -136,13 +139,13 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
         dropped = true
         client.release(new Error('connection dropped by stop()'))
       }
-      signal.addEventListener('abort', drop, { once: true })
+      signal?.addEventListener('abort', drop, { once: true })
 
       try {
         return await client.query(text, values)
       } finally {
-        signal.removeEventListener('abort', drop)
-        if (!dropped) client.release()
+        signal?.removeEventListener('abort', drop)
+        if (!dropped) client.release(retire?.aborted ? new Error('connection retired by stop()') : undefined)
       }
     }
 
