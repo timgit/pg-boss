@@ -2062,10 +2062,10 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
           : [`UPDATE ${schema}.queue SET monitor_claim_on = monitor_on WHERE monitor_claim_on IS NULL`]),
         ...(noPartitioning ? [] : [createQueueFn[40](schema)])
       ],
-      // Build before retire. BAM applies these in created_on order, so job_i11 is complete on a
-      // table before job_i5 is dropped from it. Without partitioning both run on the one job table,
-      // as rows written directly. They ran inline in this transaction until 12.38.0, which held a
-      // CockroachDB upgrade on the build.
+      // Build before retire. BAM applies these in created_on order and holds the retire on a table
+      // until its build has completed, so job_i5 is never dropped beside a failed job_i11. Without
+      // partitioning both run on the one job table, as rows written directly. They ran inline in this
+      // transaction until 12.38.0, which held a CockroachDB upgrade on the build.
       async: [
         {
           name: 'fetch_index_priority_build',

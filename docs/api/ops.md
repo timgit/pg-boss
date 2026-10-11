@@ -252,7 +252,7 @@ Limits come from the cgroup the process is charged to (v1 or v2, with a private 
 
 Returns a summary of boss async migration (BAM) commands grouped by status.
 
-BAM commands are database operations that run asynchronously after schema migrations, such as index builds, so an upgrade does not wait for them. Once the worker finds a command, it runs the pending ones back to back rather than one per `bamIntervalSeconds`. This function provides a high-level overview of their progress.
+BAM commands are database operations that run asynchronously after schema migrations, such as index builds, so an upgrade does not wait for them. Once the worker finds a command, it runs the pending ones back to back rather than one per `bamIntervalSeconds`. Commands from one migration on one table run in order, and each waits until the one before it has completed, so a failed command holds the ones after it until a retry succeeds. This function provides a high-level overview of their progress.
 
 ```js
 const status = await boss.getBamStatus()

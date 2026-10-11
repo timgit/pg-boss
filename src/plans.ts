@@ -5088,6 +5088,18 @@ export function getNextBamCommand (schema: string, { useLiveness = false, pendin
   // pendingOnly is for the claims after the first in a burst (bam.ts #processCommands): they take the
   // rest of the pending rows and leave failed and stale ones to the next poll, so a command that just
   // failed is not retried at once in a loop.
+  //
+  // A command waits while an earlier one from the same migration on the same table has not completed,
+  // so an ordered pair such as v40's build-then-retire never drops the old index after the new build
+  // failed. The earlier command stays claimable itself, so its successful retry releases the rest.
+  const afterPredecessors = `NOT EXISTS (
+    SELECT 1 FROM ${schema}.bam p
+    WHERE p.version = c.version
+      AND p.table_name = c.table_name
+      AND p.created_on < c.created_on
+      AND p.status <> 'completed'
+  )`
+
   if (!useLiveness) {
     // Timeout-only path for engines without pg_stat_progress_create_index (CockroachDB/YugabyteDB):
     // a stuck in_progress row is reclaimed purely on the 24h fallback. No CONCURRENTLY healing, so no
@@ -5102,6 +5114,7 @@ export function getNextBamCommand (schema: string, { useLiveness = false, pendin
           c.status IN ('pending', 'failed')
           OR (c.status = 'in_progress' AND c.started_on < ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds')
         )`}
+        AND ${afterPredecessors}
         AND NOT EXISTS (
           SELECT 1 FROM ${schema}.bam g
           WHERE g.status = 'in_progress' AND g.started_on >= ${schema}.job_now() - interval '${BAM_STALE_SECONDS} seconds'
@@ -5186,6 +5199,7 @@ export function getNextBamCommand (schema: string, { useLiveness = false, pendin
         c.status IN ('pending', 'failed')
         OR (c.status = 'in_progress' AND ${stale('c.started_on', 'c.table_name')})
       )`}
+      AND ${afterPredecessors}
       AND NOT EXISTS (
         SELECT 1 FROM ${schema}.bam g
         WHERE g.status = 'in_progress' AND NOT ${stale('g.started_on', 'g.table_name')}

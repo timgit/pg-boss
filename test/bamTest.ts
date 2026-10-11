@@ -217,14 +217,15 @@ describe('bam', function () {
         INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command)
         VALUES
           ('test_fail', 27, 'pending', 'job_common', 'SELECT 1/0'),
-          ('test_success', 27, 'pending', 'job_common', 'SELECT 1')
+          ('test_success', 27, 'pending', 'job_other', 'SELECT 1')
       `)
       await db.close()
 
       const failPromise = waitForBamEvent(boss, 'test_fail', 'failed')
       const successPromise = waitForBamEvent(boss, 'test_success', 'completed', 10000)
 
-      // One poll: the burst moves on to the second command after the first fails.
+      // One poll: the burst moves on to the second command after the first fails. It is on another
+      // table, so the failure does not hold it.
       await triggerBamPoll(ctx.schema)
       await failPromise
       await successPromise
@@ -827,6 +828,48 @@ describe('bam', function () {
     }, 15000)
   })
 
+  // Commands from one migration on one table are an ordered sequence: v40 builds job_i11 and then
+  // drops job_i5, and the drop must not run after the build failed.
+  describe('ordering within a migration', function () {
+    it('should hold a command behind an earlier one of the same migration and table until it completes', async function () {
+      // Only here to build the schema; its own runner would race the claims made by hand.
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
+
+      const db = await helper.getDb()
+
+      try {
+        for (const useLiveness of helper.isCockroachDb ? [false] : [false, true]) {
+          await db.executeSql(`DELETE FROM ${ctx.schema}.bam`)
+          await db.executeSql(`
+            INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
+            VALUES ('build', 40, 'failed', 'job_common', 'SELECT 1', now() - interval '4 minutes'),
+                   ('retire', 40, 'pending', 'job_common', 'SELECT 2', now() - interval '3 minutes'),
+                   ('other_table', 40, 'pending', 'job_other', 'SELECT 3', now() - interval '2 minutes'),
+                   ('other_version', 41, 'pending', 'job_common', 'SELECT 4', now() - interval '1 minute')
+          `)
+
+          const claim = async (pendingOnly: boolean) => {
+            const { rows } = await db.executeSql(plans.getNextBamCommand(ctx.schema, { useLiveness, pendingOnly }))
+            if (rows[0]) await db.executeSql(plans.setBamCompleted(ctx.schema, rows[0].id))
+            return rows[0]?.name ?? null
+          }
+
+          // The rest of a burst skips the retire, held behind its failed build, and takes what else is pending.
+          expect(await claim(true)).toBe('other_table')
+          expect(await claim(true)).toBe('other_version')
+          expect(await claim(true)).toBeNull()
+
+          // The next poll retries the build, and only then is the retire claimable.
+          expect(await claim(false)).toBe('build')
+          expect(await claim(true)).toBe('retire')
+        }
+      } finally {
+        await db.close()
+      }
+    }, 15000)
+  })
+
   describe('heal recognition', function () {
     it('should return a probe exactly when it returns a drop', function () {
       // bam.ts runs the probe first and then drops without re-checking, so the two must recognise the
@@ -904,7 +947,7 @@ describe('bam', function () {
         await db.executeSql(`
           INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
           VALUES ('burst_fail', 27, 'pending', 'job_common', 'SELECT 1/0', now() - interval '2 minutes'),
-                 ('burst_after', 27, 'pending', 'job_common', 'SELECT 1', now() - interval '1 minute')
+                 ('burst_after', 27, 'pending', 'job_other', 'SELECT 1', now() - interval '1 minute')
         `)
         await db.executeSql(`UPDATE ${ctx.schema}.version SET bam_on = NULL`)
 
