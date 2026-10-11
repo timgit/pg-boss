@@ -151,6 +151,29 @@ describe('migration', function () {
     expect(sql).not.toContain('job_common_intake')
   })
 
+  it('should queue index builds on an existing table through bam without partitioning', function () {
+    // There is no job_table_run_async() without partitioning, so each build is a direct bam row on the
+    // one table, and the CLI inlines it once against that table instead of fanning out to job_common.
+    const migrations = getAll('custom', true, true)
+    const builds = migrations
+      .flatMap(m => (m.async ?? []).map(cmd => ({ version: m.version, cmd })))
+      .filter(({ cmd }) => typeof cmd !== 'string' && cmd.table)
+    expect(builds.length).toBeGreaterThan(0)
+
+    for (const { version, cmd } of builds) {
+      const { command, table } = cmd as types.AsyncMigrationCommand
+      expect(migrations.find(m => m.version === version)!.install.join('\n')).not.toContain(bamCommandIndexName(command) ?? command)
+
+      const queued = migrate('custom', version - 1, migrations)
+      expect(queued).not.toContain('job_table_run_async')
+      expect(queued).toContain(`VALUES ('${(cmd as types.AsyncMigrationCommand).name}', ${version}, 'pending', '${table}', $$${command}$$)`)
+
+      const inlined = migrateCommands('custom', version - 1, migrations, undefined, { inlineAsync: true }).concurrent
+      expect(inlined.filter(sql => sql.endsWith(command))).toHaveLength(1)
+      expect(inlined.join('\n')).not.toContain('job_common')
+    }
+  })
+
   itPostgresOnly('job_table_format() (plpgsql) handles a schema name containing the job_i token (v37)', async function () {
     // The installed SQL function used the same naive replace() as formatJobTable did. A schema like
     // `job_intake` (contains `job_i`) got rewritten to `job_common_intake`. An index build against a
@@ -667,8 +690,8 @@ describe('migration', function () {
     await contractor.migrate(rolledBackTo)
     expect(await contractor.schemaVersion()).toBe(currentSchemaVersion)
 
-    // Migrations defer index work to BAM, so the schema has not converged until BAM drains. BAM runs
-    // one command per poll, and v46 alone enqueues four builds for each of the seven job tables here.
+    // Migrations defer index work to BAM, so the schema has not converged until BAM drains. v46 alone
+    // enqueues four builds for each of the seven job tables here.
     const boss = ctx.boss = await start({
       ...config,
       noDefault: true,
@@ -688,6 +711,38 @@ describe('migration', function () {
         .toEqual(fresh[part].rows)
     }
   }
+
+  // The round trip above is Postgres-only. This is the presence check every backend can run: the
+  // migration commits with its index builds still queued, and BAM then builds every one of them.
+  it(`builds every deferred index through BAM after rolling back ${MIGRATION_DEPTH} and replaying`, { timeout: 150000 }, async function () {
+    await contractor.create()
+
+    for (let i = 0; i < MIGRATION_DEPTH; i++) {
+      const version = await contractor.schemaVersion()
+      assertTruthy(version)
+      await contractor.rollback(version)
+    }
+
+    await contractor.migrate(currentSchemaVersion - MIGRATION_DEPTH)
+
+    const queued = await contractor.detectDrift()
+    expect(queued.building.map(index => index.name)).toEqual(expect.arrayContaining(
+      newestAsyncMigration(ctx.schema).async!.map(cmd => bamCommandIndexName(typeof cmd === 'string' ? cmd : cmd.command)).filter(Boolean)
+        .map(name => isCockroachDb ? name : name!.replace(/^job_/, 'job_common_'))
+    ))
+
+    const boss = ctx.boss = await start({ ...ctx.bossConfig, noDefault: true })
+    await expect.poll(async () => {
+      const status = await boss.getBamStatus()
+      return status.filter(item => item.status !== 'completed').reduce((sum, item) => sum + item.count, 0)
+    }, { timeout: 100000 }).toBe(0)
+
+    const built = await contractor.detectDrift()
+    expect(built.building).toEqual([])
+    expect(built.missing).toEqual([])
+    expect(built.invalid).toEqual([])
+    expect(built.extraIndexes).toEqual([])
+  })
 
   for (let depth = 1; depth <= MIGRATION_DEPTH; depth++) {
     itPostgresOnly(`converges on the fresh-install schema after rolling back ${depth} and replaying`, { timeout: 150000 }, async function () {

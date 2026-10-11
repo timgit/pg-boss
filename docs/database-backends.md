@@ -164,6 +164,14 @@ Internally that enables atomic-`UPDATE` fetch (`noSkipLocked`), split-statement 
 (`noCoveringIndexes`), and numeric coercion on read. See
 [compatibility flags](#compatibility-flags).
 
+**Upgrades on CockroachDB** commit without building indexes on existing tables. Each index build is
+queued as a [BAM](api/ops#getbamstatus) command and runs after the migration, on an instance with
+`migrate` enabled, so `start()` does not wait for it. Until a build finishes, queries run without
+that index. A unique index that a write depends on, such as the one behind `upsert()` by key, is
+still built inside the migration. If the instance running a build stops, CockroachDB finishes the
+build on its own, but its BAM row is not marked done for up to 24 hours, and the commands queued
+behind it wait that long. The [CLI](cli#migrate) runs the same builds directly after the migration.
+
 **Transactional workers on CockroachDB** work, with two differences from PostgreSQL:
 
 - A queue configuring `heartbeatSeconds` cannot carry one (`noTransactionalHeartbeat`). The

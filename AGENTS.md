@@ -37,6 +37,8 @@ grep -n "plans\." src/migrationStore.ts
 
 Only comments and those three helpers should match. When an older migration needs a snapshot of DDL that later changes, add it to a version-keyed map in `migrationStore.ts` (like `createQueueFn`), and leave the older entries untouched.
 
+An index on a table that already holds rows goes in the migration's `async` list on every backend, so the upgrade does not wait for its build. Without partitioning there is no `job_table_run_async()`, so give each command `table: 'job'` (or the table it builds on) and BAM gets the row directly. Build an index inline only when a statement needs it to be correct, such as a unique index that `ON CONFLICT` or a dedupe relies on, and say why in the migration comment.
+
 Migration comments cover the migration only: table rewrites, backfill, existing rows, build order, backend quirks. What a column or index means belongs above its builder in `plans.ts`.
 
 Do not write a test per migration. `test/migrationTest.ts` rolls back the newest few versions (`MIGRATION_DEPTH`), replays them and compares the result with a fresh install, so a new migration is covered the moment it lands.

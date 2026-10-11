@@ -481,6 +481,9 @@ export interface AsyncMigrationCommand {
   name: string
   command: string
   partitionPolicy?: QueuePolicy
+  // Runs the command once against this one table, as written, instead of across job_common and the
+  // partitions. Set on a schema without partitioning, which has no job_table_run_async().
+  table?: string
 }
 
 export interface MigrationPartition {

@@ -112,7 +112,7 @@ After `stop({ close: false })` this fires while the connection pool is still ope
 
 ## `bam`
 
-Emitted when a boss async migration (BAM) command changes status. BAM commands are database operations that run asynchronously after schema migrations, such as creating indexes on partitioned tables.
+Emitted when a boss async migration (BAM) command changes status. BAM commands are database operations that run asynchronously after schema migrations, such as index builds.
 
 ```js
 boss.on('bam', event => {
