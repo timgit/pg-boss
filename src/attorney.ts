@@ -728,10 +728,13 @@ function assertListLimit (method: string, limit: number = LIST_LIMIT_DEFAULT): n
   return limit
 }
 
-// Any spelling the uuid type accepts, with or without hyphens and braces, in either case. A read that
-// pages by id checks it here, so a malformed one is a usage error rather than the database's.
+// Any spelling the uuid type accepts, in either case: 32 hex digits, a hyphen allowed after any group
+// of four but the last, and the whole optionally inside one pair of braces. A read that pages by id
+// checks it here, so a malformed one is a usage error rather than the database's.
+const UUID_INPUT = /^(?:\{[0-9a-f]{4}(?:-?[0-9a-f]{4}){7}\}|[0-9a-f]{4}(?:-?[0-9a-f]{4}){7})$/i
+
 function isUuid (value: string): boolean {
-  return /^[0-9a-f]{32}$/i.test(value.replace(/[{}-]/g, ''))
+  return UUID_INPUT.test(value)
 }
 
 // The `after` of a list read that pages by one value: a queue name, a key or, with `id`, an id.

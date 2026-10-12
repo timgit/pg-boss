@@ -109,6 +109,10 @@ export const fetchOptionsSchema = z.object({
   { message: 'minPriority must be <= maxPriority' }
 ) satisfies z.ZodType<types.HttpFetchOptions>
 
+// Any spelling the uuid type accepts, as pg-boss checks a list read's after: a hyphen only after a
+// group of four hex digits, and braces only as a pair around the whole.
+export const UUID_INPUT = /^(?:\{[0-9a-f]{4}(?:-?[0-9a-f]{4}){7}\}|[0-9a-f]{4}(?:-?[0-9a-f]{4}){7})$/i
+
 export const findJobsOptionsSchema = z.object({
   id: z.string().optional(),
   key: z.string().optional(),

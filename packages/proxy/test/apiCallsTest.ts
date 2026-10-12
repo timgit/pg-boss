@@ -659,6 +659,12 @@ describe('proxy api routes', () => {
       expect(res.status, query).toBe(400)
     }
 
+    // An unpaired brace or a hyphen that does not follow a group of four hex digits.
+    for (const after of ['{0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', '-0193a1b2c3d47e5f80718293a4b5c6d7', '019-3a1b2-c3d4-7e5f-8071-8293a4b5c6d7']) {
+      const res = await app.fetch(new Request(`http://local/api/findJobs?name=q&after=${encodeURIComponent(after)}`, { method: 'GET' }))
+      expect(res.status, after).toBe(400)
+    }
+
     // Any spelling the uuid type accepts passes through as it was sent.
     const id = '{0193A1B2C3D4E5F60718293A4B5C6D7E}'
     const res = await app.fetch(new Request(`http://local/api/findJobs?name=q&after=${encodeURIComponent(id)}`, { method: 'GET' }))

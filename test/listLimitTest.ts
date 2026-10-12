@@ -207,5 +207,11 @@ describe('list paging', function () {
     }
     await expect(ctx.boss.getDependencies(ctx.schema, missing, { after: { name: ctx.schema, id: '' } })).rejects.toThrow('getDependencies: after.id must be a uuid')
     await expect(ctx.boss.getInstances({ after: `{${missing.toUpperCase().replaceAll('-', '')}}` })).rejects.toThrow('getInstances: after names a row that no longer exists')
+    await expect(ctx.boss.getInstances({ after: '0000-0000-0000-4000-8000-0000-0000-0000' })).rejects.toThrow('getInstances: after names a row that no longer exists')
+
+    // Spellings the uuid type rejects: an unpaired brace, and hyphens that do not follow a group of four.
+    for (const after of [`{${missing}`, `${missing}}`, `-${missing.replaceAll('-', '')}`, `${missing}-`, '000-00000-0000-4000-8000-000000000000', missing.replace('-', '--')]) {
+      await expect(ctx.boss.getInstances({ after })).rejects.toThrow('getInstances: after must be a uuid')
+    }
   })
 })
