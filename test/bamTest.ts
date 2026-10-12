@@ -1348,6 +1348,44 @@ describe('bam', function () {
       }, 30000)
     }
 
+    // stop() aborts before it sends the cancel, so a statement still waiting for a connection gives up
+    // while the cancel is in flight and finds nothing. The cancel must not undo what the statement
+    // recorded, or the row's failure would be reported as an error.
+    helper.itPostgresOnly('should not emit an error for a statement that gave up while the cancel was in flight', async function () {
+      class SlowCancelDb extends Db {
+        async executeSql (text: string, values?: unknown[], options?: { signal?: AbortSignal, retire?: AbortSignal }) {
+          if (options?.signal || options?.retire) await delay(2500)
+          if (text.includes('pg_cancel_backend')) await delay(2000)
+          if (text.includes("SET status = 'failed'")) await delay(1000)
+          return await super.executeSql(text, values, options)
+        }
+      }
+
+      const db = new SlowCancelDb(helper.getConfig())
+      await db.open()
+
+      try {
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        await insertBamRow(ctx.schema, 'cancel_cmd', 'pending', 'SELECT 1')
+
+        const started = waitForBamEvent(boss, 'cancel_cmd', 'in_progress')
+        await triggerBamPoll(ctx.schema)
+        await started
+
+        await boss.stop({ timeout: 1000, close: false })
+
+        const row = await readRow('cancel_cmd')
+        expect(row.status).toBe('failed')
+        expect(row.error).toContain('stop() ended the command before it ran')
+        expect(errors).toEqual([])
+      } finally {
+        await db.close()
+      }
+    }, 30000)
+
     // A stop that lands after the build returns, here while the build's index is read back, has no
     // statement to end. The read's failure is the command's, so the row is marked failed with an error.
     helper.itPostgresOnly('should mark a row failed when stop() lands while the build is checked', async function () {

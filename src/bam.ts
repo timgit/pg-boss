@@ -137,7 +137,9 @@ class Bam extends EventEmitter implements types.EventsMixin {
 
     try {
       const { rows } = await this.#db.executeSql(plans.cancelBamCommand(running.id))
-      running.ended = rows.some(row => row.cancelled)
+      // Only ever set here: a statement that stop() kept from starting may have set it while the
+      // cancel was in flight, and the cancel then finds nothing.
+      if (rows.some(row => row.cancelled)) running.ended = true
     } catch (err) {
       // Usually a role that can see the statement but not signal its backend, which a retry will not
       // change. Report it once and wait for the statement.
