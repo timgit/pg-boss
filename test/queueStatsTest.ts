@@ -242,6 +242,31 @@ describe('queueStats', function () {
     expect(stats.totalCount).toBe(0)
   })
 
+  // The truncate leaves nothing that finished before it, so the monitor counts completions from then on.
+  it('should count completions after a truncate before the queue\'s first maintenance pass', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+    await ctx.boss.send(queue)
+    await uncounted(queue, 1)
+
+    expect(await ctx.boss.deleteAllJobs()).toBeNull()
+
+    await Promise.all([1, 2, 3].map(() => ctx.boss!.send(queue)))
+    const fetched = await ctx.boss.fetch(queue, { batchSize: 3 })
+    await ctx.boss.complete(queue, fetched.map(job => job.id))
+
+    // Past DELTA_LAG, so a pass takes the completions into retained_count.
+    await clock.tick(plans.DELTA_LAG_SECONDS * 1000 + 1000)
+    await ctx.boss.supervise(queue)
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+
+    const [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(3)
+  })
+
   // On a caller's db the adjustment would lock the queue row until the caller commits, so it is left
   // to the next maintenance pass.
   it('should leave the queue row alone when deleteJob() or resume() run on a caller\'s db', async function () {

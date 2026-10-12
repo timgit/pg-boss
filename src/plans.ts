@@ -1807,7 +1807,10 @@ export function truncateTable (schema: string, table: string) {
 // The cached counts of a queue whose table was just truncated, written without counting: they are
 // zero. Only the truncate paths use it. A DELETE leaves concurrent sends and the other states in
 // place, so its counts can only come from a recount, whose cost the delete cannot bound. The
-// throughput counters are the monitor's and are left alone. With `one`, $1 is the queue's name.
+// throughput counters are the monitor's and are left alone. The truncate left nothing that finished
+// before it, so retained_on moves up to the monitor's lagged window end, and a queue the retention
+// sweep had not counted yet is counted from there. Not to now: a transaction that began before the
+// truncate stamps a completion with its start. With `one`, $1 is the queue's name.
 export function zeroQueueStats (schema: string, one?: boolean) {
   return `
     UPDATE ${schema}.queue SET
@@ -1819,6 +1822,7 @@ export function zeroQueueStats (schema: string, one?: boolean) {
       failed_count = 0,
       total_count = 0,
       retained_count = 0,
+      retained_on = ${deltaWindowEnd(schema)},
       singletons_active = NULL,
       monitor_on = ${schema}.job_now()
     FROM (
