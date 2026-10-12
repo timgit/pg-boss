@@ -225,34 +225,4 @@ describe('handler overrun', function () {
       held.release()
     }
   })
-
-  it('a graceful stop stops waiting for a handler that outran its timeout once its grace is spent', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
-    const boss = ctx.boss
-    const warnings = overrunWarnings(boss)
-
-    await boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
-
-    const held = heldHandler()
-    let handlerStarted = false
-
-    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, () => {
-      handlerStarted = true
-      return held.released
-    })
-
-    await helper.until(() => handlerStarted)
-    await delay(1500)
-
-    expect(warnings.length).toBe(1)
-
-    try {
-      const started = Date.now()
-      await boss.stop({ timeout: 1000 })
-
-      expect(Date.now() - started).toBeLessThan(5000)
-    } finally {
-      held.release()
-    }
-  })
 })

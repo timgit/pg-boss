@@ -862,7 +862,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // worker from fetching a retry of the same job beside it. Stopping the worker, through offWork() or
   // stop(), ends the wait: a stopping worker fetches nothing, so there is nothing left to hold.
   async #awaitHandlerOverrun (name: string, jobIds: string[], expireInSeconds: number, handling: Promise<unknown>, worker?: Worker<any>): Promise<void> {
-    const ended = worker && AbortSignal.any([worker.stopSignal, worker.graceSignal])
+    const ended = worker?.stopSignal
 
     if (ended?.aborted) return
 
@@ -1187,7 +1187,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Every worker is marked before any fail below is awaited, so a claim landing on a later worker
     // while an earlier one's fail is in flight is refused too.
     for (const worker of this.workers.values()) {
-      worker.expireGrace()
+      worker.graceExpired = true
     }
 
     for (const worker of this.workers.values()) {

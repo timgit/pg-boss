@@ -51,8 +51,8 @@ class Worker<T = unknown> {
   // A handler that outran its timeout and was still running when stop() ended the wait for it. The
   // manager releases the batch's localGroupConcurrency slots once it settles rather than at once.
   abandonedHandler: Promise<unknown> | null = null
-  // Aborted by failWip() once stop() has spent its grace: a claim landing after this is refused.
-  private readonly grace = new AbortController()
+  // Set by failWip() once stop() has spent its grace: a claim landing after this is refused.
+  graceExpired = false
   // Aborted by stop(): a stopping worker fetches nothing, so a handler that outran its timeout is no
   // longer waited for.
   private readonly stopController = new AbortController()
@@ -161,20 +161,8 @@ class Worker<T = unknown> {
     await this.runPromise
   }
 
-  get graceExpired (): boolean {
-    return this.grace.signal.aborted
-  }
-
-  get graceSignal (): AbortSignal {
-    return this.grace.signal
-  }
-
   get stopSignal (): AbortSignal {
     return this.stopController.signal
-  }
-
-  expireGrace (): void {
-    this.grace.abort()
   }
 
   abort (): void {
