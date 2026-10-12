@@ -147,6 +147,12 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
       let failed = false
 
+      // The pool takes its own error listener off a client it hands out, and a socket that dies
+      // mid-statement emits 'error' on the client, which unheard is an uncaught exception. The
+      // statement rejects with the same error, so the listener has nothing else to do.
+      const onClientError = () => { failed = true }
+      client.on('error', onClientError)
+
       try {
         return await client.query(text, values)
       } catch (err) {
@@ -154,6 +160,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
         throw err
       } finally {
         signal?.removeEventListener('abort', drop)
+        client.removeListener('error', onClientError)
         if (!dropped) client.release(failed || retire?.aborted)
       }
     }

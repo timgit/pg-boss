@@ -1304,6 +1304,32 @@ describe('bam', function () {
       }
     }, 30000)
 
+    // A connection lost mid-statement without a message from the server (a failover, a proxy
+    // restart) emits 'error' on the client. The statement rejects instead of the process crashing.
+    helper.itPostgresOnly('should reject a statement whose connection is lost', async function () {
+      const db = new Db({ ...helper.getConfig(), max: 1 })
+      await db.open()
+
+      try {
+        const pool = (db as unknown as { pool: pg.Pool }).pool
+        let client: any
+        pool.once('acquire', acquired => { client = acquired })
+
+        const retire = new AbortController().signal
+        const running = db.executeSql('SELECT pg_sleep(5)', undefined, { retire })
+
+        await delay(300)
+        client.connection.stream.destroy()
+
+        await expect(running).rejects.toThrow('Connection terminated unexpectedly')
+
+        const { rows } = await db.executeSql('SELECT 1 AS one')
+        expect(rows[0].one).toBe(1)
+      } finally {
+        await db.close()
+      }
+    }, 30000)
+
     // A Db whose statements from #execute wait before they ask for a connection, so stop() aborts
     // them first.
     class SlowStartDb extends Db {
