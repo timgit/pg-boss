@@ -793,6 +793,7 @@ export type {
   JobStates,
   Events,
   JobWithMetadata,
+  ListOptions,
   MaintenanceOptions,
   ManagedIndex,
   MigrationPartition,

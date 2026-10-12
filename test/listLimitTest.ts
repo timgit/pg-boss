@@ -3,6 +3,7 @@ import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import * as Attorney from '../src/attorney.ts'
 import { PgBoss } from '../src/index.ts'
+import type { ListOptions } from '../src/index.ts'
 
 describe('list limits', function () {
   it('defaults a list read to 1000 rows and accepts 1 to 100000', function () {
@@ -20,7 +21,8 @@ describe('list limits', function () {
     await ctx.boss.createQueue(`${ctx.schema}_b`)
     await ctx.boss.createQueue(`${ctx.schema}_a`)
 
-    expect((await ctx.boss.getQueues(undefined, { limit: 1 })).map(q => q.name)).toEqual([`${ctx.schema}_a`])
+    const options: ListOptions = { limit: 1 }
+    expect((await ctx.boss.getQueues(undefined, options)).map(q => q.name)).toEqual([`${ctx.schema}_a`])
     await expect(ctx.boss.getQueues(undefined, { limit: 0 })).rejects.toThrow('getQueues: limit must be an integer between 1 and 100000')
   })
 
