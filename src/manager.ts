@@ -2825,8 +2825,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     // A queue in the shared table is emptied in batches first, so delete_queue() only removes the
-    // jobs sent since. A queue with its own table is dropped whole.
+    // jobs sent since. A queue with its own table is dropped whole. A dead letter queue still in use
+    // would fail delete_queue() only after its jobs were gone, so it is refused before any are.
     if (!queue.partition) {
+      const { rows: [referrer] } = await this.db.executeSql(plans.getDeadLetterReferrer(this.config.schema), [name])
+
+      if (referrer) {
+        throw new Error(referrer.kind === 'queue'
+          ? `Queue ${name} was not deleted: queue ${referrer.name} uses it as its dead letter queue`
+          : `Queue ${name} was not deleted: jobs in queue ${referrer.name} name it as their dead letter queue`)
+      }
+
       await this.#deleteInBatches(name, (options) => plans.deleteAllJobs(this.config.schema, queue.table, name, options))
     }
 

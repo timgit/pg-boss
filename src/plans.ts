@@ -1296,6 +1296,19 @@ export function notifyQueue (schema: string, name: string): string {
   return `SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')`
 }
 
+// Another queue, or a job of another queue, that still names $1 as its dead letter queue. Either
+// fails delete_queue() on a foreign key, which a queue in the shared table only reaches after its jobs
+// were deleted in batches, so deleteQueue() asks first. Nothing indexes job.dead_letter, so the job
+// half reads the table as the foreign key's own check at the delete does.
+export function getDeadLetterReferrer (schema: string) {
+  return `
+    (SELECT name, 'queue' AS kind FROM ${schema}.queue WHERE dead_letter = $1 AND name <> $1 LIMIT 1)
+    UNION ALL
+    (SELECT name, 'job' AS kind FROM ${schema}.job WHERE dead_letter = $1 AND name <> $1 LIMIT 1)
+    LIMIT 1
+  `
+}
+
 // Dropping a queue's own table (partition: true) needs ACCESS EXCLUSIVE on it, on job and on job_common,
 // and an insert into job_common or a query through job takes those in other orders. So the locks are
 // taken first, all with NOWAIT: the transaction never waits holding one, so it can never be part of a

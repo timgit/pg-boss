@@ -180,6 +180,36 @@ describe('queues', function () {
 
     spy.mockRestore()
   })
+  // delete_queue() would fail on the foreign key only after the shared table's jobs were deleted in
+  // batches, so the queue is refused before any of them are.
+  for (const referrer of ['queue', 'job'] as const) {
+    it(`deleteQueue keeps a dead letter queue and its jobs while ${referrer === 'queue' ? 'another queue' : 'a job of another queue'} names it`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      const deadLetter = `${ctx.schema}_dlq`
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.createQueue(ctx.schema, { deadLetter })
+      await ctx.boss.send(deadLetter)
+      await ctx.boss.send(deadLetter)
+
+      if (referrer === 'job') {
+        await ctx.boss.send(ctx.schema)
+        await ctx.boss.updateQueue(ctx.schema, { deadLetter: null })
+      }
+
+      await expect(ctx.boss.deleteQueue(deadLetter)).rejects.toThrow(referrer === 'queue'
+        ? `Queue ${deadLetter} was not deleted: queue ${ctx.schema} uses it as its dead letter queue`
+        : `Queue ${deadLetter} was not deleted: jobs in queue ${ctx.schema} name it as their dead letter queue`)
+
+      expect(await ctx.boss.getQueue(deadLetter)).toBeTruthy()
+      expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', [deadLetter])).toBe(2)
+
+      await ctx.boss.deleteQueue(ctx.schema)
+      await ctx.boss.deleteQueue(deadLetter)
+
+      expect(await ctx.boss.getQueue(deadLetter)).toBeNull()
+    })
+  }
+
   // Without table partitioning a queue never has its own table to drop. The YugabyteDB profile turns
   // partitioning off and otherwise runs on Postgres, which is how this reaches that path here.
   it.skipIf(helper.isPglite || helper.isCockroachDb)('deleteQueue removes a queue and its jobs without table partitioning', async function () {

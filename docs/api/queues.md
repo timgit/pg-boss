@@ -181,7 +181,7 @@ Deletes a queue and all jobs.
 await boss.deleteQueue('email-send')
 ```
 
-A queue in the shared job table has its jobs deleted in batches first, as [`deleteAllJobs()`](./jobs.md#deletealljobs-name) does, and then the queue itself. If it fails partway, the jobs already deleted stay deleted and the queue remains.
+A queue in the shared job table has its jobs deleted in batches first, as [`deleteAllJobs()`](./jobs.md#deletealljobs-name) does, and then the queue itself. If it fails partway, the jobs already deleted stay deleted and the queue remains. While another queue, or a job in another queue, names it as its dead letter queue, `deleteQueue()` rejects before it deletes anything.
 
 A queue created with `partition: true` has its own table, and dropping it needs brief exclusive locks on the job tables. `deleteQueue()` takes them without waiting, so it never deadlocks with work in flight: while they are busy it tries again, for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue as it was.
 
