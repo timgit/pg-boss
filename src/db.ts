@@ -120,18 +120,22 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   // stop() can close the pool without waiting for a statement the server goes on to finish or cancel
   // by itself. If retire is aborted by the time the statement ends, its connection is closed instead
   // of returned to the pool, so a pg_cancel_backend aimed at the statement cannot reach whatever runs
-  // on that connection next.
+  // on that connection next. Either one aborted before the statement starts keeps it from starting.
+  // A connection whose statement failed is closed too, as pool.query does, so a failure inside an
+  // explicit transaction cannot hand the next query an aborted transaction.
   async executeSql (text: string, values?: unknown[], { signal, retire }: { signal?: AbortSignal, retire?: AbortSignal } = {}) {
     assert(this.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
 
     if (signal || retire) {
       signal?.throwIfAborted()
+      retire?.throwIfAborted()
 
       const client = await this.pool.connect()
 
-      if (signal?.aborted) {
+      if (signal?.aborted || retire?.aborted) {
         client.release()
-        signal.throwIfAborted()
+        signal?.throwIfAborted()
+        retire?.throwIfAborted()
       }
 
       let dropped = false
@@ -141,11 +145,16 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
       }
       signal?.addEventListener('abort', drop, { once: true })
 
+      let failed = false
+
       try {
         return await client.query(text, values)
+      } catch (err) {
+        failed = true
+        throw err
       } finally {
         signal?.removeEventListener('abort', drop)
-        if (!dropped) client.release(retire?.aborted ? new Error('connection retired by stop()') : undefined)
+        if (!dropped) client.release(failed || retire?.aborted)
       }
     }
 

@@ -1263,23 +1263,42 @@ describe('bam', function () {
       }
     }, 30000)
 
-    // The signal can abort while the statement waits for a pooled connection. The connection it gets
-    // then goes back to the pool without running anything.
-    it('should return a connection that arrives after its signal aborted', async function () {
+    // Either signal can abort while the statement waits for a pooled connection. The connection it
+    // gets then goes back to the pool without running anything.
+    for (const option of ['signal', 'retire'] as const) {
+      it(`should return a connection that arrives after its ${option} aborted`, async function () {
+        const db = new Db({ ...helper.getConfig(), max: 1 })
+        await db.open()
+
+        try {
+          const busy = db.executeSql('SELECT pg_sleep(0.5)')
+
+          const abort = new AbortController()
+          const waiting = db.executeSql('SELECT 1', undefined, { [option]: abort.signal })
+          abort.abort()
+
+          await expect(waiting).rejects.toThrow('This operation was aborted')
+          await busy
+
+          expect(db.poolCounts()).toMatchObject({ total: 1, idle: 1 })
+        } finally {
+          await db.close()
+        }
+      }, 30000)
+    }
+
+    // A statement that fails inside an explicit transaction leaves its connection in an aborted
+    // transaction. Closed instead of pooled, it cannot fail the next query.
+    helper.itPostgresOnly('should close the connection of a statement that failed', async function () {
       const db = new Db({ ...helper.getConfig(), max: 1 })
       await db.open()
 
       try {
-        const busy = db.executeSql('SELECT pg_sleep(0.5)')
+        const retire = new AbortController().signal
+        await expect(db.executeSql('BEGIN; SELECT 1/0', undefined, { retire })).rejects.toThrow('division by zero')
 
-        const abort = new AbortController()
-        const waiting = db.executeSql('SELECT 1', undefined, { signal: abort.signal })
-        abort.abort()
-
-        await expect(waiting).rejects.toThrow('This operation was aborted')
-        await busy
-
-        expect(db.poolCounts()).toMatchObject({ total: 1, idle: 1 })
+        const { rows } = await db.executeSql('SELECT 1 AS one')
+        expect(rows[0].one).toBe(1)
       } finally {
         await db.close()
       }
