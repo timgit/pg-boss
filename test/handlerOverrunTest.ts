@@ -148,6 +148,51 @@ describe('handler overrun', function () {
     expect(seen).toEqual(['a', 'b'])
   })
 
+  it('holds the worker when the timeout fail() throws', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+    const warnings = overrunWarnings(boss)
+    const errors: any[] = []
+    boss.on('error', error => errors.push(error))
+
+    const held = heldHandler()
+    const seen: string[] = []
+
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async ([job]: any[]) => {
+      seen.push(job.data.label)
+      if (job.data.label === 'a') await held.released
+    })
+
+    const { default: Manager } = await import('../src/manager.ts')
+    const fail = Manager.prototype.fail
+    let thrown = false
+    Manager.prototype.fail = function (this: any, ...args: any[]) {
+      if (!thrown && String(args[2]?.message).includes('handler execution exceeded')) {
+        thrown = true
+        return Promise.reject(new Error('fail() could not reach the database'))
+      }
+      return fail.apply(this, args as any)
+    } as any
+
+    try {
+      await boss.send(ctx.schema, { label: 'a' }, { retryLimit: 0, expireInSeconds: 1 })
+      await helper.until(() => seen.length === 1)
+      await boss.send(ctx.schema, { label: 'b' })
+      await delay(2500)
+
+      expect(thrown).toBe(true)
+      expect(warnings.length).toBe(1)
+      expect(seen).toEqual(['a'])
+
+      held.release()
+      await helper.until(() => seen.length === 2)
+      expect(errors.some(error => error.message.startsWith('fail() could not reach the database'))).toBe(true)
+    } finally {
+      Manager.prototype.fail = fail
+      held.release()
+    }
+  })
+
   it('a graceful stop does not wait for a handler that outran its timeout', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const boss = ctx.boss

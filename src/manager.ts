@@ -714,6 +714,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // outran its timeout from one that returned.
     let handling: Promise<unknown> | undefined
     let handlerSettled = false
+    // The error of a fail() that threw in the catch below.
+    let unfailed: { error: unknown } | undefined
 
     try {
       // A per-job heartbeatSeconds, or updateQueue() after the worker registered, can put a
@@ -810,7 +812,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       }
 
-      await this.fail(name, jobs, err)
+      // Thrown only after the overrun wait below, so a fail() that cannot reach the database still
+      // holds the worker for a handler that outran its timeout.
+      try {
+        await this.fail(name, jobs, err)
+      } catch (failError) {
+        unfailed = { error: failError }
+      }
+
       failedError = err
       didFail = true
     } finally {
@@ -826,7 +835,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // gated here, not just inside the trackers, so the production hot path (spies off) never
     // even calls the async tracker. No promise allocated, no microtask tick. The checks
     // inside the trackers stay as a safety net.
-    if (this.config.__test__enableSpies && this.#spies.has(name)) {
+    if (this.config.__test__enableSpies && this.#spies.has(name) && !unfailed) {
       if (didFail) {
         await this.#trackJobsFailed(name, jobs, failedError)
       } else if (!perJobResults) {
@@ -841,6 +850,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       if (worker && !handlerSettled) worker.abandonedHandler = handling
     }
+
+    if (unfailed) throw unfailed.error
 
     return didFail ? (failedError ?? new Error('handler rejected without a reason')) : perJobError
   }
