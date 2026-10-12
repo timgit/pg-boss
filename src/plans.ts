@@ -5430,9 +5430,10 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
   10: QUEUE_POLICIES.key_strict_fifo
 }
 // job_iN indexes with no policy gate, created on every job table regardless of policy
-// (throttle i4, fetch i11, group-concurrency i7, blocking i9, source root i12). 5 is absent, not
-// missing: the fetch index was replaced in v40 and the retired number is not reused.
-const BASE_JOB_INDEXES = [4, 7, 9, 11, 12]
+// (throttle i4, fetch i11, group-concurrency i7, blocking i9, source root i12, upsert i13, live i14,
+// created i15, completed i16, queued key i17). 5 is absent, not missing: the fetch index was replaced
+// in v40 and the retired number is not reused. Keep in sync with createQueueFunction.
+const BASE_JOB_INDEXES = [4, 7, 9, 11, 12, 13, 14, 15, 16, 17]
 
 // The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
 const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency', 'instance']
