@@ -217,6 +217,43 @@ describe('queueStats', function () {
     expect(stats.totalCount).toBe(2)
   })
 
+  // On a caller's db the adjustment would lock the queue row until the caller commits, so it is left
+  // to the next maintenance pass.
+  it('should leave the queue row alone when deleteJob() or resume() run on a caller\'s db', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1, maintenanceIntervalSeconds: 1 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    const [completedId, cancelledId] = await Promise.all([1, 2].map(() => ctx.boss!.send(queue))) as string[]
+    const [job] = await ctx.boss.fetch(queue)
+    const cancelled = job.id === completedId ? cancelledId : completedId
+    await ctx.boss.complete(queue, job.id)
+    await ctx.boss.cancel(queue, cancelled)
+
+    await clock.tick(plans.DELTA_LAG_SECONDS * 1000 + 1000)
+    await ctx.boss.supervise(queue)
+    let [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(2)
+
+    const db = await getDb()
+    const statements: string[] = []
+    const caller = { executeSql: (text: string, values?: unknown[]) => { statements.push(text); return db.executeSql(text, values) } }
+
+    expect((await ctx.boss.deleteJob(queue, job.id, { db: caller })).affected).toBe(1)
+    expect((await ctx.boss.resume(queue, cancelled, { db: caller })).affected).toBe(1)
+    expect(statements.some(text => text.includes('retained_count'))).toBe(false)
+
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(2)
+
+    // Maintenance recounts: the resumed job is live, and the deleted one is gone.
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(1)
+  })
+
   // A completion is stamped with its transaction's start. One that commits after a monitor pass has
   // already counted past that stamp would be in neither the live jobs nor the finished ones.
   helper.describeMultiConnectionOnly('with a completion committed after a monitor pass', function () {

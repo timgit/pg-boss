@@ -256,7 +256,7 @@ Each monitor pass updates the counts, every `monitorIntervalSeconds`. A queued j
 * `failedCount`: failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
 * `totalCount`: all jobs currently stored for the queue
 
-`totalCount` is the jobs the monitor pass counts as waiting, active or failed, plus the completed and cancelled jobs the maintenance pass counts as it walks the queue. Each monitor pass adds the jobs that finished since, so the total stays current between maintenance passes. A job completed in a transaction that commits more than 10 seconds after it began can be left out until the next maintenance pass. Until a queue's first maintenance pass after upgrading to 12.38, `totalCount` keeps the count it had before the upgrade, or the live jobs if there are more.
+`totalCount` is the jobs the monitor pass counts as waiting, active or failed, plus the completed and cancelled jobs the maintenance pass counts as it walks the queue. Each monitor pass adds the jobs that finished since, so the total stays current between maintenance passes. A job completed in a transaction that commits more than 10 seconds after it began can be left out until the next maintenance pass. `deleteJob()` and `resume()` adjust it at once, except when they are passed a `db`, where the next maintenance pass corrects it. Until a queue's first maintenance pass after upgrading to 12.38, `totalCount` keeps the count it had before the upgrade, or the live jobs if there are more.
 
 **Monitor pass fields**
 
