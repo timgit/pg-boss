@@ -1304,6 +1304,87 @@ describe('bam', function () {
       }
     }, 30000)
 
+    // A Db whose statements from #execute wait before they ask for a connection, so stop() aborts
+    // them first.
+    class SlowStartDb extends Db {
+      async executeSql (text: string, values?: unknown[], options?: { signal?: AbortSignal, retire?: AbortSignal }) {
+        if (options?.signal || options?.retire) await delay(2500)
+        return await super.executeSql(text, values, options)
+      }
+    }
+
+    // An abandoned statement leaves its row in_progress for the liveness check, but one that never
+    // started has nothing for the check to find, so its row is marked failed.
+    for (const [name, command] of [
+      ['abandon', (schema: string) => `CREATE INDEX CONCURRENTLY IF NOT EXISTS slow_idx ON ${schema}.slow_test (a)`],
+      ['cancel', () => 'SELECT 1']
+    ] as const) {
+      helper.itPostgresOnly(`should mark a row failed when stop() aborts its ${name} statement before it starts`, async function () {
+        const db = new SlowStartDb(helper.getConfig())
+        await db.open()
+
+        try {
+          const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db })
+          const errors: Error[] = []
+          boss.on('error', err => errors.push(err))
+
+          await db.executeSql(`CREATE TABLE ${ctx.schema}.slow_test (a int)`)
+
+          await insertBamRow(ctx.schema, 'slow_cmd', 'pending', command(ctx.schema))
+
+          const started = waitForBamEvent(boss, 'slow_cmd', 'in_progress')
+          await triggerBamPoll(ctx.schema)
+          await started
+
+          await boss.stop({ timeout: 1000, close: false })
+
+          const row = await readRow('slow_cmd')
+          expect(row.status).toBe('failed')
+          expect(row.error).toContain('stop() ended the command before it ran')
+          expect(errors).toEqual([])
+        } finally {
+          await db.close()
+        }
+      }, 30000)
+    }
+
+    // A stop that lands after the build returns, here while the build's index is read back, has no
+    // statement to end. The read's failure is the command's, so the row is marked failed with an error.
+    helper.itPostgresOnly('should mark a row failed when stop() lands while the build is checked', async function () {
+      class SlowProbeDb extends Db {
+        async executeSql (text: string, values?: unknown[], options?: { signal?: AbortSignal, retire?: AbortSignal }) {
+          if (text.includes('NOT i.indisvalid AS invalid')) await delay(2500)
+          return await super.executeSql(text, values, options)
+        }
+      }
+
+      const db = new SlowProbeDb(helper.getConfig())
+      await db.open()
+
+      try {
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        await db.executeSql(`CREATE TABLE ${ctx.schema}.probe_test (a int, b int)`)
+        await db.executeSql(`CREATE INDEX probe_idx ON ${ctx.schema}.probe_test (a)`)
+        await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.probe_idx'::regclass`)
+
+        await insertBamRow(ctx.schema, 'probe_cmd', 'pending', `CREATE INDEX CONCURRENTLY IF NOT EXISTS probe_idx ON ${ctx.schema}.probe_test (b)`)
+
+        const started = waitForBamEvent(boss, 'probe_cmd', 'in_progress')
+        await triggerBamPoll(ctx.schema)
+        await started
+
+        await boss.stop({ timeout: 1000, close: false })
+
+        expect((await readRow('probe_cmd')).status).toBe('failed')
+        expect(errors.map(err => err.message)).toEqual(['index probe_idx is invalid after the build'])
+      } finally {
+        await db.close()
+      }
+    }, 30000)
+
     // Left running without its client, the UPDATE would apply once the lock is released, while its row
     // read failed and was due to run it again.
     it('should roll back a data migration it stops instead of leaving it to commit', async function () {

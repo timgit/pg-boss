@@ -19,7 +19,8 @@ type BamClaim = types.BamEntry & {
   claimedStartedOn: string
 }
 
-// How a statement still running at the stop() deadline ends, chosen by #execute as it starts:
+// How a statement still running at the stop() deadline ends, chosen by #execute as it starts and
+// reset to 'wait' once it returns:
 // - 'abandon': a concurrent index build or drop on Postgres through pg-boss's own pool. The connection
 //   is dropped and the server finishes the statement, so no build progress is lost. The row stays
 //   in_progress, and the liveness check reads the statement's table lock and holds the row until it
@@ -148,10 +149,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
   // Runs one of a claimed row's statements so stop() can end it. See Ending.
   async #execute (running: Running, sql: string) {
     if (running.stopped) {
-      // Nothing is left running for the row to wait on, whatever the previous statement was.
-      running.ending = 'wait'
-      running.ended = true
-      throw new Error('stop() ended the command before it ran')
+      this.#notStarted(running)
     }
 
     const cockroach = this.#config.backend === 'cockroachdb'
@@ -167,13 +165,33 @@ class Bam extends EventEmitter implements types.EventsMixin {
     // CockroachDB drops comments from the statement text it reports, so the tag only serves Postgres.
     const text = cockroach ? sql : `${plans.bamCommandTag(running.id)}\n${sql}`
 
-    if (!(this.#db instanceof Db)) {
-      return await this.#db.executeSql(text)
-    }
+    try {
+      const result = !(this.#db instanceof Db)
+        ? await this.#db.executeSql(text)
+        : await this.#db.executeSql(text, undefined, running.ending === 'cancel'
+          ? { retire: running.abort.signal }
+          : { signal: running.abort.signal })
 
-    return await this.#db.executeSql(text, undefined, running.ending === 'cancel'
-      ? { retire: running.abort.signal }
-      : { signal: running.abort.signal })
+      // The statement is over. Until the next one starts, which checks stopped first, stop() has
+      // nothing to end, and a failure of the row's other statements is not the stop's doing.
+      running.ending = 'wait'
+
+      return result
+    } catch (err) {
+      // Db throws the abort reason when stop() aborted before the statement reached a connection.
+      if (running.abort.signal.aborted && err === running.abort.signal.reason) {
+        this.#notStarted(running)
+      }
+
+      throw err
+    }
+  }
+
+  #notStarted (running: Running): never {
+    // Nothing is left running for the row to wait on, whatever the previous statement was.
+    running.ending = 'wait'
+    running.ended = true
+    throw new Error('stop() ended the command before it ran')
   }
 
   async #onPoll () {
