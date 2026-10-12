@@ -2361,10 +2361,10 @@ AS $function$
       // dropping day partitions, and goes through BAM too: queue_stats there is one plain table.
       // retained_count and retained_on are nullable with no default, so adding them rewrites no rows,
       // and they are not seeded: each queue's next maintenance pass counts them, and until then the
-      // monitor keeps total_count.
+      // monitor keeps total_count. They are added in one ALTER, which CockroachDB runs as one schema
+      // change job.
       install: [
-        `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS retained_count int`,
-        `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS retained_on timestamp with time zone`,
+        `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS retained_count int, ADD COLUMN IF NOT EXISTS retained_on timestamp with time zone`,
         ...(noPartitioning ? [] : [createQueueFn[46](schema)])
       ],
       async: [
@@ -2409,8 +2409,7 @@ AS $function$
               `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i15$cmd$)`,
               `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i14$cmd$)`
             ]),
-        `ALTER TABLE ${schema}.queue DROP COLUMN retained_on`,
-        `ALTER TABLE ${schema}.queue DROP COLUMN retained_count`
+        `ALTER TABLE ${schema}.queue DROP COLUMN retained_on, DROP COLUMN retained_count`
       ]
     }
   ]
