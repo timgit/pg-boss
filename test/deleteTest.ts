@@ -143,6 +143,82 @@ describe('delete', function () {
     if (!helper.isPglite) await db.close()
   })
 
+  // The claim stamps every queue before the first walk, so the queues a stopped pass did not finish
+  // are handed back and come due on the next pass instead of a whole maintenance interval later.
+  it('should hand back the maintenance claim on the queues a stopped pass did not finish', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, noDefault: true })
+    const names = [`${ctx.schema}_a`, `${ctx.schema}_b`, `${ctx.schema}_c`]
+
+    for (const name of names) {
+      await ctx.boss.createQueue(name)
+      await Promise.all([1, 2, 3].map(() => ctx.boss!.send(name)))
+    }
+
+    const queues = await ctx.boss.getQueues(names)
+    const db = await helper.getDb()
+    const config = Attorney.getConfig({ ...ctx.bossConfig, supervise: false, __test__walk_batch_size: 2 })
+    let batches = 0
+
+    // The first queue's walk takes two batches, and the stop lands in the second queue's first.
+    const stopInSecondQueue: IDatabase = {
+      executeSql: async (text: string, values?: unknown[]) => {
+        const result = await db.executeSql(text, values)
+        if (text.includes('"walkCursor"') && text.includes('"deletedRetained"') && ++batches === 3) boss.stop()
+        return result
+      }
+    }
+
+    const boss = new Boss(stopInSecondQueue, new Manager(stopInSecondQueue, config), config)
+    await boss.start()
+    await boss.supervise(queues)
+
+    const { rows } = await db.executeSql(`SELECT name, maintain_on IS NOT NULL AS claimed FROM ${ctx.schema}.queue WHERE name = ANY($1::text[]) ORDER BY name`, [names])
+    expect(rows).toEqual([
+      { name: names[0], claimed: true },
+      { name: names[1], claimed: false },
+      { name: names[2], claimed: false }
+    ])
+
+    if (!helper.isPglite) await db.close()
+  })
+
+  // A failed walk hands the claims back the same way. A release that fails too is reported, and the
+  // walk's own failure is what the pass rejects with.
+  it('should hand back the maintenance claim when a walk fails, and report a release that fails', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
+    await ctx.boss.send(ctx.schema)
+    const queue = await ctx.boss.getQueue(ctx.schema)
+    assertTruthy(queue)
+
+    const db = await helper.getDb()
+    const config = Attorney.getConfig({ ...ctx.bossConfig, supervise: false })
+
+    for (const failRelease of [false, true]) {
+      const failing: IDatabase = {
+        executeSql: async (text: string, values?: unknown[]) => {
+          if (text.includes('"deletedRetained"')) throw new Error('batch failed')
+          if (failRelease && text.includes('SET maintain_on = NULL')) throw new Error('release failed')
+          return await db.executeSql(text, values)
+        }
+      }
+
+      const boss = new Boss(failing, new Manager(failing, config), config)
+      const errors: Error[] = []
+      boss.on('error', err => errors.push(err))
+      await boss.start()
+
+      await expect(boss.supervise([queue])).rejects.toThrow('batch failed')
+      expect(errors.map(err => err.message)).toEqual(failRelease ? ['release failed'] : [])
+
+      const { rows: [row] } = await db.executeSql(`SELECT maintain_on IS NOT NULL AS claimed FROM ${ctx.schema}.queue WHERE name = $1`, [ctx.schema])
+      expect(row.claimed).toBe(failRelease)
+
+      await boss.stop()
+    }
+
+    if (!helper.isPglite) await db.close()
+  })
+
   // A walk cut short has not counted what it kept, but the jobs its batches deleted are gone, so they
   // come off the counts at once rather than at the next pass a whole maintenance interval later.
   for (const interruption of ['stop', 'error'] as const) {

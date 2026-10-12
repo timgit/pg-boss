@@ -1594,6 +1594,26 @@ export function trySetQueueDeletionTime (schema: string, queues: string[], secon
   return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds, skipLocked)
 }
 
+// Hands back the maintenance claim on queues a pass claimed but did not finish, so they are due again
+// on the next pass. No other instance can have claimed them since, because the claim is not due
+// again yet. The rows are locked in name order like everywhere else.
+export function releaseQueueDeletionTime (schema: string, queues: string[], skipLocked?: boolean): SqlQuery {
+  return {
+    text: `
+    UPDATE ${schema}.queue
+    SET maintain_on = NULL
+    FROM (
+      SELECT name
+      FROM ${schema}.queue
+      WHERE name = ANY($1::text[])
+      ${queueRowLock(skipLocked)}
+    ) q
+    WHERE queue.name = q.name
+  `,
+    values: [queues]
+  }
+}
+
 // The cron claim, which also answers with the timestamp it replaced and how old that timestamp was.
 // The timestamp is when an instance last ran a pass, so the pass reads it to find out how long
 // scheduling was off, which is the window a schedule's `missed` policy catches up over. Null on a
