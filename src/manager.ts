@@ -846,28 +846,28 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // The timeout only stops the wait for a handler, not the handler, so one that ignores job.signal is
   // still running after its batch was failed. Holding the worker until it returns keeps
   // localConcurrency and localGroupConcurrency a bound on the handlers actually running, and keeps the
-  // worker from fetching a retry of the same job beside it. A shutdown whose grace has run out stops
-  // waiting, as it does for every other handler.
+  // worker from fetching a retry of the same job beside it. Stopping the worker, through offWork() or
+  // stop(), ends the wait: a stopping worker fetches nothing, so there is nothing left to hold.
   async #awaitHandlerOverrun (name: string, jobIds: string[], expireInSeconds: number, handling: Promise<unknown>, worker?: Worker<any>): Promise<void> {
-    const grace = worker?.graceSignal
+    const ended = worker && AbortSignal.any([worker.stopSignal, worker.graceSignal])
 
-    if (grace?.aborted) return
+    if (ended?.aborted) return
 
     this.emit(events.warning, {
       message: `a handler on queue ${name} is still running after exceeding ${expireInSeconds}s. Its jobs were failed and their signals aborted, and this worker fetches nothing until it returns. Stop the handler on job.signal.`,
       data: { type: WARNING_TYPES.HANDLER_OVERRUN, queue: name, jobs: jobIds, expireInSeconds }
     })
 
-    let onGrace: (() => void) | undefined
+    let onEnded: (() => void) | undefined
 
     try {
       await new Promise<void>(resolve => {
-        onGrace = resolve
-        grace?.addEventListener('abort', onGrace, { once: true })
+        onEnded = resolve
+        ended?.addEventListener('abort', onEnded, { once: true })
         handling.then(() => resolve(), () => resolve())
       })
     } finally {
-      if (onGrace) grace?.removeEventListener('abort', onGrace)
+      if (onEnded) ended?.removeEventListener('abort', onEnded)
     }
   }
 

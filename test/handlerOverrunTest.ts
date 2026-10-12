@@ -67,7 +67,9 @@ describe('handler overrun', function () {
     expect(maxRunning).toBe(1)
   })
 
-  it('a graceful stop waits for a handler that outran its timeout', async function () {
+  // Its batch is already failed, and a stopping worker has nothing to fetch, so there is nothing
+  // left to hold the worker for.
+  it('offWork() does not wait for a handler that outran its timeout', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const boss = ctx.boss
     const warnings = overrunWarnings(boss)
@@ -84,26 +86,53 @@ describe('handler overrun', function () {
       handlerEnded = true
     })
 
-    // Past the 1s timeout, so the batch is already failed when the stop begins.
+    // Past the 1s timeout, so the batch is already failed when offWork() begins.
     await helper.until(() => handlerStarted)
     await delay(1500)
 
-    let stopped = false
-    let handlerEndedBeforeStop = false
-    const stopping = boss.stop({ timeout: 10000 }).then(() => {
-      stopped = true
-      handlerEndedBeforeStop = handlerEnded
+    expect(warnings.length).toBe(1)
+
+    try {
+      await boss.offWork(ctx.schema)
+
+      expect(handlerEnded).toBe(false)
+      expect(boss.getWipData()).toEqual([])
+    } finally {
+      held.release()
+    }
+  })
+
+  it('a graceful stop does not wait for a handler that outran its timeout', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+    const warnings = overrunWarnings(boss)
+
+    await boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+
+    const held = heldHandler()
+    let handlerStarted = false
+    let handlerEnded = false
+
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+      handlerStarted = true
+      await held.released
+      handlerEnded = true
     })
 
-    await delay(500)
+    await helper.until(() => handlerStarted)
+    await delay(1500)
 
-    expect(stopped).toBe(false)
-
-    held.release()
-    await stopping
-
-    expect(handlerEndedBeforeStop).toBe(true)
     expect(warnings.length).toBe(1)
+
+    try {
+      const started = Date.now()
+      await boss.stop({ timeout: 10000 })
+
+      expect(Date.now() - started).toBeLessThan(5000)
+      expect(handlerEnded).toBe(false)
+    } finally {
+      held.release()
+    }
   })
 
   it('a graceful stop stops waiting for a handler that outran its timeout once its grace is spent', async function () {
