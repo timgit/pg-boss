@@ -5142,6 +5142,16 @@ export function getBlockedKeys (schema: string, table: string, after = false) {
     `
 }
 
+// The claim BAM runs, under a lock that one claim at a time takes. Two claims that overlap, a burst's
+// next claim and another instance's poll, would otherwise each read the other's in_progress row as
+// still pending and take a different command, running two at once. Waiting on the lock, the second
+// claim takes its snapshot after the first commits, and so sees its row. Without advisory locks
+// (CockroachDB) the claim is a single serializable statement, which retries on that conflict.
+export function claimBamCommand (schema: string, options: { useLiveness?: boolean, pendingOnly?: boolean, noAdvisoryLocks?: boolean }) {
+  const claim = getNextBamCommand(schema, options)
+  return options.noAdvisoryLocks ? claim : locked(schema, claim, 'bamClaim')
+}
+
 export function getNextBamCommand (schema: string, { useLiveness = false, pendingOnly = false }: { useLiveness?: boolean, pendingOnly?: boolean } = {}) {
   // Head-of-line note (shared by both variants): process all 'pending' commands (oldest first)
   // before retrying any 'failed' or stale 'in_progress' one, so a permanently-failing (or

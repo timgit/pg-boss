@@ -864,6 +864,46 @@ describe('bam', function () {
     }, 15000)
   })
 
+  // Advisory locks and a second connection: stock Postgres only.
+  helper.describeMultiConnectionOnly('claims across instances', function () {
+    // A burst claims its next command without the poll's interval stamp, so it can overlap another
+    // instance's poll. Neither claim sees the other's uncommitted row, and without the lock each
+    // would take a different command.
+    helper.itPostgresOnly('should not run a second command while a claim of another is in flight', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
+
+      const db = await helper.getDb()
+      await db.executeSql(`
+        INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
+        VALUES ('first', 27, 'pending', 'job_common', 'SELECT 1', now() - interval '2 minutes'),
+               ('other', 27, 'pending', 'queue', 'SELECT 2', now() - interval '1 minute')
+      `)
+
+      const claim = plans.getNextBamCommand(ctx.schema, { useLiveness: !ctx.bossConfig.noIndexProgressView })
+      const locked = plans.claimBamCommand(ctx.schema, { useLiveness: !ctx.bossConfig.noIndexProgressView })
+
+      const peer = new pg.Client({ connectionString: helper.getConnectionString() })
+      await peer.connect()
+
+      try {
+        await db.executeSql('BEGIN')
+        await db.executeSql(`SELECT pg_advisory_xact_lock(${plans.advisoryLockKey(ctx.schema, 'bamClaim')})`)
+        const a = await db.executeSql(claim)
+        const raced = peer.query(locked)
+        await delay(300)
+        await db.executeSql('COMMIT')
+        const b = (await raced as unknown as pg.QueryResult[]).flatMap(result => result.rows ?? [])
+
+        expect(a.rows.map((row: any) => row.name)).toEqual(['first'])
+        expect(b.filter((row: any) => row.name)).toEqual([])
+      } finally {
+        await peer.end()
+        await db.close()
+      }
+    }, 15000)
+  })
+
   // Commands from one migration on one table are an ordered sequence: v40 builds job_i11 and then
   // drops job_i5, and the drop must not run after the build failed.
   describe('ordering within a migration', function () {
@@ -937,7 +977,8 @@ describe('bam', function () {
         bamIntervalSeconds: 60,
         migrate: true,
         clock: systemClock,
-        noIndexProgressView: helper.isCockroachDb
+        noIndexProgressView: helper.isCockroachDb,
+        noAdvisoryLocks: helper.isCockroachDb
       } as any)
 
       const events: any[] = []

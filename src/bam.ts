@@ -2,7 +2,7 @@ import EventEmitter from 'node:events'
 import { ClaimTimer } from './claimTimer.ts'
 import Db from './db.ts'
 import * as plans from './plans.ts'
-import { delay } from './tools.ts'
+import { delay, unwrapSQLResult } from './tools.ts'
 import * as types from './types.ts'
 
 const events = {
@@ -399,9 +399,14 @@ class Bam extends EventEmitter implements types.EventsMixin {
   }
 
   async #getNextCommand (pendingOnly: boolean): Promise<BamClaim | null> {
-    const sql = plans.getNextBamCommand(this.#config.schema, { useLiveness: !this.#config.noIndexProgressView, pendingOnly })
-    const { rows } = await this.#db.executeSql(sql)
-    return rows[0] || null
+    const sql = plans.claimBamCommand(this.#config.schema, {
+      useLiveness: !this.#config.noIndexProgressView,
+      pendingOnly,
+      noAdvisoryLocks: this.#config.noAdvisoryLocks
+    })
+    const { rows } = unwrapSQLResult(await this.#db.executeSql(sql))
+    // The lock's own row comes first, so the claim is told apart by a column only it returns.
+    return rows.find(row => row?.claimedStartedOn !== undefined) ?? null
   }
 
   async #releaseCommand (entry: BamClaim): Promise<void> {
