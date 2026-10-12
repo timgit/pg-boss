@@ -2866,7 +2866,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // own statement, and returns how many it deleted. A failure partway leaves the batches before it
   // deleted. Every job it deleted comes off the queue's total_count at once, and the completed and
   // cancelled ones it held off its retained_count. CockroachDB returns the counts as strings.
-  async #deleteInBatches (name: string, batch: (options: { after?: string, batchSize?: number }) => string): Promise<number> {
+  async #deleteInBatches (name: string, batch: (options: { after?: string, batchSize?: number, backend?: string }) => string): Promise<number> {
     const batchSize = this.config.__test__walk_batch_size
     let after: string | undefined
     let deleted = 0
@@ -2874,7 +2874,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     try {
       for (;;) {
-        const { rows } = await this.db.executeSql(batch({ after, batchSize }))
+        const { rows } = await this.db.executeSql(batch({ after, batchSize, backend: this.config.backend }))
         deleted += Number(rows[0].deleted)
         retained += Number(rows[0].deletedRetained)
 

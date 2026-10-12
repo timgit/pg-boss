@@ -566,7 +566,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   async #maintainQueue (table: string, name: string): Promise<boolean> {
     if (this.#stopping) return false
 
-    const { schema, noAdvisoryLocks } = this.#config
+    const { schema, noAdvisoryLocks, backend } = this.#config
     const batchSize = this.#config.__test__walk_batch_size
 
     // The walk counts the completed and cancelled jobs that finished by DELTA_LAG before it
@@ -578,7 +578,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     let done = false
 
     try {
-      done = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, noAdvisoryLocks, retainedBefore }), retention)
+      done = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, backend, noAdvisoryLocks, retainedBefore }), retention)
     } finally {
       // A walk that a stop or a failed batch cut short has not counted what it kept, so it only
       // takes what it deleted off the counts, as a bulk delete does.
@@ -592,8 +592,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
       await this.#executeQuery({ text: plans.setRetainedCount(schema, table), values: [name, retention.retained, retainedBefore] })
     }
 
-    const children = await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'child', { after, batchSize, noAdvisoryLocks }))
-    const parents = await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'parent', { after, batchSize, noAdvisoryLocks }))
+    const children = await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'child', { after, batchSize, backend, noAdvisoryLocks }))
+    const parents = await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'parent', { after, batchSize, backend, noAdvisoryLocks }))
 
     return done && children && parents
   }

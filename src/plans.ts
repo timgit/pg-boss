@@ -3986,7 +3986,7 @@ const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 // One batch of the retention sweep for one queue, under the table's deletion lock. See
 // deleteJobsBatch for the walk. `retainedBefore` is the epoch milliseconds the sweep counts the
 // completed and cancelled jobs it keeps up to (see createTableQueue).
-export function deletion (schema: string, table: string, name: string, options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean, retainedBefore?: number } = {}): string {
+export function deletion (schema: string, table: string, name: string, options: WalkBatchOptions & { noAdvisoryLocks?: boolean, retainedBefore?: number } = {}): string {
   const expired = `(
           (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < ${schema}.job_now())
           OR
@@ -3997,16 +3997,30 @@ export function deletion (schema: string, table: string, name: string, options: 
 }
 
 // One batch of the jobs deleteQueuedJobs(), deleteStoredJobs() and deleteAllJobs() remove.
-export function deleteQueuedJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+export function deleteQueuedJobs (schema: string, table: string, name: string, options: WalkBatchOptions = {}): string {
   return deleteJobsBatch(schema, table, name, `state < '${JOB_STATES.active}'`, options)
 }
 
-export function deleteStoredJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+export function deleteStoredJobs (schema: string, table: string, name: string, options: WalkBatchOptions = {}): string {
   return deleteJobsBatch(schema, table, name, `state > '${JOB_STATES.active}'`, options)
 }
 
-export function deleteAllJobs (schema: string, table: string, name: string, options: { after?: string, batchSize?: number } = {}): string {
+export function deleteAllJobs (schema: string, table: string, name: string, options: WalkBatchOptions = {}): string {
   return deleteJobsBatch(schema, table, name, 'true', options)
+}
+
+// A walk batch's key, its size, and the backend, which decides how the batch is bounded.
+type WalkBatchOptions = { after?: string, batchSize?: number, backend?: string }
+
+// The keys a walk batch covers: up to the edge, its last key, or every key to the end of the queue
+// when the edge is null. CockroachDB cannot turn the edge's subquery into a scan span, so on it a
+// range up to the edge reads the rest of the queue on every batch. It takes the batch's own keys
+// instead, which it reads as a lookup join. Postgres keeps the range, which it serves as one bitmap
+// scan rather than a lookup per key. `keys` is the walk's keys after the cursor.
+function walkBatchBound (column: string, keys: string, batchSize: number, backend?: string) {
+  return backend === 'cockroachdb'
+    ? `${column} IN (${keys} ORDER BY ${column} LIMIT ${batchSize})`
+    : `${column} <= COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)`
 }
 
 // One batch of a delete over one queue: deletes the jobs `predicate` matches among the next
@@ -4021,8 +4035,8 @@ export function deleteAllJobs (schema: string, table: string, name: string, opti
 // name = ANY(...) cannot be served in index order before Postgres 17, so it would sort every
 // candidate row on every batch.
 //
-// The batch's upper key comes from an index-only scan, and the delete covers the id range up to it,
-// which Postgres serves as one bitmap scan rather than a lookup per key. A job inserted into the
+// The batch's upper key comes from an index-only scan, and the delete covers the id range up to it
+// (see walkBatchBound for CockroachDB). A job inserted into the
 // range after the edge was read is covered too, and is only deleted if the predicate matches it.
 //
 // deletedRetained is how many of the deleted jobs retained_count holds, the completed and cancelled
@@ -4034,12 +4048,12 @@ export function deleteAllJobs (schema: string, table: string, name: string, opti
 //
 // Literals rather than bind parameters, since deletion() wraps the statement in a multi-statement
 // transaction. The result row is told apart from the advisory lock's by "walkCursor".
-function deleteJobsBatch (schema: string, table: string, name: string, predicate: string, options: { after?: string, batchSize?: number, retainedBefore?: number }): string {
-  const { after, batchSize = DELETION_BATCH_SIZE, retainedBefore } = options
+function deleteJobsBatch (schema: string, table: string, name: string, predicate: string, options: WalkBatchOptions & { retainedBefore?: number }): string {
+  const { after, batchSize = DELETION_BATCH_SIZE, retainedBefore, backend } = options
   const queue = `'${name.replace(SINGLE_QUOTE_REGEX, "''")}'`
   const cursor = after ? `AND id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
   const range = `name = ${queue} ${cursor}
-        AND id <= COALESCE((SELECT id FROM edge), '${MAX_UUID}'::uuid)`
+        AND ${walkBatchBound('id', `SELECT id FROM ${schema}.${table} WHERE name = ${queue} ${cursor}`, batchSize, backend)}`
   const held = `${RETAINED_STATES} AND completed_on <= (SELECT retained_on FROM ${schema}.queue WHERE name = ${queue})`
   const before = `${RETAINED_STATES} AND completed_on <= to_timestamp(${Number(retainedBefore)}::float8 / 1000)`
 
@@ -5070,8 +5084,8 @@ export const DEPENDENCY_CLEANUP_BATCH_SIZE = 10000
 // by parent (over job_dep_parent_idx). Walked like the retention sweep and for the same reason (see
 // deletion): the anti-join probes every row, so a single statement's cost grows with the table
 // whether or not anything is orphaned.
-export function cleanupDependencies (schema: string, table: string, name: string, side: 'child' | 'parent', options: { after?: string, batchSize?: number, noAdvisoryLocks?: boolean } = {}): string {
-  const { after, batchSize = DEPENDENCY_CLEANUP_BATCH_SIZE, noAdvisoryLocks } = options
+export function cleanupDependencies (schema: string, table: string, name: string, side: 'child' | 'parent', options: WalkBatchOptions & { noAdvisoryLocks?: boolean } = {}): string {
+  const { after, batchSize = DEPENDENCY_CLEANUP_BATCH_SIZE, noAdvisoryLocks, backend } = options
   const queue = `'${name.replace(SINGLE_QUOTE_REGEX, "''")}'`
   const cursor = after ? `AND ${side}_id > '${after.replace(SINGLE_QUOTE_REGEX, "''")}'::uuid` : ''
 
@@ -5090,7 +5104,7 @@ export function cleanupDependencies (schema: string, table: string, name: string
     removed AS (
       DELETE FROM ${schema}.job_dependency d
       WHERE ${side}_name = ${queue} ${cursor}
-        AND ${side}_id <= ${edge}
+        AND ${walkBatchBound(`${side}_id`, `SELECT ${side}_id FROM ${schema}.job_dependency WHERE ${side}_name = ${queue} ${cursor}`, batchSize, backend)}
         AND NOT EXISTS (
           SELECT 1 FROM ${schema}.${table} j
           WHERE j.name = ${queue} ${jobCursor}

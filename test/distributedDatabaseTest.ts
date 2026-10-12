@@ -436,6 +436,31 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
     expect(rows[0].reindex_on).toBeNull()
   })
+
+  // CockroachDB bounds each batch of a walk by the batch's own keys rather than by the range up to
+  // its edge (see plans.walkBatchBound). Runs on Postgres too, via the backend profile.
+  it('should walk a queue in several batches under the cockroachdb backend', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, backend: 'cockroachdb', supervise: false, __test__walk_batch_size: 2 })
+
+    const expiring = await Promise.all([1, 2, 3, 4, 5].map(() => ctx.boss!.send(ctx.schema, null, { deleteAfterSeconds: 1 })))
+    await Promise.all([1, 2].map(() => ctx.boss!.send(ctx.schema, null, { deleteAfterSeconds: 0 })))
+
+    const fetched = await ctx.boss.fetch(ctx.schema, { batchSize: 10 })
+    expect(fetched.length).toBe(7)
+    await ctx.boss.complete(ctx.schema, fetched.map(job => job.id))
+
+    await Promise.all([1, 2, 3].map(() => ctx.boss!.send(ctx.schema)))
+
+    await delay(1000)
+    await ctx.boss.supervise(ctx.schema)
+
+    for (const id of expiring) {
+      expect(await ctx.boss.getJobById(ctx.schema, id!)).toBeFalsy()
+    }
+
+    expect(await ctx.boss.deleteQueuedJobs(ctx.schema)).toBe(3)
+    expect(await ctx.boss.deleteStoredJobs(ctx.schema)).toBe(2)
+  })
   // Skipped on PGlite, whose adapter does not route through pg-types.
   helper.describeMultiConnectionOnly('with a custom timestamptz parser on the pool', function () {
     // The distributed fail path is the one place pg-boss reads a timestamp out of a row and binds it
