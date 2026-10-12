@@ -1313,7 +1313,9 @@ export function getDeadLetterReferrer (schema: string) {
 // and an insert into job_common or a query through job takes those in other orders. So the locks are
 // taken first, all with NOWAIT: the transaction never waits holding one, so it can never be part of a
 // deadlock, and the caller tries again when one is busy. The table is read in the same transaction, so
-// a stale cache cannot name the wrong one, and a queue already gone is left alone.
+// a stale cache cannot name the wrong one, and a queue already gone is left alone. The table's BAM
+// commands that have not completed go with it: run against a dropped table they would fail on every
+// poll, and hold the commands queued after them on that table.
 export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean, partitioned = false) {
   const sql = partitioned
     ? `
@@ -1332,6 +1334,10 @@ export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boo
         END IF;
 
         PERFORM ${schema}.delete_queue('${name}');
+
+        IF v_partition THEN
+          DELETE FROM ${schema}.bam WHERE table_name = v_table AND status <> 'completed';
+        END IF;
       END $$
     `
     : `SELECT ${schema}.delete_queue('${name}')`

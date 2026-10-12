@@ -329,6 +329,22 @@ describe('queues', function () {
         await other.stop({ graceful: false })
       }
     })
+
+    // Against a dropped table they would fail on every poll and hold the commands queued after them.
+    it('removes the BAM commands for its table that have not completed', async function () {
+      const table = await partitioned()
+
+      // In progress and fresh, so the running BAM worker leaves it, and the pending one waits behind it.
+      for (const [name, status] of [['done', 'completed'], ['building', 'in_progress'], ['next', 'pending']]) {
+        await run(`INSERT INTO ${ctx.schema}.bam (name, version, status, started_on, queue, table_name, command)
+          VALUES ('${name}', 99, '${status}', now(), '${ctx.schema}', '${table}', 'SELECT 1')`)
+      }
+
+      await ctx.boss!.deleteQueue(ctx.schema)
+
+      const rows = await run(`SELECT name FROM ${ctx.schema}.bam WHERE table_name = '${table}' ORDER BY name`)
+      expect(rows.map(row => row.name)).toEqual(['done'])
+    })
   })
 
   it('should create a queue', async function () {
