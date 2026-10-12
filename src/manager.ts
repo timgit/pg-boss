@@ -2395,8 +2395,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       const ids = jobs.map(job => job.id)
+      const names = [...new Set(jobs.map(job => job.name))]
       const deleteSql = plans.deleteJobsByIds(this.config.schema, table)
-      await tx.executeSql(deleteSql.text, [ids])
+      await tx.executeSql(deleteSql.text, [names, ids])
 
       return this.reinsertFailedJobs(tx, table, jobs, outputData)
     })
@@ -2588,7 +2589,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const moved = ids.filter((_, i) => created.has(newIds[i]))
         const conflicted = ids.filter((_, i) => !created.has(newIds[i]))
 
-        if (moved.length) await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [moved])
+        if (moved.length) await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [[name], moved])
         if (conflicted.length) await tx.executeSql(plans.failRedriveConflicts(this.config.schema, table), [conflicted, filter[0]])
 
         return moved.length

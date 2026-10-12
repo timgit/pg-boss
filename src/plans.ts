@@ -3625,9 +3625,11 @@ export function selectJobsToFailByHeartbeat (schema: string, table: string, queu
   }
 }
 
+// $1 is the jobs' queue names and $2 their ids. The names let the delete reach each job through the
+// (name, id) primary key, which an id alone cannot without a skip scan, and CockroachDB has none.
 export function deleteJobsByIds (schema: string, table: string): SqlQuery {
   return {
-    text: `DELETE FROM ${schema}.${table} WHERE id = ANY($1::uuid[])`,
+    text: `DELETE FROM ${schema}.${table} WHERE name = ANY($1::text[]) AND id = ANY($2::uuid[])`,
     values: []
   }
 }
