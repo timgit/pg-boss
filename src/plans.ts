@@ -2162,7 +2162,9 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
 // rows it deletes. The supervisor repeats it while a batch comes back with a cursor, which is the
 // last (captured_on, id) deleted, as text joined by '|', so the next batch starts past the rows this
 // one removed rather than stepping over them again (CockroachDB keeps them as tombstones until
-// garbage collection). No cursor once a batch deletes fewer than `batchSize`.
+// garbage collection). No cursor once a batch deletes fewer than `batchSize`. captured_on travels as
+// ISO 8601 in UTC, which reads back the same whatever the DateStyle and TimeZone of the connection
+// the next batch runs on.
 export function deleteOldQueueStats (schema: string, days: number, options: { after?: string, batchSize?: number } = {}): string {
   const { after, batchSize = DELETION_BATCH_SIZE } = options
   const [capturedOn, id] = (after ?? '').replace(SINGLE_QUOTE_REGEX, "''").split('|')
@@ -2183,7 +2185,7 @@ export function deleteOldQueueStats (schema: string, days: number, options: { af
     )
     SELECT
       CASE WHEN (SELECT count(*) FROM batch) = ${batchSize}
-        THEN (SELECT captured_on::text || '|' || id::text FROM batch ORDER BY captured_on DESC, id DESC LIMIT 1)
+        THEN (SELECT to_char(captured_on AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || id::text FROM batch ORDER BY captured_on DESC, id DESC LIMIT 1)
       END AS "walkCursor",
       (SELECT count(*) FROM removed)::int AS deleted
   `
