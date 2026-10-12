@@ -1385,6 +1385,38 @@ describe('bam', function () {
       }
     }, 30000)
 
+    // On CockroachDB a build stop() dropped goes on as a schema change job, and a retry finds no index
+    // until it ends. The retry fails its row without an error event. Run on Postgres with the
+    // CockroachDB backend and a catalog read that finds nothing.
+    it('should fail a CockroachDB build whose index is still being added without an error event', async function () {
+      const pool = await helper.getDb()
+
+      try {
+        const db = {
+          executeSql: async (text: string, values?: unknown[]) => text.includes('NOT i.indisvalid AS invalid')
+            ? { rows: [] }
+            : await pool.executeSql(text, values)
+        }
+
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db, backend: 'cockroachdb' })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        await pool.executeSql(`CREATE TABLE ${ctx.schema}.pending_test (a int)`)
+
+        await insertBamRow(ctx.schema, 'pending_cmd', 'pending', `CREATE INDEX CONCURRENTLY IF NOT EXISTS pending_idx ON ${ctx.schema}.pending_test (a)`)
+
+        const failed = waitForBamEvent(boss, 'pending_cmd', 'failed')
+        await triggerBamPoll(ctx.schema)
+        const event = await failed
+
+        expect(event.error).toContain('index pending_idx does not exist after the build')
+        expect(errors).toEqual([])
+      } finally {
+        await pool.close()
+      }
+    }, 30000)
+
     // Left running without its client, the UPDATE would apply once the lock is released, while its row
     // read failed and was due to run it again.
     it('should roll back a data migration it stops instead of leaving it to commit', async function () {

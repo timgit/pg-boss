@@ -273,6 +273,10 @@ class Bam extends EventEmitter implements types.EventsMixin {
       table: entry.table
     })
 
+    // Set when a CockroachDB build returns without its index because an earlier build of it is still
+    // running as a schema change job. The row fails until that job ends, which is not an error.
+    let buildPending = false
+
     try {
       let alreadyBuilt = false
 
@@ -327,6 +331,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
           const { rows } = await this.#db.executeSql(probeSql)
 
           if (!rows[0] || (rows[0].invalid && !this.#config.noIndexProgressView)) {
+            buildPending = !rows[0] && this.#config.backend === 'cockroachdb'
             const name = plans.bamCommandIndexName(entry.command)
             throw new Error(rows[0]
               ? `index ${name} is invalid after the build`
@@ -372,7 +377,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
 
       // A failure stop() caused is not an error. The row still records it, so the next attempt runs
       // as a reattempt and heals what the cancel left.
-      if (!running.ended) {
+      if (!running.ended && !buildPending) {
         this.emit(events.error, err)
       }
 
