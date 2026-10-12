@@ -48,6 +48,9 @@ class Worker<T = unknown> {
   // the signal alone says nothing, and the timeout wired into the same controller trips it on every
   // ordinary completion. Reset per batch by the manager, beside abortController.
   aborted = false
+  // A handler that outran its timeout and was still running when stop() ended the wait for it. The
+  // manager releases the batch's localGroupConcurrency slots once it settles rather than at once.
+  abandonedHandler: Promise<unknown> | null = null
   // Aborted by failWip() once stop() has spent its grace: a claim landing after this is refused.
   private readonly grace = new AbortController()
   // Aborted by stop(): a stopping worker fetches nothing, so a handler that outran its timeout is no

@@ -105,6 +105,49 @@ describe('handler overrun', function () {
     }
   })
 
+  // Group counts are per queue, across work() registrations, so a slot released when offWork()
+  // ends the hold would let another registration run the group beside the abandoned handler.
+  it('offWork() keeps the localGroupConcurrency slot of a handler that outran its timeout until it returns', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+
+    const held = heldHandler()
+    const seen: string[] = []
+    const holders: string[] = []
+
+    const handler = (workId: () => string) => async ([job]: any[]) => {
+      seen.push(job.data.label)
+      if (job.data.label === 'a') {
+        holders.push(workId())
+        await held.released
+      }
+    }
+
+    const options = { pollingIntervalSeconds: 0.5, localGroupConcurrency: 1 }
+    let first = ''
+    let second = ''
+    first = await boss.work(ctx.schema, options, handler(() => first))
+    second = await boss.work(ctx.schema, options, handler(() => second))
+
+    await boss.send(ctx.schema, { label: 'a' }, { group: { id: 'g' }, retryLimit: 0, expireInSeconds: 1 })
+    await helper.until(() => holders.length === 1)
+    await delay(1500)
+
+    await boss.send(ctx.schema, { label: 'b' }, { group: { id: 'g' } })
+
+    try {
+      await boss.offWork(ctx.schema, { id: holders[0] })
+      await delay(1500)
+
+      expect(seen).toEqual(['a'])
+    } finally {
+      held.release()
+    }
+
+    await helper.until(() => seen.length === 2)
+    expect(seen).toEqual(['a', 'b'])
+  })
+
   it('a graceful stop does not wait for a handler that outran its timeout', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const boss = ctx.boss

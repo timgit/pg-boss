@@ -838,6 +838,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (handling && !handlerSettled) {
       await this.#awaitHandlerOverrun(name, jobIds, maxExpiration, handling, worker)
+
+      if (worker && !handlerSettled) worker.abandonedHandler = handling
     }
 
     return didFail ? (failedError ?? new Error('handler rejected without a reason')) : perJobError
@@ -1328,7 +1330,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
               await processBatch(allowed, worker)
             }
           } finally {
-            this.#trackLocalGroupEnd(name, groupedJobs)
+            // A handler stop() abandoned still runs, so its group slots stay taken until it settles.
+            const abandoned = worker?.abandonedHandler
+
+            if (worker && abandoned) {
+              worker.abandonedHandler = null
+              const end = () => this.#trackLocalGroupEnd(name, groupedJobs)
+              abandoned.then(end, end)
+            } else {
+              this.#trackLocalGroupEnd(name, groupedJobs)
+            }
           }
         }
 
