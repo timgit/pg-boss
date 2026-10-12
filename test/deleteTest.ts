@@ -143,6 +143,52 @@ describe('delete', function () {
     if (!helper.isPglite) await db.close()
   })
 
+  // A walk cut short has not counted what it kept, but the jobs its batches deleted are gone, so they
+  // come off the counts at once rather than at the next pass a whole maintenance interval later.
+  for (const interruption of ['stop', 'error'] as const) {
+    it(`should take the jobs deleted so far off the counts when ${interruption === 'stop' ? 'stop() lands between' : 'a later batch fails among'} deletion batches`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
+      await Promise.all([1, 2, 3, 4, 5].map(() => ctx.boss!.send(ctx.schema, null, { deleteAfterSeconds: 1 })))
+      const fetched = await ctx.boss.fetch(ctx.schema, { batchSize: 5 })
+      await ctx.boss.complete(ctx.schema, fetched.map(job => job.id))
+
+      const db = await helper.getDb()
+      await db.executeSql(`UPDATE ${ctx.schema}.queue SET retained_count = 5, retained_on = ${ctx.schema}.job_now(), total_count = 5 WHERE name = $1`, [ctx.schema])
+      await delay(1500)
+
+      const queue = await ctx.boss.getQueue(ctx.schema)
+      assertTruthy(queue)
+
+      const config = Attorney.getConfig({ ...ctx.bossConfig, supervise: false, __test__walk_batch_size: 2 })
+      let batches = 0
+
+      const interrupting: IDatabase = {
+        executeSql: async (text: string, values?: unknown[]) => {
+          const deletion = text.includes('"walkCursor"') && text.includes('"deletedRetained"')
+          if (deletion && interruption === 'error' && batches === 1) throw new Error('batch failed')
+          const result = await db.executeSql(text, values)
+          if (deletion && ++batches === 1 && interruption === 'stop') boss.stop()
+          return result
+        }
+      }
+
+      const boss = new Boss(interrupting, new Manager(interrupting, config), config)
+      await boss.start()
+      const supervised = await boss.supervise([queue]).then(() => null, (err: Error) => err)
+
+      expect(batches).toBe(1)
+      expect(supervised?.message ?? null).toBe(interruption === 'error' ? 'batch failed' : null)
+
+      const { rows: [jobs] } = await db.executeSql(`SELECT count(*)::int AS count FROM ${ctx.schema}.job WHERE name = $1`, [ctx.schema])
+      const { rows: [counts] } = await db.executeSql(`SELECT retained_count, total_count FROM ${ctx.schema}.queue WHERE name = $1`, [ctx.schema])
+      // CockroachDB returns integers as strings.
+      expect(Number(jobs.count)).toBe(3)
+      expect({ retained: Number(counts.retained_count), total: Number(counts.total_count) }).toEqual({ retained: 3, total: 3 })
+
+      if (!helper.isPglite) await db.close()
+    })
+  }
+
   it('should never delete a completed job when deleteAfterSeconds is 0', async function () {
     const config = {
       ...ctx.bossConfig,

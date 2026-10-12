@@ -560,10 +560,21 @@ class Boss extends EventEmitter implements types.EventsMixin {
         // counts the rest after that (see plans.createTableQueue).
         const { rows: [{ time }] } = await this.#executeQuery(plans.getTime(schema))
         const retainedBefore = Number(time) - plans.DELTA_LAG_SECONDS * 1000
-        const retention = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, noAdvisoryLocks, retainedBefore }))
+        const retention = { retained: 0, deleted: 0, deletedRetained: 0 }
+        let done = false
+
+        try {
+          done = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, noAdvisoryLocks, retainedBefore }), retention)
+        } finally {
+          // A walk that a stop or a failed batch cut short has not counted what it kept, so it only
+          // takes what it deleted off the counts, as a bulk delete does.
+          if (!done && retention.deleted) {
+            await this.#executeQuery({ text: plans.reduceRetainedCount(schema), values: [name, retention.deletedRetained, retention.deleted] })
+          }
+        }
 
         // Only a walk that covered the whole queue has counted all of what it kept.
-        if (retention.done) {
+        if (done) {
           await this.#executeQuery({ text: plans.setRetainedCount(schema, table), values: [name, retention.retained, retainedBefore] })
         }
 
@@ -575,25 +586,28 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   // Walks one queue's keys a batch at a time (see plans.deletion), carrying each batch's cursor into
-  // the next until a batch comes back without one. A stop between batches leaves the rest for the
-  // next pass, and says so with done: false. retained totals the batches' "retained", where they
-  // count it. CockroachDB returns counts as strings.
-  async #walk (batch: (after?: string) => string): Promise<{ done: boolean, retained: number }> {
+  // the next until a batch comes back without one, and returns whether it got there. A stop between
+  // batches leaves the rest for the next pass. `tally` totals the batches' counts as they commit, so
+  // it holds them even when a batch throws. CockroachDB returns counts as strings.
+  async #walk (batch: (after?: string) => string, tally?: { retained: number, deleted: number, deletedRetained: number }): Promise<boolean> {
     let after: string | undefined
-    let retained = 0
 
     while (!this.#stopping) {
       const { rows } = await this.#executeQuery(batch(after))
       const row = rows.find((row) => row.walkCursor !== undefined)
 
-      retained += Number(row?.retained ?? 0)
+      if (tally) {
+        tally.retained += Number(row?.retained ?? 0)
+        tally.deleted += Number(row?.deleted ?? 0)
+        tally.deletedRetained += Number(row?.deletedRetained ?? 0)
+      }
 
-      if (!row?.walkCursor) return { done: true, retained }
+      if (!row?.walkCursor) return true
 
       after = row.walkCursor
     }
 
-    return { done: false, retained }
+    return false
   }
 
   /**
