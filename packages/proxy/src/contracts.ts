@@ -126,12 +126,18 @@ const redriveFilterShape = {
   data: jsonRecordSchema.optional(),
   createdBefore: z.iso.datetime().transform((val) => new Date(val)).optional(),
   ids: z.array(z.string()).optional(),
-  limit: z.number().optional(),
 }
 
-export const redriveOptionsSchema = z.object(redriveFilterShape) satisfies z.ZodType<types.HttpRedriveOptions>
+// The same bounds core asserts, so an out-of-range limit is a 400 rather than a 500.
+export const redriveOptionsSchema = z.object({
+  ...redriveFilterShape,
+  limit: z.number().int().min(1).optional(),
+}) satisfies z.ZodType<types.HttpRedriveOptions>
 
-export const redrivePreviewOptionsSchema = z.object(redriveFilterShape) satisfies z.ZodType<types.HttpRedrivePreviewOptions>
+export const redrivePreviewOptionsSchema = z.object({
+  ...redriveFilterShape,
+  limit: z.number().int().min(1).max(100000).optional(),
+}) satisfies z.ZodType<types.HttpRedrivePreviewOptions>
 
 export const insertOptionsSchema = z.object({
   returnId: z.boolean().optional(),

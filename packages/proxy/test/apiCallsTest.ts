@@ -650,6 +650,25 @@ describe('proxy api routes', () => {
     }
   })
 
+  it('redrive and previewRedrive reject a limit core would refuse', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const cases: Array<[string, number]> = [['redrive', 0], ['redrive', 1.5], ['previewRedrive', 0], ['previewRedrive', 1.5], ['previewRedrive', 100001]]
+
+    for (const [method, limit] of cases) {
+      const res = await app.fetch(await postJson(`http://local/api/${method}`, { name: 'dlq', options: { limit } }))
+      expect(res.status, `${method} ${limit}`).toBe(400)
+    }
+
+    expect(calls.get('redrive') ?? []).toHaveLength(0)
+    expect(calls.get('previewRedrive') ?? []).toHaveLength(0)
+
+    // redrive has no upper bound in core.
+    const res = await app.fetch(await postJson('http://local/api/redrive', { name: 'dlq', options: { limit: 200000 } }))
+    expect(res.status).toBe(200)
+  })
+
   it('GET findJobs with dataKey and dataValue builds data filter', async () => {
     const { boss, calls } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
