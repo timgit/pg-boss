@@ -635,7 +635,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     heartbeatRefreshSeconds?: number,
     perJobResults = false,
     transactional = false,
-    transactionTimeoutSeconds?: number
+    transactionTimeoutSeconds?: number,
+    overrun: { wait?: () => Promise<void> } = {}
   ): Promise<unknown> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -714,8 +715,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // outran its timeout from one that returned.
     let handling: Promise<unknown> | undefined
     let handlerSettled = false
-    // The error of a fail() that threw in the catch below.
-    let unfailed: { error: unknown } | undefined
 
     try {
       // A per-job heartbeatSeconds, or updateQueue() after the worker registered, can put a
@@ -812,14 +811,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       }
 
-      // Thrown only after the overrun wait below, so a fail() that cannot reach the database still
-      // holds the worker for a handler that outran its timeout.
-      try {
-        await this.fail(name, jobs, err)
-      } catch (failError) {
-        unfailed = { error: failError }
-      }
-
+      await this.fail(name, jobs, err)
       failedError = err
       didFail = true
     } finally {
@@ -828,6 +820,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // Clear between jobs
         worker.abortController = null
       }
+
+      // Left to the caller, which waits once the batch's telemetry span has ended, so the span
+      // measures the batch rather than the abandoned handler. Set here so a fail() that throws
+      // still holds the worker.
+      if (handling && !handlerSettled) {
+        const abandoned = handling
+        overrun.wait = async () => {
+          if (handlerSettled) return
+          await this.#awaitHandlerOverrun(name, jobIds, maxExpiration, abandoned, worker)
+          if (worker && !handlerSettled) worker.abandonedHandler = abandoned
+        }
+      }
     }
 
     // Spy tracking runs after the completion/failure logic so a spy lookup error can never
@@ -835,7 +839,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // gated here, not just inside the trackers, so the production hot path (spies off) never
     // even calls the async tracker. No promise allocated, no microtask tick. The checks
     // inside the trackers stay as a safety net.
-    if (this.config.__test__enableSpies && this.#spies.has(name) && !unfailed) {
+    if (this.config.__test__enableSpies && this.#spies.has(name)) {
       if (didFail) {
         await this.#trackJobsFailed(name, jobs, failedError)
       } else if (!perJobResults) {
@@ -844,14 +848,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
         await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
       }
     }
-
-    if (handling && !handlerSettled) {
-      await this.#awaitHandlerOverrun(name, jobIds, maxExpiration, handling, worker)
-
-      if (worker && !handlerSettled) worker.abandonedHandler = handling
-    }
-
-    if (unfailed) throw unfailed.error
 
     return didFail ? (failedError ?? new Error('handler rejected without a reason')) : perJobError
   }
@@ -1304,10 +1300,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       // Counted here rather than on fetch: jobs past localGroupConcurrency are restored, not delivered.
-      const processBatch = (batch: types.Job<ReqData>[], worker?: Worker) => {
+      // A handler that outran its timeout holds the worker after the span ends (see #processJobs).
+      const processBatch = async (batch: types.Job<ReqData>[], worker?: Worker) => {
         this.#telemetry.consumed(name, batch.length)
-        return this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
-          this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds))
+        const overrun: { wait?: () => Promise<void> } = {}
+
+        try {
+          await this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
+            this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds, overrun))
+        } finally {
+          await overrun.wait?.()
+        }
       }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
