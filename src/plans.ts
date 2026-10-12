@@ -3625,11 +3625,12 @@ export function selectJobsToFailByHeartbeat (schema: string, table: string, queu
   }
 }
 
-// $1 is the jobs' queue names and $2 their ids. The names let the delete reach each job through the
-// (name, id) primary key, which an id alone cannot without a skip scan, and CockroachDB has none.
+// $1 and $2 are parallel arrays, each job's queue name and id. Paired, the delete reaches each job
+// through the (name, id) primary key, which an id alone cannot without a skip scan, and CockroachDB
+// has none. Two independent lists would also match a job of one queue whose id is a job of another.
 export function deleteJobsByIds (schema: string, table: string): SqlQuery {
   return {
-    text: `DELETE FROM ${schema}.${table} WHERE name = ANY($1::text[]) AND id = ANY($2::uuid[])`,
+    text: `DELETE FROM ${schema}.${table} WHERE (name, id) IN (SELECT n, i FROM unnest($1::text[], $2::uuid[]) AS p(n, i))`,
     values: []
   }
 }

@@ -205,6 +205,33 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(dlqMeta.heartbeatSeconds).toBe(900)
   })
 
+  // Ids are unique per queue, not per table, so the expiry must delete each job by its own pair.
+  it('should expire only the timed-out jobs when another queue holds a job with the same id', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, noDefault: true })
+
+    const a = `${ctx.schema}_a`
+    const b = `${ctx.schema}_b`
+    await ctx.boss.createQueue(a, { retryLimit: 0 })
+    await ctx.boss.createQueue(b, { retryLimit: 0 })
+
+    const shared = randomUUID()
+    await ctx.boss.send(a, null, { id: shared })
+    const timedOut = await ctx.boss.send(b, null, { id: randomUUID() })
+    expect((await ctx.boss.fetch(a)).length).toBe(1)
+    expect((await ctx.boss.fetch(b)).length).toBe(1)
+    await ctx.boss.send(b, null, { id: shared })
+
+    const db = await helper.getDb()
+    await db.executeSql(`UPDATE ${ctx.schema}.job SET started_on = now() - interval '1 hour' WHERE state = 'active'`)
+    await db.close()
+
+    await ctx.boss.supervise()
+
+    expect((await ctx.boss.getJobById(a, shared))?.state).toBe('failed')
+    expect((await ctx.boss.getJobById(b, timedOut!))?.state).toBe('failed')
+    expect((await ctx.boss.getJobById(b, shared))?.state).toBe('created')
+  })
+
   it('should retry heartbeat-timed-out jobs with backoff via distributed supervise', async function () {
     // Exercises boss.#monitor -> manager.failJobsByHeartbeatDistributed and the retry-with-backoff
     // branch of reinsertFailedJobs (retryBackoff: true), which the failDistributed rollback test
