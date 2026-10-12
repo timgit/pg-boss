@@ -4064,13 +4064,14 @@ export function setRetainedCount (schema: string, table: string): string {
 
 // Takes the jobs a delete or resume moved off the queue's counts at once rather than at the next
 // pass: $2 off retained_count, the completed and cancelled jobs it held, and $3 off total_count, every
-// job removed. $1 is the queue. A queue the retention sweep has not counted yet stays null.
+// job removed. $1 is the queue. A queue the retention sweep has not counted yet keeps a null
+// retained_count, and its total_count, the count it had before 12.38, still drops by the jobs removed.
 export function reduceRetainedCount (schema: string): string {
   return `
     UPDATE ${schema}.queue
-    SET retained_count = GREATEST(retained_count - $2, 0),
+    SET retained_count = CASE WHEN retained_count IS NULL THEN NULL ELSE GREATEST(retained_count - $2, 0) END,
       total_count = GREATEST(total_count - $3, 0)
-    WHERE name = $1 AND retained_count IS NOT NULL
+    WHERE name = $1
   `
 }
 

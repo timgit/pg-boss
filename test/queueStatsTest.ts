@@ -217,6 +217,31 @@ describe('queueStats', function () {
     expect(stats.totalCount).toBe(2)
   })
 
+  // A queue the retention sweep has not counted yet, as after the upgrade to 12.38: retained_count and
+  // retained_on are null and maintenance is not due.
+  async function uncounted (queue: string, totalCount: number) {
+    const db = await getDb()
+    await db.executeSql(`UPDATE ${ctx.schema}.queue SET retained_count = NULL, retained_on = NULL, total_count = $2, maintain_on = ${ctx.schema}.job_now() WHERE name = $1`, [queue, totalCount])
+  }
+
+  it('should take a bulk delete off totalCount before the queue\'s first maintenance pass', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+    await Promise.all([1, 2, 3, 4].map(() => ctx.boss!.send(queue)))
+    await uncounted(queue, 4)
+
+    expect(await ctx.boss.deleteQueuedJobs(queue)).toBe(4)
+    let [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(0)
+
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(0)
+  })
+
   // On a caller's db the adjustment would lock the queue row until the caller commits, so it is left
   // to the next maintenance pass.
   it('should leave the queue row alone when deleteJob() or resume() run on a caller\'s db', async function () {
