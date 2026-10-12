@@ -282,7 +282,7 @@ Array of objects with the following properties:
 
 ### `getBamEntries()`
 
-Returns boss async migration (BAM) command entries with full details, oldest version first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last entry's `id` as `options.after` to read the next page.
+Returns boss async migration (BAM) command entries with full details, oldest version first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last entry's `id` as `options.after` to read the next page. It rejects if that entry has been deleted since.
 
 Use this function when you need to inspect individual BAM commands, troubleshoot failures, or review the command history.
 

@@ -4963,8 +4963,10 @@ export function assertMigration (schema: string, version: number) {
 }
 
 // Ordered by created_on, then id: jobs written in one transaction share a created_on, and id keeps
-// their order the same on every page. job_i15 (or job_i17 by key) supplies created_on, so only the
-// jobs that share one are sorted. With `after`, a page continues past that job, read back by id so
+// their order the same on every page. job_i15 supplies created_on, or job_i17 for queued jobs by key,
+// so only the jobs that share one are sorted. Queued jobs without a key have no index in created_on
+// order (job_i14's state list does not match state < 'active'), so that read sorts the queue's
+// queued jobs on every page. With `after`, a page continues past that job, read back by id so
 // its created_on keeps the microseconds a JS Date drops. The created_on bound beside the row
 // comparison is what lets the index scan start there.
 export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean, after?: boolean }) {
