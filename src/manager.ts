@@ -853,6 +853,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (ended?.aborted) return
 
+    // Its jobs were failed, and a retry may already be another worker's, so they are no longer this
+    // worker's: its wip counts none, and a shutdown has none of its to fail.
+    if (worker) worker.jobs = []
+
     this.emit(events.warning, {
       message: `a handler on queue ${name} is still running after exceeding ${expireInSeconds}s. Its jobs were failed and their signals aborted, and this worker fetches nothing until it returns. Stop the handler on job.signal.`,
       data: { type: WARNING_TYPES.HANDLER_OVERRUN, queue: name, jobs: jobIds, expireInSeconds }

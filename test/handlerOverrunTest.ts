@@ -55,6 +55,9 @@ describe('handler overrun', function () {
     expect(warnings.length).toBe(1)
     expect(warnings[0].data).toMatchObject({ queue: ctx.schema, jobs: [jobId], expireInSeconds: 1 })
 
+    // The failed batch is no longer the worker's, so it counts none while it waits.
+    expect(boss.getWipData().map(worker => [worker.state, worker.count])).toEqual([['active', 0]])
+
     const failed = await boss.getJobById(ctx.schema, jobId)
     assertTruthy(failed)
     expect(failed.state).toBe('retry')
