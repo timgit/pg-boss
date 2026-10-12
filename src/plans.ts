@@ -1595,9 +1595,10 @@ export function trySetQueueDeletionTime (schema: string, queues: string[], secon
 }
 
 // Hands back the maintenance claim on queues a pass claimed but did not finish, so they are due again
-// on the next pass. No other instance can have claimed them since, because the claim is not due
-// again yet. The rows are locked in name order like everywhere else.
-export function releaseQueueDeletionTime (schema: string, queues: string[], skipLocked?: boolean): SqlQuery {
+// on the next pass. $2 is the stamp the pass claimed them with: a pass that outlasted the interval
+// may find a queue claimed again by another instance, and that claim stays. The rows are locked in
+// name order like everywhere else.
+export function releaseQueueDeletionTime (schema: string, queues: string[], claimedOn: string, skipLocked?: boolean): SqlQuery {
   return {
     text: `
     UPDATE ${schema}.queue
@@ -1606,11 +1607,12 @@ export function releaseQueueDeletionTime (schema: string, queues: string[], skip
       SELECT name
       FROM ${schema}.queue
       WHERE name = ANY($1::text[])
+        AND maintain_on = $2::timestamptz
       ${queueRowLock(skipLocked)}
     ) q
     WHERE queue.name = q.name
   `,
-    values: [queues]
+    values: [queues, claimedOn]
   }
 }
 
@@ -1689,7 +1691,7 @@ function trySetQueueTimestamp (schema: string, queues: string[], column: string,
     SET ${column} = ${schema}.job_now()
     FROM due
     WHERE queue.name = due.name
-    RETURNING queue.name
+    RETURNING queue.name, queue.${column}::text AS "claimedOn"
   `,
     values: [queues]
   }

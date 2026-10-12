@@ -542,6 +542,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
     const command = plans.trySetQueueDeletionTime(this.#config.schema, names, this.#config.maintenanceIntervalSeconds, skipLocked)
     const { rows } = await this.#executeQuery(command)
     const queues: string[] = rows.map((q) => q.name)
+    // One statement stamps every queue it claims with the same time.
+    const claimedOn: string = rows[0]?.claimedOn
     let finished = 0
 
     try {
@@ -553,7 +555,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       // back the ones it did not finish. Otherwise they would wait a whole maintenance interval.
       if (finished < queues.length) {
         try {
-          await this.#executeQuery(plans.releaseQueueDeletionTime(this.#config.schema, queues.slice(finished), skipLocked))
+          await this.#executeQuery(plans.releaseQueueDeletionTime(this.#config.schema, queues.slice(finished), claimedOn, skipLocked))
         } catch (err) {
           this.emit(events.error, err)
         }

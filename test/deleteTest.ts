@@ -182,6 +182,47 @@ describe('delete', function () {
     if (!helper.isPglite) await db.close()
   })
 
+  // A pass that outlasts the maintenance interval may find a queue claimed again by another instance,
+  // and handing back its own claim must not clear that one.
+  it('should leave a claim another instance took since in place when a stopped pass hands back its own', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, noDefault: true })
+    const names = [`${ctx.schema}_a`, `${ctx.schema}_b`, `${ctx.schema}_c`]
+
+    for (const name of names) {
+      await ctx.boss.createQueue(name)
+      await Promise.all([1, 2, 3].map(() => ctx.boss!.send(name)))
+    }
+
+    const queues = await ctx.boss.getQueues(names)
+    const db = await helper.getDb()
+    const config = Attorney.getConfig({ ...ctx.bossConfig, supervise: false, __test__walk_batch_size: 2 })
+    let batches = 0
+
+    const stopInSecondQueue: IDatabase = {
+      executeSql: async (text: string, values?: unknown[]) => {
+        const result = await db.executeSql(text, values)
+        if (text.includes('"walkCursor"') && text.includes('"deletedRetained"') && ++batches === 3) {
+          await db.executeSql(`UPDATE ${ctx.schema}.queue SET maintain_on = maintain_on + interval '1 second' WHERE name = $1`, [names[2]])
+          boss.stop()
+        }
+        return result
+      }
+    }
+
+    const boss = new Boss(stopInSecondQueue, new Manager(stopInSecondQueue, config), config)
+    await boss.start()
+    await boss.supervise(queues)
+
+    const { rows } = await db.executeSql(`SELECT name, maintain_on IS NOT NULL AS claimed FROM ${ctx.schema}.queue WHERE name = ANY($1::text[]) ORDER BY name`, [names])
+    expect(rows).toEqual([
+      { name: names[0], claimed: true },
+      { name: names[1], claimed: false },
+      { name: names[2], claimed: true }
+    ])
+
+    if (!helper.isPglite) await db.close()
+  })
+
   // A failed walk hands the claims back the same way. A release that fails too is reported, and the
   // walk's own failure is what the pass rejects with.
   it('should hand back the maintenance claim when a walk fails, and report a release that fails', async function () {
