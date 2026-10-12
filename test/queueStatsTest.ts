@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
 import pg from 'pg'
+import Db from '../src/db.ts'
 
 // One database handle for the whole file. Each helper.getDb() is a pool of its own that is never closed,
 // and this file asks for one on every monitor pass and every finished job, which ran a CI database at
@@ -215,6 +216,39 @@ describe('queueStats', function () {
     await ctx.boss.supervise(queue)
     ;[stats] = await ctx.boss.getQueueStats(queue)
     expect(stats.totalCount).toBe(2)
+  })
+
+  // The job is deleted by the time the count is adjusted, so a failed adjustment is reported, not thrown.
+  // Skipped on PGlite, which runs through its own adapter rather than Db.
+  helper.itPglite('should resolve deleteJob() and report the error when taking the job off totalCount fails', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1 })
+    const errors: Error[] = []
+    ctx.boss.on('error', err => errors.push(err))
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    await ctx.boss.send(queue)
+    const [job] = await ctx.boss.fetch(queue)
+    await ctx.boss.complete(queue, job.id)
+
+    await clock.tick(plans.DELTA_LAG_SECONDS * 1000 + 1000)
+    await ctx.boss.supervise(queue)
+
+    const executeSql = Db.prototype.executeSql
+    Db.prototype.executeSql = function (this: Db, text: string, ...rest: any[]) {
+      if (text.includes('GREATEST(retained_count - $2')) return Promise.reject(new Error('count update failed'))
+      return executeSql.call(this, text, ...rest)
+    } as typeof executeSql
+
+    try {
+      expect((await ctx.boss.deleteJob(queue, job.id)).affected).toBe(1)
+    } finally {
+      Db.prototype.executeSql = executeSql
+    }
+
+    expect(errors.map(error => error.message)).toEqual(['count update failed'])
+    expect(await ctx.boss.getJobById(queue, job.id)).toBeNull()
   })
 
   // A queue the retention sweep has not counted yet, as after the upgrade to 12.38: retained_count and

@@ -2690,12 +2690,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // leaves totalCount too, and a resumed one stays in it as a live job. Only when one was counted, so
   // settling a live job never touches the queue row. Not on a caller's db: the UPDATE would hold the
   // queue row until the caller commits, against the monitor and the caller's other queues, so the
-  // next maintenance pass corrects the count instead. CockroachDB returns the count as a string.
+  // next maintenance pass corrects the count instead. CockroachDB returns the count as a string. The
+  // delete or resume has committed by then, so a failure here is reported rather than thrown: the
+  // change happened, and the next maintenance pass corrects the count.
   async #reduceRetained (options: types.ConnectionOptions, name: string, result: { rows: any[] } | null, deleted: boolean) {
     const retained = Number(result?.rows?.[0]?.retained ?? 0)
 
     if (retained > 0 && !options.db) {
-      await this.db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained, deleted ? retained : 0])
+      try {
+        await this.db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained, deleted ? retained : 0])
+      } catch (err) {
+        this.emit(events.error, err)
+      }
     }
   }
 
