@@ -6,7 +6,7 @@ import * as plans from '../src/plans.ts'
 import Bam from '../src/bam.ts'
 import Db from '../src/db.ts'
 import { systemClock } from '../src/clock.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
 
 const bamConfig = {
@@ -1170,6 +1170,47 @@ describe('bam', function () {
       expect(Date.now() - begun).toBeLessThan(10000)
       expect((await readRow('sleep_cmd')).status).toBe('failed')
       expect(errors).toEqual([])
+    }, 30000)
+
+    // A TestClock wraps the db to count statements in flight, and the wrapper has to pass the stop
+    // signals on, or stop() waits for a build it would leave running.
+    helper.itPostgresOnly('should leave an index build running at the timeout under a TestClock', async function () {
+      const db = await helper.getDb()
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.abandon_test (a int)`)
+      await ctx.boss.stop()
+      await db.close()
+
+      // A snapshot on the table parks CREATE INDEX CONCURRENTLY in its wait phase.
+      const holder = await holdOpen(`SELECT * FROM ${ctx.schema}.abandon_test`)
+
+      try {
+        const clock = new TestClock()
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, clock })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS abandon_idx ON ${ctx.schema}.abandon_test (a)`
+        await insertBamRow(ctx.schema, 'abandon_cmd', 'pending', command)
+        await triggerBamPoll(ctx.schema)
+
+        // Not awaited: the tick waits for statements in flight, the build among them.
+        const started = waitForBamEvent(boss, 'abandon_cmd', 'in_progress')
+        const ticked = clock.tick(1000)
+        await started
+        await delay(500)
+
+        const begun = Date.now()
+        await boss.stop({ timeout: 1000 })
+
+        expect(Date.now() - begun).toBeLessThan(5000)
+        expect((await readRow('abandon_cmd')).status).toBe('in_progress')
+        expect(errors).toEqual([])
+        await ticked
+      } finally {
+        await holder.query('ROLLBACK')
+        await holder.end()
+      }
     }, 30000)
 
     it('should cancel a running command at once without graceful', async function () {
