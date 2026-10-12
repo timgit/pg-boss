@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProxyService } from '../src/index.js'
 import { bossMethodNames } from '../src/routes.js'
+import { findJobsOptionsSchema } from '../src/contracts.js'
 import type { MiddlewareHandler } from 'hono'
 
 type BossMethod = string
@@ -670,6 +671,13 @@ describe('proxy api routes', () => {
     const res = await app.fetch(new Request(`http://local/api/findJobs?name=q&after=${encodeURIComponent(id)}`, { method: 'GET' }))
     expect(res.status).toBe(200)
     expect(calls.get('findJobs')?.at(-1)).toEqual(['q', { after: id }])
+  })
+
+  it('findJobsOptionsSchema takes the limit and after core accepts', () => {
+    for (const options of [{ limit: 0 }, { limit: 1.5 }, { limit: 100001 }, { after: 'abc' }, { after: '{0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]) {
+      expect(findJobsOptionsSchema.safeParse(options).success, JSON.stringify(options)).toBe(false)
+    }
+    expect(findJobsOptionsSchema.safeParse({ limit: 100000, after: '{0193A1B2C3D47E5F80718293A4B5C6D7}' }).success).toBe(true)
   })
 
   it('redrive and previewRedrive reject a limit core would refuse', async () => {

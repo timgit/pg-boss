@@ -113,13 +113,14 @@ export const fetchOptionsSchema = z.object({
 // group of four hex digits, and braces only as a pair around the whole.
 export const UUID_INPUT = /^(?:\{[0-9a-f]{4}(?:-?[0-9a-f]{4}){7}\}|[0-9a-f]{4}(?:-?[0-9a-f]{4}){7})$/i
 
+// The bounds core asserts on limit and after.
 export const findJobsOptionsSchema = z.object({
   id: z.string().optional(),
   key: z.string().optional(),
   data: jsonRecordSchema.optional(),
   queued: z.boolean().optional(),
-  limit: z.number().optional(),
-  after: z.string().optional(),
+  limit: z.number().int().min(1).max(100000).optional(),
+  after: z.string().regex(UUID_INPUT, 'must be a uuid').optional(),
 }) satisfies z.ZodType<types.HttpFindJobsOptions>
 
 // Shared by redrive and previewRedrive, which take the same filter and a limit. createdBefore
