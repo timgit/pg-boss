@@ -225,6 +225,37 @@ describe('delete', function () {
 
   // A failed walk hands the claims back the same way. A release that fails too is reported, and the
   // walk's own failure is what the pass rejects with.
+  // A custom db that returns only the last statement's rows loses the batch's result row behind the
+  // transaction's COMMIT. Taking that as the end of the queue would record a count of one batch.
+  it('should fail a walk whose batch returns no result row instead of counting it done', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
+    await ctx.boss.send(ctx.schema)
+    const queue = await ctx.boss.getQueue(ctx.schema)
+    assertTruthy(queue)
+
+    const db = await helper.getDb()
+    const config = Attorney.getConfig({ ...ctx.bossConfig, supervise: false })
+
+    const lastStatementOnly: IDatabase = {
+      executeSql: async (text: string, values?: unknown[]) => {
+        const result = await db.executeSql(text, values)
+        return text.includes('"deletedRetained"') ? { rows: [] } : result
+      }
+    }
+
+    const boss = new Boss(lastStatementOnly, new Manager(lastStatementOnly, config), config)
+    boss.on('error', () => {})
+    await boss.start()
+
+    await expect(boss.supervise([queue])).rejects.toThrow('maintenance batch returned no result row')
+
+    const { rows: [row] } = await db.executeSql(`SELECT retained_count FROM ${ctx.schema}.queue WHERE name = $1`, [ctx.schema])
+    expect(row.retained_count).toBeNull()
+
+    await boss.stop()
+    if (!helper.isPglite) await db.close()
+  })
+
   it('should hand back the maintenance claim when a walk fails, and report a release that fails', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
     await ctx.boss.send(ctx.schema)

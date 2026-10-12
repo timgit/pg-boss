@@ -1,3 +1,4 @@
+import assert from 'node:assert'
 import EventEmitter from 'node:events'
 import { ClaimTimer } from './claimTimer.ts'
 import type Manager from './manager.ts'
@@ -603,7 +604,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // Walks one queue's keys a batch at a time (see plans.deletion), carrying each batch's cursor into
   // the next until a batch comes back without one, and returns whether it got there. A stop between
   // batches leaves the rest for the next pass. `tally` totals the batches' counts as they commit, so
-  // it holds them even when a batch throws. CockroachDB returns counts as strings.
+  // it holds them even when a batch throws. CockroachDB returns counts as strings. A batch with no
+  // result row fails the walk rather than ending it, since a walk taken as done records its count.
   async #walk (batch: (after?: string) => string, tally?: { retained: number, deleted: number, deletedRetained: number }): Promise<boolean> {
     let after: string | undefined
 
@@ -611,13 +613,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const { rows } = await this.#executeQuery(batch(after))
       const row = rows.find((row) => row.walkCursor !== undefined)
 
+      assert(row, 'maintenance batch returned no result row: a custom db must return the rows of every statement in a multi-statement query')
+
       if (tally) {
-        tally.retained += Number(row?.retained ?? 0)
-        tally.deleted += Number(row?.deleted ?? 0)
-        tally.deletedRetained += Number(row?.deletedRetained ?? 0)
+        tally.retained += Number(row.retained ?? 0)
+        tally.deleted += Number(row.deleted ?? 0)
+        tally.deletedRetained += Number(row.deletedRetained ?? 0)
       }
 
-      if (!row?.walkCursor) return true
+      if (!row.walkCursor) return true
 
       after = row.walkCursor
     }
