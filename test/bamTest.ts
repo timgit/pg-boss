@@ -4,6 +4,7 @@ import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
 import Bam from '../src/bam.ts'
+import Db from '../src/db.ts'
 import { systemClock } from '../src/clock.ts'
 import { PgBoss } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
@@ -1208,6 +1209,80 @@ describe('bam', function () {
       await db.close()
 
       expect(alive).toBe(false)
+    }, 30000)
+
+    // CockroachDB through pg-boss's own pool drops the connection rather than cancelling. Started with
+    // the CockroachDB backend on Postgres, as distributedDatabaseTest does, so the path runs here too.
+    it('should drop the connection of a running command on CockroachDB', async function () {
+      const { boss, errors } = await startCommand('drop_cmd', 'SELECT pg_sleep(3)', { backend: 'cockroachdb' })
+
+      const begun = Date.now()
+      await boss.stop({ timeout: 1000 })
+
+      expect(Date.now() - begun).toBeLessThan(2500)
+      expect((await readRow('drop_cmd')).status).toBe('failed')
+      expect(errors).toEqual([])
+    }, 30000)
+
+    // A deadline that passes between a row's statements, here while a re-attempt reads the catalog,
+    // finds nothing to cancel. The command never starts, and the row is marked failed.
+    it('should not start a command once the timeout has passed', async function () {
+      const pool = await helper.getDb()
+
+      try {
+        const db = {
+          executeSql: async (text: string, values?: unknown[]) => {
+            if (text.includes('NOT i.indisvalid AS invalid')) await delay(2500)
+            return await pool.executeSql(text, values)
+          }
+        }
+
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        await pool.executeSql(`CREATE TABLE ${ctx.schema}.late_test (a int)`)
+        const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS late_idx ON ${ctx.schema}.late_test (a)`
+        await insertBamRow(ctx.schema, 'late_cmd', 'failed', command)
+
+        const started = waitForBamEvent(boss, 'late_cmd', 'in_progress')
+        await triggerBamPoll(ctx.schema)
+        await started
+
+        await boss.stop({ timeout: 1000 })
+
+        const row = await readRow('late_cmd')
+        expect(row.status).toBe('failed')
+        expect(row.error).toContain('stop() ended the command before it ran')
+        expect(errors).toEqual([])
+
+        const { rows } = await pool.executeSql(`SELECT to_regclass('${ctx.schema}.late_idx') AS idx`)
+        expect(rows[0].idx).toBeNull()
+      } finally {
+        await pool.close()
+      }
+    }, 30000)
+
+    // The signal can abort while the statement waits for a pooled connection. The connection it gets
+    // then goes back to the pool without running anything.
+    it('should return a connection that arrives after its signal aborted', async function () {
+      const db = new Db({ ...helper.getConfig(), max: 1 })
+      await db.open()
+
+      try {
+        const busy = db.executeSql('SELECT pg_sleep(0.5)')
+
+        const abort = new AbortController()
+        const waiting = db.executeSql('SELECT 1', undefined, { signal: abort.signal })
+        abort.abort()
+
+        await expect(waiting).rejects.toThrow('This operation was aborted')
+        await busy
+
+        expect(db.poolCounts()).toMatchObject({ total: 1, idle: 1 })
+      } finally {
+        await db.close()
+      }
     }, 30000)
 
     // Left running without its client, the UPDATE would apply once the lock is released, while its row
