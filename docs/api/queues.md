@@ -191,9 +191,9 @@ Inside a transaction passed as `db`, a queue in the shared job table is checked 
 
 A queue deleted and created again elsewhere with a different `partition` setting fails the first write from an instance that cached it, with `relation ... does not exist` or a partition constraint violation, and that instance writes to the new table from the next call.
 
-### `getQueues(names?)`
+### `getQueues(names?, options)`
 
-Returns all queues, or only the named queues when an array of names is provided, sorted by name. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last queue's name as `options.after` to read the next page.
+Returns the queues, or only the named queues when an array of names is provided, sorted by name. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last queue's name as `options.after` to read the next page.
 
 ```js
 const queues = await boss.getQueues(['email-send'])
@@ -290,7 +290,7 @@ In `queue_stats` the histograms are stored as the `int[]` columns `wait_bins` an
 
 ### `getQueue(name)`
 
-Returns a queue by name, with the same fields as [`getQueues()`](#getqueues-names), or `null` if it doesn't exist.
+Returns a queue by name, with the same fields as [`getQueues()`](#getqueues-names-options), or `null` if it doesn't exist.
 
 ```js
 const queue = await boss.getQueue('email-send')
@@ -302,7 +302,7 @@ if (!queue) {
 
 ### `getQueueStats(name, options)`
 
-Returns an array of queue-depth snapshots, most recent first. Each holds the queue's counts and monitor pass fields, described under [`getQueues()`](#getqueues-names), and `capturedOn`, when the snapshot was captured, or the start of its bucket when downsampled.
+Returns an array of queue-depth snapshots, most recent first. Each holds the queue's counts and monitor pass fields, described under [`getQueues()`](#getqueues-names-options), and `capturedOn`, when the snapshot was captured, or the start of its bucket when downsampled.
 
 ```js
 interface QueueStats {
@@ -371,7 +371,7 @@ Over a wide window the raw series can be far larger than `limit`, and returning 
 
 **Percentile options**
 
-Percentiles are read from the [wait and run histograms](#getqueues-names) described under `getQueues()`.
+Percentiles are read from the [wait and run histograms](#getqueues-names-options) described under `getQueues()`.
 
 * **percentiles**, array of numbers
 
@@ -419,7 +419,7 @@ const series = await boss.getQueueStats('email-send', {
 // ]
 ```
 
-### `getBlockedKeys(name)`
+### `getBlockedKeys(name, options)`
 
 Returns an array of `singletonKey` values that are currently blocked due to failed jobs, sorted. This is only available for queues with the `key_strict_fifo` policy. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last key as `options.after` to read the next page.
 

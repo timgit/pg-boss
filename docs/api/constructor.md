@@ -58,7 +58,7 @@ Maximum number of connections that will be shared by all operations in this inst
 
 ### `application_name`
 
-String, defaults to `pgboss:` followed by the first 8 characters of the instance's id, so each instance's connections can be told apart in `pg_stat_activity` and joined to [`getInstances()`](./ops.md#getinstances). With `registerInstance: false` the default is `"pgboss"`.
+String, defaults to `pgboss:` followed by the first 8 characters of the instance's id, so each instance's connections can be told apart in `pg_stat_activity` and joined to [`getInstances()`](./ops.md#getinstances-options). With `registerInstance: false` the default is `"pgboss"`.
 
 ### `connectionTimeoutMillis`
 
@@ -315,7 +315,7 @@ With table partitioning, old days are dropped as whole partitions on each superv
 
 Bool, default true
 
-Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`. [`getInstances()`](./ops.md#getinstances) lists every pg-boss instance connecting to this schema. Set to false to leave this instance out of the registry. 
+Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`. [`getInstances()`](./ops.md#getinstances-options) lists every pg-boss instance connecting to this schema. Set to false to leave this instance out of the registry. 
 
 > [!NOTE]
 > Short-lived processes such as serverless functions should set this to false, since frequent registrations would produce false positives of a frozen or crashed instance.
@@ -324,7 +324,7 @@ Records this instance in the database's `instance` table at `start()`, keeps the
 
 String, optional
 
-A label for this instance in the registry, such as `api` or `billing-worker`. It does not need to be unique, since each instance is recorded under its own id. Instances with the same name are grouped for pruning stopped rows and for counting crash restarts; see [`getInstances()`](./ops.md#getinstances).
+A label for this instance in the registry, such as `api` or `billing-worker`. It does not need to be unique, since each instance is recorded under its own id. Instances with the same name are grouped for pruning stopped rows and for counting crash restarts; see [`getInstances()`](./ops.md#getinstances-options).
 
 ### `instanceHeartbeatSeconds`
 

@@ -266,7 +266,7 @@ export interface QueueStats {
   failedCount: number;
   /**
    * All jobs stored for the queue.
-   * @see https://pgboss.io/api/queues#getqueues-names
+   * @see https://pgboss.io/api/queues#getqueues-names-options
    */
   totalCount: number;
   /**
@@ -289,7 +289,7 @@ export interface QueueStats {
   /**
    * Wait times of the jobs that finished in the deltas' window, as a histogram of 48 counts in
    * log-spaced bins; sum histograms to read a percentile over any span. Null wherever the deltas are.
-   * @see https://pgboss.io/api/queues#getqueues-names
+   * @see https://pgboss.io/api/queues#getqueues-names-options
    */
   waitBins: number[] | null;
   /** Run times of the same jobs, in the same bins as `waitBins`. */
@@ -556,7 +556,7 @@ export interface AttachableClock extends Clock {
 export interface InstanceOptions {
   /**
    * Record this instance in the database's instance registry, readable with `getInstances()`.
-   * @see https://pgboss.io/api/ops#getinstances
+   * @see https://pgboss.io/api/ops#getinstances-options
    * @default true
    */
   registerInstance?: boolean;
@@ -1078,13 +1078,13 @@ export interface QueueResult extends Queue {
   failedCount: number;
   /**
    * All jobs stored for the queue.
-   * @see https://pgboss.io/api/queues#getqueues-names
+   * @see https://pgboss.io/api/queues#getqueues-names-options
    */
   totalCount: number
   /**
    * Jobs completed in the window the latest counted monitor pass covered. Zero until an instance
    * with `persistQueueStats` on has counted this queue.
-   * @see https://pgboss.io/api/queues#getqueues-names
+   * @see https://pgboss.io/api/queues#getqueues-names-options
    */
   completedDelta: number;
   /** Jobs failed terminally since the previous monitor pass. */
@@ -1391,7 +1391,7 @@ export interface Schedule {
   /**
    * Id of the job this schedule most recently created, or `null` when none is recorded. The job
    * may since have been deleted by the queue's retention policy.
-   * @see https://pgboss.io/api/scheduling#getschedules
+   * @see https://pgboss.io/api/scheduling#getschedules-name-key-options
    */
   lastJobId: string | null;
 }
@@ -1521,7 +1521,7 @@ export interface InstanceWorker {
   lastErrorOn: string | null;
   /**
    * The other `work()` options this call set; one left at its default is absent.
-   * @see https://pgboss.io/api/ops#getinstances
+   * @see https://pgboss.io/api/ops#getinstances-options
    */
   options?: Partial<WorkOptions>;
 }
@@ -1529,7 +1529,7 @@ export interface InstanceWorker {
 /**
  * A registered instance's process at its last heartbeat. Limits are its container's where one is set
  * (cgroup v1 or v2), else the host's; rates cover the time since the previous heartbeat.
- * @see https://pgboss.io/api/ops#getinstances
+ * @see https://pgboss.io/api/ops#getinstances-options
  */
 export interface InstanceMetrics {
   /** 1 or 2 when the limits were read from a cgroup, null when they are the host's. */
@@ -1557,7 +1557,7 @@ export interface InstanceMetrics {
 
 /**
  * A PgBoss object that registered itself in this database.
- * @see https://pgboss.io/api/ops#getinstances
+ * @see https://pgboss.io/api/ops#getinstances-options
  */
 export interface Instance {
   id: string;

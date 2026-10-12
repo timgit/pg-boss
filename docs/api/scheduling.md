@@ -179,7 +179,7 @@ await boss.unschedule('report', 'eu')
 
 An optional third argument takes a `db` to run the removal on, as `schedule()` does: `boss.unschedule('report', 'eu', { db })`.
 
-### `getSchedules()`
+### `getSchedules(name?, key?, options)`
 
 Returns scheduled jobs, sorted by queue name and key. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last schedule as `options.after` to read the next page. Pass the options as the third argument, after the name and key, as `getSchedules(undefined, undefined, { limit: 50 })`.
 

@@ -32,7 +32,7 @@ It is also safe to call `start()` again yourself on the same instance until it s
 
 * **attempts**, int, default 1
 
-  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error. An instance that started on a later try records it as `config.startAttempt` in [`getInstances()`](#getinstances).
+  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error. An instance that started on a later try records it as `config.startAttempt` in [`getInstances()`](#getinstances-options).
 
 Once started, pg-boss rides out a database that drops and comes back: workers emit `error` while it is gone and resume when it returns, with no restart needed.
 
@@ -200,7 +200,7 @@ const { rows } = await db.executeSql('SELECT now()')
 
 > Reaching past the API and mutating pg-boss tables directly is not supported. This exists so an application can reuse the same pool for its own queries rather than opening a second one.
 
-### `getInstances()`
+### `getInstances(options)`
 
 Returns the pg-boss instances registered in this database, oldest first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last instance's `id` as `options.after` to read the next page; it rejects if that instance has been deleted since. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never says it stopped, so its row goes quiet instead: `live` turns false once it has missed three heartbeats. Rows whose heartbeat has not moved for 7 days are deleted during maintenance.
 
@@ -280,7 +280,7 @@ Array of objects with the following properties:
 | `count` | number | Number of BAM entries with this status |
 | `lastCreatedOn` | Date | Most recent creation timestamp for this status |
 
-### `getBamEntries()`
+### `getBamEntries(options)`
 
 Returns boss async migration (BAM) command entries with full details, oldest version first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last entry's `id` as `options.after` to read the next page. It rejects if that entry has been deleted since.
 
