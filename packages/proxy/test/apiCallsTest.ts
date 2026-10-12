@@ -615,8 +615,8 @@ describe('proxy api routes', () => {
       ['getQueues', 'after=a', [undefined, { after: 'a' }]],
       ['getBlockedKeys', 'name=q&limit=5&after=k', ['q', { limit: 5, after: 'k' }]],
       ['getSchedules', 'afterName=q&afterKey=k', [undefined, undefined, { after: { name: 'q', key: 'k' } }]],
-      ['getDependencies', 'name=q&id=1&afterName=p&afterId=2', ['q', '1', { after: { name: 'p', id: '2' } }]],
-      ['findJobs', 'name=q&limit=5&after=j', ['q', { limit: 5, after: 'j' }]]
+      ['getDependencies', 'name=q&id=1&afterName=p&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', '1', { after: { name: 'p', id: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' } }]],
+      ['findJobs', 'name=q&limit=5&after=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', { limit: 5, after: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]]
     ]
 
     for (const [method, query, args] of cases) {
@@ -634,7 +634,7 @@ describe('proxy api routes', () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
-    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0', 'getSchedules?afterName=q', 'getDependents?name=q&id=1&afterId=2']) {
+    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0', 'getSchedules?afterName=q', 'getDependents?name=q&id=1&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7']) {
       const res = await app.fetch(new Request(`http://local/api/${query}`, { method: 'GET' }))
       expect(res.status, query).toBe(400)
     }
@@ -648,6 +648,22 @@ describe('proxy api routes', () => {
       const findRes = await app.fetch(new Request(`http://local/api/findJobs?name=queue&limit=${limit}`, { method: 'GET' }))
       expect(findRes.status, limit).toBe(400)
     }
+  })
+
+  it('GET findJobs and the dependency reads reject an after that is not a uuid', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    for (const query of ['findJobs?name=q&after=abc', 'getDependencies?name=q&id=1&afterName=q&afterId=abc', 'getDependents?name=q&id=1&afterName=q&afterId=abc']) {
+      const res = await app.fetch(new Request(`http://local/api/${query}`, { method: 'GET' }))
+      expect(res.status, query).toBe(400)
+    }
+
+    // Any spelling the uuid type accepts passes through as it was sent.
+    const id = '{0193A1B2C3D4E5F60718293A4B5C6D7E}'
+    const res = await app.fetch(new Request(`http://local/api/findJobs?name=q&after=${encodeURIComponent(id)}`, { method: 'GET' }))
+    expect(res.status).toBe(200)
+    expect(calls.get('findJobs')?.at(-1)).toEqual(['q', { after: id }])
   })
 
   it('redrive and previewRedrive reject a limit core would refuse', async () => {

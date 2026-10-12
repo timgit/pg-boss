@@ -3104,7 +3104,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { id, key, data, queued = false, after } = options
     const limit = Attorney.assertListLimit('findJobs', options.limit)
-    Attorney.assertListAfter('findJobs', after)
+    Attorney.assertListAfter('findJobs', after, true)
 
     const db = this.assertDb(options)
 
@@ -3161,7 +3161,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     Attorney.assertQueueName(name)
     const limit = Attorney.assertListLimit('getDependencies', options.limit)
     const { after } = options
-    Attorney.assertListAfterRow('getDependencies', after, ['name', 'id'])
+    Attorney.assertListAfterRow('getDependencies', after, ['name', 'id'], 'id')
     const db = this.assertDb(options)
     const sql = plans.getDependencies(this.config.schema, after !== undefined)
     const { rows } = await db.executeSql(sql, after ? [name, id, after.name, after.id, limit] : [name, id, limit])
@@ -3172,7 +3172,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     Attorney.assertQueueName(name)
     const limit = Attorney.assertListLimit('getDependents', options.limit)
     const { after } = options
-    Attorney.assertListAfterRow('getDependents', after, ['name', 'id'])
+    Attorney.assertListAfterRow('getDependents', after, ['name', 'id'], 'id')
     const db = this.assertDb(options)
     const sql = plans.getDependents(this.config.schema, after !== undefined)
     const { rows } = await db.executeSql(sql, after ? [name, id, after.name, after.id, limit] : [name, id, limit])

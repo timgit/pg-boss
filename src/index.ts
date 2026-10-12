@@ -620,7 +620,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   async getInstances (options?: types.ListOptions): Promise<types.Instance[]> {
     const limit = Attorney.assertListLimit('getInstances', options?.limit)
-    Attorney.assertListAfter('getInstances', options?.after)
+    Attorney.assertListAfter('getInstances', options?.after, true)
     return this.#registrar.getInstances(limit, options?.after)
   }
 
@@ -727,7 +727,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   async getBamEntries (options?: types.ListOptions): Promise<types.BamEntry[]> {
     const limit = Attorney.assertListLimit('getBamEntries', options?.limit)
     const after = options?.after
-    Attorney.assertListAfter('getBamEntries', after)
+    Attorney.assertListAfter('getBamEntries', after, true)
     const sql = plans.getBamEntries(this.#config.schema, after !== undefined)
     const { rows } = await this.#db.executeSql(sql, after !== undefined ? [after, limit] : [limit])
 

@@ -196,5 +196,16 @@ describe('list paging', function () {
     await expect(ctx.boss.getInstances({ after: missing })).rejects.toThrow('getInstances: after names a row that no longer exists')
     await expect(ctx.boss.getBamEntries({ after: missing })).rejects.toThrow('getBamEntries: after names a row that no longer exists')
     await expect(ctx.boss.getQueues(undefined, { after: '' })).rejects.toThrow('getQueues: after must be a non-empty string')
+
+    // A read that pages by id checks the id, in any spelling the uuid type accepts.
+    for (const read of [
+      () => ctx.boss!.findJobs(ctx.schema, { after: 'not-a-uuid' }),
+      () => ctx.boss!.getInstances({ after: 'not-a-uuid' }),
+      () => ctx.boss!.getBamEntries({ after: 'not-a-uuid' })
+    ]) {
+      await expect(read()).rejects.toThrow(/: after must be a uuid$/)
+    }
+    await expect(ctx.boss.getDependencies(ctx.schema, missing, { after: { name: ctx.schema, id: '' } })).rejects.toThrow('getDependencies: after.id must be a uuid')
+    await expect(ctx.boss.getInstances({ after: `{${missing.toUpperCase().replaceAll('-', '')}}` })).rejects.toThrow('getInstances: after names a row that no longer exists')
   })
 })

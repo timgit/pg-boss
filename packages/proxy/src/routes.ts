@@ -156,6 +156,10 @@ const limitQuery = z.coerce.number().int().positive().max(100000).optional()
 // by a pair, sent as afterName with afterKey or afterId.
 const afterQuery = z.string().min(1).optional()
 
+// An after that names a job by id. Any spelling the uuid type accepts, as core checks it, so a
+// malformed cursor is a 400 rather than a 500.
+const afterIdQuery = z.string().refine((v) => /^[0-9a-f]{32}$/i.test(v.replace(/[{}-]/g, '')), 'must be a uuid').optional()
+
 // The ListOptions argument for a route's call, left out when the request gave neither a limit nor
 // an after.
 const listOptions = (q: { limit?: number }, after?: unknown) => {
@@ -213,7 +217,7 @@ const findJobsQuerySchema = z.object({
   dataKey: z.string().optional(),
   dataValue: z.string().optional(),
   limit: limitQuery,
-  after: afterQuery
+  after: afterIdQuery
 }).refine((q) => !q.dataValue || q.dataKey, {
   message: 'dataKey is required when dataValue is provided'
 })
@@ -254,7 +258,7 @@ const dependencyQuerySchema = z.object({
   id: z.string().min(1),
   limit: limitQuery,
   afterName: afterQuery,
-  afterId: afterQuery
+  afterId: afterIdQuery
 }).refine((q) => (q.afterName === undefined) === (q.afterId === undefined), {
   message: 'afterName and afterId go together'
 })

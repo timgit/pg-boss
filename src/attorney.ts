@@ -728,18 +728,26 @@ function assertListLimit (method: string, limit: number = LIST_LIMIT_DEFAULT): n
   return limit
 }
 
-// The `after` of a list read that pages by one value: a queue name, a key or an id.
-function assertListAfter (method: string, after: unknown): void {
+// Any spelling the uuid type accepts, with or without hyphens and braces, in either case. A read that
+// pages by id checks it here, so a malformed one is a usage error rather than the database's.
+function isUuid (value: string): boolean {
+  return /^[0-9a-f]{32}$/i.test(value.replace(/[{}-]/g, ''))
+}
+
+// The `after` of a list read that pages by one value: a queue name, a key or, with `id`, an id.
+function assertListAfter (method: string, after: unknown, id = false): void {
   assert(after === undefined || (typeof after === 'string' && after.length > 0),
     `${method}: after must be a non-empty string`)
+  assert(!id || after === undefined || isUuid(after as string), `${method}: after must be a uuid`)
 }
 
 // The `after` of a list read that pages by a row: the previous page's last row, of which only the
-// two named fields are read.
-function assertListAfterRow (method: string, after: unknown, fields: [string, string]): void {
+// two named fields are read. With `id`, that field must be a uuid.
+function assertListAfterRow (method: string, after: unknown, fields: [string, string], id?: string): void {
   assert(after === undefined || (typeof after === 'object' && after !== null &&
     fields.every(field => typeof (after as Record<string, unknown>)[field] === 'string')),
   `${method}: after must be an object with string ${fields.join(' and ')}`)
+  assert(!id || after === undefined || isUuid((after as Record<string, string>)[id]), `${method}: after.${id} must be a uuid`)
 }
 
 function assertQueueName (name: string) {
