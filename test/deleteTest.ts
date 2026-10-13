@@ -184,6 +184,22 @@ describe('delete', function () {
     if (!helper.isPglite) await db.close()
   })
 
+  // The release matches the claim's stamp to the microsecond, which a driver that binds a timestamp
+  // through a JS Date (postgres.js) would drop. Runs through the instance's own db for that reason.
+  it('should hand back a claim through the instance db', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
+    const db = ctx.boss.getDb()
+
+    const claim = plans.trySetQueueDeletionTime(ctx.schema, [ctx.schema], 0)
+    const { rows: [{ claimedOn }] } = await db.executeSql(claim.text, claim.values)
+
+    const release = plans.releaseQueueDeletionTime(ctx.schema, [ctx.schema], claimedOn)
+    await db.executeSql(release.text, release.values)
+
+    const { rows } = await db.executeSql(`SELECT maintain_on IS NULL AS released FROM ${ctx.schema}.queue WHERE name = $1`, [ctx.schema])
+    expect(rows[0].released).toBe(true)
+  })
+
   // The claim and its release can land on different pooled connections. CockroachDB only has the ISO
   // DateStyle, and PGlite has one connection.
   it.skipIf(helper.isPglite || helper.isCockroachDb)('should hand back a claim through a connection with another DateStyle and TimeZone', async function () {

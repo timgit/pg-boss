@@ -1597,7 +1597,8 @@ export function trySetQueueDeletionTime (schema: string, queues: string[], secon
 // Hands back the maintenance claim on queues a pass claimed but did not finish, so they are due again
 // on the next pass. $2 is the stamp the pass claimed them with: a pass that outlasted the interval
 // may find a queue claimed again by another instance, and that claim stays. The rows are locked in
-// name order like everywhere else.
+// name order like everywhere else. $2 is bound as text so its microseconds survive postgres.js, which
+// passes a timestamptz parameter through a JS Date.
 export function releaseQueueDeletionTime (schema: string, queues: string[], claimedOn: string, skipLocked?: boolean): SqlQuery {
   return {
     text: `
@@ -1607,7 +1608,7 @@ export function releaseQueueDeletionTime (schema: string, queues: string[], clai
       SELECT name
       FROM ${schema}.queue
       WHERE name = ANY($1::text[])
-        AND maintain_on = $2::timestamptz
+        AND maintain_on = $2::text::timestamptz
       ${queueRowLock(skipLocked)}
     ) q
     WHERE queue.name = q.name
@@ -4999,7 +5000,8 @@ export function assertMigration (schema: string, version: number) {
 // created_on first with findJobsAnchor and passes it with the id. A literal rather than a subquery,
 // because CockroachDB cannot start a scan at a subquery's value and would read the queue from the
 // start on every page. The created_on bound beside the row comparison is what lets the index scan
-// start there.
+// start there. It is bound as text, since postgres.js passes a timestamptz parameter through a JS
+// Date, which drops the microseconds the anchor carries.
 export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean, after?: boolean }) {
   const { queued, byKey, byData, byId, after } = options
 
@@ -5026,7 +5028,7 @@ export function findJobs (schema: string, table: string, options: { queued: bool
   }
 
   if (after) {
-    const createdOn = `$${++paramIndex}::timestamptz`
+    const createdOn = `$${++paramIndex}::text::timestamptz`
     const id = `$${++paramIndex}::uuid`
     whereConditions.push(`AND created_on >= ${createdOn}`)
     whereConditions.push(`AND (created_on, id) > (${createdOn}, ${id})`)
