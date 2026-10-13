@@ -673,6 +673,19 @@ describe('proxy api routes', () => {
     expect(calls.get('findJobs')?.at(-1)).toEqual(['q', { after: id }])
   })
 
+  it('OpenAPI gives after and afterId a pattern that matches a uuid', async () => {
+    const { boss } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+    const spec = await (await app.fetch(new Request('http://local/openapi.json', { method: 'GET' }))).json() as any
+
+    for (const [path, param] of [['/api/findJobs', 'after'], ['/api/getDependencies', 'afterId'], ['/api/getDependents', 'afterId']]) {
+      const { pattern } = spec.paths[path].get.parameters.find((p: any) => p.name === param).schema
+      for (const id of ['0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', '{0193A1B2C3D47E5F80718293A4B5C6D7}']) {
+        expect(new RegExp(pattern).test(id), `${path} ${param} ${id}`).toBe(true)
+      }
+    }
+  })
+
   it('findJobsOptionsSchema takes the limit and after core accepts', () => {
     for (const options of [{ limit: 0 }, { limit: 1.5 }, { limit: 100001 }, { after: 'abc' }, { after: '{0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]) {
       expect(findJobsOptionsSchema.safeParse(options).success, JSON.stringify(options)).toBe(false)

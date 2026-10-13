@@ -110,8 +110,9 @@ export const fetchOptionsSchema = z.object({
 ) satisfies z.ZodType<types.HttpFetchOptions>
 
 // Any spelling the uuid type accepts, as pg-boss checks a list read's after: a hyphen only after a
-// group of four hex digits, and braces only as a pair around the whole.
-export const UUID_INPUT = /^(?:\{[0-9a-f]{4}(?:-?[0-9a-f]{4}){7}\}|[0-9a-f]{4}(?:-?[0-9a-f]{4}){7})$/i
+// group of four hex digits, and braces only as a pair around the whole. No `i` flag: the OpenAPI
+// document would keep it as text after the `$`, and that pattern matches nothing.
+export const UUID_INPUT = /^(?:\{[0-9a-fA-F]{4}(?:-?[0-9a-fA-F]{4}){7}\}|[0-9a-fA-F]{4}(?:-?[0-9a-fA-F]{4}){7})$/
 
 // The bounds core asserts on limit and after.
 export const findJobsOptionsSchema = z.object({
