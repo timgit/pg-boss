@@ -3157,24 +3157,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (id !== undefined) values.push(id)
     if (key !== undefined) values.push(key)
     if (data !== undefined) values.push(JSON.stringify(data))
-    if (after !== undefined) values.push(after)
+
+    if (after !== undefined) {
+      // A job deleted since the previous page would otherwise end the list early without saying so.
+      const { rows: [anchor] } = await db.executeSql(plans.findJobsAnchor(this.config.schema, table), [name, after])
+      assert(anchor, 'findJobs: after names a row that no longer exists')
+      values.push(anchor.createdOn, after)
+    }
+
     values.push(limit)
 
     const result = await db.executeSql(sql, values)
-    const rows = result?.rows || []
 
-    if (after !== undefined && rows.length === 0) {
-      await this.#assertAfterExists(db, 'findJobs', plans.jobExists(this.config.schema, table), [name, after])
-    }
-
-    return this.#numericJobFields(rows)
-  }
-
-  // An empty page after `after` is the end of the list, unless the row `after` names was deleted
-  // since the previous page, which would end it early without saying so.
-  async #assertAfterExists (db: types.IDatabase, method: string, sql: string, values: unknown[]) {
-    const { rows } = await db.executeSql(sql, values)
-    assert(rows.length > 0, `${method}: after names a row that no longer exists`)
+    return this.#numericJobFields(result?.rows || [])
   }
 
   // CockroachDB returns integer columns (INT8) as strings. Every read that hands job rows to a

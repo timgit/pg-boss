@@ -125,6 +125,19 @@ describe('list paging', function () {
     expect(new Set(paged.map(job => job.id)).size).toBe(7)
   })
 
+  it('findJobs() pages through jobs whose created_on differ only in microseconds', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const ids = [await ctx.boss.send(ctx.schema), await ctx.boss.send(ctx.schema), await ctx.boss.send(ctx.schema)]
+
+    const { table } = (await ctx.boss.getQueue(ctx.schema))!
+    for (const [i, id] of ids.entries()) {
+      await ctx.boss.getDb().executeSql(`UPDATE ${ctx.schema}.${table} SET created_on = '2026-01-01T00:00:00.00000${i + 1}Z' WHERE name = $1 AND id = $2`, [ctx.schema, id])
+    }
+
+    const paged = await pageAll((after?: string) => ctx.boss!.findJobs(ctx.schema, { limit: 1, after }), job => job.id)
+    expect(paged.map(job => job.id)).toEqual(ids)
+  })
+
   it('findJobs() rejects an after whose job was deleted, and ends quietly after the last one', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const first = await ctx.boss.send(ctx.schema)

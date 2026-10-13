@@ -2157,14 +2157,20 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
   `
 }
 
+// A timestamptz as ISO 8601 text in UTC to the microsecond, for a value that goes back to the database
+// as a parameter. It reads back the same whatever the DateStyle and TimeZone of the connection, which
+// can differ between pooled connections.
+function utcIsoText (column: string) {
+  return `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+}
+
 // Retention for queue_stats where it is not partitioned by day (noTablePartitioning): deletes at
 // most `batchSize` rows past retention, oldest first, through queue_stats_i2, so a pass reads only the
 // rows it deletes. The supervisor repeats it while a batch comes back with a cursor, which is the
 // last (captured_on, id) deleted, as text joined by '|', so the next batch starts past the rows this
 // one removed rather than stepping over them again (CockroachDB keeps them as tombstones until
 // garbage collection). No cursor once a batch deletes fewer than `batchSize`. captured_on travels as
-// ISO 8601 in UTC, which reads back the same whatever the DateStyle and TimeZone of the connection
-// the next batch runs on.
+// utcIsoText, since the next batch can run on another connection.
 export function deleteOldQueueStats (schema: string, days: number, options: { after?: string, batchSize?: number } = {}): string {
   const { after, batchSize = DELETION_BATCH_SIZE } = options
   const [capturedOn, id] = (after ?? '').replace(SINGLE_QUOTE_REGEX, "''").split('|')
@@ -2185,7 +2191,7 @@ export function deleteOldQueueStats (schema: string, days: number, options: { af
     )
     SELECT
       CASE WHEN (SELECT count(*) FROM batch) = ${batchSize}
-        THEN (SELECT to_char(captured_on AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || id::text FROM batch ORDER BY captured_on DESC, id DESC LIMIT 1)
+        THEN (SELECT ${utcIsoText('captured_on')} || '|' || id::text FROM batch ORDER BY captured_on DESC, id DESC LIMIT 1)
       END AS "walkCursor",
       (SELECT count(*) FROM removed)::int AS deleted
   `
@@ -4985,9 +4991,11 @@ export function assertMigration (schema: string, version: number) {
 // their order the same on every page. job_i15 supplies created_on, or job_i17 for queued jobs by key,
 // so only the jobs that share one are sorted. Queued jobs without a key have no index in created_on
 // order (job_i14's state list does not match state < 'active'), so that read sorts the queue's
-// queued jobs on every page. With `after`, a page continues past that job, read back by id so
-// its created_on keeps the microseconds a JS Date drops. The created_on bound beside the row
-// comparison is what lets the index scan start there.
+// queued jobs on every page. With `after`, a page continues past that job: the caller reads its
+// created_on first with findJobsAnchor and passes it with the id. A literal rather than a subquery,
+// because CockroachDB cannot start a scan at a subquery's value and would read the queue from the
+// start on every page. The created_on bound beside the row comparison is what lets the index scan
+// start there.
 export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean, after?: boolean }) {
   const { queued, byKey, byData, byId, after } = options
 
@@ -5014,10 +5022,10 @@ export function findJobs (schema: string, table: string, options: { queued: bool
   }
 
   if (after) {
-    ++paramIndex
-    const anchor = `(SELECT created_on FROM ${schema}.${table} WHERE name = $1 AND id = $${paramIndex}::uuid)`
-    whereConditions.push(`AND created_on >= ${anchor}`)
-    whereConditions.push(`AND (created_on, id) > (${anchor}, $${paramIndex}::uuid)`)
+    const createdOn = `$${++paramIndex}::timestamptz`
+    const id = `$${++paramIndex}::uuid`
+    whereConditions.push(`AND created_on >= ${createdOn}`)
+    whereConditions.push(`AND (created_on, id) > (${createdOn}, ${id})`)
   }
 
   return `
@@ -5126,10 +5134,10 @@ export function cleanupDependencies (schema: string, table: string, name: string
   return locked(schema, sql, table + 'cleanupDependencies', noAdvisoryLocks)
 }
 
-// Whether the row a list read's `after` names still exists, asked only when a page comes back empty,
-// to tell the end of the list from a row deleted between pages. $1 and $2 are the queue and job id.
-export function jobExists (schema: string, table: string) {
-  return `SELECT 1 FROM ${schema}.${table} WHERE name = $1 AND id = $2::uuid`
+// The created_on of the job findJobs' `after` names, as UTC ISO text with the microseconds a JS Date
+// drops. No row when that job was deleted. $1 and $2 are the queue and job id.
+export function findJobsAnchor (schema: string, table: string) {
+  return `SELECT ${utcIsoText('created_on')} AS "createdOn" FROM ${schema}.${table} WHERE name = $1 AND id = $2::uuid`
 }
 
 // With `after`, $2 is the last key of the previous page and the limit moves to $3.
