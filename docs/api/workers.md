@@ -399,7 +399,7 @@ Removes a worker by name or id and stops polling.
 
 * **wait**, boolean, *(default=true)*
 
-  If the promise should wait until current jobs finish
+  If the promise should wait until current jobs finish. It does not wait for a handler that outran its timeout, which keeps running on its own (see [`work(name, handler)`](#work-name-handler)).
 
 * **id**, string
 
