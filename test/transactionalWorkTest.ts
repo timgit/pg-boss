@@ -593,7 +593,7 @@ describeTransactional('transactional work', function () {
     expect(JSON.stringify(job.output)).toContain('left its transaction aborted')
   })
 
-  it('should warn when transactional workers leave the pool no headroom', async function () {
+  helper.itBundledPool('should warn when transactional workers leave the pool no headroom', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, max: 2 })
 
     const warnings: any[] = []
@@ -606,7 +606,7 @@ describeTransactional('transactional work', function () {
     expect(warnings.some(w => w.data?.type === 'transactional_pool_headroom')).toBe(true)
   })
 
-  it('should keep the pool headroom warning out of the warning table', async function () {
+  helper.itBundledPool('should keep the pool headroom warning out of the warning table', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, max: 2, persistWarnings: true })
 
     const warnings: any[] = []
@@ -920,7 +920,7 @@ describeTransactional('transactional work', function () {
     return { ...ctx.bossConfig, options: `-c ${guc}=${ms}` }
   }
 
-  it('should keep an operator bound that is tighter than the derived one', async function () {
+  helper.itBundledPool('should keep an operator bound that is tighter than the derived one', async function () {
     // 3 seconds the DBA set against 35 derived from expireInSeconds. Widening it would happen on
     // exactly the longest transactions pg-boss opens, which is the worst place to do it.
     ctx.boss = await helper.start(await withOperatorBound(3000))

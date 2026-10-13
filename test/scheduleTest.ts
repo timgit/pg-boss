@@ -184,13 +184,13 @@ describe('schedule', function () {
 
   it('errors during clock skew monitoring should emit', async function () {
     const clock = new TestClock()
-    const config = {
+    const config = helper.getConfig({
       ...ctx.bossConfig,
       clock,
       clockMonitorIntervalSeconds: 1,
       schedule: true,
       __test__force_clock_monitoring_error: 'pg-boss mock error: clock skew monitoring'
-    }
+    })
 
     let errorCount = 0
 
@@ -210,13 +210,13 @@ describe('schedule', function () {
 
   it('errors during cron monitoring should emit', async function () {
     const clock = new TestClock()
-    const config = {
+    const config = helper.getConfig({
       ...ctx.bossConfig,
       clock,
       cronMonitorIntervalSeconds: 1,
       schedule: true,
       __test__force_cron_monitoring_error: 'pg-boss mock error: cron monitoring'
-    }
+    })
 
     let errorCount = 0
 
@@ -235,13 +235,13 @@ describe('schedule', function () {
 
   it('clock monitoring error handling works', async function () {
     const clock = new TestClock()
-    const config = {
+    const config = helper.getConfig({
       ...ctx.bossConfig,
       clock,
       schedule: true,
       clockMonitorIntervalSeconds: 1,
       __test__force_clock_monitoring_error: 'pg-boss mock error: clock monitoring'
-    }
+    })
 
     let errorCount = 0
 

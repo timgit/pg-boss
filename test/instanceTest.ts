@@ -53,7 +53,7 @@ describe('instance registry', function () {
     expect(row.metrics?.memoryLimit).toBeGreaterThan(0)
     expect(row.metrics?.rss).toBeGreaterThan(0)
 
-    if (helper.isPglite) {
+    if (helper.usesAdapter) {
       // A caller-supplied adapter: pg-boss neither names its connections nor can count its pool.
       expect(row.poolMax).toBeNull()
     } else {
@@ -65,7 +65,7 @@ describe('instance registry', function () {
   })
 
   helper.itPostgresOnly('names the pool connections after the instance, so pg_stat_activity joins to the row', async function () {
-    if (helper.isPglite) return
+    if (helper.usesAdapter) return
 
     ctx.boss = await helper.start({ ...ctx.bossConfig })
 
@@ -76,7 +76,7 @@ describe('instance registry', function () {
   })
 
   it('keeps a name the caller gave the connections', async function () {
-    if (helper.isPglite) return
+    if (helper.usesAdapter) return
 
     ctx.boss = await helper.start({ ...ctx.bossConfig, application_name: 'billing' })
 
@@ -159,7 +159,7 @@ describe('instance registry', function () {
 
     expect(await instances(ctx.boss)).toEqual([])
 
-    if (!helper.isPglite) {
+    if (!helper.usesAdapter) {
       const { rows } = await ctx.boss.getDb().executeSql("SELECT current_setting('application_name') as name")
       expect(rows[0].name).toBe('pgboss')
     }
@@ -399,7 +399,7 @@ describe('instance registry', function () {
     expect(config.supervise).toBe(false)
     expect(config.monitorIntervalSeconds).toBe(45)
     expect(config.warningQueueSize).toBe(500)
-    expect(config.adapter).toBe(helper.isPglite ? 'custom' : 'pg')
+    expect(config.adapter).toBe(helper.usesAdapter ? 'custom' : 'pg')
 
     for (const key of ['password', 'connectionString', 'user', 'host', 'database', 'port', 'ssl', 'options', 'db', 'clock', 'application_name']) {
       expect(config).not.toHaveProperty(key)

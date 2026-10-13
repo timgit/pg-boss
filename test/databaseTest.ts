@@ -60,7 +60,7 @@ describe('database', function () {
   })
 
   // A pool pg-boss opens itself; a db adapter passed in (PGlite here) is the caller's to open.
-  helper.itPglite('refuses work before start(), naming start() in the error', async function () {
+  helper.itBundledPool('refuses work before start(), naming start() in the error', async function () {
     const boss = new PgBoss(helper.getConfig())
     const message = 'Call start() before using pg-boss'
 
@@ -71,7 +71,7 @@ describe('database', function () {
   })
 
   // Over TCP, so not PGlite. https://github.com/timgit/pg-boss/issues/510
-  helper.itPglite('recovers when the database is down at start(), and when it drops while running', async function () {
+  helper.itBundledPool('recovers when the database is down at start(), and when it drops while running', async function () {
     const relay = await databaseRelay(ctx.bossConfig.host!, Number(ctx.bossConfig.port))
     const boss = new PgBoss({ ...ctx.bossConfig, host: '127.0.0.1', port: relay.port, connectionTimeoutMillis: 1000 })
     let errors = 0
@@ -105,7 +105,7 @@ describe('database', function () {
   })
 
   // Over TCP, so not PGlite.
-  helper.itPglite('start({ attempts }) tries again until the database is reachable', async function () {
+  helper.itBundledPool('start({ attempts }) tries again until the database is reachable', async function () {
     const relay = await databaseRelay(ctx.bossConfig.host!, Number(ctx.bossConfig.port))
     const boss = new PgBoss({ ...ctx.bossConfig, host: '127.0.0.1', port: relay.port, connectionTimeoutMillis: 1000 })
     const retries: any[] = []
@@ -134,7 +134,7 @@ describe('database', function () {
     }
   })
 
-  helper.itPglite('start({ attempts }) rejects with the last error once the attempts run out, warning once', async function () {
+  helper.itBundledPool('start({ attempts }) rejects with the last error once the attempts run out, warning once', async function () {
     const relay = await databaseRelay(ctx.bossConfig.host!, Number(ctx.bossConfig.port))
     const boss = new PgBoss({ ...ctx.bossConfig, host: '127.0.0.1', port: relay.port, connectionTimeoutMillis: 1000 })
     const retries: any[] = []
@@ -149,7 +149,7 @@ describe('database', function () {
     }
   })
 
-  helper.itPglite('stop() ends start({ attempts }) while it waits between tries', async function () {
+  helper.itBundledPool('stop() ends start({ attempts }) while it waits between tries', async function () {
     const relay = await databaseRelay(ctx.bossConfig.host!, Number(ctx.bossConfig.port))
     const boss = new PgBoss({ ...ctx.bossConfig, host: '127.0.0.1', port: relay.port, connectionTimeoutMillis: 1000 })
     let retried = false

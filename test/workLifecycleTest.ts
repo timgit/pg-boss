@@ -131,7 +131,7 @@ describe('work lifecycle', function () {
     expect(queue.name).toBe(ctx.schema)
   })
 
-  helper.itPglite('should report the worker error from work() and the database error from send() once the pool closes', async function () {
+  helper.itBundledPool('should report the worker error from work() and the database error from send() once the pool closes', async function () {
     // PGlite hands pg-boss a constructor-provided db, so stop() never closes anything and the
     // closed-pool half of this boundary cannot be reached there.
     ctx.boss = await helper.start(ctx.bossConfig)

@@ -1,5 +1,6 @@
 import Db from '../src/db.ts'
-import { PgBoss, fromPglite } from '../src/index.ts'
+import { PgBoss, TestClock, fromPglite, fromPostgresJs } from '../src/index.ts'
+import postgres from 'postgres'
 import { PGlite } from '@electric-sql/pglite'
 import { describe, it, type SuiteAPI, type TestAPI } from 'vitest'
 import crypto from 'node:crypto'
@@ -47,6 +48,16 @@ function getPgliteDb (): IDatabase & { close: () => Promise<void> } {
   return { executeSql: db.executeSql, close: async () => {} }
 }
 
+// DB_DRIVER=postgres-js runs the suite on the postgres.js driver instead of the bundled pg pool:
+// every boss built from getConfig() gets fromPostgresJs over one client per test-file worker.
+const isPostgresJs = process.env.DB_DRIVER === 'postgres-js'
+
+let postgresJsDb: IDatabase | undefined
+function getPostgresJsDb ({ host, port, user, password, database }: ConstructorOptions): IDatabase {
+  postgresJsDb ??= fromPostgresJs(postgres({ host, port, user, password, database, max: 10, onnotice: () => {} }))
+  return postgresJsDb
+}
+
 // Distributed database mode is the atomic-UPDATE fetch strategy used by CockroachDB et al. It is a
 // pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise the
 // whole suite under it on Postgres via DISTRIBUTED=true, fast, reliable coverage of the distributed
@@ -67,6 +78,12 @@ const describePostgresOnly = describe.skipIf(isCockroachDb) as SuiteAPI
 // or that require multiple independent connections cannot run against it. Wrap them with these.
 const itPglite = it.skipIf(isPglite) as TestAPI
 const describePglite = describe.skipIf(isPglite) as SuiteAPI
+
+// A caller-supplied adapter in place of the bundled pg pool: PGlite, or postgres.js under
+// DB_DRIVER=postgres-js. pg-boss neither sizes, names nor closes its connections. Tests of the pool
+// itself (its close, its connection retries, its headroom) are wrapped with itBundledPool.
+const usesAdapter = isPglite || isPostgresJs
+const itBundledPool = it.skipIf(usesAdapter) as TestAPI
 
 // Tests that need multiple independent role connections (e.g. one session holds a lock while
 // another polls) can't run on PGlite (single in-process instance, no network) or CockroachDB.
@@ -147,8 +164,20 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
     config.db = fromPglite(getPgliteInstance())
   }
 
+  if (isPostgresJs && !('db' in options)) {
+    config.db = getPostgresJsDb(config)
+  }
+
+  const merged = Object.assign(config, options)
+
+  // A TestClock needs setSessionStatements(), which fromPostgresJs does not offer, so a test on one
+  // stays on the bundled pool.
+  if (isPostgresJs && merged.clock instanceof TestClock && merged.db === postgresJsDb) {
+    delete merged.db
+  }
+
   // Resolve last: options merged after this point would otherwise be read without their flags.
-  return Attorney.getConfig(Object.assign(config, options)) as ResolvedConstructorOptions
+  return Attorney.getConfig(merged) as ResolvedConstructorOptions
 }
 
 // Maps the active DB_TYPE to the docker compose command that starts its container(s). The default
@@ -390,6 +419,8 @@ export {
   isYugabyteDb,
   isCitus,
   isPglite,
+  usesAdapter,
+  itBundledPool,
   isDistributed,
   itPostgresOnly,
   describePostgresOnly,

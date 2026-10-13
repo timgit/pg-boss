@@ -13,9 +13,10 @@ on:
 name: CI
 
 jobs:
-  # Runs the full suite against Postgres in two modes via one matrix:
+  # Runs the full suite against Postgres in three modes via one matrix:
   #   - standard:    npm run cover (with coverage, uploaded to Coveralls as the only flag)
   #   - distributed: npm run test:distributed (DISTRIBUTED=true)
+  #   - postgres-js: npm run test:postgres-js (DB_DRIVER=postgres-js), every boss on fromPostgresJs
   # distributedDatabaseMode is a pure runtime fetch-strategy toggle, so every test (existing and new)
   # is automatically exercised against the distributed code paths in the distributed leg - fast and
   # reliable, without CockroachDB's slow DDL. The distributed leg is behavioral only: its line
@@ -34,6 +35,8 @@ jobs:
             command: npm run cover
           - mode: distributed
             command: npm run test:distributed
+          - mode: postgres-js
+            command: npm run test:postgres-js
     services:
       postgres:
         image: postgres

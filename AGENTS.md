@@ -11,7 +11,7 @@ npm test                    # lint, typecheck, schema manifest check, then the f
 npx vitest run test/fooTest.ts
 ```
 
-Other backends run the same suite: `npm run test:pglite`, `npm run test:cockroachdb:full`, `npm run test:yugabytedb:full` and `npm run test:citus:full`, each against its own `docker-compose.*.yaml`.
+Other backends run the same suite: `npm run test:pglite`, `npm run test:cockroachdb:full`, `npm run test:yugabytedb:full` and `npm run test:citus:full`, each against its own `docker-compose.*.yaml`. `npm run test:postgres-js` runs it against the default Postgres on the postgres.js driver, through `fromPostgresJs`.
 
 Two ways the suite fails that are not regressions:
 

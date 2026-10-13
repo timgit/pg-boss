@@ -30,7 +30,7 @@ describe('ops', function () {
     await ctx.boss.stop({ graceful: false })
   })
 
-  helper.itPglite('should close the connection pool', async function () {
+  helper.itBundledPool('should close the connection pool', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await ctx.boss.stop({ graceful: false })
 
@@ -38,7 +38,7 @@ describe('ops', function () {
     expect(ctx.boss.getDb().pool.totalCount).toBe(0)
   })
 
-  helper.itPglite('should close the connection pool gracefully', async function () {
+  helper.itBundledPool('should close the connection pool gracefully', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await ctx.boss.stop()
 
@@ -56,7 +56,7 @@ describe('ops', function () {
     expect(jobId).toBe(job.id)
   })
 
-  helper.itPglite('should close the connection pool on a stop after stop with close: false', async function () {
+  helper.itBundledPool('should close the connection pool on a stop after stop with close: false', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await ctx.boss.stop({ close: false })
@@ -70,7 +70,7 @@ describe('ops', function () {
     expect(ctx.boss.getDb().pool.totalCount).toBe(0)
   })
 
-  helper.itPglite('should not resolve a concurrent stop() before the pool from a close: false stop is closed', async function () {
+  helper.itBundledPool('should not resolve a concurrent stop() before the pool from a close: false stop is closed', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await ctx.boss.stop({ close: false })
@@ -114,7 +114,7 @@ describe('ops', function () {
     expect(stoppedCount).toBe(1)
   })
 
-  helper.itPglite('should not close the connection pool when the second stop also passes close: false', async function () {
+  helper.itBundledPool('should not close the connection pool when the second stop also passes close: false', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     let stoppedCount = 0
