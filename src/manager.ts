@@ -144,9 +144,10 @@ const STATS_COUNT_FIELDS = [
 
 // A snapshot's histogram, LATENCY_SLOTS counts from a recorded pass or added up over a bucket, with
 // the slots stored as null (no job landed there) handed out as 0. Null when no pass counted it; all
-// zeros when one did and nothing finished. CockroachDB hands integers over as strings.
+// zeros when one did and nothing finished. CockroachDB hands integers over as strings, and postgres.js
+// parses a null slot as NaN.
 function toBins (bins: unknown): number[] | null {
-  return Array.isArray(bins) ? bins.map(n => (n == null ? 0 : Number(n))) : null
+  return Array.isArray(bins) ? bins.map(n => Number(n) || 0) : null
 }
 
 // The throughput counters and the seconds they cover. Only recorded snapshots carry them; see
