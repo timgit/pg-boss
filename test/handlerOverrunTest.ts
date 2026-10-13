@@ -148,6 +148,51 @@ describe('handler overrun', function () {
     expect(seen).toEqual(['a', 'b'])
   })
 
+  // offWork() on the last registration drops the queue's group config, but the abandoned handler's
+  // count has to outlive it, or work() again runs the group beside it and its late release frees
+  // another handler's slot.
+  it('work() after offWork() keeps the localGroupConcurrency slot of a handler that outran its timeout', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+
+    const holds: Record<string, ReturnType<typeof heldHandler>> = { a: heldHandler(), b: heldHandler(), c: heldHandler() }
+    const running = new Set<string>()
+
+    const handler = async ([job]: any[]) => {
+      running.add(job.data.label)
+      try {
+        await holds[job.data.label].released
+      } finally {
+        running.delete(job.data.label)
+      }
+    }
+
+    const options = { pollingIntervalSeconds: 0.5, localGroupConcurrency: 1, localConcurrency: 2 }
+    await boss.work(ctx.schema, options, handler)
+
+    await boss.send(ctx.schema, { label: 'a' }, { group: { id: 'g' }, retryLimit: 0, expireInSeconds: 1 })
+    await helper.until(() => running.has('a'))
+    await delay(1500)
+
+    try {
+      await boss.offWork(ctx.schema)
+      await boss.work(ctx.schema, options, handler)
+
+      await boss.send(ctx.schema, { label: 'b' }, { group: { id: 'g' } })
+      await delay(1500)
+      expect([...running]).toEqual(['a'])
+
+      holds.a.release()
+      await helper.until(() => running.has('b'))
+
+      await boss.send(ctx.schema, { label: 'c' }, { group: { id: 'g' } })
+      await delay(1500)
+      expect([...running]).toEqual(['b'])
+    } finally {
+      Object.values(holds).forEach(hold => hold.release())
+    }
+  })
+
   it('holds the worker when the timeout fail() throws', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const boss = ctx.boss

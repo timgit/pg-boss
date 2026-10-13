@@ -345,6 +345,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const current = queueGroups.get(groupId) || 0
     if (current <= 1) {
       queueGroups.delete(groupId)
+      if (queueGroups.size === 0) this.#localGroupActive.delete(queueName)
     } else {
       queueGroups.set(groupId, current - 1)
     }
@@ -566,12 +567,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
       : config.default)
   }
 
+  // The active counts stay: a handler still running, or one stop() abandoned, holds its slots until
+  // it settles, and the next work() on the queue must see them. Each count drops itself at zero.
   #cleanupLocalGroupTracking (name: string): void {
     // Only cleanup if no more workers exist for this queue
     const hasWorkersForQueue = this.getWorkers().some(w => w.name === name && !w.stopping && !w.stopped)
     if (!hasWorkersForQueue) {
       this.#localGroupConfig.delete(name)
-      this.#localGroupActive.delete(name)
       this.#localGroupMaxLimit.delete(name)
     }
   }
@@ -1170,9 +1172,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     await Promise.allSettled([...names].map(name => this.offWork(name, { wait: false })))
 
-    // Clean up all local group tracking on full stop
+    // Clean up local group config on full stop; active counts drop as their handlers settle
     this.#localGroupConfig.clear()
-    this.#localGroupActive.clear()
     this.#localGroupMaxLimit.clear()
   }
 
