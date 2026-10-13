@@ -12,7 +12,7 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "cron-parser": "^5.10.1",
+    "cron-parser": "^5.10.2",
     "pg": "^8.23.1",
     "rrule-temporal": "^2.2.8",
     "serialize-error": "^13.0.2"
@@ -21,17 +21,17 @@
     "@opentelemetry/api": "^1.9.0"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite": "^0.5.9",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/core": "^2.11.0",
-    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^2.12.0",
     "@opentelemetry/sdk-node": "^0.222.0",
-    "@opentelemetry/sdk-trace": "^2.11.0",
+    "@opentelemetry/sdk-trace": "^2.12.0",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@tsconfig/node-ts": "^23.6.4",
     "@tsconfig/node22": "^22.0.6",
-    "@types/bun": "^1.4.2",
+    "@types/bun": "^1.4.3",
     "@types/luxon": "^3.7.6",
     "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
@@ -48,7 +48,7 @@
     "prisma": "^7.10.0",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "vite": "^8.3.2",
+    "vite": "^8.3.4",
     "vitest": "^4.0.18"
   },
   "scripts": {
