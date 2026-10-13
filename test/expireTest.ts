@@ -54,6 +54,32 @@ describe('expire', function () {
     expect(job.state).toBe('failed')
   })
 
+  for (const distributed of [false, true]) {
+    it(`should expire every timed out job when the sweep spans several batches${distributed ? ' (distributed path)' : ''}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: distributed, __test__expiry_batch_size: 2 })
+
+      const ids = await Promise.all([1, 2, 3, 4, 5].map(() => ctx.boss!.send(ctx.schema, null, { retryLimit: 0 })))
+      const running = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+
+      const fetched = await ctx.boss.fetch(ctx.schema, { batchSize: 10 })
+      expect(fetched.length).toBe(6)
+
+      const db = await helper.getDb()
+      await db.executeSql(`UPDATE ${ctx.schema}.job SET started_on = now() - interval '1 hour' WHERE id = ANY($1::uuid[])`, [ids])
+      await db.close()
+
+      await ctx.boss.supervise(ctx.schema)
+
+      for (const id of ids) {
+        assertTruthy(id)
+        expect((await ctx.boss.getJobById(ctx.schema, id))?.state).toBe('failed')
+      }
+
+      assertTruthy(running)
+      expect((await ctx.boss.getJobById(ctx.schema, running))?.state).toBe('active')
+    })
+  }
+
   it('should expire a job - cascaded config', async function () {
     const clock = new TestClock()
     ctx.boss = await helper.start({ ...ctx.bossConfig, clock, noDefault: true })

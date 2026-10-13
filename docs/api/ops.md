@@ -32,7 +32,7 @@ It is also safe to call `start()` again yourself on the same instance until it s
 
 * **attempts**, int, default 1
 
-  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error. An instance that started on a later try records it as `config.startAttempt` in [`getInstances()`](#getinstances).
+  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error. An instance that started on a later try records it as `config.startAttempt` in [`getInstances()`](#getinstances-options).
 
 Once started, pg-boss rides out a database that drops and comes back: workers emit `error` while it is gone and resume when it returns, with no restart needed.
 
@@ -61,8 +61,16 @@ A job a worker is still claiming when `stop()` is called gets its handler if it 
 
     Default: 30000. Maximum time (in milliseconds) to allow active handlers to finish before failing and aborting their jobs. Pending claims and database cleanup are still awaited before shutdown completes.
 
+    The same timeout bounds a [BAM](#getbamstatus) command that is still running. `stop()` waits for the command first and starts the handlers' timeout after it, so a stop that waits on both can take up to twice `timeout`. With `graceful: false` the command is ended at once. What happens to the command depends on what it is:
+
+    - A concurrent index build or drop on PostgreSQL keeps running on the server after its connection is closed. Its row stays `in_progress` until the build ends, and then the next instance with `migrate` enabled marks it completed, or rebuilds the index if the build failed.
+    - Any other command, such as a data migration, is cancelled and rolls back. Its row is marked `failed`, and the next instance with `migrate` enabled runs it again.
+    - On CockroachDB the connection is closed. A schema change keeps running as a CockroachDB job, and any other statement is cancelled. The row is marked `failed` and runs again.
+
+    With a custom [`db`](./constructor.md#db) adapter, pg-boss has no connection to close, so it cancels every command on PostgreSQL, and waits for the command on CockroachDB. A cancel needs the connecting role to be allowed to cancel the command's backend. If it is not, `stop()` emits one `error` and waits for the command.
+
     > [!WARNING]
-    > This option is ignored when `graceful` is set to `false`.
+    > This option is ignored for handlers when `graceful` is set to `false`.
 
 ```js
 // graceful shutdown: wait for active jobs to finish (up to the timeout)
@@ -192,9 +200,9 @@ const { rows } = await db.executeSql('SELECT now()')
 
 > Reaching past the API and mutating pg-boss tables directly is not supported. This exists so an application can reuse the same pool for its own queries rather than opening a second one.
 
-### `getInstances()`
+### `getInstances(options)`
 
-Returns every pg-boss instance registered in this database, oldest first. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never says it stopped, so its row goes quiet instead: `live` turns false once it has missed three heartbeats. Rows whose heartbeat has not moved for 7 days are deleted during maintenance.
+Returns the pg-boss instances registered in this database, oldest first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last instance's `id` as `options.after` to read the next page; it rejects if that instance has been deleted since. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never says it stopped, so its row goes quiet instead: `live` turns false once it has missed three heartbeats. Rows whose heartbeat has not moved for 7 days are deleted during maintenance.
 
 Every `start()` of a new `PgBoss` object is a new row, so a crash loop, or a deploy whose processes exit without calling `stop()`, leaves a quiet row per life. To keep that bounded, an instance deletes all but the 20 newest stopped or quiet rows with its name when it registers (with its host, when it has no name), and maintenance keeps the 1,000 newest stopped or quiet rows in all. Calling `stop()` on `SIGTERM` marks a row stopped rather than quiet, which tells a deploy apart from a crash. `crashRestarts` survives that pruning.
 
@@ -252,7 +260,7 @@ Limits come from the cgroup the process is charged to (v1 or v2, with a private 
 
 Returns a summary of boss async migration (BAM) commands grouped by status.
 
-BAM commands are database operations that run asynchronously after schema migrations, such as creating indexes on partitioned tables. This function provides a high-level overview of their progress.
+BAM commands are database operations that run asynchronously after schema migrations, such as index builds, so an upgrade does not wait for them. Once the worker finds a command, it runs the pending ones back to back rather than one per `bamIntervalSeconds`. Commands from one migration on one table run in order, and each waits until the one before it has completed, so a failed command holds the ones after it until a retry succeeds. This function provides a high-level overview of their progress.
 
 ```js
 const status = await boss.getBamStatus()
@@ -272,9 +280,9 @@ Array of objects with the following properties:
 | `count` | number | Number of BAM entries with this status |
 | `lastCreatedOn` | Date | Most recent creation timestamp for this status |
 
-### `getBamEntries()`
+### `getBamEntries(options)`
 
-Returns all boss async migration (BAM) command entries with full details.
+Returns boss async migration (BAM) command entries with full details, oldest version first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last entry's `id` as `options.after` to read the next page. It rejects if that entry has been deleted since.
 
 Use this function when you need to inspect individual BAM commands, troubleshoot failures, or review the command history.
 

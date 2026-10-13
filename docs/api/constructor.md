@@ -58,7 +58,7 @@ Maximum number of connections that will be shared by all operations in this inst
 
 ### `application_name`
 
-String, defaults to `pgboss:` followed by the first 8 characters of the instance's id, so each instance's connections can be told apart in `pg_stat_activity` and joined to [`getInstances()`](./ops.md#getinstances). With `registerInstance: false` the default is `"pgboss"`.
+String, defaults to `pgboss:` followed by the first 8 characters of the instance's id, so each instance's connections can be told apart in `pg_stat_activity` and joined to [`getInstances()`](./ops.md#getinstances-options). With `registerInstance: false` the default is `"pgboss"`.
 
 ### `connectionTimeoutMillis`
 
@@ -82,6 +82,8 @@ const { rows } = await executeSql(text, values)
 
 assert(rows[0].input === 'arg1')
 ```
+
+Some of pg-boss's statements are several statements in one text, and pg-boss reads rows from statements before the last. For those, `executeSql` must return every statement's result, as an array of results the way `pg` does, not only the last one.
 
 See [Custom type parsers](#custom-type-parsers) for how a global `pg-types` parser interacts with pg-boss, whether you bring your own pool or not.
 
@@ -188,11 +190,15 @@ Int, default 1 day
 
 How often maintenance will be run against queue tables to drop queued and completed jobs.
 
+Maintenance deletes expired jobs, and the flow dependencies they leave behind, in batches, each in its own transaction, so a large backlog never becomes one long transaction.
+
 ### `monitorIntervalSeconds`
 
 Int, default 60 seconds
 
 How often each queue is monitored for backlogs, expired jobs, and calculating stats.
+
+Jobs past their expiration or heartbeat are failed in batches too, so a fleet that stopped with many jobs active recovers in short transactions.
 
 ### `queueCacheIntervalSeconds`
 
@@ -283,7 +289,7 @@ The default number of jobs in the created or retry state a queue may hold before
 
 Bool, default false
 
-If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
+If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) and by workers (handlers that outran their timeout) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
 
 ### `warningRetentionDays`
 
@@ -297,19 +303,19 @@ Bool, default false
 
 If set to true, the per-queue stats captured during monitoring are also stored in the `queue_stats` table in addition to the `queue` table. This data can then be queried with [`getQueueStats()`](./queues.md#getqueuestats-name-options), which can optionally be downsampled into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day and pruned automatically during maintenance.
 
-Each monitor pass then also counts the jobs created and finished since the previous pass, and records the wait and run times of the finished ones, in the same read of the job table. The wait and run times cost more the more jobs finished since the previous pass, whatever the size of the table. Measured on one queue on PostgreSQL 18, they added about 0.4 s to a 2.4 s pass with 100,000 finished jobs, and about 1.1 s to a 3.7 s pass with 1,000,000, with about 9 MB of memory per million finished jobs held for the length of the pass. On CockroachDB they added about 0.7 s with 100,000.
-
 ### `queueStatRetentionDays`
 
 Int, default 7
 
 When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
 
+With table partitioning, old days are dropped as whole partitions on each supervise pass. Without it (`noTablePartitioning`, as on CockroachDB), old rows are deleted in batches on each supervise pass, oldest first, through an index on the capture time.
+
 ### `registerInstance`
 
 Bool, default true
 
-Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`. [`getInstances()`](./ops.md#getinstances) lists every pg-boss instance connecting to this schema. Set to false to leave this instance out of the registry. 
+Records this instance in the database's `instance` table at `start()`, keeps the row current on a heartbeat, and marks it stopped on `stop()`. [`getInstances()`](./ops.md#getinstances-options) lists every pg-boss instance connecting to this schema. Set to false to leave this instance out of the registry. 
 
 > [!NOTE]
 > Short-lived processes such as serverless functions should set this to false, since frequent registrations would produce false positives of a frozen or crashed instance.
@@ -318,7 +324,7 @@ Records this instance in the database's `instance` table at `start()`, keeps the
 
 String, optional
 
-A label for this instance in the registry, such as `api` or `billing-worker`. It does not need to be unique, since each instance is recorded under its own id. Instances with the same name are grouped for pruning stopped rows and for counting crash restarts; see [`getInstances()`](./ops.md#getinstances).
+A label for this instance in the registry, such as `api` or `billing-worker`. It does not need to be unique, since each instance is recorded under its own id. Instances with the same name are grouped for pruning stopped rows and for counting crash restarts; see [`getInstances()`](./ops.md#getinstances-options).
 
 ### `instanceHeartbeatSeconds`
 

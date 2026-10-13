@@ -717,6 +717,42 @@ function assertPostgresObjectName (name: string) {
   assert(!/^\d/.test(name), `Schema name ${JSON.stringify(name)} cannot start with a number when unquoted.${remedy}`)
 }
 
+const LIST_LIMIT_DEFAULT = 1000
+const LIST_LIMIT_MAX = 100_000
+
+// The limit of a public list read: an integer from 1 to LIST_LIMIT_MAX, LIST_LIMIT_DEFAULT when
+// left out. Internal callers that need every row call below the public method instead.
+function assertListLimit (method: string, limit: number = LIST_LIMIT_DEFAULT): number {
+  assert(Number.isInteger(limit) && limit >= 1 && limit <= LIST_LIMIT_MAX,
+    `${method}: limit must be an integer between 1 and ${LIST_LIMIT_MAX}`)
+  return limit
+}
+
+// Any spelling the uuid type accepts, in either case: 32 hex digits, a hyphen allowed after any group
+// of four but the last, and the whole optionally inside one pair of braces. A read that pages by id
+// checks it here, so a malformed one is a usage error rather than the database's.
+const UUID_INPUT = /^(?:\{[0-9a-fA-F]{4}(?:-?[0-9a-fA-F]{4}){7}\}|[0-9a-fA-F]{4}(?:-?[0-9a-fA-F]{4}){7})$/
+
+function isUuid (value: string): boolean {
+  return UUID_INPUT.test(value)
+}
+
+// The `after` of a list read that pages by one value: a queue name, a key or, with `id`, an id.
+function assertListAfter (method: string, after: unknown, id = false): void {
+  assert(after === undefined || (typeof after === 'string' && after.length > 0),
+    `${method}: after must be a non-empty string`)
+  assert(!id || after === undefined || isUuid(after as string), `${method}: after must be a uuid`)
+}
+
+// The `after` of a list read that pages by a row: the previous page's last row, of which only the
+// two named fields are read. With `id`, that field must be a uuid.
+function assertListAfterRow (method: string, after: unknown, fields: [string, string], id?: string): void {
+  assert(after === undefined || (typeof after === 'object' && after !== null &&
+    fields.every(field => typeof (after as Record<string, unknown>)[field] === 'string')),
+  `${method}: after must be an object with string ${fields.join(' and ')}`)
+  assert(!id || after === undefined || isUuid((after as Record<string, string>)[id]), `${method}: after.${id} must be a uuid`)
+}
+
 function assertQueueName (name: string) {
   assert(name, 'Name is required')
   assert(typeof name === 'string', 'Name must be a string')
@@ -920,6 +956,9 @@ function applyFlowConfig (config: any) {
 
 export {
   assertKey,
+  assertListAfter,
+  assertListAfterRow,
+  assertListLimit,
   COMPATIBILITY_FLAGS,
   assertPostgresObjectName,
   assertQueueName,

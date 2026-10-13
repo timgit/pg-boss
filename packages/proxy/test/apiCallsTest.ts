@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProxyService } from '../src/index.js'
 import { bossMethodNames } from '../src/routes.js'
+import { findJobsOptionsSchema } from '../src/contracts.js'
 import type { MiddlewareHandler } from 'hono'
 
 type BossMethod = string
@@ -462,8 +463,8 @@ describe('proxy api routes', () => {
       },
       {
         method: 'previewRedrive',
-        body: { name: 'dlq', options: { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: '2026-09-01T00:00:00.000Z' } },
-        expected: ['dlq', { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: new Date('2026-09-01T00:00:00.000Z') }]
+        body: { name: 'dlq', options: { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: '2026-09-01T00:00:00.000Z', limit: 50 } },
+        expected: ['dlq', { sourceName: 'src', data: { tenant: 'acme' }, createdBefore: new Date('2026-09-01T00:00:00.000Z'), limit: 50 }]
       },
       {
         method: 'deleteQueuedJobs',
@@ -600,12 +601,115 @@ describe('proxy api routes', () => {
     expect(calls.get('findJobs')?.[0]).toEqual(['queue', { id: '1', queued: true, limit: 50 }])
   })
 
-  it('GET findJobs rejects a limit that is not a positive integer', async () => {
+  it('GET list reads pass a limit through as ListOptions', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const cases: Array<[string, string, unknown[]]> = [
+      ['getQueues', 'limit=5', [undefined, { limit: 5 }]],
+      ['getQueues', 'names=a&limit=5', [['a'], { limit: 5 }]],
+      ['getSchedules', 'limit=5', [undefined, undefined, { limit: 5 }]],
+      ['getSchedules', 'name=q&limit=5', ['q', undefined, { limit: 5 }]],
+      ['getBlockedKeys', 'name=q&limit=5', ['q', { limit: 5 }]],
+      ['getDependencies', 'name=q&id=1&limit=5', ['q', '1', { limit: 5 }]],
+      ['getDependents', 'name=q&id=1&limit=5', ['q', '1', { limit: 5 }]],
+      ['getQueues', 'after=a', [undefined, { after: 'a' }]],
+      ['getBlockedKeys', 'name=q&limit=5&after=k', ['q', { limit: 5, after: 'k' }]],
+      ['getSchedules', 'afterName=q&afterKey=k', [undefined, undefined, { after: { name: 'q', key: 'k' } }]],
+      ['getDependencies', 'name=q&id=1&afterName=p&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', '1', { after: { name: 'p', id: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' } }]],
+      ['findJobs', 'name=q&limit=5&after=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', { limit: 5, after: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]]
+    ]
+
+    for (const [method, query, args] of cases) {
+      const res = await app.fetch(new Request(`http://local/api/${method}?${query}`, { method: 'GET' }))
+      expect(res.status, `${method}?${query}`).toBe(200)
+      expect(calls.get(method)?.at(-1), `${method}?${query}`).toEqual(args)
+    }
+
+    // No limit leaves the call as it was, so core applies its default.
+    await app.fetch(new Request('http://local/api/getQueues', { method: 'GET' }))
+    expect(calls.get('getQueues')?.at(-1)).toEqual([])
+  })
+
+  it('GET list reads reject a limit outside 1 to 100000, and half an after pair', async () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
-    const findRes = await app.fetch(new Request('http://local/api/findJobs?name=queue&limit=0', { method: 'GET' }))
-    expect(findRes.status).toBe(400)
+    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0', 'getSchedules?afterName=q', 'getDependents?name=q&id=1&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7']) {
+      const res = await app.fetch(new Request(`http://local/api/${query}`, { method: 'GET' }))
+      expect(res.status, query).toBe(400)
+    }
+  })
+
+  it('GET findJobs rejects a limit outside 1 to 100000', async () => {
+    const { boss } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    for (const limit of ['0', '1.5', '100001']) {
+      const findRes = await app.fetch(new Request(`http://local/api/findJobs?name=queue&limit=${limit}`, { method: 'GET' }))
+      expect(findRes.status, limit).toBe(400)
+    }
+  })
+
+  it('GET findJobs and the dependency reads reject an after that is not a uuid', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    for (const query of ['findJobs?name=q&after=abc', 'getDependencies?name=q&id=1&afterName=q&afterId=abc', 'getDependents?name=q&id=1&afterName=q&afterId=abc']) {
+      const res = await app.fetch(new Request(`http://local/api/${query}`, { method: 'GET' }))
+      expect(res.status, query).toBe(400)
+    }
+
+    // An unpaired brace or a hyphen that does not follow a group of four hex digits.
+    for (const after of ['{0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', '-0193a1b2c3d47e5f80718293a4b5c6d7', '019-3a1b2-c3d4-7e5f-8071-8293a4b5c6d7']) {
+      const res = await app.fetch(new Request(`http://local/api/findJobs?name=q&after=${encodeURIComponent(after)}`, { method: 'GET' }))
+      expect(res.status, after).toBe(400)
+    }
+
+    // Any spelling the uuid type accepts passes through as it was sent.
+    const id = '{0193A1B2C3D4E5F60718293A4B5C6D7E}'
+    const res = await app.fetch(new Request(`http://local/api/findJobs?name=q&after=${encodeURIComponent(id)}`, { method: 'GET' }))
+    expect(res.status).toBe(200)
+    expect(calls.get('findJobs')?.at(-1)).toEqual(['q', { after: id }])
+  })
+
+  it('OpenAPI gives after and afterId a pattern that matches a uuid', async () => {
+    const { boss } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+    const spec = await (await app.fetch(new Request('http://local/openapi.json', { method: 'GET' }))).json() as any
+
+    for (const [path, param] of [['/api/findJobs', 'after'], ['/api/getDependencies', 'afterId'], ['/api/getDependents', 'afterId']]) {
+      const { pattern } = spec.paths[path].get.parameters.find((p: any) => p.name === param).schema
+      for (const id of ['0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', '{0193A1B2C3D47E5F80718293A4B5C6D7}']) {
+        expect(new RegExp(pattern).test(id), `${path} ${param} ${id}`).toBe(true)
+      }
+    }
+  })
+
+  it('findJobsOptionsSchema takes the limit and after core accepts', () => {
+    for (const options of [{ limit: 0 }, { limit: 1.5 }, { limit: 100001 }, { after: 'abc' }, { after: '{0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]) {
+      expect(findJobsOptionsSchema.safeParse(options).success, JSON.stringify(options)).toBe(false)
+    }
+    expect(findJobsOptionsSchema.safeParse({ limit: 100000, after: '{0193A1B2C3D47E5F80718293A4B5C6D7}' }).success).toBe(true)
+  })
+
+  it('redrive and previewRedrive reject a limit core would refuse', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const cases: Array<[string, number]> = [['redrive', 0], ['redrive', 1.5], ['previewRedrive', 0], ['previewRedrive', 1.5], ['previewRedrive', 100001]]
+
+    for (const [method, limit] of cases) {
+      const res = await app.fetch(await postJson(`http://local/api/${method}`, { name: 'dlq', options: { limit } }))
+      expect(res.status, `${method} ${limit}`).toBe(400)
+    }
+
+    expect(calls.get('redrive') ?? []).toHaveLength(0)
+    expect(calls.get('previewRedrive') ?? []).toHaveLength(0)
+
+    // redrive has no upper bound in core.
+    const res = await app.fetch(await postJson('http://local/api/redrive', { name: 'dlq', options: { limit: 200000 } }))
+    expect(res.status).toBe(200)
   })
 
   it('GET findJobs with dataKey and dataValue builds data filter', async () => {

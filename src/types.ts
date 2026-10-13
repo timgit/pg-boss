@@ -264,6 +264,10 @@ export interface QueueStats {
   readyCount: number;
   activeCount: number;
   failedCount: number;
+  /**
+   * All jobs stored for the queue.
+   * @see https://pgboss.io/api/queues#getqueues-names-options
+   */
   totalCount: number;
   /**
    * Jobs completed in the window since the previous monitor pass. Null when `persistQueueStats` is
@@ -285,7 +289,7 @@ export interface QueueStats {
   /**
    * Wait times of the jobs that finished in the deltas' window, as a histogram of 48 counts in
    * log-spaced bins; sum histograms to read a percentile over any span. Null wherever the deltas are.
-   * @see https://pgboss.io/api/queues#getqueues-names
+   * @see https://pgboss.io/api/queues#getqueues-names-options
    */
   waitBins: number[] | null;
   /** Run times of the same jobs, in the same bins as `waitBins`. */
@@ -477,6 +481,9 @@ export interface AsyncMigrationCommand {
   name: string
   command: string
   partitionPolicy?: QueuePolicy
+  // Runs the command once against this one table, as written, instead of across job_common and the
+  // partitions. Set on a schema without partitioning, which has no job_table_run_async().
+  table?: string
 }
 
 export interface MigrationPartition {
@@ -549,7 +556,7 @@ export interface AttachableClock extends Clock {
 export interface InstanceOptions {
   /**
    * Record this instance in the database's instance registry, readable with `getInstances()`.
-   * @see https://pgboss.io/api/ops#getinstances
+   * @see https://pgboss.io/api/ops#getinstances-options
    * @default true
    */
   registerInstance?: boolean;
@@ -653,6 +660,10 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__delay_maint_ms?: number;
   /** @internal */
+  __test__walk_batch_size?: number;
+  /** @internal */
+  __test__expiry_batch_size?: number;
+  /** @internal */
   __test__delay_bam_ms?: number;
   /** @internal */
   __test__delay_bam_claim_ms?: number;
@@ -709,6 +720,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @internal
    */
   __test__transactionTimeoutProbeCooldownMs?: number;
+  /**
+   * How long a queue's `handler_overrun` tally runs before it is written to the warning table, in
+   * milliseconds. Defaults to an hour.
+   * @internal
+   */
+  __test__handlerOverrunWindowMs?: number;
   /** @internal */
   migrations?: Migration[];
 }
@@ -840,21 +857,38 @@ export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
 
+export interface ListOptions<After = string> {
+  /**
+   * Most rows to return, from 1 to 100,000. Defaults to 1000.
+   */
+  limit?: number;
+  /**
+   * Continue after this row, the last one of the previous page: a name, key or id, or the row itself
+   * for schedules and dependencies.
+   */
+  after?: After;
+}
+
 export interface FindJobsOptions extends ConnectionOptions {
   id?: string;
   key?: string;
   data?: object;
   queued?: boolean;
   /**
-   * Most jobs to return. Which matching jobs a limited call returns is unspecified. No limit by default.
+   * Most jobs to return, oldest first, from 1 to 100,000. Defaults to 1000.
    * @see https://pgboss.io/api/jobs#findjobs-name-options
    */
   limit?: number;
+  /**
+   * Continue after this job id, the last one of the previous page. Rejects if that job no longer exists.
+   * @see https://pgboss.io/api/jobs#findjobs-name-options
+   */
+  after?: string;
 }
 
 /**
  * Which dead-lettered jobs a redrive is about, and where they go. Shared by
- * `redrive()` and `previewRedrive()`, so a preview counts exactly what the
+ * `redrive()` and `previewRedrive()`, so a preview matches exactly what the
  * redrive would move.
  */
 export interface RedriveFilter extends ConnectionOptions {
@@ -889,14 +923,23 @@ export interface RedriveOptions extends RedriveFilter {
   limit?: number;
 }
 
+export interface RedrivePreviewOptions extends RedriveFilter {
+  /**
+   * Most jobs to read of each kind, those a redrive would move and those it would leave in place,
+   * from 1 to 100,000. A count that reaches it means at least that many.
+   * @default 1000
+   */
+  limit?: number;
+}
+
 export interface RedrivePreview {
-  /** Every job the filter matches, routable or not. */
+  /** Every matching job read, routable or not. */
   total: number;
-  /** Where the routable jobs would go, most first. */
+  /** Where the routable jobs read would go, most first. */
   destinations: { name: string; count: number }[];
   /**
-   * Matching jobs a redrive would leave in place: no recorded source queue and no `destination`,
-   * or a source queue that no longer exists.
+   * Matching jobs read that a redrive would leave in place: no recorded source queue and no
+   * `destination`, or a source queue that no longer exists.
    */
   unroutable: number;
 }
@@ -1039,11 +1082,15 @@ export interface QueueResult extends Queue {
    * so this is a rolling count of recent failures, not an all-time total.
    */
   failedCount: number;
+  /**
+   * All jobs stored for the queue.
+   * @see https://pgboss.io/api/queues#getqueues-names-options
+   */
   totalCount: number
   /**
    * Jobs completed in the window the latest counted monitor pass covered. Zero until an instance
    * with `persistQueueStats` on has counted this queue.
-   * @see https://pgboss.io/api/queues#getqueues-names
+   * @see https://pgboss.io/api/queues#getqueues-names-options
    */
   completedDelta: number;
   /** Jobs failed terminally since the previous monitor pass. */
@@ -1350,7 +1397,7 @@ export interface Schedule {
   /**
    * Id of the job this schedule most recently created, or `null` when none is recorded. The job
    * may since have been deleted by the queue's retention policy.
-   * @see https://pgboss.io/api/scheduling#getschedules
+   * @see https://pgboss.io/api/scheduling#getschedules-name-key-options
    */
   lastJobId: string | null;
 }
@@ -1480,7 +1527,7 @@ export interface InstanceWorker {
   lastErrorOn: string | null;
   /**
    * The other `work()` options this call set; one left at its default is absent.
-   * @see https://pgboss.io/api/ops#getinstances
+   * @see https://pgboss.io/api/ops#getinstances-options
    */
   options?: Partial<WorkOptions>;
 }
@@ -1488,7 +1535,7 @@ export interface InstanceWorker {
 /**
  * A registered instance's process at its last heartbeat. Limits are its container's where one is set
  * (cgroup v1 or v2), else the host's; rates cover the time since the previous heartbeat.
- * @see https://pgboss.io/api/ops#getinstances
+ * @see https://pgboss.io/api/ops#getinstances-options
  */
 export interface InstanceMetrics {
   /** 1 or 2 when the limits were read from a cgroup, null when they are the host's. */
@@ -1516,7 +1563,7 @@ export interface InstanceMetrics {
 
 /**
  * A PgBoss object that registered itself in this database.
- * @see https://pgboss.io/api/ops#getinstances
+ * @see https://pgboss.io/api/ops#getinstances-options
  */
 export interface Instance {
   id: string;
@@ -1601,7 +1648,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry' | 'handler_overrun'
 
 export interface PersistedWarning {
   id: number;

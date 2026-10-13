@@ -7,13 +7,14 @@ import type { Clock } from './types.ts'
  *
  * Some drivers (postgres.js, and therefore drizzle-orm/postgres-js) instead return the rows
  * themselves as a flat array. Those elements have no `rows` property, so treat the array
- * as the row set rather than flat-mapping undefined into it.
+ * as the row set rather than flat-mapping undefined into it. For multiple queries they return
+ * one such array per query, which are flattened the same way.
 */
 function unwrapSQLResult (result: { rows: any[] } | { rows: any[] }[] | any[]): { rows: any[] } {
   if (Array.isArray(result)) {
-    return result.every(i => Array.isArray(i?.rows))
-      ? { rows: result.flatMap(i => i.rows) }
-      : { rows: result }
+    if (result.every(i => Array.isArray(i?.rows))) return { rows: result.flatMap(i => i.rows) }
+    if (result.every(i => Array.isArray(i))) return { rows: result.flat() }
+    return { rows: result }
   }
 
   return result

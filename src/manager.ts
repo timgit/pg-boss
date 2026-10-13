@@ -15,6 +15,7 @@ import { delay, resolveWithinSeconds } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
 import { JobSpy, type JobSpyInterface } from './spy.ts'
+import { persistWarning } from './warning.ts'
 import Telemetry, { type TraceCarrier } from './telemetry.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
@@ -39,8 +40,13 @@ const DEFAULT_POOL_MAX = 10
 
 const WARNING_TYPES = {
   TRANSACTIONAL_POOL_HEADROOM: 'transactional_pool_headroom',
-  TRANSACTION_TIMEOUT_PROBE: 'transaction_timeout_probe'
+  TRANSACTION_TIMEOUT_PROBE: 'transaction_timeout_probe',
+  HANDLER_OVERRUN: 'handler_overrun'
 } as const
+
+function overrunMessage (name: string, expireInSeconds: number) {
+  return `a handler on queue ${name} is still running after exceeding ${expireInSeconds}s. Its jobs were failed and their signals aborted, and this worker fetches nothing until it returns. Stop the handler on job.signal.`
+}
 
 const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
@@ -92,6 +98,19 @@ const TRANSACTION_TIMEOUT_REHEARSE = `SELECT ${TRANSACTION_TIMEOUT_TIGHTEST}`
 // is a backstop, so the retry has to stay; a backend that will never answer does not need to be
 // asked on every batch for the life of the process either.
 const TRANSACTION_TIMEOUT_PROBE_COOLDOWN_MS = 60_000
+
+// How long a queue's handler_overrun tally runs before it is written to the warning table, and how
+// many job ids a row samples.
+const HANDLER_OVERRUN_WINDOW_MS = 60 * 60 * 1000
+const HANDLER_OVERRUN_SAMPLE_JOBS = 10
+
+interface OverrunTally {
+  since: number
+  count: number
+  expireInSeconds: number
+  jobs: string[]
+  timer: types.ClockTimer
+}
 
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
 // fields must be coerced back to numbers when backend === 'cockroachdb'.
@@ -250,11 +269,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
   #localGroupMaxLimit: Map<string, number>
+  #instanceId: string
+  // handler_overrun is emitted per batch but written to the warning table per queue per window, so
+  // a handler that overruns on every job does not write a row per batch. See #recordOverrun.
+  #overruns: Map<string, OverrunTally>
+  #overrunWindowMs: number
+  #overrunWrites: Set<Promise<void>>
   #telemetry: Telemetry
   // The trace context each fetched job was sent with, kept off the job object handed to the handler.
   #traceContexts: WeakMap<object, TraceCarrier>
 
-  constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
+  constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions, instanceId: string = randomUUID()) {
     super()
 
     this.config = config
@@ -273,8 +298,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
     this.#localGroupMaxLimit = new Map()
+    this.#instanceId = instanceId
+    this.#overruns = new Map()
+    this.#overrunWindowMs = config.__test__handlerOverrunWindowMs ?? HANDLER_OVERRUN_WINDOW_MS
+    this.#overrunWrites = new Set()
     this.#telemetry = new Telemetry(config.openTelemetry, config.schema, () => this.queues)
     this.#traceContexts = new WeakMap()
+  }
+
+  // The id getInstances() reports, for the warnings other components write about this instance.
+  get instanceId (): string {
+    return this.#instanceId
   }
 
   getSpy<T = object> (name: string): JobSpyInterface<T> {
@@ -345,6 +379,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const current = queueGroups.get(groupId) || 0
     if (current <= 1) {
       queueGroups.delete(groupId)
+      if (queueGroups.size === 0) this.#localGroupActive.delete(queueName)
     } else {
       queueGroups.set(groupId, current - 1)
     }
@@ -566,12 +601,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
       : config.default)
   }
 
+  // The active counts stay: a handler still running, or one stop() abandoned, holds its slots until
+  // it settles, and the next work() on the queue must see them. Each count drops itself at zero.
   #cleanupLocalGroupTracking (name: string): void {
     // Only cleanup if no more workers exist for this queue
     const hasWorkersForQueue = this.getWorkers().some(w => w.name === name && !w.stopping && !w.stopped)
     if (!hasWorkersForQueue) {
       this.#localGroupConfig.delete(name)
-      this.#localGroupActive.delete(name)
       this.#localGroupMaxLimit.delete(name)
     }
   }
@@ -635,7 +671,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     heartbeatRefreshSeconds?: number,
     perJobResults = false,
     transactional = false,
-    transactionTimeoutSeconds?: number
+    transactionTimeoutSeconds?: number,
+    overrun: { wait?: () => Promise<void> } = {}
   ): Promise<unknown> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -710,6 +747,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // is idempotent, so the catch can settle it without tracking whether the commit got there
     // first.
     let transaction: types.TransactionHandle | null = null
+    // The handler's own promise, kept past the race below so the batch can tell a handler that
+    // outran its timeout from one that returned.
+    let handling: Promise<unknown> | undefined
+    let handlerSettled = false
 
     try {
       // A per-job heartbeatSeconds, or updateQueue() after the worker registered, can put a
@@ -748,11 +789,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
         throw new Error('pg-boss shut down before the handler started')
       }
 
-      const handling = transaction
+      const handler = Promise.resolve(transaction
         ? (callback as unknown as types.TransactionalWorkHandler<T>)(jobs, untracked(transaction.db))
-        : callback(jobs)
+        : callback(jobs))
 
-      const result = await resolveWithinSeconds(this.config.clock, handling, maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+      handling = handler
+      handler.then(() => { handlerSettled = true }, () => { handlerSettled = true })
+
+      const result = await resolveWithinSeconds(this.config.clock, handler, maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
 
       // An abort resolves the race rather than rejecting it, so on this line an abandoned handler
       // looks exactly like one that returned. failWip() aborts after failing the batch, so
@@ -812,6 +856,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // Clear between jobs
         worker.abortController = null
       }
+
+      // Left to the caller, which waits once the batch's telemetry span has ended, so the span
+      // measures the batch rather than the abandoned handler. Set here so a fail() that throws
+      // still holds the worker.
+      if (handling && !handlerSettled) {
+        const abandoned = handling
+        overrun.wait = async () => {
+          if (handlerSettled) return
+          await this.#awaitHandlerOverrun(name, jobIds, maxExpiration, abandoned, worker)
+          if (worker && !handlerSettled) worker.abandonedHandler = abandoned
+        }
+      }
     }
 
     // Spy tracking runs after the completion/failure logic so a spy lookup error can never
@@ -830,6 +886,118 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return didFail ? (failedError ?? new Error('handler rejected without a reason')) : perJobError
+  }
+
+  // The timeout only stops the wait for a handler, not the handler, so one that ignores job.signal is
+  // still running after its batch was failed. Holding the worker until it returns keeps
+  // localConcurrency and localGroupConcurrency a bound on the handlers actually running, and keeps the
+  // worker from fetching a retry of the same job beside it. Stopping the worker, through offWork() or
+  // stop(), ends the wait: a stopping worker fetches nothing, so there is nothing left to hold.
+  async #awaitHandlerOverrun (name: string, jobIds: string[], expireInSeconds: number, handling: Promise<unknown>, worker?: Worker<any>): Promise<void> {
+    const ended = worker?.stopSignal
+
+    if (ended?.aborted) return
+
+    // Its jobs were failed, and a retry may already be another worker's, so they are no longer this
+    // worker's: its wip counts none, and a shutdown has none of its to fail.
+    if (worker) worker.jobs = []
+
+    this.emit(events.warning, {
+      message: overrunMessage(name, expireInSeconds),
+      data: { type: WARNING_TYPES.HANDLER_OVERRUN, instance: this.#instanceId, queue: name, jobs: jobIds, expireInSeconds }
+    })
+
+    this.#recordOverrun(name, jobIds, expireInSeconds)
+
+    let onEnded: (() => void) | undefined
+
+    try {
+      await new Promise<void>(resolve => {
+        onEnded = resolve
+        ended?.addEventListener('abort', onEnded, { once: true })
+        handling.then(() => resolve(), () => resolve())
+      })
+    } finally {
+      if (onEnded) ended?.removeEventListener('abort', onEnded)
+    }
+  }
+
+  // The first overrun on a queue is written to the warning table at once, then the queue keeps a
+  // tally for the window that write opened, and the window's end writes one row with the count if
+  // there were more. A window that counted none closes the tally, so the queue's next overrun is
+  // written at once again. Each row counts only the overruns since the previous one.
+  #recordOverrun (name: string, jobIds: string[], expireInSeconds: number) {
+    if (!this.config.persistWarnings || this.stopped) return
+
+    const tally = this.#overruns.get(name)
+
+    if (tally) {
+      tally.count++
+      tally.expireInSeconds = Math.max(tally.expireInSeconds, expireInSeconds)
+      tally.jobs = [...tally.jobs, ...jobIds].slice(-HANDLER_OVERRUN_SAMPLE_JOBS)
+      return
+    }
+
+    const now = this.config.clock.now()
+
+    this.#writeOverrun(name, now, now, 1, expireInSeconds, jobIds)
+    this.#overruns.set(name, { since: now, count: 0, expireInSeconds: 0, jobs: [], timer: this.#overrunTimer(name) })
+  }
+
+  #overrunTimer (name: string): types.ClockTimer {
+    return this.config.clock.setTimeout(() => this.#closeOverrunWindow(name, true), this.#overrunWindowMs)
+  }
+
+  #closeOverrunWindow (name: string, reopen: boolean) {
+    const tally = this.#overruns.get(name)
+
+    if (!tally) return
+
+    this.config.clock.clearTimeout(tally.timer)
+
+    if (!tally.count || !reopen) this.#overruns.delete(name)
+
+    if (!tally.count) return
+
+    const now = this.config.clock.now()
+
+    this.#writeOverrun(name, tally.since, now, tally.count, tally.expireInSeconds, tally.jobs)
+
+    if (reopen) {
+      this.#overruns.set(name, { since: now, count: 0, expireInSeconds: 0, jobs: [], timer: this.#overrunTimer(name) })
+    }
+  }
+
+  #writeOverrun (name: string, since: number, until: number, count: number, expireInSeconds: number, jobIds: string[]) {
+    const message = count === 1
+      ? overrunMessage(name, expireInSeconds)
+      : `${count} handlers on queue ${name} kept running after exceeding their timeout of up to ${expireInSeconds}s between ${new Date(since).toISOString()} and ${new Date(until).toISOString()}. Their jobs were failed and their signals aborted, and each held its worker until it returned. Stop the handler on job.signal.`
+
+    const data = {
+      type: WARNING_TYPES.HANDLER_OVERRUN,
+      instance: this.#instanceId,
+      queue: name,
+      count,
+      since: new Date(since).toISOString(),
+      until: new Date(until).toISOString(),
+      expireInSeconds,
+      jobs: jobIds.slice(0, HANDLER_OVERRUN_SAMPLE_JOBS)
+    }
+
+    const write = persistWarning({ emitter: this, db: this.db, schema: this.config.schema, errorEvent: events.error }, WARNING_TYPES.HANDLER_OVERRUN, message, data)
+      .finally(() => this.#overrunWrites.delete(write))
+
+    this.#overrunWrites.add(write)
+  }
+
+  // On stop, while the pool is still open: each open window writes what it has counted, and every
+  // write in flight finishes.
+  async #flushOverruns () {
+    for (const name of [...this.#overruns.keys()]) {
+      this.#closeOverrunWindow(name, false)
+    }
+
+    await Promise.allSettled([...this.#overrunWrites])
   }
 
   /**
@@ -1118,10 +1286,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     await Promise.allSettled([...names].map(name => this.offWork(name, { wait: false })))
 
-    // Clean up all local group tracking on full stop
+    // Clean up local group config on full stop; active counts drop as their handlers settle
     this.#localGroupConfig.clear()
-    this.#localGroupActive.clear()
     this.#localGroupMaxLimit.clear()
+
+    await this.#flushOverruns()
   }
 
   // Last step of a shutdown: closing the pool, marking the instance stopped, and emitting
@@ -1248,10 +1417,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       // Counted here rather than on fetch: jobs past localGroupConcurrency are restored, not delivered.
-      const processBatch = (batch: types.Job<ReqData>[], worker?: Worker) => {
+      // A handler that outran its timeout holds the worker after the span ends (see #processJobs).
+      const processBatch = async (batch: types.Job<ReqData>[], worker?: Worker) => {
         this.#telemetry.consumed(name, batch.length)
-        return this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
-          this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds))
+        const overrun: { wait?: () => Promise<void> } = {}
+
+        try {
+          await this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
+            this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds, overrun))
+        } finally {
+          await overrun.wait?.()
+        }
       }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
@@ -1285,7 +1461,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
               await processBatch(allowed, worker)
             }
           } finally {
-            this.#trackLocalGroupEnd(name, groupedJobs)
+            // A handler stop() abandoned still runs, so its group slots stay taken until it settles.
+            const abandoned = worker?.abandonedHandler
+
+            if (worker && abandoned) {
+              worker.abandonedHandler = null
+              const end = () => this.#trackLocalGroupEnd(name, groupedJobs)
+              abandoned.then(end, end)
+            } else {
+              this.#trackLocalGroupEnd(name, groupedJobs)
+            }
           }
         }
 
@@ -1348,7 +1533,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // built-in pool, and a warning rather than an assert, because the ceiling is the operator's call.
   //
   // Emitted only, never persisted. The `warning` table records episodes, and every type in it is
-  // deduped by a flag that clears when the condition does. This one is an assertion about static
+  // deduped, by a flag that clears when the condition does or, for handler_overrun, by an hourly
+  // count. This one is an assertion about static
   // configuration with no episode behind it: `max` is fixed for the life of the process, so every
   // later transactional work() call trips it again with a larger `pinned`, and every restart writes
   // the same rows once more. Persisting it would bury the warnings someone actually needs.
@@ -2302,14 +2488,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // Distributed equivalents of the supervisor's failJobsByTimeout/failJobsByHeartbeat maintenance.
   // Those use the multi-mutation failJobs() CTE, which CockroachDB rejects, so on a distributed
   // database we select the expired/timed-out jobs, delete them, and re-insert as retry/failed in a
-  // single transaction (the same split as failDistributed). Always run on the pooled connection.
-  async failJobsByTimeoutDistributed (table: string, queues: string[]): Promise<number> {
-    const select = plans.selectJobsToFailByTimeout(this.config.schema, table, queues)
+  // single transaction (the same split as failDistributed), a batch of at most `limit` jobs per call.
+  // Always run on the pooled connection.
+  async failJobsByTimeoutDistributed (table: string, queues: string[], limit?: number): Promise<number> {
+    const select = plans.selectJobsToFailByTimeout(this.config.schema, table, queues, limit)
     return this.expireJobsDistributed(table, select, { value: { message: 'job timed out' } })
   }
 
-  async failJobsByHeartbeatDistributed (table: string, queues: string[]): Promise<number> {
-    const select = plans.selectJobsToFailByHeartbeat(this.config.schema, table, queues)
+  async failJobsByHeartbeatDistributed (table: string, queues: string[], limit?: number): Promise<number> {
+    const select = plans.selectJobsToFailByHeartbeat(this.config.schema, table, queues, limit)
     return this.expireJobsDistributed(table, select, { value: { message: 'job heartbeat timeout' } })
   }
 
@@ -2354,9 +2541,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         return 0
       }
 
-      const ids = jobs.map(job => job.id)
       const deleteSql = plans.deleteJobsByIds(this.config.schema, table)
-      await tx.executeSql(deleteSql.text, [ids])
+      await tx.executeSql(deleteSql.text, [jobs.map(job => job.name), jobs.map(job => job.id)])
 
       return this.reinsertFailedJobs(tx, table, jobs, outputData)
     })
@@ -2477,6 +2663,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       const sql = plans.deleteJobsById(this.config.schema, table, !!attempts)
       const result = await db.executeSql(sql, attempts ? [name, ids, plans.attemptPairs(ids, attempts)] : [name, ids])
+      await this.#reduceRetained(options, name, result, true)
       const response = this.mapCommandResponse(ids, result)
 
       this.#trackHandlerSettle(options, response)
@@ -2541,14 +2728,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         const ids: string[] = rows.map((row: { id: string }) => row.id)
         const newIds: string[] = rows.map((row: { new_id: string }) => row.new_id)
-        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0], newIds])
+        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0], newIds, name])
 
         const created = new Set(inserted.map((row: { id: string }) => row.id))
         const moved = ids.filter((_, i) => created.has(newIds[i]))
         const conflicted = ids.filter((_, i) => !created.has(newIds[i]))
 
-        if (moved.length) await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [moved])
-        if (conflicted.length) await tx.executeSql(plans.failRedriveConflicts(this.config.schema, table), [conflicted, filter[0]])
+        if (moved.length) await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [moved.map(() => name), moved])
+        if (conflicted.length) await tx.executeSql(plans.failRedriveConflicts(this.config.schema, table), [conflicted, filter[0], name])
 
         return moved.length
       })
@@ -2559,29 +2746,30 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return Number(result.rows[0].moved)
   }
 
-  async previewRedrive (name: string, options: types.RedriveFilter = {}): Promise<types.RedrivePreview> {
+  async previewRedrive (name: string, options: types.RedrivePreviewOptions = {}): Promise<types.RedrivePreview> {
     Attorney.assertQueueName(name)
 
+    const limit = Attorney.assertListLimit('previewRedrive', options.limit)
     const filter = this.#redriveFilterValues(options)
+
     const db = this.assertDb(options)
     const { table } = await this.getQueueCache(name)
     const sql = plans.previewRedrive(this.config.schema, table)
-    const { rows } = await db.executeSql(sql, [name, ...filter])
+    const { rows } = await db.executeSql(sql, [name, ...filter, limit])
 
-    const destinations: { name: string; count: number }[] = []
+    const counts = new Map<string, number>()
     let unroutable = 0
 
     for (const row of rows) {
-      // CockroachDB returns counts as strings.
-      const count = Number(row.count)
-      if (row.routable) destinations.push({ name: row.destination, count })
-      else unroutable += count
+      if (row.destination === null) unroutable++
+      else counts.set(row.destination, (counts.get(row.destination) ?? 0) + 1)
     }
 
+    const destinations = [...counts].map(([name, count]) => ({ name, count }))
     destinations.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 
     return {
-      total: destinations.reduce((sum, d) => sum + d.count, unroutable),
+      total: rows.length,
       destinations,
       unroutable
     }
@@ -2614,7 +2802,28 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const sql = plans.resumeJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
+    await this.#reduceRetained(options, name, result, false)
     return this.mapCommandResponse(ids, result)
+  }
+
+  // deleteJob() and resume() take the completed and cancelled jobs they moved out of the queue's
+  // retained_count off it, so totalCount does not wait for the next maintenance pass. A deleted job
+  // leaves totalCount too, and a resumed one stays in it as a live job. Only when one was counted, so
+  // settling a live job never touches the queue row. Not on a caller's db: the UPDATE would hold the
+  // queue row until the caller commits, against the monitor and the caller's other queues, so the
+  // next maintenance pass corrects the count instead. CockroachDB returns the count as a string. The
+  // delete or resume has committed by then, so a failure here is reported rather than thrown: the
+  // change happened, and the next maintenance pass corrects the count.
+  async #reduceRetained (options: types.ConnectionOptions, name: string, result: { rows: any[] } | null, deleted: boolean) {
+    const retained = Number(result?.rows?.[0]?.retained ?? 0)
+
+    if (retained > 0 && !options.db) {
+      try {
+        await this.db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained, deleted ? retained : 0])
+      } catch (err) {
+        this.emit(events.error, err)
+      }
+    }
   }
 
   async restore (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
@@ -2670,8 +2879,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.#reloadQueueCache(name)
   }
 
-  async getBlockedKeys (name: string): Promise<string[]> {
+  async getBlockedKeys (name: string, options: types.ListOptions = {}): Promise<string[]> {
     Attorney.assertQueueName(name)
+    const limit = Attorney.assertListLimit('getBlockedKeys', options.limit)
+    const { after } = options
+    Attorney.assertListAfter('getBlockedKeys', after)
 
     const { table, policy } = await this.getQueueCache(name)
 
@@ -2679,13 +2891,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
       throw new Error(`getBlockedKeys is only available for ${plans.QUEUE_POLICIES.key_strict_fifo} queues`)
     }
 
-    const sql = plans.getBlockedKeys(this.config.schema, table)
-    const { rows } = await this.db.executeSql(sql, [name])
+    const sql = plans.getBlockedKeys(this.config.schema, table, after !== undefined)
+    const { rows } = await this.db.executeSql(sql, after !== undefined ? [name, after, limit] : [name, limit])
 
     return rows.map(row => row.singletonKey)
   }
 
-  async getQueues (names?: string | string[]): Promise<types.QueueResult[]> {
+  // Every queue unless `limit` is passed: the public getQueues() passes its limit and `after`, and
+  // supervision and the queue cache read them all.
+  async getQueues (names?: string | string[], limit?: number, after?: string): Promise<types.QueueResult[]> {
     names = Array.isArray(names) ? names : typeof names === 'string' ? [names] : undefined
     if (names) {
       for (const name of names) {
@@ -2693,7 +2907,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
-    const query = plans.getQueues(this.config.schema, names)
+    const query = plans.getQueues(this.config.schema, names, limit, after)
     const { rows } = await this.db.executeSql(query.text, query.values)
 
     // CockroachDB returns integer columns as strings; normalize the numeric queue fields.
@@ -2755,10 +2969,27 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Scope the catch to the cache lookup only: a queue that doesn't exist is a no-op. The DELETE
     // and cache eviction must NOT be swallowed. A transient connection error there previously
     // resolved as success while the queue (and its stale cache entry) survived.
+    let queue: types.QueueResult
+
     try {
-      await this.getQueueCache(name)
+      queue = await this.getQueueCache(name)
     } catch {
       return
+    }
+
+    // A queue in the shared table is emptied in batches first, so delete_queue() only removes the
+    // jobs sent since. A queue with its own table is dropped whole. A dead letter queue still in use
+    // would fail delete_queue() only after its jobs were gone, so it is refused before any are.
+    if (!queue.partition) {
+      const { rows: [referrer] } = await this.db.executeSql(plans.getDeadLetterReferrer(this.config.schema), [name])
+
+      if (referrer) {
+        throw new Error(referrer.kind === 'queue'
+          ? `Queue ${name} was not deleted: queue ${referrer.name} uses it as its dead letter queue`
+          : `Queue ${name} was not deleted: jobs in queue ${referrer.name} name it as their dead letter queue`)
+      }
+
+      await this.#deleteInBatches(name, (options) => plans.deleteAllJobs(this.config.schema, queue.table, name, options))
     }
 
     const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks, !this.config.noTablePartitioning)
@@ -2778,29 +3009,60 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#evictQueueCache(name)
   }
 
-  async deleteQueuedJobs (name: string) {
-    Attorney.assertQueueName(name)
-    const { table } = await this.getQueueCache(name)
-    const sql = plans.deleteQueuedJobs(this.config.schema, table)
-    await this.db.executeSql(sql, [name])
+  // Deletes one queue's jobs a batch of keys at a time (see plans.deleteJobsBatch), each batch its
+  // own statement, and returns how many it deleted. A failure partway leaves the batches before it
+  // deleted. Every job it deleted comes off the queue's total_count at once, and the completed and
+  // cancelled ones it held off its retained_count. CockroachDB returns the counts as strings.
+  async #deleteInBatches (name: string, batch: (options: { after?: string, batchSize?: number, backend?: string }) => string): Promise<number> {
+    const batchSize = this.config.__test__walk_batch_size
+    let after: string | undefined
+    let deleted = 0
+    let retained = 0
+
+    try {
+      for (;;) {
+        const { rows } = await this.db.executeSql(batch({ after, batchSize, backend: this.config.backend }))
+        deleted += Number(rows[0].deleted)
+        retained += Number(rows[0].deletedRetained)
+
+        if (!rows[0].walkCursor) return deleted
+
+        after = rows[0].walkCursor
+      }
+    } finally {
+      // The batches have committed, so a failed count update is reported rather than thrown, and does
+      // not hide a batch's own error. The next maintenance pass corrects the count.
+      if (deleted) {
+        try {
+          await this.db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained, deleted])
+        } catch (err) {
+          this.emit(events.error, err)
+        }
+      }
+    }
   }
 
-  async deleteStoredJobs (name: string) {
+  async deleteQueuedJobs (name: string): Promise<number> {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.deleteStoredJobs(this.config.schema, table)
-    await this.db.executeSql(sql, [name])
+    return this.#deleteInBatches(name, (options) => plans.deleteQueuedJobs(this.config.schema, table, name, options))
   }
 
-  // A truncate leaves nothing to count, so it zeroes the cached counts after itself. A monitor pass
-  // that read the table first holds it until done, so the truncate and then the zeroes land after
-  // that pass's write.
-  async deleteAllJobs (name?: string) {
+  async deleteStoredJobs (name: string): Promise<number> {
+    Attorney.assertQueueName(name)
+    const { table } = await this.getQueueCache(name)
+    return this.#deleteInBatches(name, (options) => plans.deleteStoredJobs(this.config.schema, table, name, options))
+  }
+
+  // A truncate leaves nothing to count, so it zeroes the cached counts after itself and returns
+  // null. A monitor pass that read the table first holds it until done, so the truncate and then
+  // the zeroes land after that pass's write.
+  async deleteAllJobs (name?: string): Promise<number | null> {
     if (!name) {
       const sql = plans.truncateTable(this.config.schema, plans.BASE_JOB_TABLE)
       await this.db.executeSql(sql)
       await this.db.executeSql(plans.zeroQueueStats(this.config.schema))
-      return
+      return null
     }
 
     Attorney.assertQueueName(name)
@@ -2810,10 +3072,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const sql = plans.truncateTable(this.config.schema, table)
       await this.db.executeSql(sql)
       await this.db.executeSql(plans.zeroQueueStats(this.config.schema, true), [name])
-    } else {
-      const sql = plans.deleteAllJobs(this.config.schema, table)
-      await this.db.executeSql(sql, [name])
+      return null
     }
+
+    return this.#deleteInBatches(name, (options) => plans.deleteAllJobs(this.config.schema, table, name, options))
   }
 
   // Queue stats are a time series, always returned as an array (newest first).
@@ -2998,11 +3260,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async findJobs<T>(name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
     Attorney.assertQueueName(name)
 
-    const { id, key, data, queued = false, limit } = options
-
-    if (limit !== undefined) {
-      assert(Number.isInteger(limit) && limit >= 1, 'limit must be an integer >= 1')
-    }
+    const { id, key, data, queued = false, after } = options
+    const limit = Attorney.assertListLimit('findJobs', options.limit)
+    Attorney.assertListAfter('findJobs', after, true)
 
     const db = this.assertDb(options)
 
@@ -3013,14 +3273,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
       byKey: key !== undefined,
       byData: data !== undefined,
       queued,
-      limited: limit !== undefined
+      after: after !== undefined
     })
 
     const values: unknown[] = [name]
     if (id !== undefined) values.push(id)
     if (key !== undefined) values.push(key)
     if (data !== undefined) values.push(JSON.stringify(data))
-    if (limit !== undefined) values.push(limit)
+
+    if (after !== undefined) {
+      // A job deleted since the previous page would otherwise end the list early without saying so.
+      const { rows: [anchor] } = await db.executeSql(plans.findJobsAnchor(this.config.schema, table), [name, after])
+      assert(anchor, 'findJobs: after names a row that no longer exists')
+      values.push(anchor.createdOn, after)
+    }
+
+    values.push(limit)
 
     const result = await db.executeSql(sql, values)
 
@@ -3042,19 +3310,25 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return rows
   }
 
-  async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+  async getDependencies (name: string, id: string, options: types.ConnectionOptions & types.ListOptions<types.DependencyRef> = {}): Promise<types.DependencyRef[]> {
     Attorney.assertQueueName(name)
+    const limit = Attorney.assertListLimit('getDependencies', options.limit)
+    const { after } = options
+    Attorney.assertListAfterRow('getDependencies', after, ['name', 'id'], 'id')
     const db = this.assertDb(options)
-    const sql = plans.getDependencies(this.config.schema)
-    const { rows } = await db.executeSql(sql, [name, id])
+    const sql = plans.getDependencies(this.config.schema, after !== undefined)
+    const { rows } = await db.executeSql(sql, after ? [name, id, after.name, after.id, limit] : [name, id, limit])
     return rows.map((r: any) => ({ name: r.parentName, id: r.parentId }))
   }
 
-  async getDependents (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+  async getDependents (name: string, id: string, options: types.ConnectionOptions & types.ListOptions<types.DependencyRef> = {}): Promise<types.DependencyRef[]> {
     Attorney.assertQueueName(name)
+    const limit = Attorney.assertListLimit('getDependents', options.limit)
+    const { after } = options
+    Attorney.assertListAfterRow('getDependents', after, ['name', 'id'], 'id')
     const db = this.assertDb(options)
-    const sql = plans.getDependents(this.config.schema)
-    const { rows } = await db.executeSql(sql, [name, id])
+    const sql = plans.getDependents(this.config.schema, after !== undefined)
+    const { rows } = await db.executeSql(sql, after ? [name, id, after.name, after.id, limit] : [name, id, limit])
     return rows.map((r: any) => ({ name: r.childName, id: r.childId }))
   }
 

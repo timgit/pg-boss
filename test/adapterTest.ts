@@ -424,6 +424,18 @@ describe('drizzle adapter (postgres-js)', () => {
     expect(jobId).toBeDefined()
   })
 
+  it('should return the rows of every statement in a multi-statement query (postgres-js)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = getDb()
+
+    const rows = await db.transaction(async (tx) => {
+      const result = await fromDrizzle(tx, drizzleSql).executeSql('SELECT 1 AS a; SELECT 2 AS b WHERE false; SELECT 3 AS c')
+      return result.rows
+    })
+
+    expect(rows).toEqual([{ a: 1 }, { c: 3 }])
+  })
+
   it('should send a job through a postgres-js drizzle transaction', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     const db = getDb()

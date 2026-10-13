@@ -1,3 +1,4 @@
+import assert from 'node:assert'
 import EventEmitter from 'node:events'
 import { ClaimTimer } from './claimTimer.ts'
 import type Manager from './manager.ts'
@@ -319,10 +320,14 @@ class Boss extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    const sql = this.#config.noTablePartitioning
-      ? plans.deleteOldQueueStats(this.#config.schema, this.#config.queueStatRetentionDays)
-      : plans.dropOldQueueStatsPartitions(this.#config.schema, this.#config.queueStatRetentionDays)
-    await this.#executeQuery(sql)
+    const { schema, queueStatRetentionDays: days } = this.#config
+
+    if (this.#config.noTablePartitioning) {
+      const batchSize = this.#config.__test__walk_batch_size
+      await this.#walk((after) => plans.deleteOldQueueStats(schema, days, { after, batchSize }))
+    } else {
+      await this.#executeQuery(plans.dropOldQueueStatsPartitions(schema, days))
+    }
   }
 
   // Waits for a pass in flight rather than skipping like #onSupervise, since the caller asked for
@@ -503,45 +508,130 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       // CockroachDB rejects the multi-mutation failJobs() CTE these use, so under noMultiMutationCte
       // route expiry through the manager's split select/delete/re-insert variants instead.
-      if (this.#config.noMultiMutationCte) {
-        await this.#manager.failJobsByTimeoutDistributed(table, queues)
-      } else {
-        const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(sql)
-      }
+      const limit = this.#config.__test__expiry_batch_size ?? plans.EXPIRY_BATCH_SIZE
+
+      await this.#repeatWhileFull(limit, () => this.#config.noMultiMutationCte
+        ? this.#manager.failJobsByTimeoutDistributed(table, queues, limit)
+        : this.#expiryBatch(plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
 
       if (this.#stopping) return
 
-      if (this.#config.noMultiMutationCte) {
-        await this.#manager.failJobsByHeartbeatDistributed(table, queues)
-      } else {
-        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(heartbeatSql)
-      }
+      await this.#repeatWhileFull(limit, () => this.#config.noMultiMutationCte
+        ? this.#manager.failJobsByHeartbeatDistributed(table, queues, limit)
+        : this.#expiryBatch(plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
     }
+  }
+
+  // Runs a maintenance sweep a batch at a time until a batch picks fewer than `limit` rows. A stop
+  // between batches leaves the rest for the next pass.
+  async #repeatWhileFull (limit: number, batch: () => Promise<number>) {
+    while (!this.#stopping) {
+      if (await batch() < limit) return
+    }
+  }
+
+  // CockroachDB returns the count as a string.
+  async #expiryBatch (sql: string): Promise<number> {
+    const { rows } = await this.#executeQuery(sql)
+    return Number(rows.find((row) => row.expiryPicked !== undefined)?.expiryPicked ?? 0)
   }
 
   async #maintain (table: string, names: string[]) {
     if (this.#stopping) return
 
-    const command = plans.trySetQueueDeletionTime(
-      this.#config.schema,
-      names,
-      this.#config.maintenanceIntervalSeconds,
-      plans.queueClaimSkipLocked(this.#config.backend, this.#config.noSkipLocked)
-    )
+    const skipLocked = plans.queueClaimSkipLocked(this.#config.backend, this.#config.noSkipLocked)
+    const command = plans.trySetQueueDeletionTime(this.#config.schema, names, this.#config.maintenanceIntervalSeconds, skipLocked)
     const { rows } = await this.#executeQuery(command)
+    const queues: string[] = rows.map((q) => q.name)
+    // One statement stamps every queue it claims with the same time.
+    const claimedOn: string = rows[0]?.claimedOn
+    let finished = 0
 
-    if (this.#stopping) return
-
-    if (rows.length) {
-      const queues = rows.map((q) => q.name)
-      const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeQuery(sql)
-
-      const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeQuery(depSql)
+    try {
+      while (finished < queues.length && await this.#maintainQueue(table, queues[finished])) {
+        finished++
+      }
+    } finally {
+      // The claim covers every queue up front, so a pass that a stop or a failure ends early hands
+      // back the ones it did not finish. Otherwise they would wait a whole maintenance interval.
+      if (finished < queues.length) {
+        try {
+          await this.#executeQuery(plans.releaseQueueDeletionTime(this.#config.schema, queues.slice(finished), claimedOn, skipLocked))
+        } catch (err) {
+          this.emit(events.error, err)
+        }
+      }
     }
+  }
+
+  // The retention sweep and the dependency cleanup for one queue. Returns whether every walk covered
+  // the whole queue.
+  async #maintainQueue (table: string, name: string): Promise<boolean> {
+    if (this.#stopping) return false
+
+    const { schema, noAdvisoryLocks, backend } = this.#config
+    const batchSize = this.#config.__test__walk_batch_size
+
+    // The walk counts the completed and cancelled jobs that finished by DELTA_LAG before it
+    // started, so a completion committed late is still ahead of the watermark, and the monitor
+    // counts the rest after that (see plans.createTableQueue).
+    const { rows: [{ time }] } = await this.#executeQuery(plans.getTime(schema))
+    const retainedBefore = Number(time) - plans.DELTA_LAG_SECONDS * 1000
+    const retention = { retained: 0, deleted: 0, deletedRetained: 0 }
+    let done = false
+
+    try {
+      done = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, backend, noAdvisoryLocks, retainedBefore }), retention)
+    } finally {
+      // A walk that a stop or a failed batch cut short has not counted what it kept, so it only
+      // takes what it deleted off the counts, as a bulk delete does. A failed update is reported so
+      // that it does not hide the batch's own error, and the next full walk sets the count.
+      if (!done && retention.deleted) {
+        try {
+          await this.#executeQuery({ text: plans.reduceRetainedCount(schema), values: [name, retention.deletedRetained, retention.deleted] })
+        } catch (err) {
+          this.emit(events.error, err)
+        }
+      }
+    }
+
+    // Only a walk that covered the whole queue has counted all of what it kept.
+    if (done) {
+      await this.#executeQuery({ text: plans.setRetainedCount(schema, table), values: [name, retention.retained, retainedBefore] })
+    }
+
+    const children = await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'child', { after, batchSize, backend, noAdvisoryLocks }))
+    const parents = await this.#walk((after) => plans.cleanupDependencies(schema, table, name, 'parent', { after, batchSize, backend, noAdvisoryLocks }))
+
+    return done && children && parents
+  }
+
+  // Walks one queue's keys a batch at a time (see plans.deletion), carrying each batch's cursor into
+  // the next until a batch comes back without one, and returns whether it got there. A stop between
+  // batches leaves the rest for the next pass. `tally` totals the batches' counts as they commit, so
+  // it holds them even when a batch throws. CockroachDB returns counts as strings. A batch with no
+  // result row fails the walk rather than ending it, since a walk taken as done records its count.
+  async #walk (batch: (after?: string) => string, tally?: { retained: number, deleted: number, deletedRetained: number }): Promise<boolean> {
+    let after: string | undefined
+
+    while (!this.#stopping) {
+      const { rows } = await this.#executeQuery(batch(after))
+      const row = rows.find((row) => row.walkCursor !== undefined)
+
+      assert(row, 'maintenance batch returned no result row: a custom db must return the rows of every statement in a multi-statement query')
+
+      if (tally) {
+        tally.retained += Number(row.retained ?? 0)
+        tally.deleted += Number(row.deleted ?? 0)
+        tally.deletedRetained += Number(row.deletedRetained ?? 0)
+      }
+
+      if (!row.walkCursor) return true
+
+      after = row.walkCursor
+    }
+
+    return false
   }
 
   /**
@@ -870,11 +960,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       this.#xminHorizonSources = readable
 
+      // Persisted like the horizon warnings themselves, so a table with none of them does not read
+      // as a healthy horizon on an instance that cannot check it.
       if (!readable.length) {
-        this.emit(events.warning, {
-          message: 'Unable to read the transaction horizon; the xmin_horizon check is disabled for this instance.',
-          data: { type: WARNING_TYPES.XMIN_HORIZON, error: (err as Error)?.message }
-        })
+        await emitAndPersistWarning(this.#warningContext, WARNING_TYPES.XMIN_HORIZON,
+          'Unable to read the transaction horizon; the xmin_horizon check is disabled for this instance.',
+          { type: WARNING_TYPES.XMIN_HORIZON, instance: this.#manager.instanceId, error: (err as Error)?.message })
       }
 
       return null

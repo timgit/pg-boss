@@ -48,8 +48,14 @@ class Worker<T = unknown> {
   // the signal alone says nothing, and the timeout wired into the same controller trips it on every
   // ordinary completion. Reset per batch by the manager, beside abortController.
   aborted = false
+  // A handler that outran its timeout and was still running when stop() ended the wait for it. The
+  // manager releases the batch's localGroupConcurrency slots once it settles rather than at once.
+  abandonedHandler: Promise<unknown> | null = null
   // Set by failWip() once stop() has spent its grace: a claim landing after this is refused.
   graceExpired = false
+  // Aborted by stop(): a stopping worker fetches nothing, so a handler that outran its timeout is no
+  // longer waited for.
+  private readonly stopController = new AbortController()
   private loopDelayPromise: AbortablePromise<void> | null = null
   private beenNotified = false
   private runPromise: Promise<void> | null = null
@@ -146,12 +152,17 @@ class Worker<T = unknown> {
 
     this.stopping = true
     this.state = WORKER_STATES.stopping
+    this.stopController.abort()
 
     if (this.loopDelayPromise) {
       this.loopDelayPromise.abort()
     }
 
     await this.runPromise
+  }
+
+  get stopSignal (): AbortSignal {
+    return this.stopController.signal
   }
 
   abort (): void {

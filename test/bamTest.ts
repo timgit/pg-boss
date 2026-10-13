@@ -4,8 +4,9 @@ import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
 import Bam from '../src/bam.ts'
+import Db from '../src/db.ts'
 import { systemClock } from '../src/clock.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
 
 const bamConfig = {
@@ -217,18 +218,17 @@ describe('bam', function () {
         INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command)
         VALUES
           ('test_fail', 27, 'pending', 'job_common', 'SELECT 1/0'),
-          ('test_success', 27, 'pending', 'job_common', 'SELECT 1')
+          ('test_success', 27, 'pending', 'job_other', 'SELECT 1')
       `)
       await db.close()
 
       const failPromise = waitForBamEvent(boss, 'test_fail', 'failed')
       const successPromise = waitForBamEvent(boss, 'test_success', 'completed', 10000)
 
+      // One poll: the burst moves on to the second command after the first fails. It is on another
+      // table, so the failure does not hold it.
       await triggerBamPoll(ctx.schema)
       await failPromise
-
-      // Trigger another poll for the second command
-      await triggerBamPoll(ctx.schema)
       await successPromise
 
       const bamStatus = await boss.getBamEntries()
@@ -340,6 +340,41 @@ describe('bam', function () {
       expect(rows).toHaveLength(1)
       expect(rows[0].indexdef).toContain('(b)')
       expect(rows[0].indexdef).not.toContain('(a)')
+    }, 10000)
+
+    // A first attempt's IF NOT EXISTS skips an INVALID index of the same name and returns without
+    // building anything. The row fails instead of completing, and the retry heals the index. Postgres
+    // only, since CockroachDB does not let a test mark an index INVALID.
+    helper.itPostgresOnly('should fail a build that leaves an invalid index and heal it on retry', async function () {
+      const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
+      const errors: Error[] = []
+      boss.on('error', err => errors.push(err))
+
+      const db = await helper.getDb()
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
+      await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
+      await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.heal_idx'::regclass`)
+
+      const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (b)`
+      await insertBamRow(ctx.schema, 'invalid_cmd', 'pending', command)
+
+      const failed = waitForBamEvent(boss, 'invalid_cmd', 'failed')
+      await triggerBamPoll(ctx.schema)
+      await failed
+
+      expect(errors.map(err => err.message)).toEqual(['index heal_idx is invalid after the build'])
+
+      const done = waitForBamEvent(boss, 'invalid_cmd', 'completed')
+      await triggerBamPoll(ctx.schema)
+      await done
+
+      const { rows } = await db.executeSql(
+        `SELECT indexdef FROM pg_indexes WHERE schemaname = '${ctx.schema}' AND indexname = 'heal_idx'`
+      )
+      await db.close()
+
+      expect(rows).toHaveLength(1)
+      expect(rows[0].indexdef).toContain('(b)')
     }, 10000)
 
     it('does NOT drop a VALID leftover index on reattempt (build succeeded but row was never marked)', async function () {
@@ -829,6 +864,121 @@ describe('bam', function () {
     }, 15000)
   })
 
+  // Advisory locks and a second connection: stock Postgres only.
+  helper.describeMultiConnectionOnly('claims across instances', function () {
+    // A burst claims its next command without the poll's interval stamp, so it can overlap another
+    // instance's poll. Neither claim sees the other's uncommitted row, and without the lock each
+    // would take a different command.
+    helper.itPostgresOnly('should not run a second command while a claim of another is in flight', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
+
+      const db = await helper.getDb()
+      await db.executeSql(`
+        INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
+        VALUES ('first', 27, 'pending', 'job_common', 'SELECT 1', now() - interval '2 minutes'),
+               ('other', 27, 'pending', 'queue', 'SELECT 2', now() - interval '1 minute')
+      `)
+
+      const claim = plans.getNextBamCommand(ctx.schema, { useLiveness: !ctx.bossConfig.noIndexProgressView })
+      const locked = plans.claimBamCommand(ctx.schema, { useLiveness: !ctx.bossConfig.noIndexProgressView })
+
+      const peer = new pg.Client({ connectionString: helper.getConnectionString() })
+      await peer.connect()
+
+      try {
+        await db.executeSql('BEGIN')
+        await db.executeSql(`SELECT pg_advisory_xact_lock(${plans.advisoryLockKey(ctx.schema, 'bamClaim')})`)
+        const a = await db.executeSql(claim)
+        const raced = peer.query(locked)
+        await delay(300)
+        await db.executeSql('COMMIT')
+        const b = (await raced as unknown as pg.QueryResult[]).flatMap(result => result.rows ?? [])
+
+        expect(a.rows.map((row: any) => row.name)).toEqual(['first'])
+        expect(b.filter((row: any) => row.name)).toEqual([])
+      } finally {
+        await peer.end()
+        await db.close()
+      }
+    }, 15000)
+  })
+
+  // The claim runs under an advisory lock, so its row comes from a statement before the last. A db
+  // that returns only the last statement's rows would lose every claim without a word. PGlite's
+  // adapter flattens the results itself, and CockroachDB claims without the lock.
+  it.skipIf(helper.isPglite || helper.isCockroachDb)('should report a db that returns only the last statement of a claim', async function () {
+    const pool = await helper.getDb()
+
+    try {
+      const db = {
+        executeSql: async (text: string, values?: unknown[]) => {
+          const result: any = await pool.executeSql(text, values)
+          return Array.isArray(result) ? result.at(-1) : result
+        }
+      }
+
+      // Only here to build the schema.
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
+
+      await pool.executeSql(`INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command) VALUES ('cmd', 27, 'pending', 'job_common', 'SELECT 1')`)
+      await pool.executeSql(`UPDATE ${ctx.schema}.version SET bam_on = NULL`)
+
+      ctx.boss = new PgBoss(helper.getConfig({ ...ctx.bossConfig, db, bamIntervalSeconds: 1, __test__bypass_bam_interval_check: true }))
+      const errors: Error[] = []
+      ctx.boss.on('error', err => errors.push(err))
+      await ctx.boss.start()
+
+      await helper.until(() => errors.length > 0, 10000)
+      expect(errors[0].message).toContain('bam claim returned no lock row')
+    } finally {
+      await pool.close()
+    }
+  }, 15000)
+
+  // Commands from one migration on one table are an ordered sequence: v40 builds job_i11 and then
+  // drops job_i5, and the drop must not run after the build failed.
+  describe('ordering within a migration', function () {
+    it('should hold a command behind an earlier one of the same migration and table until it completes', async function () {
+      // Only here to build the schema; its own runner would race the claims made by hand.
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
+
+      const db = await helper.getDb()
+
+      try {
+        for (const useLiveness of helper.isCockroachDb ? [false] : [false, true]) {
+          await db.executeSql(`DELETE FROM ${ctx.schema}.bam`)
+          await db.executeSql(`
+            INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
+            VALUES ('build', 40, 'failed', 'job_common', 'SELECT 1', now() - interval '4 minutes'),
+                   ('retire', 40, 'pending', 'job_common', 'SELECT 2', now() - interval '3 minutes'),
+                   ('other_table', 40, 'pending', 'job_other', 'SELECT 3', now() - interval '2 minutes'),
+                   ('other_version', 41, 'pending', 'job_common', 'SELECT 4', now() - interval '1 minute')
+          `)
+
+          const claim = async (pendingOnly: boolean) => {
+            const { rows } = await db.executeSql(plans.getNextBamCommand(ctx.schema, { useLiveness, pendingOnly }))
+            if (rows[0]) await db.executeSql(plans.setBamCompleted(ctx.schema, rows[0].id))
+            return rows[0]?.name ?? null
+          }
+
+          // The rest of a burst skips the retire, held behind its failed build, and takes what else is pending.
+          expect(await claim(true)).toBe('other_table')
+          expect(await claim(true)).toBe('other_version')
+          expect(await claim(true)).toBeNull()
+
+          // The next poll retries the build, and only then is the retire claimable.
+          expect(await claim(false)).toBe('build')
+          expect(await claim(true)).toBe('retire')
+        }
+      } finally {
+        await db.close()
+      }
+    }, 15000)
+  })
+
   describe('heal recognition', function () {
     it('should return a probe exactly when it returns a drop', function () {
       // bam.ts runs the probe first and then drops without re-checking, so the two must recognise the
@@ -843,6 +993,89 @@ describe('bam', function () {
       expect(plans.bamHealProbe('s', 'CREATE INDEX i ON s.t (a)')).toBeNull()
       expect(plans.bamHealDrop('s', 'CREATE INDEX i ON s.t (a)')).toBeNull()
     })
+  })
+
+  // Once a poll claims a command, the runner keeps claiming until no pending row is left, rather than
+  // waiting bamIntervalSeconds between commands. The interval here is 60 seconds, so a second poll
+  // cannot land inside the test: every row completing proves they ran in one burst.
+  describe('burst', function () {
+    async function startRunner () {
+      // Only here to build the schema; its own runner would race the one under test.
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
+
+      const db = await helper.getDb()
+      const bam = new Bam(db, {
+        schema: ctx.schema,
+        bamIntervalSeconds: 60,
+        migrate: true,
+        clock: systemClock,
+        noIndexProgressView: helper.isCockroachDb,
+        noAdvisoryLocks: helper.isCockroachDb
+      } as any)
+
+      const events: any[] = []
+      bam.on('bam', event => events.push(event))
+      bam.on('error', () => {})
+
+      return { db, bam, events }
+    }
+
+    it('should run every pending command from one poll', async function () {
+      const { db, bam } = await startRunner()
+
+      try {
+        await db.executeSql(`
+          INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
+          VALUES ('burst_1', 27, 'pending', 'job_common', 'SELECT 1', now() - interval '3 minutes'),
+                 ('burst_2', 27, 'pending', 'job_common', 'SELECT 2', now() - interval '2 minutes'),
+                 ('burst_3', 27, 'pending', 'job_common', 'SELECT 3', now() - interval '1 minute')
+        `)
+        await db.executeSql(`UPDATE ${ctx.schema}.version SET bam_on = NULL`)
+
+        await bam.start()
+        await waitForBamStatus(ctx.schema, 'burst_3', 'completed')
+
+        const { rows } = await db.executeSql(
+          `SELECT name, status FROM ${ctx.schema}.bam WHERE name LIKE 'burst_%' ORDER BY completed_on`
+        )
+        expect(rows).toEqual([
+          { name: 'burst_1', status: 'completed' },
+          { name: 'burst_2', status: 'completed' },
+          { name: 'burst_3', status: 'completed' }
+        ])
+      } finally {
+        await bam.stop()
+        await db.close()
+      }
+    }, 15000)
+
+    it('should not retry a command that failed earlier in the same burst', async function () {
+      const { db, bam, events } = await startRunner()
+
+      try {
+        await db.executeSql(`
+          INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command, created_on)
+          VALUES ('burst_fail', 27, 'pending', 'job_common', 'SELECT 1/0', now() - interval '2 minutes'),
+                 ('burst_after', 27, 'pending', 'job_other', 'SELECT 1', now() - interval '1 minute')
+        `)
+        await db.executeSql(`UPDATE ${ctx.schema}.version SET bam_on = NULL`)
+
+        await bam.start()
+        await waitForBamStatus(ctx.schema, 'burst_after', 'completed')
+        // Long enough for a looping burst to have claimed the failed row again.
+        await delay(500)
+
+        const attempts = events.filter(e => e.name === 'burst_fail' && e.status === 'in_progress')
+        expect(attempts).toHaveLength(1)
+
+        const { rows } = await db.executeSql(`SELECT status FROM ${ctx.schema}.bam WHERE name = 'burst_fail'`)
+        expect(rows[0].status).toBe('failed')
+      } finally {
+        await bam.stop()
+        await db.close()
+      }
+    }, 15000)
   })
 
   describe('start and stop', function () {
@@ -913,8 +1146,8 @@ describe('bam', function () {
   })
 
   // A stop that lands while a command is running must not throw the result away. stop() waits out the
-  // in-flight command and the pool is closed only after bam.stop() resolves, so the row can - and must
-  // - be marked. An unmarked row behind a VALID index is the orphan every "already exists" retry loop
+  // in-flight command up to its timeout, and the pool is closed only after bam.stop() resolves, so the
+  // row can - and must - be marked. An unmarked row behind a VALID index is the orphan every "already exists" retry loop
   // starts from, and on the timeout-only backends it blocks the whole BAM queue for 24 hours.
   helper.describeMultiConnectionOnly('stop during an in-flight command', function () {
     it('should mark a command completed when a stop lands after it succeeds', async function () {
@@ -966,6 +1199,523 @@ describe('bam', function () {
       expect(rows[0].status).toBe('completed')
       expect(rows[0].error).toBeNull()
     }, 20000)
+  })
+
+  // The timeout bounds a command still running at the stop() deadline. A concurrent index statement on
+  // Postgres is left running on the server with its row in_progress. Anything else is cancelled and
+  // rolls back, and its row is marked failed without an error event and runs again.
+  helper.describePglite('stop deadline', function () {
+    async function startCommand (name: string, command: string, options = {}) {
+      const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, ...options })
+      const errors: Error[] = []
+      boss.on('error', err => errors.push(err))
+
+      await insertBamRow(ctx.schema, name, 'pending', command)
+
+      const started = waitForBamEvent(boss, name, 'in_progress')
+      await triggerBamPoll(ctx.schema)
+      await started
+      await delay(500)
+
+      return { boss, errors }
+    }
+
+    async function readRow (name: string) {
+      const db = await helper.getDb()
+      const { rows } = await db.executeSql(`SELECT status, error FROM ${ctx.schema}.bam WHERE name = $1`, [name])
+      await db.close()
+      return rows[0]
+    }
+
+    async function holdOpen (sql: string) {
+      const holder = new pg.Client({ connectionString: helper.getConnectionString() })
+      await holder.connect()
+      await holder.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
+      await holder.query(sql)
+      return holder
+    }
+
+    it('should cancel a command still running when the timeout passes', async function () {
+      const { boss, errors } = await startCommand('sleep_cmd', 'SELECT pg_sleep(60)')
+
+      const begun = Date.now()
+      await boss.stop({ timeout: 1000 })
+
+      expect(Date.now() - begun).toBeLessThan(10000)
+      expect((await readRow('sleep_cmd')).status).toBe('failed')
+      expect(errors).toEqual([])
+    }, 30000)
+
+    // A TestClock wraps the db to count statements in flight, and the wrapper has to pass the stop
+    // signals on, or stop() waits for a build it would leave running.
+    helper.itPostgresOnly('should leave an index build running at the timeout under a TestClock', async function () {
+      const db = await helper.getDb()
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.abandon_test (a int)`)
+      await ctx.boss.stop()
+      await db.close()
+
+      // A snapshot on the table parks CREATE INDEX CONCURRENTLY in its wait phase.
+      const holder = await holdOpen(`SELECT * FROM ${ctx.schema}.abandon_test`)
+
+      try {
+        const clock = new TestClock()
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, clock })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS abandon_idx ON ${ctx.schema}.abandon_test (a)`
+        await insertBamRow(ctx.schema, 'abandon_cmd', 'pending', command)
+        await triggerBamPoll(ctx.schema)
+
+        // Not awaited: the tick waits for statements in flight, the build among them.
+        const started = waitForBamEvent(boss, 'abandon_cmd', 'in_progress')
+        const ticked = clock.tick(1000)
+        await started
+        await delay(500)
+
+        const begun = Date.now()
+        await boss.stop({ timeout: 1000 })
+
+        expect(Date.now() - begun).toBeLessThan(5000)
+        expect((await readRow('abandon_cmd')).status).toBe('in_progress')
+        expect(errors).toEqual([])
+        await ticked
+      } finally {
+        await holder.query('ROLLBACK')
+        await holder.end()
+      }
+    }, 30000)
+
+    it('should cancel a running command at once without graceful', async function () {
+      const { boss, errors } = await startCommand('sleep_cmd', 'SELECT pg_sleep(60)')
+
+      const begun = Date.now()
+      await boss.stop({ graceful: false, timeout: 20000 })
+
+      expect(Date.now() - begun).toBeLessThan(10000)
+      expect((await readRow('sleep_cmd')).status).toBe('failed')
+      expect(errors).toEqual([])
+    }, 30000)
+
+    // pg_cancel_backend reaches whatever statement the backend runs when the signal lands. A command
+    // that ends just before then goes back to the pool and the signal hits the next query on that
+    // connection, so stop() closes it instead. Catching the cancel stands in for a command that ends
+    // without it: the command succeeds and its connection still has to close.
+    helper.itPostgresOnly('should close the connection of a command it set out to cancel instead of returning it to the pool', async function () {
+      const command = 'DO $$ BEGIN PERFORM pg_sleep(60); EXCEPTION WHEN query_canceled THEN NULL; END $$'
+      const { boss, errors } = await startCommand('caught_cmd', command)
+
+      const db = await helper.getDb()
+      const { rows } = await db.executeSql("SELECT pid FROM pg_stat_activity WHERE query LIKE '/* pgboss bam %' AND state = 'active'")
+      expect(rows).toHaveLength(1)
+
+      await boss.stop({ timeout: 1000, close: false })
+
+      expect((await readRow('caught_cmd')).status).toBe('completed')
+      expect(errors).toEqual([])
+
+      let alive = true
+      for (let i = 0; i < 50 && alive; i++) {
+        const { rows: found } = await db.executeSql('SELECT 1 FROM pg_stat_activity WHERE pid = $1', [rows[0].pid])
+        alive = found.length > 0
+        if (alive) await delay(100)
+      }
+      await db.close()
+
+      expect(alive).toBe(false)
+    }, 30000)
+
+    // CockroachDB through pg-boss's own pool drops the connection rather than cancelling. Started with
+    // the CockroachDB backend on Postgres, as distributedDatabaseTest does, so the path runs here too.
+    it('should drop the connection of a running command on CockroachDB', async function () {
+      const { boss, errors } = await startCommand('drop_cmd', 'SELECT pg_sleep(3)', { backend: 'cockroachdb' })
+
+      const begun = Date.now()
+      await boss.stop({ timeout: 1000 })
+
+      expect(Date.now() - begun).toBeLessThan(2500)
+      expect((await readRow('drop_cmd')).status).toBe('failed')
+      expect(errors).toEqual([])
+    }, 30000)
+
+    // A deadline that passes between a row's statements, here while a re-attempt reads the catalog,
+    // finds nothing to cancel. The command never starts, and the row is marked failed.
+    it('should not start a command once the timeout has passed', async function () {
+      const pool = await helper.getDb()
+
+      try {
+        const db = {
+          executeSql: async (text: string, values?: unknown[]) => {
+            if (text.includes('NOT i.indisvalid AS invalid')) await delay(2500)
+            return await pool.executeSql(text, values)
+          }
+        }
+
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        await pool.executeSql(`CREATE TABLE ${ctx.schema}.late_test (a int)`)
+        const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS late_idx ON ${ctx.schema}.late_test (a)`
+        await insertBamRow(ctx.schema, 'late_cmd', 'failed', command)
+
+        const started = waitForBamEvent(boss, 'late_cmd', 'in_progress')
+        await triggerBamPoll(ctx.schema)
+        await started
+
+        await boss.stop({ timeout: 1000 })
+
+        const row = await readRow('late_cmd')
+        expect(row.status).toBe('failed')
+        expect(row.error).toContain('stop() ended the command before it ran')
+        expect(errors).toEqual([])
+
+        const { rows } = await pool.executeSql(`SELECT to_regclass('${ctx.schema}.late_idx') AS idx`)
+        expect(rows[0].idx).toBeNull()
+      } finally {
+        await pool.close()
+      }
+    }, 30000)
+
+    // Either signal can abort while the statement waits for a pooled connection. The connection it
+    // gets then goes back to the pool without running anything.
+    for (const option of ['signal', 'retire'] as const) {
+      it(`should return a connection that arrives after its ${option} aborted`, async function () {
+        const db = new Db({ ...helper.getConfig(), max: 1 })
+        await db.open()
+
+        try {
+          const busy = db.executeSql('SELECT pg_sleep(0.5)')
+
+          const abort = new AbortController()
+          const waiting = db.executeSql('SELECT 1', undefined, { [option]: abort.signal })
+          abort.abort()
+
+          await expect(waiting).rejects.toThrow('This operation was aborted')
+          await busy
+
+          expect(db.poolCounts()).toMatchObject({ total: 1, idle: 1 })
+        } finally {
+          await db.close()
+        }
+      }, 30000)
+    }
+
+    // A statement that fails inside an explicit transaction leaves its connection in an aborted
+    // transaction. Closed instead of pooled, it cannot fail the next query.
+    helper.itPostgresOnly('should close the connection of a statement that failed', async function () {
+      const db = new Db({ ...helper.getConfig(), max: 1 })
+      await db.open()
+
+      try {
+        const retire = new AbortController().signal
+        await expect(db.executeSql('BEGIN; SELECT 1/0', undefined, { retire })).rejects.toThrow('division by zero')
+
+        const { rows } = await db.executeSql('SELECT 1 AS one')
+        expect(rows[0].one).toBe(1)
+      } finally {
+        await db.close()
+      }
+    }, 30000)
+
+    // A connection lost mid-statement without a message from the server (a failover, a proxy
+    // restart) emits 'error' on the client. The statement rejects instead of the process crashing.
+    helper.itPostgresOnly('should reject a statement whose connection is lost', async function () {
+      const db = new Db({ ...helper.getConfig(), max: 1 })
+      await db.open()
+
+      try {
+        const pool = (db as unknown as { pool: pg.Pool }).pool
+        let client: any
+        pool.once('acquire', acquired => { client = acquired })
+
+        const retire = new AbortController().signal
+        const running = db.executeSql('SELECT pg_sleep(5)', undefined, { retire })
+
+        await delay(300)
+        client.connection.stream.destroy()
+
+        await expect(running).rejects.toThrow('Connection terminated unexpectedly')
+
+        const { rows } = await db.executeSql('SELECT 1 AS one')
+        expect(rows[0].one).toBe(1)
+      } finally {
+        await db.close()
+      }
+    }, 30000)
+
+    // A Db whose statements from #execute wait before they ask for a connection, so stop() aborts
+    // them first.
+    class SlowStartDb extends Db {
+      async executeSql (text: string, values?: unknown[], options?: { signal?: AbortSignal, retire?: AbortSignal }) {
+        if (options?.signal || options?.retire) await delay(2500)
+        return await super.executeSql(text, values, options)
+      }
+    }
+
+    // An abandoned statement leaves its row in_progress for the liveness check, but one that never
+    // started has nothing for the check to find, so its row is marked failed.
+    for (const [name, command] of [
+      ['abandon', (schema: string) => `CREATE INDEX CONCURRENTLY IF NOT EXISTS slow_idx ON ${schema}.slow_test (a)`],
+      ['cancel', () => 'SELECT 1']
+    ] as const) {
+      helper.itPostgresOnly(`should mark a row failed when stop() aborts its ${name} statement before it starts`, async function () {
+        const db = new SlowStartDb(helper.getConfig())
+        await db.open()
+
+        try {
+          const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db })
+          const errors: Error[] = []
+          boss.on('error', err => errors.push(err))
+
+          await db.executeSql(`CREATE TABLE ${ctx.schema}.slow_test (a int)`)
+
+          await insertBamRow(ctx.schema, 'slow_cmd', 'pending', command(ctx.schema))
+
+          const started = waitForBamEvent(boss, 'slow_cmd', 'in_progress')
+          await triggerBamPoll(ctx.schema)
+          await started
+
+          await boss.stop({ timeout: 1000, close: false })
+
+          const row = await readRow('slow_cmd')
+          expect(row.status).toBe('failed')
+          expect(row.error).toContain('stop() ended the command before it ran')
+          expect(errors).toEqual([])
+        } finally {
+          await db.close()
+        }
+      }, 30000)
+    }
+
+    // stop() aborts before it sends the cancel, so a statement still waiting for a connection gives up
+    // while the cancel is in flight and finds nothing. The cancel must not undo what the statement
+    // recorded, or the row's failure would be reported as an error.
+    helper.itPostgresOnly('should not emit an error for a statement that gave up while the cancel was in flight', async function () {
+      class SlowCancelDb extends Db {
+        async executeSql (text: string, values?: unknown[], options?: { signal?: AbortSignal, retire?: AbortSignal }) {
+          if (options?.signal || options?.retire) await delay(2500)
+          if (text.includes('pg_cancel_backend')) await delay(2000)
+          if (text.includes("SET status = 'failed'")) await delay(1000)
+          return await super.executeSql(text, values, options)
+        }
+      }
+
+      const db = new SlowCancelDb(helper.getConfig())
+      await db.open()
+
+      try {
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        await insertBamRow(ctx.schema, 'cancel_cmd', 'pending', 'SELECT 1')
+
+        const started = waitForBamEvent(boss, 'cancel_cmd', 'in_progress')
+        await triggerBamPoll(ctx.schema)
+        await started
+
+        await boss.stop({ timeout: 1000, close: false })
+
+        const row = await readRow('cancel_cmd')
+        expect(row.status).toBe('failed')
+        expect(row.error).toContain('stop() ended the command before it ran')
+        expect(errors).toEqual([])
+      } finally {
+        await db.close()
+      }
+    }, 30000)
+
+    // A stop that lands after the build returns, here while the build's index is read back, has no
+    // statement to end. The read's failure is the command's, so the row is marked failed with an error.
+    helper.itPostgresOnly('should mark a row failed when stop() lands while the build is checked', async function () {
+      class SlowProbeDb extends Db {
+        async executeSql (text: string, values?: unknown[], options?: { signal?: AbortSignal, retire?: AbortSignal }) {
+          if (text.includes('NOT i.indisvalid AS invalid')) await delay(2500)
+          return await super.executeSql(text, values, options)
+        }
+      }
+
+      const db = new SlowProbeDb(helper.getConfig())
+      await db.open()
+
+      try {
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        await db.executeSql(`CREATE TABLE ${ctx.schema}.probe_test (a int, b int)`)
+        await db.executeSql(`CREATE INDEX probe_idx ON ${ctx.schema}.probe_test (a)`)
+        await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.probe_idx'::regclass`)
+
+        await insertBamRow(ctx.schema, 'probe_cmd', 'pending', `CREATE INDEX CONCURRENTLY IF NOT EXISTS probe_idx ON ${ctx.schema}.probe_test (b)`)
+
+        const started = waitForBamEvent(boss, 'probe_cmd', 'in_progress')
+        await triggerBamPoll(ctx.schema)
+        await started
+
+        await boss.stop({ timeout: 1000, close: false })
+
+        expect((await readRow('probe_cmd')).status).toBe('failed')
+        expect(errors.map(err => err.message)).toEqual(['index probe_idx is invalid after the build'])
+      } finally {
+        await db.close()
+      }
+    }, 30000)
+
+    // On CockroachDB a build stop() dropped goes on as a schema change job, and a retry finds no index
+    // until it ends. The retry fails its row without an error event. Run on Postgres with the
+    // CockroachDB backend and a catalog read that finds nothing.
+    it('should fail a CockroachDB build whose index is still being added without an error event', async function () {
+      const pool = await helper.getDb()
+
+      try {
+        const db = {
+          executeSql: async (text: string, values?: unknown[]) => text.includes('NOT i.indisvalid AS invalid')
+            ? { rows: [] }
+            : await pool.executeSql(text, values)
+        }
+
+        const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig, db, backend: 'cockroachdb' })
+        const errors: Error[] = []
+        boss.on('error', err => errors.push(err))
+
+        await pool.executeSql(`CREATE TABLE ${ctx.schema}.pending_test (a int)`)
+
+        await insertBamRow(ctx.schema, 'pending_cmd', 'pending', `CREATE INDEX CONCURRENTLY IF NOT EXISTS pending_idx ON ${ctx.schema}.pending_test (a)`)
+
+        // A concurrent build waits out every older snapshot in the database, which another suite
+        // sharing it can hold for seconds.
+        const failed = waitForBamEvent(boss, 'pending_cmd', 'failed', 25_000)
+        await triggerBamPoll(ctx.schema)
+        const event = await failed
+
+        expect(event.error).toContain('index pending_idx does not exist after the build')
+        expect(errors).toEqual([])
+      } finally {
+        await pool.close()
+      }
+    }, 30000)
+
+    // Left running without its client, the UPDATE would apply once the lock is released, while its row
+    // read failed and was due to run it again.
+    it('should roll back a data migration it stops instead of leaving it to commit', async function () {
+      const db = await helper.getDb()
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.migrate_test (id int PRIMARY KEY, n int)`)
+      await db.executeSql(`INSERT INTO ${ctx.schema}.migrate_test VALUES (1, 0)`)
+      await ctx.boss.stop()
+
+      const holder = await holdOpen(`SELECT * FROM ${ctx.schema}.migrate_test FOR UPDATE`)
+
+      try {
+        const { boss, errors } = await startCommand('migrate_cmd', `UPDATE ${ctx.schema}.migrate_test SET n = n + 1`)
+
+        await boss.stop({ timeout: 1000 })
+
+        expect((await readRow('migrate_cmd')).status).toBe('failed')
+        expect(errors).toEqual([])
+      } finally {
+        await holder.query('ROLLBACK')
+        await holder.end()
+      }
+
+      await delay(1000)
+
+      const { rows } = await db.executeSql(`SELECT n FROM ${ctx.schema}.migrate_test`)
+      await db.close()
+
+      expect(Number(rows[0].n)).toBe(0)
+    }, 30000)
+
+    // The cancel goes through a role that can read the statement in pg_stat_activity but not signal
+    // its backend, so pg_cancel_backend fails. stop() reports that once, waits for the command, and
+    // still reports the command's own failure.
+    helper.itPostgresOnly('should report a cancel it is not allowed to make once and wait for the command', async function () {
+      const role = `bam_cancel_${Math.random().toString(36).slice(2, 10)}`
+      const config = helper.getConfig()
+      const pool = await helper.getDb()
+      await pool.executeSql(`CREATE ROLE ${role} LOGIN PASSWORD 'p'`)
+      await pool.executeSql(`GRANT pg_read_all_stats TO ${role}`)
+
+      const canceller = new pg.Client({ host: config.host, port: Number(config.port), database: config.database, user: role, password: 'p' })
+      await canceller.connect()
+
+      try {
+        const db = {
+          executeSql: (text: string, values?: unknown[]) => text.includes('pg_cancel_backend')
+            ? canceller.query(text, values)
+            : pool.executeSql(text, values)
+        }
+        const command = "DO $$ BEGIN PERFORM pg_sleep(3); RAISE EXCEPTION 'command failed'; END $$"
+        const { boss, errors } = await startCommand('denied_cmd', command, { db })
+
+        const begun = Date.now()
+        await boss.stop({ timeout: 1000 })
+
+        expect(Date.now() - begun).toBeGreaterThan(1500)
+        expect(errors.map(err => err.message)).toEqual([
+          'permission denied to cancel query',
+          'command failed'
+        ])
+
+        const row = await readRow('denied_cmd')
+        expect(row.status).toBe('failed')
+        expect(row.error).toContain('command failed')
+      } finally {
+        await canceller.end()
+        await pool.executeSql(`DROP ROLE ${role}`)
+        await pool.close()
+      }
+    }, 30000)
+
+    // CockroachDB index builds do not wait on open snapshots, so only Postgres can park one.
+    helper.itPostgresOnly('should leave an index build running on the server and complete its row once it finishes', async function () {
+      const db = await helper.getDb()
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      await db.executeSql(`CREATE TABLE ${ctx.schema}.abandon_test (a int)`)
+      await ctx.boss.stop()
+
+      // A snapshot on the table parks CREATE INDEX CONCURRENTLY in its wait phase.
+      const holder = await holdOpen(`SELECT * FROM ${ctx.schema}.abandon_test`)
+
+      try {
+        const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS abandon_idx ON ${ctx.schema}.abandon_test (a)`
+        const { boss, errors } = await startCommand('abandon_cmd', command)
+
+        const begun = Date.now()
+        await boss.stop({ timeout: 1000 })
+
+        expect(Date.now() - begun).toBeLessThan(10000)
+        expect((await readRow('abandon_cmd')).status).toBe('in_progress')
+        expect(errors).toEqual([])
+
+        // Past the grace window, so only the build's table lock keeps another instance off the row.
+        await db.executeSql(`UPDATE ${ctx.schema}.bam SET started_on = now() - interval '1 hour' WHERE name = 'abandon_cmd'`)
+
+        const restarted = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
+        restarted.on('error', () => {})
+        await triggerBamPoll(ctx.schema)
+        await delay(2500)
+
+        expect((await readRow('abandon_cmd')).status).toBe('in_progress')
+      } finally {
+        await holder.query('ROLLBACK')
+        await holder.end()
+      }
+
+      // The build finishes on the server, and the next attempt finds the index valid.
+      await triggerBamPoll(ctx.schema)
+      await waitForBamStatus(ctx.schema, 'abandon_cmd', 'completed', 10000)
+
+      const { rows } = await db.executeSql(
+        `SELECT indisvalid AS valid FROM pg_index WHERE indexrelid = '${ctx.schema}.abandon_idx'::regclass`
+      )
+      await db.close()
+
+      expect(rows[0].valid).toBe(true)
+    }, 30000)
   })
 
   describe('successful execution', function () {

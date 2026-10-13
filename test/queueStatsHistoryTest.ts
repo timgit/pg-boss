@@ -1,6 +1,7 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
+import pg from 'pg'
 import { ctx } from './hooks.ts'
 import { delay } from '../src/tools.ts'
 import * as plans from '../src/plans.ts'
@@ -577,22 +578,73 @@ describe('queueStatsHistory', function () {
       backend: 'cockroachdb',
       persistQueueStats: true,
       queueStatRetentionDays: 7,
-      noDefault: true
+      noDefault: true,
+      __test__walk_batch_size: 2
     })
 
+    // More old rows than one batch holds, among rows inside the retention.
     const db = await helper.getDb()
     await db.executeSql(
-      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) VALUES ($1, now() - interval '10 days')`, [q])
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) SELECT $1, now() - interval '10 days' FROM generate_series(1, 5)`, [q])
+    await db.executeSql(
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) SELECT $1, now() - interval '1 day' FROM generate_series(1, 2)`, [q])
     await db.close()
 
     // supervise() runs retention in its tail; with no queues it goes straight there
     await ctx.boss.supervise()
 
     const db2 = await helper.getDb()
-    const { rows } = await db2.executeSql(
-      `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])
+    const count = async () => (await db2.executeSql(
+      `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])).rows[0].c
+
+    expect(await count()).toBe(2)
+
+    // queue_stats_i2 keeps it to the rows past retention, so it runs on every pass.
+    await db2.executeSql(
+      `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) VALUES ($1, now() - interval '10 days')`, [q])
+    await ctx.boss.supervise()
+    expect(await count()).toBe(2)
+
     await db2.close()
-    expect(rows[0].c).toBe(0)
+  })
+
+  // The cursor one batch returns is read by the next, which may run on another pooled connection.
+  // Day and month swap between DMY and MDY, so a cursor printed in one and read in the other would
+  // skip the rows between the two dates. CockroachDB only prints ISO, so there the connections differ
+  // in TimeZone alone, where unpartitioned retention is the default. The two rows a microsecond apart
+  // catch a cursor that loses precision.
+  helper.describePglite('stats retention cursor', function () {
+    it('reads back the same on a connection with another DateStyle and TimeZone', async function () {
+      const q = `q${randomUUID().replaceAll('-', '')}`
+      ctx.boss = await helper.start({ ...ctx.bossConfig, backend: 'cockroachdb', noDefault: true })
+      await ctx.boss.stop()
+
+      const dmy = new pg.Client({ connectionString: helper.getConnectionString() })
+      const mdy = new pg.Client({ connectionString: helper.getConnectionString() })
+      await dmy.connect()
+      await mdy.connect()
+
+      try {
+        await dmy.query(`SET DateStyle = '${helper.isCockroachDb ? 'ISO' : 'SQL'}, DMY'; SET TimeZone = 'Asia/Kolkata'`)
+        await mdy.query("SET DateStyle = 'ISO, MDY'; SET TimeZone = 'UTC'")
+        await dmy.query(
+          `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) SELECT $1, d FROM unnest($2::timestamptz[]) d`,
+          [q, ['2025-03-01T10:00:00Z', '2025-03-04T10:00:00Z', '2025-03-10T10:00:00Z', '2025-03-10T10:00:00.000001Z', '2025-03-20T10:00:00Z', '2025-03-25T10:00:00Z']])
+
+        const first = await dmy.query(plans.deleteOldQueueStats(ctx.schema, 7, { batchSize: 2 }))
+        let after: string | undefined = first.rows[0].walkCursor
+        while (after) {
+          const { rows } = await mdy.query(plans.deleteOldQueueStats(ctx.schema, 7, { batchSize: 2, after }))
+          after = rows[0].walkCursor
+        }
+
+        const { rows } = await mdy.query(`SELECT count(*) AS c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])
+        expect(Number(rows[0].c)).toBe(0)
+      } finally {
+        await dmy.end()
+        await mdy.end()
+      }
+    })
   })
 
   it('rejects an unknown queue (persistQueueStats off)', async function () {

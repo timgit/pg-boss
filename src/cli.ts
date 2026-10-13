@@ -374,9 +374,19 @@ async function cmdMigrate (args: ReturnType<typeof parseCliArgs>): Promise<void>
     const partitionTables = await getPartitionTables(db, schema)
     const { sql, concurrent } = migrationStore.migrateCommands(schema, version, migrationStore.getAllForConfig(config), config.noAdvisoryLocks, { inlineAsync: true, partitionTables })
     await db.executeSql(sql)
-    // CONCURRENTLY index builds must run outside the migration transaction, one at a time.
-    for (const statement of concurrent) {
-      await db.executeSql(statement)
+    // CONCURRENTLY index builds must run outside the migration transaction, one at a time. The
+    // version is already committed by then and nothing enqueues them for BAM, so a failed build
+    // would never be retried: hand the rest to the operator instead.
+    for (const [i, statement] of concurrent.entries()) {
+      try {
+        await db.executeSql(statement)
+      } catch (err: any) {
+        console.error(`pg-boss schema "${schema}" is at version ${schemaVersion}, but an index build failed: ${err.message}`)
+        console.error('Drop any invalid index the failed build left, then run these statements one at a time:\n')
+        console.error(concurrent.slice(i).map(rest => `${rest};`).join('\n\n'))
+        process.exitCode = 1
+        return
+      }
     }
     console.log(`Successfully migrated pg-boss schema "${schema}" to version ${schemaVersion}`)
   } finally {

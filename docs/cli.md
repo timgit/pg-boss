@@ -33,7 +33,7 @@ Every command reads its connection from the same sources (see [Connection Config
 
 ### `migrate`
 
-Brings the schema up to the latest version, running any pending migrations in order. If pg-boss is not yet installed, it creates the schema first (equivalent to `create`). If the schema is already current, it reports that and does nothing. Async index builds (normally run by the background worker) are inlined as `CREATE INDEX CONCURRENTLY` statements and fanned out across every partitioned queue table, so a migration run needs no live worker. Pass `--dry-run` to print the SQL without executing it. It is rendered from the database's actual current version.
+Brings the schema up to the latest version, running any pending migrations in order. If pg-boss is not yet installed, it creates the schema first (equivalent to `create`). If the schema is already current, it reports that and does nothing. Async index builds (normally run by the background worker) are inlined as `CREATE INDEX CONCURRENTLY` statements and fanned out across every partitioned queue table, so a migration run needs no live worker. They run after the migration commits, so if one fails, `migrate` exits with an error that lists the builds left to run by hand. Pass `--dry-run` to print the SQL without executing it. It is rendered from the database's actual current version.
 
 ```bash
 pg-boss migrate --connection-string postgres://localhost/myapp
