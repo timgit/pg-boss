@@ -2611,14 +2611,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         const ids: string[] = rows.map((row: { id: string }) => row.id)
         const newIds: string[] = rows.map((row: { new_id: string }) => row.new_id)
-        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0], newIds])
+        const { rows: inserted } = await tx.executeSql(plans.insertRedrivenJobs(this.config.schema, table), [ids, filter[0], newIds, name])
 
         const created = new Set(inserted.map((row: { id: string }) => row.id))
         const moved = ids.filter((_, i) => created.has(newIds[i]))
         const conflicted = ids.filter((_, i) => !created.has(newIds[i]))
 
         if (moved.length) await tx.executeSql(plans.deleteJobsByIds(this.config.schema, table).text, [moved.map(() => name), moved])
-        if (conflicted.length) await tx.executeSql(plans.failRedriveConflicts(this.config.schema, table), [conflicted, filter[0]])
+        if (conflicted.length) await tx.executeSql(plans.failRedriveConflicts(this.config.schema, table), [conflicted, filter[0], name])
 
         return moved.length
       })

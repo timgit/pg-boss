@@ -3899,7 +3899,7 @@ export function redriveJobs (schema: string, table: string): string {
       INSERT INTO ${schema}.job ${REDRIVE_INSERT_COLUMNS}
       SELECT ${redriveInsertValues(schema, 'c.new_id', '$2')}
       FROM candidates c
-        JOIN ${schema}.${table} m ON m.id = c.id
+        JOIN ${schema}.${table} m ON m.name = $1 AND m.id = c.id
         JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
       ORDER BY m.created_on
       ON CONFLICT DO NOTHING
@@ -3911,16 +3911,17 @@ export function redriveJobs (schema: string, table: string): string {
     ),
     removed AS (
       DELETE FROM ${schema}.${table}
-      WHERE id IN (SELECT id FROM settled WHERE inserted)
+      WHERE name = $1 AND id IN (SELECT id FROM settled WHERE inserted)
     ),
     conflicted AS (
       UPDATE ${schema}.${table} j
       SET ${redriveConflictSet(schema)}
       FROM settled s, ${schema}.queue q
-      WHERE j.id = s.id
+      WHERE j.name = $1
+        AND j.id = s.id
         AND NOT s.inserted
         AND q.name = COALESCE($2, j.source_name)
-        AND ${redriveConflictFailable(schema, table, 'm.id IN (SELECT id FROM settled WHERE NOT inserted)')}
+        AND ${redriveConflictFailable(schema, table, 'm.name = $1 AND m.id IN (SELECT id FROM settled WHERE NOT inserted)')}
     )
     SELECT count(*)::int AS moved FROM ins
   `
@@ -3945,14 +3946,14 @@ export function selectRedriveCandidates (schema: string, table: string): string 
   `
 }
 
-// $1 candidate ids, $2 destination override, $3 the new id for each candidate, in the same order.
-// Returns the new ids of the jobs that were re-created.
+// $1 candidate ids, $2 destination override, $3 the new id for each candidate, in the same order,
+// $4 the dead letter queue. Returns the new ids of the jobs that were re-created.
 export function insertRedrivenJobs (schema: string, table: string): string {
   return `
     INSERT INTO ${schema}.job ${REDRIVE_INSERT_COLUMNS}
     SELECT ${redriveInsertValues(schema, 'p.new_id', '$2')}
     FROM unnest($1::uuid[], $3::uuid[]) AS p (id, new_id)
-      JOIN ${schema}.${table} m ON m.id = p.id
+      JOIN ${schema}.${table} m ON m.name = $4 AND m.id = p.id
       JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
     ORDER BY m.created_on
     ON CONFLICT DO NOTHING
@@ -3960,15 +3961,16 @@ export function insertRedrivenJobs (schema: string, table: string): string {
   `
 }
 
-// $1 the dead letter ids that were not re-created, $2 destination override.
+// $1 the dead letter ids that were not re-created, $2 destination override, $3 the dead letter queue.
 export function failRedriveConflicts (schema: string, table: string): string {
   return `
     UPDATE ${schema}.${table} j
     SET ${redriveConflictSet(schema)}
     FROM ${schema}.queue q
-    WHERE j.id = ANY($1::uuid[])
+    WHERE j.name = $3
+      AND j.id = ANY($1::uuid[])
       AND q.name = COALESCE($2, j.source_name)
-      AND ${redriveConflictFailable(schema, table, 'm.id = ANY($1::uuid[])')}
+      AND ${redriveConflictFailable(schema, table, 'm.name = $3 AND m.id = ANY($1::uuid[])')}
   `
 }
 
