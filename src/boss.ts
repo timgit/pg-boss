@@ -960,11 +960,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       this.#xminHorizonSources = readable
 
+      // Persisted like the horizon warnings themselves, so a table with none of them does not read
+      // as a healthy horizon on an instance that cannot check it.
       if (!readable.length) {
-        this.emit(events.warning, {
-          message: 'Unable to read the transaction horizon; the xmin_horizon check is disabled for this instance.',
-          data: { type: WARNING_TYPES.XMIN_HORIZON, error: (err as Error)?.message }
-        })
+        await emitAndPersistWarning(this.#warningContext, WARNING_TYPES.XMIN_HORIZON,
+          'Unable to read the transaction horizon; the xmin_horizon check is disabled for this instance.',
+          { type: WARNING_TYPES.XMIN_HORIZON, error: (err as Error)?.message })
       }
 
       return null

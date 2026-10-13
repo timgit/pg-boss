@@ -591,8 +591,10 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
       expect((disabled[0].data as { error: string }).error).toContain('permission denied')
 
       // No holder can be named without a readable source, so the diagnosis is withheld rather than
-      // guessed at from the table evidence alone.
-      expect(await storedWarnings(ctx.schema, 'xmin_horizon')).toHaveLength(0)
+      // guessed at from the table evidence alone. The table holds only the check being disabled.
+      const stored = await storedWarnings(ctx.schema, 'xmin_horizon')
+      expect(stored).toHaveLength(1)
+      expect(stored[0].message).toContain('xmin_horizon check is disabled')
     } finally {
       await release()
       await realDb.close()

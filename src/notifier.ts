@@ -2,6 +2,7 @@ import EventEmitter from 'node:events'
 import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import type * as types from './types.ts'
+import { emitAndPersistWarning } from './warning.ts'
 
 const events = {
   error: 'error',
@@ -71,10 +72,16 @@ class Notifier extends EventEmitter implements types.EventsMixin {
         () => this.#manager.forceFetchLnWorkers()
       )
     } catch (err: any) {
-      this.emit(events.warning, {
-        message: 'Failed to start LISTEN/NOTIFY listener. Continuing with polling only.',
-        data: { type: WARNING_TYPE, error: err?.message }
-      })
+      // Persisted, unlike the two above: those restate the configuration on every start, and this
+      // one is a failure the database or the network caused.
+      await emitAndPersistWarning({
+        emitter: this,
+        db: this.#db,
+        schema: this.#config.schema,
+        persistWarnings: this.#config.persistWarnings,
+        warningEvent: events.warning,
+        errorEvent: events.error
+      }, WARNING_TYPE, 'Failed to start LISTEN/NOTIFY listener. Continuing with polling only.', { type: WARNING_TYPE, error: err?.message })
     }
   }
 

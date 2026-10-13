@@ -47,6 +47,39 @@ describe('notifier', function () {
     await notifier.stop()
   })
 
+  // A listener that fails is an event in the database's history; a backend or adapter without
+  // LISTEN is the configuration, restated on every start.
+  it('writes a failed listener to the warning table, but not a backend without LISTEN', async function () {
+    const inserts: unknown[][] = []
+    const recording = (over: Partial<IDatabase>) => fakeDb({
+      executeSql: async (sql: string, values?: unknown[]) => {
+        if (sql.includes('INSERT INTO pgboss.warning')) inserts.push(values!)
+        return { rows: [{ channel: 'pgboss_chan' }] } as any
+      },
+      ...over
+    })
+    const persisting = { schema: 'pgboss', persistWarnings: true }
+
+    const failing = new Notifier(recording({ listen: async () => { throw new Error('listen failed') } }), fakeManager, persisting as any)
+    failing.on('warning', () => {})
+    await failing.start()
+    await failing.stop()
+
+    expect(inserts).toHaveLength(1)
+    expect(inserts[0][0]).toBe('listen_notify_unavailable')
+    expect(JSON.parse(inserts[0][2] as string)).toMatchObject({ error: 'listen failed' })
+
+    const noListen = new Notifier(recording({}), fakeManager, persisting as any)
+    noListen.on('warning', () => {})
+    await noListen.start()
+
+    const noBackend = new Notifier(recording({}), fakeManager, { ...persisting, backend: 'cockroachdb', noListenNotify: true } as any)
+    noBackend.on('warning', () => {})
+    await noBackend.start()
+
+    expect(inserts).toHaveLength(1)
+  })
+
   it('available reflects the listener handle lifecycle', async function () {
     const db = fakeDb({ listen: async () => ({ close: async () => {} }) })
     const notifier = new Notifier(db, fakeManager, config)
