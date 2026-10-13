@@ -2317,10 +2317,10 @@ AS $function$
       previous: 44,
       // upsert_by_key is nullable with no default, so adding it rewrites no rows, and no existing job
       // carries it. job_i13 therefore starts empty and cannot fail on existing duplicates.
-      // Without partitioning it is built inline, unlike job_i12: upsert() relies on it to keep
-      // concurrent upserts of one key on one job, and it starts empty, so the build is cheap. With
-      // partitioning it goes through create_queue for new partitions and BAM, concurrently, for the
-      // tables that already exist.
+      // Without partitioning it is built inline, unlike job_i12, because upsert() relies on it to keep
+      // concurrent upserts of one key on one job. The build still scans the table and holds back
+      // writes until it finishes. With partitioning it goes through create_queue for new partitions
+      // and BAM, concurrently, for the tables that already exist.
       install: [
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS upsert_by_key bool`,
         noPartitioning
