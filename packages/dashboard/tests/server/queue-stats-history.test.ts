@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import pg from 'pg'
 import { ctx, createTestQueue, insertQueueStatsHistory } from './helpers'
 import {
-  getQueues,
+  getQueuePage,
   getQueue,
   getQueueStatsHistory,
   getQueueStatsCollectionStatus,
@@ -120,11 +120,11 @@ describe('queue.ready_history (sparkline column)', () => {
     await pool.end()
   }
 
-  it('getQueues returns readyHistory (newest-first) when the column exists', async () => {
+  it('getQueuePage returns readyHistory (newest-first) when the column exists', async () => {
     await createTestQueue('rh-list')
     await setReadyHistory('rh-list', [7, 5, 3])
 
-    const queues = await getQueues(ctx.connectionString, ctx.schema, {})
+    const queues = (await getQueuePage(ctx.connectionString, ctx.schema, { limit: 100 })).rows
     const queue = queues.find((q) => q.name === 'rh-list')
     expect(queue?.readyHistory).toEqual([7, 5, 3])
   })

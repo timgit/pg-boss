@@ -7,6 +7,7 @@ import {
   formatDateWithSeconds,
   formatWarningData,
   isValidJobState,
+  jobListSortColumn,
   isValidWarningType,
   isValidBamStatus,
   warningTypeLabel,
@@ -145,6 +146,13 @@ describe('utils', () => {
 
       expect(formatted).toBeTruthy()
       expect(typeof formatted).toBe('string')
+    })
+  })
+
+  describe('jobListSortColumn', () => {
+    it('orders finished states by completion and the rest by creation', () => {
+      for (const state of ['completed', 'cancelled', 'failed']) expect(jobListSortColumn(state)).toBe('completedOn')
+      for (const state of ['pending', 'all', 'created', 'retry', 'active', null]) expect(jobListSortColumn(state)).toBe('createdOn')
     })
   })
 

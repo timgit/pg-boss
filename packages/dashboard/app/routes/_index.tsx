@@ -56,7 +56,7 @@ export async function loader ({ context }: Route.LoaderArgs) {
 
   return {
     stats,
-    warnings,
+    warnings: warnings.rows,
     topQueues,
     migrations,
     queueStats: {

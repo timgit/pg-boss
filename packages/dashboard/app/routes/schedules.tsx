@@ -25,7 +25,8 @@ import { ErrorCard } from '~/components/error-card'
 import { dbContext } from '~/lib/db-context'
 import type { ScheduleKind } from '~/lib/types'
 import {
-  parsePageNumber,
+  parsePaging,
+  pagingSearchParams,
   formatDate,
   formatTimeUntil,
 } from '~/lib/utils'
@@ -33,35 +34,34 @@ import {
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
-  const page = parsePageNumber(url.searchParams.get('page'))
+  const { page, cursor } = parsePaging(url.searchParams)
   const limit = 20
-  const offset = (page - 1) * limit
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
   const [schedules, totalCount] = await Promise.all([
-    getSchedules(DB_URL, SCHEMA, { limit, offset, sort, dir }),
+    getSchedules(DB_URL, SCHEMA, { limit, cursor, sort, dir }),
     getScheduleCount(DB_URL, SCHEMA),
   ])
 
   // Derive each schedule's next fire time from its expression + timezone (null when the expression
   // parses as neither kind, or when a finite rule has nothing left to send).
-  const schedulesWithNext = schedules.map((schedule) => {
+  const schedulesWithNext = schedules.rows.map((schedule) => {
     const next = nextScheduleOccurrence(schedule.cron, schedule.timezone)
     return { ...schedule, nextOccurrence: next ? next.toISOString() : null }
   })
 
   const totalPages = Math.ceil(totalCount / limit)
-  const hasNextPage = schedules.length === limit
-  const hasPrevPage = page > 1
 
   return {
     schedules: schedulesWithNext,
     totalCount,
-    page,
+    page: schedules.atStart ? 1 : page,
     totalPages,
-    hasNextPage,
-    hasPrevPage,
+    hasNextPage: schedules.hasNextPage,
+    hasPrevPage: schedules.hasPrevPage,
+    nextCursor: schedules.nextCursor,
+    prevCursor: schedules.prevCursor,
   }
 }
 
@@ -125,9 +125,7 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
-    setSearchParams(params)
+    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
   }
 
   return (

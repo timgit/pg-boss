@@ -1,4 +1,4 @@
-import { appendSearchParamPairs, parseSearchParamPairs } from './utils'
+import { appendSearchParamPairs, isFinishedStateFilter, parseSearchParamPairs } from './utils'
 
 export interface JobColumn {
   path: string
@@ -61,6 +61,12 @@ const JOB_COLUMN_DB_COLUMNS = new Map<string, string>(JOB_COLUMNS.map(([path, , 
 export const DEFAULT_JOB_COLUMNS: JobColumn[] = DEFAULT_JOB_COLUMN_PATHS.map(createKnownJobColumn)
 
 export const DEFAULT_QUEUE_JOB_COLUMNS: JobColumn[] = DEFAULT_QUEUE_JOB_COLUMN_PATHS.map(createKnownJobColumn)
+
+// A finished state lists newest finished first, so its default columns show Completed before Created.
+export function defaultJobColumnsFor (state: string | null | undefined, base: JobColumn[] = DEFAULT_JOB_COLUMNS): JobColumn[] {
+  if (!isFinishedStateFilter(state)) return base
+  return base.flatMap(column => column.path === 'createdOn' ? [createKnownJobColumn('completedOn'), column] : [column])
+}
 
 export const JOB_COLUMN_SOURCE_OPTIONS = [
   ...JOB_COLUMNS.map(([path]) => path),
@@ -133,7 +139,7 @@ function createKnownJobColumn (path: string): JobColumn {
   }
 }
 
-function jobColumnsEqual (a: JobColumn[], b: JobColumn[]): boolean {
+export function jobColumnsEqual (a: JobColumn[], b: JobColumn[]): boolean {
   if (a.length !== b.length) return false
   return a.every((column, index) => {
     const other = b[index]

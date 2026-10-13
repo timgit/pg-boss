@@ -19,7 +19,9 @@ import { Pagination } from '~/components/ui/pagination'
 import { ErrorCard } from '~/components/error-card'
 import type { BamEntryResult, BamStatus, BamStatusSummary } from '~/lib/types'
 import {
-  parsePageNumber,
+  parsePaging,
+  pagingSearchParams,
+  resetPaging,
   isValidBamStatus,
   formatDateWithSeconds,
   BAM_STATUSES,
@@ -48,20 +50,29 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   // Validate status filter - invalid values are treated as no filter
   const statusFilter = isValidBamStatus(statusParam) ? statusParam : null
 
-  const page = parsePageNumber(url.searchParams.get('page'))
-  const offset = (page - 1) * PAGE_SIZE
+  const { page, cursor } = parsePaging(url.searchParams)
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
   const [entries, totalCount, summary] = await Promise.all([
-    getBamEntries(DB_URL, SCHEMA, { status: statusFilter, limit: PAGE_SIZE, offset, sort, dir }),
+    getBamEntries(DB_URL, SCHEMA, { status: statusFilter, limit: PAGE_SIZE, cursor, sort, dir }),
     getBamCount(DB_URL, SCHEMA, statusFilter),
     getBamStatusSummary(DB_URL, SCHEMA),
   ])
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE)
 
-  return { entries, summary, statusFilter, page, totalPages }
+  return {
+    entries: entries.rows,
+    summary,
+    statusFilter,
+    page: entries.atStart ? 1 : page,
+    totalPages,
+    hasNextPage: entries.hasNextPage,
+    hasPrevPage: entries.hasPrevPage,
+    nextCursor: entries.nextCursor,
+    prevCursor: entries.prevCursor,
+  }
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
@@ -75,7 +86,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function Migrations ({ loaderData }: Route.ComponentProps) {
-  const { entries, summary, statusFilter, page, totalPages } = loaderData
+  const { entries, summary, statusFilter, page, totalPages, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
 
   const counts = countByStatus(summary)
@@ -87,14 +98,12 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
     } else {
       params.delete(key)
     }
-    params.delete('page')
+    resetPaging(params)
     setSearchParams(params)
   }
 
   const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
-    setSearchParams(params)
+    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
   }
 
   return (
@@ -201,8 +210,8 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
         <Pagination
           page={page}
           totalPages={totalPages}
-          hasNextPage={page < totalPages}
-          hasPrevPage={page > 1}
+          hasNextPage={hasNextPage}
+          hasPrevPage={hasPrevPage}
           onPageChange={handlePageChange}
         />
       </Card>

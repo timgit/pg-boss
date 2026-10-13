@@ -1,17 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import pg from 'pg'
 import { ctx, createTestQueue, updateQueueStats, insertTestWarning, insertTestBam } from './helpers'
-import { getQueues, getSchedules, getWarnings, getBamEntries } from '~/lib/queries.server'
+import { getQueuePage, getSchedules, getWarnings, getBamEntries } from '~/lib/queries.server'
+
+// A page wide enough to hold every row a test writes.
+const L = 100
 
 describe('list sorting', () => {
-  describe('getQueues', () => {
+  describe('getQueuePage', () => {
     it('sorts by name ascending and descending', async () => {
       await createTestQueue('queue-a')
       await createTestQueue('queue-b')
       await createTestQueue('queue-c')
 
-      const asc = await getQueues(ctx.connectionString, ctx.schema, { sort: 'name', dir: 'asc' })
-      const desc = await getQueues(ctx.connectionString, ctx.schema, { sort: 'name', dir: 'desc' })
+      const asc = (await getQueuePage(ctx.connectionString, ctx.schema, { limit: L, sort: 'name', dir: 'asc' })).rows
+      const desc = (await getQueuePage(ctx.connectionString, ctx.schema, { limit: L, sort: 'name', dir: 'desc' })).rows
 
       expect(asc.map((q) => q.name)).toEqual(['queue-a', 'queue-b', 'queue-c'])
       expect(desc.map((q) => q.name)).toEqual(['queue-c', 'queue-b', 'queue-a'])
@@ -22,7 +25,7 @@ describe('list sorting', () => {
       await createTestQueue('q2'); await updateQueueStats(ctx.schema, 'q2', { totalCount: 1 })
       await createTestQueue('q3'); await updateQueueStats(ctx.schema, 'q3', { totalCount: 9 })
 
-      const asc = await getQueues(ctx.connectionString, ctx.schema, { sort: 'total', dir: 'asc' })
+      const asc = (await getQueuePage(ctx.connectionString, ctx.schema, { limit: L, sort: 'total', dir: 'asc' })).rows
       expect(asc.map((q) => q.totalCount)).toEqual([1, 5, 9])
     })
 
@@ -30,10 +33,11 @@ describe('list sorting', () => {
       await createTestQueue('queue-b')
       await createTestQueue('queue-a')
 
-      const result = await getQueues(ctx.connectionString, ctx.schema, {
+      const result = (await getQueuePage(ctx.connectionString, ctx.schema, {
+        limit: L,
         sort: 'name); DROP TABLE pgboss.queue; --',
         dir: 'desc',
-      })
+      })).rows
 
       // Unknown key is ignored → default name ASC, and nothing is injected.
       expect(result.map((q) => q.name)).toEqual(['queue-a', 'queue-b'])
@@ -48,7 +52,7 @@ describe('list sorting', () => {
       ['sched-q'])
     await pool.end()
 
-    const result = await getSchedules(ctx.connectionString, ctx.schema, { sort: 'key', dir: 'asc' })
+    const result = (await getSchedules(ctx.connectionString, ctx.schema, { limit: L, sort: 'key', dir: 'asc' })).rows
     expect(result.map((s) => s.key)).toEqual(['alpha', 'zeta'])
   })
 
@@ -56,7 +60,7 @@ describe('list sorting', () => {
     await insertTestWarning(ctx.schema, 'slow_query', 'm1')
     await insertTestWarning(ctx.schema, 'clock_skew', 'm2')
 
-    const asc = await getWarnings(ctx.connectionString, ctx.schema, { sort: 'type', dir: 'asc' })
+    const asc = (await getWarnings(ctx.connectionString, ctx.schema, { limit: L, sort: 'type', dir: 'asc' })).rows
     expect(asc[0].type).toBe('clock_skew')
   })
 
@@ -64,7 +68,7 @@ describe('list sorting', () => {
     await insertTestBam(ctx.schema, { name: 'mig-a', version: 36 })
     await insertTestBam(ctx.schema, { name: 'mig-b', version: 34 })
 
-    const asc = await getBamEntries(ctx.connectionString, ctx.schema, { sort: 'version', dir: 'asc' })
+    const asc = (await getBamEntries(ctx.connectionString, ctx.schema, { limit: L, sort: 'version', dir: 'asc' })).rows
     expect(asc.map((e) => e.version)).toEqual([34, 36])
   })
 })

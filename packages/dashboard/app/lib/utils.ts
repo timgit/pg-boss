@@ -18,6 +18,43 @@ export function parsePageNumber (value: string | null): number {
   return parsed
 }
 
+// The lists page with a keyset cursor (`after` or `before` in the URL), not an offset. `page` is
+// only the counter shown beside Previous and Next, so without a cursor the page is the first one.
+export function parsePaging (searchParams: URLSearchParams): { page: number; cursor: { after: string | null; before: string | null } } {
+  const after = searchParams.get('after')
+  const before = searchParams.get('before')
+  const page = after || before ? parsePageNumber(searchParams.get('page')) : 1
+  return { page, cursor: { after, before } }
+}
+
+// What a loader reports about a page's position, as pagingSearchParams needs it.
+export interface PagePosition {
+  page: number;
+  nextCursor: string | null;
+  prevCursor: string | null;
+}
+
+// Drop the paging params, so a changed filter or sort starts again from the first page.
+export function resetPaging (params: URLSearchParams): URLSearchParams {
+  params.delete('page')
+  params.delete('after')
+  params.delete('before')
+  return params
+}
+
+// The URL params for moving from the current page to `newPage`, one step either way. Page 1 drops
+// the cursor, so it is always the true start of the list.
+export function pagingSearchParams (current: URLSearchParams, newPage: number, position: PagePosition): URLSearchParams {
+  const params = resetPaging(new URLSearchParams(current))
+  if (newPage <= 1) return params
+  const forward = newPage > position.page
+  const cursor = forward ? position.nextCursor : position.prevCursor
+  if (!cursor) return params
+  params.set(forward ? 'after' : 'before', cursor)
+  params.set('page', String(newPage))
+  return params
+}
+
 /**
  * Format a date as a relative time string (e.g., "5m ago", "2h ago")
  */
@@ -86,6 +123,18 @@ export const ALL_STATES_FILTER = 'all' as const // All states (no filter)
 export const DEFAULT_STATE_FILTER = PENDING_FILTER // Default filter when none specified
 
 export type JobStateFilter = JobStateValue | typeof PENDING_FILTER | typeof ALL_STATES_FILTER
+
+const FINISHED_STATE_FILTERS: ReadonlySet<string> = new Set(['completed', 'cancelled', 'failed'])
+
+export function isFinishedStateFilter (state: string | null | undefined): boolean {
+  return state != null && FINISHED_STATE_FILTERS.has(state)
+}
+
+// The job column a list with this state filter is ordered by, newest first: when a job finished for
+// a finished state, when it was created otherwise.
+export function jobListSortColumn (state: string | null | undefined): 'createdOn' | 'completedOn' {
+  return isFinishedStateFilter(state) ? 'completedOn' : 'createdOn'
+}
 
 /**
  * Validate a job state filter value
@@ -205,8 +254,9 @@ function coerceJsonScalar (value: string): string | number | boolean {
   return value
 }
 
-// Valid warning types. Mirrors WarningType in the pg-boss core (src/types.ts); the core does not
-// publish the union as an exported type, so it is duplicated here.
+// Valid warning types: those the pg-boss core writes to the warning table (WarningType in
+// src/types.ts, less the startup warnings it only emits). The core does not publish the union as
+// an exported type, so it is duplicated here.
 export const WARNING_TYPES = [
   'slow_query',
   'queue_backlog',

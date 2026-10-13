@@ -1,7 +1,7 @@
 import { type ReactNode, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
-import { cn } from '~/lib/utils'
+import { cn, resetPaging } from '~/lib/utils'
 import { useDbHref } from '~/components/db-link'
 
 interface TableProps {
@@ -38,6 +38,8 @@ const ROW_INTERACTIVE_SELECTOR =
 interface TableHeadProps {
   children: ReactNode
   className?: string
+  /** Marks the column a fixed-order list is sorted by, newest first. */
+  sortedDesc?: boolean
 }
 
 interface TableCellProps {
@@ -104,7 +106,7 @@ export function TableRow ({ children, className, onClick, to }: TableRowProps) {
   )
 }
 
-export function TableHead ({ children, className }: TableHeadProps) {
+export function TableHead ({ children, className, sortedDesc = false }: TableHeadProps) {
   return (
     <th
       scope="col"
@@ -116,7 +118,10 @@ export function TableHead ({ children, className }: TableHeadProps) {
       {/* Mirror SortableHeader's button: inline-flex + align-middle so every header — plain or
           sortable, left or right — positions by box center rather than a (direction-dependent)
           baseline, keeping them all vertically aligned. */}
-      <span className="inline-flex items-center align-middle">{children}</span>
+      <span className="inline-flex items-center align-middle gap-1">
+        {children}
+        {sortedDesc && <ChevronDown className="h-3 w-3 shrink-0" aria-label="newest first" />}
+      </span>
     </th>
   )
 }
@@ -156,7 +161,7 @@ export function SortableHeader ({ column, children, title, align = 'left', class
     const params = new URLSearchParams(searchParams)
     params.set('sort', column)
     params.set('dir', isActive && activeDir === 'asc' ? 'desc' : 'asc')
-    params.delete('page')
+    resetPaging(params)
     setSearchParams(params)
   }
 

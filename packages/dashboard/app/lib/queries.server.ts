@@ -1,5 +1,15 @@
 import { query, queryOne } from './db.server'
-import type { JobStateFilter } from './utils'
+import {
+  cursorSelect,
+  keysetCondition,
+  keysetOrderBy,
+  keysetPage,
+  type Cursor,
+  type Key,
+  type KeyType,
+  type KeysetPage,
+} from './keyset.server'
+import { isFinishedStateFilter, type JobStateFilter } from './utils'
 import {
   isBuiltinJobColumnPath,
   jobColumnDbColumn,
@@ -22,55 +32,90 @@ export interface SortOptions {
   dir?: string | null;
 }
 
-// Map a UI sort key + direction into a safe ORDER BY clause. The key is resolved to a real column
-// through an allowlist (so it can never inject), the direction is constrained to ASC/DESC, and a
-// stable tiebreaker keeps pagination deterministic across ties. Unknown keys fall back to the list's
-// default ordering.
-function buildOrderBy (
+interface SortColumn {
+  expr: string;
+  type: KeyType;
+}
+
+// Map a UI sort key + direction into the keys a list orders and pages by. The key is resolved to a
+// real column through an allowlist (so it can never inject), the direction is constrained to
+// ASC/DESC, and the tiebreak keys make the ordering unique, which keyset paging needs. Unknown keys
+// fall back to the list's default ordering.
+function sortKeys (
   { sort, dir }: SortOptions,
-  columns: Record<string, string>,
-  defaultOrderBy: string,
-  tiebreak?: string
-): string {
+  columns: Record<string, SortColumn>,
+  defaults: Key[],
+  tiebreak: Key[]
+): Key[] {
   const column = sort ? columns[sort] : undefined
-  if (!column) return `ORDER BY ${defaultOrderBy}`
-  const direction = dir === 'desc' ? 'DESC' : 'ASC'
-  return `ORDER BY ${column} ${direction}${tiebreak ? `, ${tiebreak}` : ''}`
+  if (!column) return defaults
+  return [
+    { ...column, desc: dir === 'desc' },
+    ...tiebreak.filter(k => k.expr !== column.expr),
+  ]
 }
 
-// Per-list allowlists mapping sort keys (used in the URL + column headers) to real columns.
-const QUEUE_SORT_COLUMNS: Record<string, string> = {
-  name: 'name',
-  policy: 'policy',
-  storage: 'partition',
-  queued: 'queued_count',
-  deferred: 'deferred_count',
-  ready: 'ready_count',
-  active: 'active_count',
-  failed: 'failed_count',
-  total: 'total_count',
+// Per-list allowlists mapping sort keys (used in the URL + column headers) to real columns. A
+// nullable column is coalesced, since a keyset comparison against null matches nothing; the
+// fallbacks keep the order Postgres gives nulls (last ascending, first descending).
+const QUEUE_SORT_COLUMNS: Record<string, SortColumn> = {
+  name: { expr: 'name', type: 'text' },
+  policy: { expr: 'policy', type: 'text' },
+  storage: { expr: 'partition', type: 'bool' },
+  queued: { expr: 'queued_count', type: 'int' },
+  deferred: { expr: 'deferred_count', type: 'int' },
+  ready: { expr: 'ready_count', type: 'int' },
+  active: { expr: 'active_count', type: 'int' },
+  failed: { expr: 'failed_count', type: 'int' },
+  total: { expr: 'total_count', type: 'int' },
 }
 
-const SCHEDULE_SORT_COLUMNS: Record<string, string> = {
-  name: 'name',
-  key: 'key',
-  cron: 'cron',
-  timezone: 'timezone',
+// A null timezone is UTC to the core's scheduler, so it sorts as UTC.
+const SCHEDULE_SORT_COLUMNS: Record<string, SortColumn> = {
+  name: { expr: 'name', type: 'text' },
+  key: { expr: 'key', type: 'text' },
+  cron: { expr: 'cron', type: 'text' },
+  timezone: { expr: "COALESCE(timezone, 'UTC')", type: 'text' },
 }
 
-const WARNING_SORT_COLUMNS: Record<string, string> = {
-  type: 'type',
-  created: 'created_on',
+const WARNING_SORT_COLUMNS: Record<string, SortColumn> = {
+  type: { expr: 'type', type: 'text' },
+  created: { expr: 'created_on', type: 'timestamptz' },
 }
 
-const BAM_SORT_COLUMNS: Record<string, string> = {
-  name: 'name',
-  version: 'version',
-  status: 'status',
-  table: 'table_name',
-  created: 'created_on',
-  started: 'started_on',
-  completed: 'completed_on',
+const BAM_SORT_COLUMNS: Record<string, SortColumn> = {
+  name: { expr: 'name', type: 'text' },
+  version: { expr: 'version', type: 'int' },
+  status: { expr: 'status', type: 'text' },
+  table: { expr: 'table_name', type: 'text' },
+  created: { expr: 'created_on', type: 'timestamptz' },
+  started: { expr: "COALESCE(started_on, 'infinity'::timestamptz)", type: 'timestamptz' },
+  completed: { expr: "COALESCE(completed_on, 'infinity'::timestamptz)", type: 'timestamptz' },
+}
+
+const QUEUE_KEYS: Key[] = [{ expr: 'name', type: 'text', desc: false }]
+const SCHEDULE_KEYS: Key[] = [{ expr: 'name', type: 'text', desc: false }, { expr: 'key', type: 'text', desc: false }]
+const WARNING_KEYS: Key[] = [{ expr: 'created_on', type: 'timestamptz', desc: true }, { expr: 'id', type: 'uuid', desc: true }]
+const BAM_TIEBREAK: Key[] = [{ expr: 'created_on', type: 'timestamptz', desc: true }, { expr: 'id', type: 'uuid', desc: true }]
+const BAM_KEYS: Key[] = [{ expr: 'version', type: 'int', desc: true }, ...BAM_TIEBREAK]
+
+// Newest first. Jobs written in one transaction share created_on, so id breaks the tie.
+const QUEUE_JOB_KEYS: Key[] = [{ expr: 'created_on', type: 'timestamptz', desc: true }, { expr: 'id', type: 'uuid', desc: true }]
+const QUEUE_FINISHED_JOB_KEYS: Key[] = [{ expr: 'completed_on', type: 'timestamptz', desc: true }, { expr: 'id', type: 'uuid', desc: true }]
+
+// A finished state lists newest finished first through job_i16 (name, completed_on). Ordered by
+// created_on, a queue whose newest jobs are a backlog would read the whole backlog to find them.
+// Every path that finishes a job sets completed_on; the condition lets the planner use the index.
+const FINISHED_CONDITION = 'completed_on IS NOT NULL'
+
+// A list page: the rows plus its paging, as a loader hands it to the page.
+export type ListPage<T> = KeysetPage<T>
+
+const EMPTY_PAGE = { rows: [], hasNextPage: false, hasPrevPage: false, nextCursor: null, prevCursor: null, atStart: true }
+
+export interface PageOptions {
+  limit: number;
+  cursor?: Cursor;
 }
 
 // Validate schema name to prevent SQL injection
@@ -236,63 +281,58 @@ async function scheduleKindColumns (dbUrl: string, schema: string): Promise<stri
   return (await hasScheduleKindColumns(dbUrl, schema)) ? ', kind, last_job_id as "lastJobId"' : ''
 }
 
-export async function getQueues (
-  dbUrl: string,
-  schema: string,
-  options: {
-    limit?: number;
-    offset?: number;
-    filter?: 'all' | 'attention' | 'partitioned';
-    search?: string;
-  } & SortOptions = {}
-): Promise<QueueResult[]> {
-  const s = validateIdentifier(schema)
-  const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
-  const { limit, offset, filter = 'all', search, sort, dir } = options
-  const orderBy = buildOrderBy({ sort, dir }, QUEUE_SORT_COLUMNS, 'name', 'name')
-
-  // Build WHERE conditions
+// Build the WHERE conditions the queues list and its count share.
+function queueListConditions (
+  filter: 'all' | 'attention' | 'partitioned',
+  search: string | undefined
+): { conditions: string[]; params: unknown[] } {
   const conditions: string[] = []
   const params: unknown[] = []
-  let paramIndex = 1
 
-  // Add filter conditions
   if (filter === 'attention') {
     conditions.push('warning_queued > 0 AND queued_count > warning_queued')
   } else if (filter === 'partitioned') {
     conditions.push('partition = true')
   }
 
-  // Add search condition
   if (search && search.trim()) {
-    conditions.push(`name ILIKE $${paramIndex}`)
     params.push(`%${search.trim()}%`)
-    paramIndex++
+    conditions.push(`name ILIKE $${params.length}`)
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  return { conditions, params }
+}
 
-  // If no pagination, return all queues
-  if (limit === undefined) {
+// One page of the queues list, filtered, searched and sorted.
+export async function getQueuePage (
+  dbUrl: string,
+  schema: string,
+  options: PageOptions & {
+    filter?: 'all' | 'attention' | 'partitioned';
+    search?: string;
+  } & SortOptions
+): Promise<ListPage<QueueResult>> {
+  const s = validateIdentifier(schema)
+  const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
+  const { limit, cursor = {}, filter = 'all', search, sort, dir } = options
+  const keys = sortKeys({ sort, dir }, QUEUE_SORT_COLUMNS, QUEUE_KEYS, QUEUE_KEYS)
+
+  return keysetPage<QueueResult>(keys, cursor, limit, (plan) => {
+    const { conditions, params } = queueListConditions(filter, search)
+    if (plan.values) {
+      conditions.push(keysetCondition(keys, params.length + 1, plan.backward))
+      params.push(...plan.values)
+    }
+    params.push(limit + 1)
     const sql = `
-      SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
+      SELECT ${QUEUE_COLUMNS}${readyHistoryCol}, ${cursorSelect(keys)}
       FROM ${s}.queue
-      ${whereClause}
-      ${orderBy}
+      ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
+      ${keysetOrderBy(keys, plan.backward)}
+      LIMIT $${params.length}
     `
-    return query<QueueResult>(dbUrl, sql, params)
-  }
-
-  // With pagination
-  params.push(limit, offset ?? 0)
-  const sql = `
-    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
-    FROM ${s}.queue
-    ${whereClause}
-    ${orderBy}
-    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-  `
-  return query<QueueResult>(dbUrl, sql, params)
+    return query(dbUrl, sql, params)
+  })
 }
 
 // Get total count of queues with optional filtering and search
@@ -306,25 +346,7 @@ export async function getQueueCount (
 ): Promise<number> {
   const s = validateIdentifier(schema)
   const { filter = 'all', search } = options
-
-  // Build WHERE conditions
-  const conditions: string[] = []
-  const params: unknown[] = []
-  let paramIndex = 1
-
-  // Add filter conditions
-  if (filter === 'attention') {
-    conditions.push('warning_queued > 0 AND queued_count > warning_queued')
-  } else if (filter === 'partitioned') {
-    conditions.push('partition = true')
-  }
-
-  // Add search condition
-  if (search && search.trim()) {
-    conditions.push(`name ILIKE $${paramIndex}`)
-    params.push(`%${search.trim()}%`)
-    paramIndex++
-  }
+  const { conditions, params } = queueListConditions(filter, search)
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
@@ -470,13 +492,17 @@ export interface RecentJobsFilterOptions {
   output?: Record<string, unknown> | null;
 }
 
-// Build the shared WHERE fragment used by getRecentJobs and getRecentJobsCount.
+// The pending filter spelled as a list, not state < 'completed', so the planner can prove it implies
+// job_i14's live-state predicate and read a queue's live jobs through it instead of its whole history.
+const PENDING_CONDITION = "state IN ('created', 'retry', 'active')"
+
+// Build the WHERE fragment getRecentJobs filters by.
 // Returns the assembled clause (with leading WHERE if any conditions exist) plus
 // the bound params. The caller appends its own LIMIT/OFFSET params after these.
 function buildRecentJobsWhere (
   schema: string,
   options: RecentJobsFilterOptions
-): { clause: string; params: unknown[]; impossible: boolean } {
+): { clause: string; conditions: string[]; params: unknown[]; impossible: boolean } {
   const conditions: string[] = []
   const params: unknown[] = []
   let paramIndex = 1
@@ -484,7 +510,7 @@ function buildRecentJobsWhere (
   const { state = null, id = null, queues = null, minRetries = null, data = null, output = null } = options
 
   if (state === 'pending') {
-    conditions.push("state < 'completed'")
+    conditions.push(PENDING_CONDITION)
   } else if (state && state !== 'all') {
     conditions.push(`state = $${paramIndex}::${schema}.job_state`)
     params.push(state)
@@ -495,7 +521,7 @@ function buildRecentJobsWhere (
     if (!UUID_REGEX.test(id)) {
       // No row will ever match a malformed UUID — short-circuit so callers can
       // skip the query entirely.
-      return { clause: '', params: [], impossible: true }
+      return { clause: '', conditions: [], params: [], impossible: true }
     }
     conditions.push(`id = $${paramIndex}::uuid`)
     params.push(id)
@@ -527,59 +553,87 @@ function buildRecentJobsWhere (
   }
 
   const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-  return { clause, params, impossible: false }
+  return { clause, conditions, params, impossible: false }
 }
 
-// Get recent jobs across all queues with pagination
-// Uses lightweight columns and includes queue name
+// Newest first across queues. The same id can sit in two queues (a redrive keeps it), so name ends
+// the tie. The inner keys order each queue's own jobs; the outer ones are the same columns as the
+// lateral subquery projects them.
+const RECENT_JOB_KEYS: Key[] = [
+  { expr: 'created_on', type: 'timestamptz', desc: true },
+  { expr: 'id', type: 'uuid', desc: true },
+  { expr: 'name', type: 'text', desc: true },
+]
+const RECENT_JOB_PAGE_KEYS: Key[] = [
+  { expr: 'j."createdOn"', type: 'timestamptz', desc: true },
+  { expr: 'j.id', type: 'uuid', desc: true },
+  { expr: 'j.name', type: 'text', desc: true },
+]
+const FINISHED_JOB_KEYS: Key[] = [
+  { expr: 'completed_on', type: 'timestamptz', desc: true },
+  { expr: 'id', type: 'uuid', desc: true },
+  { expr: 'name', type: 'text', desc: true },
+]
+const FINISHED_JOB_PAGE_KEYS: Key[] = [
+  { expr: 'j."completedOn"', type: 'timestamptz', desc: true },
+  { expr: 'j.id', type: 'uuid', desc: true },
+  { expr: 'j.name', type: 'text', desc: true },
+]
+
+// One page of recent jobs across queues. No index orders the job table by created_on alone, so each
+// queue reads its own next page through job_i15 (name, created_on), job_i14 for live states or
+// job_i16 for finished ones, and the pages are merged. That costs an index descent per queue, where a whole-table scan would cost a
+// read of every job on every page view.
 export async function getRecentJobs (
   dbUrl: string,
   schema: string,
-  options: RecentJobsFilterOptions & {
-    limit?: number;
-    offset?: number;
+  options: RecentJobsFilterOptions & PageOptions & {
     jobColumns?: JobColumn[];
-  } = {}
-): Promise<JobResult[]> {
+  }
+): Promise<ListPage<JobResult>> {
   const s = validateIdentifier(schema)
-  const { limit = 20, offset = 0, jobColumns = [], ...filters } = options
-
-  const { clause, params, impossible } = buildRecentJobsWhere(s, filters)
-  if (impossible) return []
-
-  const limitPlaceholder = `$${params.length + 1}`
-  const offsetPlaceholder = `$${params.length + 2}`
+  const { limit, cursor = {}, jobColumns = [], ...filters } = options
   const selectColumns = buildJobListSelect(jobColumns)
 
-  const sql = `
-    SELECT ${selectColumns}
-    FROM ${s}.job
-    ${clause}
-    ORDER BY created_on DESC
-    LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
-  `
-  return query<JobResult>(dbUrl, sql, [...params, limit, offset])
+  const { conditions: jobConditions, params: filterParams, impossible } = buildRecentJobsWhere(s, filters)
+  if (impossible) return EMPTY_PAGE
+
+  const finished = isFinishedStateFilter(filters.state)
+  const keys = finished ? FINISHED_JOB_KEYS : RECENT_JOB_KEYS
+  const pageKeys = finished ? FINISHED_JOB_PAGE_KEYS : RECENT_JOB_PAGE_KEYS
+
+  return keysetPage<JobResult>(pageKeys, cursor, limit, (plan) => {
+    const params = [...filterParams]
+    const conditions = ['name = q.name', ...jobConditions]
+    if (finished) conditions.push(FINISHED_CONDITION)
+    if (plan.values) {
+      conditions.push(keysetCondition(keys, params.length + 1, plan.backward))
+      params.push(...plan.values)
+    }
+    const queueFilter = filters.queues && filters.queues.length > 0
+      ? `WHERE q.name = ANY($${params.push(filters.queues)}::text[])`
+      : ''
+    const limitParam = `$${params.push(limit + 1)}`
+
+    const sql = `
+      SELECT j.*, ${cursorSelect(pageKeys)}
+      FROM ${s}.queue q
+      CROSS JOIN LATERAL (
+        SELECT ${selectColumns}
+        FROM ${s}.job
+        WHERE ${conditions.join(' AND ')}
+        ${keysetOrderBy(keys, plan.backward)}
+        LIMIT ${limitParam}
+      ) j
+      ${queueFilter}
+      ${keysetOrderBy(pageKeys, plan.backward)}
+      LIMIT ${limitParam}
+    `
+    return query(dbUrl, sql, params)
+  })
 }
 
-// Count of jobs matching the same filters as getRecentJobs. Intentionally
-// separate so the loader can skip it when no filter is active (an unfiltered
-// COUNT(*) on the job table is expensive on large deployments).
-export async function getRecentJobsCount (
-  dbUrl: string,
-  schema: string,
-  options: RecentJobsFilterOptions = {}
-): Promise<number> {
-  const s = validateIdentifier(schema)
-  const { clause, params, impossible } = buildRecentJobsWhere(s, options)
-  if (impossible) return 0
-
-  const sql = `SELECT COUNT(*)::int as count FROM ${s}.job ${clause}`
-  const result = await queryOne<{ count: number }>(dbUrl, sql, params)
-  return result?.count ?? 0
-}
-
-// Lightweight name-only listing of queues for filter dropdowns. Kept separate
-// from getQueues so the multi-select doesn't pull stat columns it never uses.
+// Every queue name, for the queue pickers on the Jobs filter and the send, schedule and create forms.
 export async function getQueueNames (
   dbUrl: string,
   schema: string
@@ -590,7 +644,8 @@ export async function getQueueNames (
   return rows.map(r => r.name)
 }
 
-// Get jobs for a queue with pagination and filtering
+// One page of a queue's jobs, newest first, through job_i15 (name, created_on), or newest finished
+// first through job_i16 (name, completed_on) for a finished state.
 // Uses lightweight columns to avoid loading large payloads
 // For counts, we use cached stats from the queue table instead of COUNT(*).
 // Supports 'pending' filter for non-final states (created, retry, active)
@@ -599,52 +654,42 @@ export async function getJobs (
   dbUrl: string,
   schema: string,
   queueName: string,
-  options: {
+  options: PageOptions & {
     state?: string | null;
-    limit?: number;
-    offset?: number;
     jobColumns?: JobColumn[];
-  } = {}
-): Promise<JobResult[]> {
+  }
+): Promise<ListPage<JobResult>> {
   const s = validateIdentifier(schema)
-  const { state = null, limit = 50, offset = 0, jobColumns = [] } = options
+  const { state = null, limit, cursor = {}, jobColumns = [] } = options
   const selectColumns = buildJobListSelect(jobColumns)
 
-  // Handle 'pending' filter for non-final states
-  if (state === 'pending') {
-    const sql = `
-      SELECT ${selectColumns}
-      FROM ${s}.job
-      WHERE name = $1
-      AND state < 'completed'
-      ORDER BY created_on DESC
-      LIMIT $2 OFFSET $3
-    `
-    return query<JobResult>(dbUrl, sql, [queueName, limit, offset])
-  }
+  const finished = isFinishedStateFilter(state)
+  const keys = finished ? QUEUE_FINISHED_JOB_KEYS : QUEUE_JOB_KEYS
 
-  // Handle 'all' filter or null - no state filtering
-  if (state === 'all' || state === null) {
-    const sql = `
-      SELECT ${selectColumns}
-      FROM ${s}.job
-      WHERE name = $1
-      ORDER BY created_on DESC
-      LIMIT $2 OFFSET $3
-    `
-    return query<JobResult>(dbUrl, sql, [queueName, limit, offset])
-  }
+  return keysetPage<JobResult>(keys, cursor, limit, (plan) => {
+    const params: unknown[] = [queueName]
+    const conditions = ['name = $1']
+    if (state === 'pending') {
+      conditions.push(PENDING_CONDITION)
+    } else if (state !== 'all' && state !== null) {
+      conditions.push(`state = $${params.push(state)}::${s}.job_state`)
+    }
+    if (finished) conditions.push(FINISHED_CONDITION)
+    if (plan.values) {
+      conditions.push(keysetCondition(keys, params.length + 1, plan.backward))
+      params.push(...plan.values)
+    }
+    params.push(limit + 1)
 
-  // Filter by specific state
-  const sql = `
-    SELECT ${selectColumns}
-    FROM ${s}.job
-    WHERE name = $1
-    AND state = $2::${s}.job_state
-    ORDER BY created_on DESC
-    LIMIT $3 OFFSET $4
-  `
-  return query<JobResult>(dbUrl, sql, [queueName, state, limit, offset])
+    const sql = `
+      SELECT ${selectColumns}, ${cursorSelect(keys)}
+      FROM ${s}.job
+      WHERE ${conditions.join(' AND ')}
+      ${keysetOrderBy(keys, plan.backward)}
+      LIMIT $${params.length}
+    `
+    return query(dbUrl, sql, params)
+  })
 }
 
 // Get job counts from cached queue stats
@@ -677,110 +722,125 @@ export function getJobCountFromQueue (
   }
 }
 
-// Get warnings with pagination and filtering
-// Returns empty array if warning table doesn't exist (persistWarnings not enabled)
+function isMissingTable (err: unknown): boolean {
+  return !!err && typeof err === 'object' && 'code' in err && err.code === '42P01'
+}
+
+// One page of warnings, filtered by type and sorted.
+// Returns an empty page if the warning table doesn't exist (persistWarnings not enabled)
 export async function getWarnings (
   dbUrl: string,
   schema: string,
-  options: {
+  options: PageOptions & {
     type?: string | null;
-    limit?: number;
-    offset?: number;
-  } & SortOptions = {}
-): Promise<WarningResult[]> {
+  } & SortOptions
+): Promise<ListPage<WarningResult>> {
   const s = validateIdentifier(schema)
-  const { type = null, limit = 50, offset = 0, sort, dir } = options
-  const orderBy = buildOrderBy({ sort, dir }, WARNING_SORT_COLUMNS, 'created_on DESC', 'id DESC')
+  const { type = null, limit, cursor = {}, sort, dir } = options
+  const keys = sortKeys({ sort, dir }, WARNING_SORT_COLUMNS, WARNING_KEYS, [WARNING_KEYS[1]])
 
-  const sql = `
-    SELECT
-      id,
-      type,
-      message,
-      data,
-      created_on as "createdOn"
-    FROM ${s}.warning
-    WHERE ($1::text IS NULL OR type = $1)
-    ${orderBy}
-    LIMIT $2 OFFSET $3
-  `
   try {
-    return await query<WarningResult>(dbUrl, sql, [type, limit, offset])
+    return await keysetPage<WarningResult>(keys, cursor, limit, (plan) => {
+      const params: unknown[] = [type]
+      const conditions = ['($1::text IS NULL OR type = $1)']
+      if (plan.values) {
+        conditions.push(keysetCondition(keys, params.length + 1, plan.backward))
+        params.push(...plan.values)
+      }
+      params.push(limit + 1)
+      const sql = `
+        SELECT
+          id,
+          type,
+          message,
+          data,
+          created_on as "createdOn",
+          ${cursorSelect(keys)}
+        FROM ${s}.warning
+        WHERE ${conditions.join(' AND ')}
+        ${keysetOrderBy(keys, plan.backward)}
+        LIMIT $${params.length}
+      `
+      return query(dbUrl, sql, params)
+    })
   } catch (err: unknown) {
-    // Table doesn't exist - persistWarnings not enabled
-    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
-      return []
-    }
+    if (isMissingTable(err)) return EMPTY_PAGE
     throw err
   }
 }
 
-// Get warning count (for pagination)
+// Most warnings getWarningCount counts before it stops and reports the count as capped. Nothing
+// deletes warnings unless warningRetentionDays is set, so the table can grow without bound.
+export const WARNING_COUNT_CAP = 10_000
+
+// Warning count for the page header, up to `cap`.
 // Returns 0 if warning table doesn't exist (persistWarnings not enabled)
 export async function getWarningCount (
   dbUrl: string,
   schema: string,
-  type?: string | null
-): Promise<number> {
+  type?: string | null,
+  cap: number = WARNING_COUNT_CAP
+): Promise<{ count: number; capped: boolean }> {
   const s = validateIdentifier(schema)
   const sql = `
     SELECT COUNT(*)::int as count
-    FROM ${s}.warning
-    WHERE ($1::text IS NULL OR type = $1)
+    FROM (SELECT 1 FROM ${s}.warning WHERE ($1::text IS NULL OR type = $1) LIMIT $2) t
   `
   try {
-    const result = await queryOne<{ count: number }>(dbUrl, sql, [type ?? null])
-    return result?.count ?? 0
+    const count = (await queryOne<{ count: number }>(dbUrl, sql, [type ?? null, cap + 1]))?.count ?? 0
+    return count > cap ? { count: cap, capped: true } : { count, capped: false }
   } catch (err: unknown) {
-    // Table doesn't exist - persistWarnings not enabled
-    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
-      return 0
-    }
+    if (isMissingTable(err)) return { count: 0, capped: false }
     throw err
   }
 }
 
-// Get background async migration (BAM) entries, newest schema version first.
+// One page of background async migration (BAM) entries, newest schema version first.
 // Mirrors plans.getBamEntries in the pg-boss core (same column aliases).
-// Returns [] if the bam table doesn't exist (schema predates async migrations).
+// Returns an empty page if the bam table doesn't exist (schema predates async migrations).
 export async function getBamEntries (
   dbUrl: string,
   schema: string,
-  options: {
+  options: PageOptions & {
     status?: string | null;
-    limit?: number;
-    offset?: number;
-  } & SortOptions = {}
-): Promise<BamEntryResult[]> {
+  } & SortOptions
+): Promise<ListPage<BamEntryResult>> {
   const s = validateIdentifier(schema)
-  const { status = null, limit = 200, offset = 0, sort, dir } = options
-  const orderBy = buildOrderBy({ sort, dir }, BAM_SORT_COLUMNS, 'version DESC, created_on DESC', 'created_on DESC')
+  const { status = null, limit, cursor = {}, sort, dir } = options
+  const keys = sortKeys({ sort, dir }, BAM_SORT_COLUMNS, BAM_KEYS, BAM_TIEBREAK)
 
-  const sql = `
-    SELECT
-      id,
-      name,
-      version,
-      status,
-      queue,
-      table_name as "table",
-      command,
-      error,
-      created_on as "createdOn",
-      started_on as "startedOn",
-      completed_on as "completedOn"
-    FROM ${s}.bam
-    WHERE ($1::text IS NULL OR status = $1)
-    ${orderBy}
-    LIMIT $2 OFFSET $3
-  `
   try {
-    return await query<BamEntryResult>(dbUrl, sql, [status, limit, offset])
+    return await keysetPage<BamEntryResult>(keys, cursor, limit, (plan) => {
+      const params: unknown[] = [status]
+      const conditions = ['($1::text IS NULL OR status = $1)']
+      if (plan.values) {
+        conditions.push(keysetCondition(keys, params.length + 1, plan.backward))
+        params.push(...plan.values)
+      }
+      params.push(limit + 1)
+      const sql = `
+        SELECT
+          id,
+          name,
+          version,
+          status,
+          queue,
+          table_name as "table",
+          command,
+          error,
+          created_on as "createdOn",
+          started_on as "startedOn",
+          completed_on as "completedOn",
+          ${cursorSelect(keys)}
+        FROM ${s}.bam
+        WHERE ${conditions.join(' AND ')}
+        ${keysetOrderBy(keys, plan.backward)}
+        LIMIT $${params.length}
+      `
+      return query(dbUrl, sql, params)
+    })
   } catch (err: unknown) {
-    // Table doesn't exist - schema predates background async migrations
-    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
-      return []
-    }
+    if (isMissingTable(err)) return EMPTY_PAGE
     throw err
   }
 }
@@ -979,38 +1039,40 @@ export function isValidIntent (intent: unknown): intent is JobActionIntent {
   return typeof intent === 'string' && JOB_INTENTS.includes(intent as JobActionIntent)
 }
 
-// Get all schedules with pagination
+// One page of schedules, sorted.
 export async function getSchedules (
   dbUrl: string,
   schema: string,
-  options: {
-    limit?: number;
-    offset?: number;
-  } & SortOptions = {}
-): Promise<ScheduleResult[]> {
+  options: PageOptions & SortOptions
+): Promise<ListPage<ScheduleResult>> {
   const s = validateIdentifier(schema)
-  const { limit, offset, sort, dir } = options
-  const orderBy = buildOrderBy({ sort, dir }, SCHEDULE_SORT_COLUMNS, 'name, key', 'name, key')
+  const { limit, cursor = {}, sort, dir } = options
+  const keys = sortKeys({ sort, dir }, SCHEDULE_SORT_COLUMNS, SCHEDULE_KEYS, SCHEDULE_KEYS)
   const kindColumns = await scheduleKindColumns(dbUrl, schema)
 
-  const sql = `
-    SELECT
-      name,
-      key,
-      cron,
-      timezone,
-      data,
-      options,
-      created_on as "createdOn",
-      updated_on as "updatedOn"${kindColumns}
-    FROM ${s}.schedule
-    ${orderBy}
-    ${limit !== undefined ? 'LIMIT $1 OFFSET $2' : ''}
-  `
-
-  const params: unknown[] = (limit !== undefined) ? [limit, offset ?? 0] : []
-
-  return await query<ScheduleResult>(dbUrl, sql, params)
+  return keysetPage<ScheduleResult>(keys, cursor, limit, (plan) => {
+    const params: unknown[] = []
+    const where = plan.values ? `WHERE ${keysetCondition(keys, 1, plan.backward)}` : ''
+    if (plan.values) params.push(...plan.values)
+    params.push(limit + 1)
+    const sql = `
+      SELECT
+        name,
+        key,
+        cron,
+        timezone,
+        data,
+        options,
+        created_on as "createdOn",
+        updated_on as "updatedOn"${kindColumns},
+        ${cursorSelect(keys)}
+      FROM ${s}.schedule
+      ${where}
+      ${keysetOrderBy(keys, plan.backward)}
+      LIMIT $${params.length}
+    `
+    return query(dbUrl, sql, params)
+  })
 }
 
 export async function getScheduleCount (dbUrl: string, schema: string): Promise<number> {
