@@ -7,6 +7,8 @@ import Boss from '../src/boss.ts'
 import Manager from '../src/manager.ts'
 import * as Attorney from '../src/attorney.ts'
 import type { IDatabase } from '../src/types.ts'
+import * as plans from '../src/plans.ts'
+import pg from 'pg'
 
 describe('delete', function () {
   it('should delete a completed job via maintenance', async function () {
@@ -180,6 +182,35 @@ describe('delete', function () {
     ])
 
     if (!helper.isPglite) await db.close()
+  })
+
+  // The claim and its release can land on different pooled connections. CockroachDB only has the ISO
+  // DateStyle, and PGlite has one connection.
+  it.skipIf(helper.isPglite || helper.isCockroachDb)('should hand back a claim through a connection with another DateStyle and TimeZone', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
+
+    const connect = async (options: string) => {
+      const client = new pg.Client({ connectionString: helper.getConnectionString(), options })
+      await client.connect()
+      return client
+    }
+
+    const claiming = await connect('-c DateStyle=SQL,DMY -c TimeZone=Asia/Kolkata')
+    const releasing = await connect('-c DateStyle=SQL,MDY -c TimeZone=America/New_York')
+
+    try {
+      const claim = plans.trySetQueueDeletionTime(ctx.schema, [ctx.schema], 0)
+      const { rows: [{ claimedOn }] } = await claiming.query(claim.text, claim.values)
+
+      const release = plans.releaseQueueDeletionTime(ctx.schema, [ctx.schema], claimedOn)
+      await releasing.query(release.text, release.values)
+
+      const { rows } = await releasing.query(`SELECT maintain_on FROM ${ctx.schema}.queue WHERE name = $1`, [ctx.schema])
+      expect(rows[0].maintain_on).toBeNull()
+    } finally {
+      await claiming.end()
+      await releasing.end()
+    }
   })
 
   // A pass that outlasts the maintenance interval may find a queue claimed again by another instance,

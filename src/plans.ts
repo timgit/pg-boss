@@ -1677,6 +1677,8 @@ function trySetTimestamp (schema: string, column: string, seconds: number) {
   `
 }
 
+// claimedOn comes back as UTC ISO text, so the release can read it on a connection whose DateStyle
+// or TimeZone differs from the one that claimed.
 function trySetQueueTimestamp (schema: string, queues: string[], column: string, seconds: number, skipLocked?: boolean): SqlQuery {
   return {
     text: `
@@ -1691,7 +1693,7 @@ function trySetQueueTimestamp (schema: string, queues: string[], column: string,
     SET ${column} = ${schema}.job_now()
     FROM due
     WHERE queue.name = due.name
-    RETURNING queue.name, queue.${column}::text AS "claimedOn"
+    RETURNING queue.name, ${utcIsoText(`queue.${column}`)} AS "claimedOn"
   `,
     values: [queues]
   }
