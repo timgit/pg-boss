@@ -83,7 +83,7 @@ const { rows } = await executeSql(text, values)
 assert(rows[0].input === 'arg1')
 ```
 
-Some of pg-boss's statements are several statements in one text, and pg-boss reads rows from statements before the last. For those, `executeSql` must return every statement's result, as an array of results the way `pg` does, not only the last one.
+Some of pg-boss's statements are several statements in one text, and pg-boss reads rows from statements before the last. For those, `executeSql` must return every statement's result, as an array of results the way `pg` does, not only the last one. pg-promise's `query()`, `any()` and `result()` return only the last result, and its `multiResult()` returns them all.
 
 See [Custom type parsers](#custom-type-parsers) for how a global `pg-types` parser interacts with pg-boss, whether you bring your own pool or not.
 
