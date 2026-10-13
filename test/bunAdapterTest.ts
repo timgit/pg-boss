@@ -82,6 +82,23 @@ describe('bun adapter', () => {
     expect(counts()).toEqual({ reserveCount: 1, releaseCount: 1 })
   })
 
+  it('rolls back a failed script before releasing its connection', async () => {
+    // a script that fails after its BEGIN leaves the session in an aborted transaction, which the
+    // pool would otherwise hand to the next caller
+    const { client, calls } = fakeBunSql(call => {
+      if (call.text.startsWith('BEGIN')) throw new Error('division by zero')
+      return []
+    })
+
+    await expect(fromBunSql(client).executeSql('BEGIN; SELECT 1/0; COMMIT;'))
+      .rejects.toThrow('division by zero')
+
+    expect(calls.map(call => [call.text, call.reserved])).toEqual([
+      ['BEGIN; SELECT 1/0; COMMIT;', true],
+      ['ROLLBACK', true]
+    ])
+  })
+
   it('keeps ordinary statements on the pool', async () => {
     const { client, calls, counts } = fakeBunSql()
 

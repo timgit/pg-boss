@@ -95,6 +95,12 @@ async function runReserved (client: BunSqlLike, run: (target: BunReservedSqlLike
 
   try {
     return await run(reserved)
+  } catch (err) {
+    // A script that fails after its BEGIN leaves the session in an aborted transaction. node-postgres
+    // discards a client whose query failed, but Bun's pool would hand this one to the next caller,
+    // whose statement would fail with "current transaction is aborted".
+    await reserved.unsafe('ROLLBACK').catch(() => {})
+    throw err
   } finally {
     reserved.release()
   }
