@@ -1585,7 +1585,9 @@ describe('bam', function () {
 
         await insertBamRow(ctx.schema, 'pending_cmd', 'pending', `CREATE INDEX CONCURRENTLY IF NOT EXISTS pending_idx ON ${ctx.schema}.pending_test (a)`)
 
-        const failed = waitForBamEvent(boss, 'pending_cmd', 'failed')
+        // A concurrent build waits out every older snapshot in the database, which another suite
+        // sharing it can hold for seconds.
+        const failed = waitForBamEvent(boss, 'pending_cmd', 'failed', 25_000)
         await triggerBamPoll(ctx.schema)
         const event = await failed
 
