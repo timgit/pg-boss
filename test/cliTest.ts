@@ -395,6 +395,38 @@ describePglite('cli', function () {
 
         expect(await indexNames()).toEqual(['job_common_i7', 'job_common_i8'])
       }, 30_000)
+
+      // The builds run after the version commits, so a failed one is handed to the operator rather
+      // than left for a BAM worker that has no row for it.
+      itPostgresOnly('should print the index builds left to run when one fails after the version commits', async function () {
+        runCli(['create', '--connection-string', connectionString, '--schema', schema])
+        runCli(['rollback', '--connection-string', connectionString, '--schema', schema])
+
+        const db = await getDb()
+        const trigger = `${schema}_fail_i16`
+
+        try {
+          await db.executeSql(`
+            CREATE FUNCTION ${schema}.fail_i16() RETURNS event_trigger LANGUAGE plpgsql AS $$
+            BEGIN
+              IF current_query() LIKE '%i16 ON ${schema}.%' THEN
+                RAISE EXCEPTION 'job_i16 refused';
+              END IF;
+            END $$`)
+          await db.executeSql(`CREATE EVENT TRIGGER ${trigger} ON ddl_command_start WHEN TAG IN ('CREATE INDEX') EXECUTE FUNCTION ${schema}.fail_i16()`)
+
+          const result = runCli(['migrate', '--connection-string', connectionString, '--schema', schema])
+
+          expect(result.code).toBe(1)
+          expect(result.stderr).toContain(`is at version ${currentSchemaVersion}, but an index build failed: job_i16 refused`)
+          expect(result.stderr).toMatch(/i16 ON/)
+          expect(result.stderr).toMatch(/i17 ON/)
+          expect(result.stderr).not.toMatch(/i15 ON/)
+        } finally {
+          await db.executeSql(`DROP EVENT TRIGGER IF EXISTS ${trigger}`)
+          await db.close()
+        }
+      }, 30_000)
     })
 
     describe('rollback', function () {
