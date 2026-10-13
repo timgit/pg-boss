@@ -41,7 +41,7 @@ await db.transaction().execute(async (trx) => {
 
 ## Drizzle
 
-The Drizzle adapter requires the `sql` tagged-template function from `drizzle-orm` as a second argument. This allows pg-boss to construct parameterised queries through Drizzle's public API without adding `drizzle-orm` as a runtime dependency. The `node-postgres`, `postgres-js` and `bun-sql` drivers are supported. For `bun-sql`, see [Bun](../database-backends.md#bun-driver), which covers running pg-boss on Bun's client as well as enqueueing through it.
+The Drizzle adapter requires the `sql` tagged-template function from `drizzle-orm` as a second argument. This allows pg-boss to construct parameterised queries through Drizzle's public API without adding `drizzle-orm` as a runtime dependency. The `node-postgres`, `postgres-js` and `bun-sql` drivers are supported. For `bun-sql`, see [Bun](../database-backends.md#bun-driver), which covers running pg-boss on Bun's client as well as enqueueing through it. To run pg-boss itself on the client a `postgres-js` Drizzle instance wraps, see [postgres.js](../database-backends.md#postgres-js-driver).
 
 ```ts
 import { fromDrizzle } from 'pg-boss'
@@ -51,6 +51,20 @@ await db.transaction(async (tx) => {
   await tx.insert(orders).values({ item: 'widget', qty: 1 })
 
   await boss.send('order-processing', { item: 'widget' }, { db: fromDrizzle(tx, sql) })
+})
+```
+
+## postgres.js
+
+Without an ORM, a postgres.js `sql.begin()` transaction goes through the same adapter that runs pg-boss on a postgres.js client. See [postgres.js](../database-backends.md#postgres-js-driver).
+
+```ts
+import { fromPostgresJs } from 'pg-boss'
+
+await sql.begin(async (tx) => {
+  await tx`insert into orders (item, qty) values ('widget', 1)`
+
+  await boss.send('order-processing', { item: 'widget' }, { db: fromPostgresJs(tx) })
 })
 ```
 

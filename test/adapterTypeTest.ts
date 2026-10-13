@@ -1,12 +1,13 @@
 import { describe, it, expectTypeOf } from 'vitest'
 
-import { fromKnex, fromKysely, fromDrizzle, fromPrisma } from '../src/adapters/index.ts'
+import { fromKnex, fromKysely, fromDrizzle, fromPrisma, fromPostgresJs } from '../src/adapters/index.ts'
 import type {
   KnexTransactionLike,
   KyselyTransactionLike,
   DrizzleTransactionLike,
   DrizzleSqlTagLike,
-  PrismaTransactionLike
+  PrismaTransactionLike,
+  PostgresJsLike
 } from '../src/adapters/index.ts'
 import type { IDatabase } from '../src/types.ts'
 
@@ -15,6 +16,7 @@ import type { Transaction as KyselyTransaction } from 'kysely'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { sql as drizzleSqlType } from 'drizzle-orm'
 import type { PrismaClient } from '@prisma/client'
+import type { Sql, TransactionSql } from 'postgres'
 
 // Vitest typecheck verifies these at compile time.
 // A failure means our adapter interfaces have drifted from the real library types.
@@ -40,6 +42,14 @@ describe('adapter type compatibility', () => {
     expectTypeOf<PrismaClient>().toMatchTypeOf<PrismaTransactionLike>()
   })
 
+  it('postgres.js client satisfies PostgresJsLike', () => {
+    expectTypeOf<Sql>().toMatchTypeOf<PostgresJsLike>()
+  })
+
+  it('postgres.js transaction satisfies PostgresJsLike', () => {
+    expectTypeOf<TransactionSql>().toMatchTypeOf<PostgresJsLike>()
+  })
+
   it('fromKnex returns IDatabase', () => {
     expectTypeOf(fromKnex).returns.toMatchTypeOf<IDatabase>()
   })
@@ -54,5 +64,9 @@ describe('adapter type compatibility', () => {
 
   it('fromPrisma returns IDatabase', () => {
     expectTypeOf(fromPrisma).returns.toMatchTypeOf<IDatabase>()
+  })
+
+  it('fromPostgresJs returns IDatabase', () => {
+    expectTypeOf(fromPostgresJs).returns.toMatchTypeOf<IDatabase>()
   })
 })

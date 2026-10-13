@@ -838,6 +838,7 @@ export {
   fromPrisma,
   fromPglite,
   fromBunSql,
+  fromPostgresJs,
 } from './adapters/index.ts'
 
 export type {
@@ -849,4 +850,6 @@ export type {
   PGliteLike,
   BunSqlLike,
   BunReservedSqlLike,
+  PostgresJsLike,
+  PostgresJsReservedLike,
 } from './adapters/index.ts'

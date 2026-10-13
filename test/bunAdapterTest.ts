@@ -99,6 +99,14 @@ describe('bun adapter', () => {
     ])
   })
 
+  it('binds an undefined value as null, as node-postgres does', async () => {
+    const { client, calls } = fakeBunSql()
+
+    await fromBunSql(client).executeSql('SELECT $1, $2', [undefined, 'x'])
+
+    expect(calls[0]?.values).toEqual([null, 'x'])
+  })
+
   it('keeps ordinary statements on the pool', async () => {
     const { client, calls, counts } = fakeBunSql()
 

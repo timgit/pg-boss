@@ -54,7 +54,8 @@ fetch instead. See [Citus](#tested-citus-compatible-in-standard-mode).
 
 Bun's `Bun.SQL` client has no row of its own: it is a different *driver* against PostgreSQL, not a
 different database, so it runs on the `postgres` profile with every feature above, LISTEN/NOTIFY
-included, on Bun 1.4.0 and later. See [Bun](#bun-driver).
+included, on Bun 1.4.0 and later. See [Bun](#bun-driver). The same goes for the `postgres` package
+(postgres.js). See [postgres.js](#postgres-js-driver).
 
 ## Compatibility flags
 
@@ -422,6 +423,54 @@ notification missed while the listener was down is recovered by the next fetch.
 On an earlier Bun the adapter exposes no listener at all, and pg-boss emits a
 `listen_notify_unavailable` warning and delivers by polling, which is the default and never more than a
 latency difference.
+
+### postgres.js (driver)
+
+[postgres.js](https://github.com/porsager/postgres) (the `postgres` package) is another PostgreSQL
+driver, reached through the `fromPostgresJs` adapter. Like Bun, it runs on the `postgres` profile,
+and every feature works, LISTEN/NOTIFY and transactional workers included, except a
+[`TestClock`](api/testing.md#new-testclock-start). It needs postgres.js 3.4 or later.
+
+The bundled `pg` driver remains the simpler choice. Reach for the adapter when your application
+already holds a postgres.js client and you want pg-boss to share it and its pool.
+
+| What you want | Use |
+|---|---|
+| pg-boss to run on your postgres.js client | `fromPostgresJs(sql)` as the constructor `db` |
+| To enqueue inside a `sql.begin()` transaction | `fromPostgresJs(tx)` as the per-call `db` |
+| To enqueue inside a Drizzle transaction on `postgres-js` | [`fromDrizzle(tx, sql)`](api/adapters.md#drizzle) as the per-call `db` |
+
+```ts
+import postgres from 'postgres'
+import { PgBoss, fromPostgresJs } from 'pg-boss'
+
+const sql = postgres(process.env.DATABASE_URL)
+
+const boss = new PgBoss({ db: fromPostgresJs(sql) })
+
+await boss.start()
+
+await sql.begin(async (tx) => {
+  await tx`insert into orders (item, qty) values ('widget', 1)`
+
+  await boss.send('order-processing', { item: 'widget' }, { db: fromPostgresJs(tx) })
+})
+```
+
+With Drizzle on `postgres-js`, pass the client Drizzle wraps, `fromPostgresJs(db.$client)`, as the
+constructor `db`.
+
+The client is yours: pg-boss never calls `end()` on it.
+
+pg-boss installs its schema, migrates, and runs maintenance as `BEGIN; ... COMMIT;` scripts, and
+postgres.js refuses those on a pooled connection (`UNSAFE_TRANSACTION`). `fromPostgresJs` reserves a
+connection for the duration of one. A [transactional worker](api/workers.md#work-name-options-handler)
+runs its handler inside `sql.begin()`. postgres.js holds LISTEN on a connection of its own, outside
+the pool, and re-subscribes after a reconnect, so `useListenNotify` needs no extra setup.
+
+A `TestClock` has to reach every session pg-boss opens, and the adapter cannot run statements on
+each new postgres.js connection, so `start()` refuses one. Use a connection string in tests that
+need a `TestClock`.
 
 ### Not supported: YugabyteDB
 
