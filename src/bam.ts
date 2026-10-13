@@ -1,3 +1,4 @@
+import assert from 'node:assert'
 import EventEmitter from 'node:events'
 import { ClaimTimer } from './claimTimer.ts'
 import Db from './db.ts'
@@ -405,7 +406,10 @@ class Bam extends EventEmitter implements types.EventsMixin {
       noAdvisoryLocks: this.#config.noAdvisoryLocks
     })
     const { rows } = unwrapSQLResult(await this.#db.executeSql(sql))
-    // The lock's own row comes first, so the claim is told apart by a column only it returns.
+    // The lock's own row comes first, so the claim is told apart by a column only it returns. Without
+    // the lock's row the db returned only the last statement, COMMIT, and a claim it made is lost.
+    assert(this.#config.noAdvisoryLocks || rows.some(row => row && 'pg_advisory_xact_lock' in row),
+      'bam claim returned no lock row: a custom db must return the rows of every statement in a multi-statement query')
     return rows.find(row => row?.claimedStartedOn !== undefined) ?? null
   }
 

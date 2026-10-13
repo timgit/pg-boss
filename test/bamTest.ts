@@ -904,6 +904,39 @@ describe('bam', function () {
     }, 15000)
   })
 
+  // The claim runs under an advisory lock, so its row comes from a statement before the last. A db
+  // that returns only the last statement's rows would lose every claim without a word. PGlite's
+  // adapter flattens the results itself, and CockroachDB claims without the lock.
+  it.skipIf(helper.isPglite || helper.isCockroachDb)('should report a db that returns only the last statement of a claim', async function () {
+    const pool = await helper.getDb()
+
+    try {
+      const db = {
+        executeSql: async (text: string, values?: unknown[]) => {
+          const result: any = await pool.executeSql(text, values)
+          return Array.isArray(result) ? result.at(-1) : result
+        }
+      }
+
+      // Only here to build the schema.
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, bamIntervalSeconds: 60 })
+      await ctx.boss.stop()
+
+      await pool.executeSql(`INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command) VALUES ('cmd', 27, 'pending', 'job_common', 'SELECT 1')`)
+      await pool.executeSql(`UPDATE ${ctx.schema}.version SET bam_on = NULL`)
+
+      ctx.boss = new PgBoss(helper.getConfig({ ...ctx.bossConfig, db, bamIntervalSeconds: 1, __test__bypass_bam_interval_check: true }))
+      const errors: Error[] = []
+      ctx.boss.on('error', err => errors.push(err))
+      await ctx.boss.start()
+
+      await helper.until(() => errors.length > 0, 10000)
+      expect(errors[0].message).toContain('bam claim returned no lock row')
+    } finally {
+      await pool.close()
+    }
+  }, 15000)
+
   // Commands from one migration on one table are an ordered sequence: v40 builds job_i11 and then
   // drops job_i5, and the drop must not run after the build failed.
   describe('ordering within a migration', function () {
