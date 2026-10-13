@@ -965,7 +965,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       if (!readable.length) {
         await emitAndPersistWarning(this.#warningContext, WARNING_TYPES.XMIN_HORIZON,
           'Unable to read the transaction horizon; the xmin_horizon check is disabled for this instance.',
-          { type: WARNING_TYPES.XMIN_HORIZON, error: (err as Error)?.message })
+          { type: WARNING_TYPES.XMIN_HORIZON, instance: this.#manager.instanceId, error: (err as Error)?.message })
       }
 
       return null

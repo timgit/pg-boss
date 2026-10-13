@@ -81,7 +81,7 @@ class Notifier extends EventEmitter implements types.EventsMixin {
         persistWarnings: this.#config.persistWarnings,
         warningEvent: events.warning,
         errorEvent: events.error
-      }, WARNING_TYPE, 'Failed to start LISTEN/NOTIFY listener. Continuing with polling only.', { type: WARNING_TYPE, error: err?.message })
+      }, WARNING_TYPE, 'Failed to start LISTEN/NOTIFY listener. Continuing with polling only.', { type: WARNING_TYPE, instance: this.#manager.instanceId, error: err?.message })
     }
   }
 

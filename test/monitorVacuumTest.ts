@@ -595,6 +595,8 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
       const stored = await storedWarnings(ctx.schema, 'xmin_horizon')
       expect(stored).toHaveLength(1)
       expect(stored[0].message).toContain('xmin_horizon check is disabled')
+      expect(stored[0].data.instance).toEqual(expect.any(String))
+      expect(stored[0].data.instance).toBe((disabled[0].data as { instance: string }).instance)
     } finally {
       await release()
       await realDb.close()

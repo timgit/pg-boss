@@ -7,7 +7,7 @@ import type { IDatabase } from '../src/types.ts'
 // live connection won't reliably produce.
 
 const config = { schema: 'pgboss' } as any
-const fakeManager = { notifyQueue () {}, forceFetchLnWorkers () {} } as any
+const fakeManager = { instanceId: 'instance-1', notifyQueue () {}, forceFetchLnWorkers () {} } as any
 
 function fakeDb (over: Partial<IDatabase>): IDatabase {
   return {
@@ -67,7 +67,7 @@ describe('notifier', function () {
 
     expect(inserts).toHaveLength(1)
     expect(inserts[0][0]).toBe('listen_notify_unavailable')
-    expect(JSON.parse(inserts[0][2] as string)).toMatchObject({ error: 'listen failed' })
+    expect(JSON.parse(inserts[0][2] as string)).toMatchObject({ instance: 'instance-1', error: 'listen failed' })
 
     const noListen = new Notifier(recording({}), fakeManager, persisting as any)
     noListen.on('warning', () => {})

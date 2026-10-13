@@ -305,6 +305,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#traceContexts = new WeakMap()
   }
 
+  // The id getInstances() reports, for the warnings other components write about this instance.
+  get instanceId (): string {
+    return this.#instanceId
+  }
+
   getSpy<T = object> (name: string): JobSpyInterface<T> {
     if (!this.config.__test__enableSpies) {
       throw new Error('Spy is not enabled. Set __test__enableSpies: true in constructor options to use spies.')
