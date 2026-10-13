@@ -189,6 +189,33 @@ describe('openTelemetry', function () {
     expect(processSpan.attributes[ATTR.errorType]).toBe('Error')
   })
 
+  // The batch is failed at its timeout. The worker then waits for the handler, but the span is the
+  // batch's, so it ends with the timeout rather than with the abandoned handler.
+  it('ends the process span of a batch whose handler outran its timeout before the handler returns', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+    boss.on('warning', () => {})
+
+    await boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+
+    let release!: () => void
+    const released = new Promise<void>(resolve => { release = resolve })
+    let returned = false
+
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+      await released
+      returned = true
+    })
+
+    try {
+      const [processSpan] = await waitForSpans(isSpan(`process ${ctx.schema}`))
+      expect(returned).toBe(false)
+      expect(processSpan.status.code).toBe(SpanStatusCode.ERROR)
+    } finally {
+      release()
+    }
+  })
+
   it('does not parent batches to the context work() was called in', async function () {
     ctx.boss = await helper.start(propagating())
     const boss = ctx.boss

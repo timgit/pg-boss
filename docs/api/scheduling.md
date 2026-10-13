@@ -179,9 +179,9 @@ await boss.unschedule('report', 'eu')
 
 An optional third argument takes a `db` to run the removal on, as `schedule()` does: `boss.unschedule('report', 'eu', { db })`.
 
-### `getSchedules()`
+### `getSchedules(name?, key?, options)`
 
-Returns all scheduled jobs.
+Returns scheduled jobs, sorted by queue name and key. Pass a queue name to read only that queue's schedules, and a key as well to read the one schedule with that key, as an array of at most one. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last schedule as `options.after` to read the next page. Pass the options as the third argument, after the name and key, as `getSchedules(undefined, undefined, { limit: 50 })`.
 
 Each schedule carries the expression in `cron`, the format it is in as `kind` (`cron` or `rrule`), the time zone it is evaluated in, and the `data` and `options` its jobs are sent with.
 
@@ -231,22 +231,6 @@ It is recorded on a best-effort basis, in a separate statement once the job has 
 the column reads `null` until its next run, and so does one whose annotating statement failed after
 its job was already created. Treat it as a pointer to the last run pg-boss observed, not as a
 complete firing record: the queue's job history is the authority on what actually ran.
-
-### `getSchedules(name)`
-
-Returns all scheduled jobs by queue name.
-
-```js
-const schedules = await boss.getSchedules('report')
-```
-
-### `getSchedules(name, key)`
-
-Returns all scheduled jobs by queue name and unique key.
-
-```js
-const [schedule] = await boss.getSchedules('report', 'eu')
-```
 
 ### `getSchedule(name, key)`
 

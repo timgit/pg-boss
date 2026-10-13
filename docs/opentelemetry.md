@@ -34,7 +34,7 @@ The rest of this section describes trace context propagation, which is off until
 
 When a worker processes one job at a time, the `process` span is a child of the job's `send` span, and baggage active at `send()` is active in the handler. A batch (`batchSize` above 1) starts a trace of its own and links to the `send` span of every job in it. `receive` spans link the same way. The trace context `work()` was called in is never used as a parent: the worker loop runs long after the call that started it.
 
-A worker's own polling has no span, since a span per empty poll would bury the traces that matter. A handler that throws ends its `process` span with an error status, the exception recorded as an event, and `error.type` set.
+A worker's own polling has no span, since a span per empty poll would bury the traces that matter. A handler that throws ends its `process` span with an error status, the exception recorded as an event, and `error.type` set. A handler that outruns its timeout ends the span the same way when its batch is failed, even if the handler goes on running.
 
 The trace context survives retries, dead lettering and `redrive()`, so each attempt of a job, including its copy in a dead letter queue, is part of the trace its `send()` started.
 

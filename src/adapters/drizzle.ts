@@ -4,7 +4,7 @@ import { unwrapSQLResult } from '../tools.ts'
 
 export interface DrizzleTransactionLike {
   // node-postgres returns { rows }, or an array of them for multi-statement queries;
-  // postgres-js returns the rows themselves as a flat array (see unwrapSQLResult).
+  // postgres-js returns the rows themselves as a flat array, or one per statement (see unwrapSQLResult).
   execute(query: unknown): Promise<{ rows: any[] } | { rows: any[] }[] | any[]>
 }
 

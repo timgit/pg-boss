@@ -1,6 +1,6 @@
 # Instance table
 
-Each pg-boss instance records itself here unless it was constructed with `registerInstance: false`: at `start()`, on every heartbeat, and at `stop()`. [`getInstances()`](../api/ops.md#getinstances) reads it.
+Each pg-boss instance records itself here unless it was constructed with `registerInstance: false`: at `start()`, on every heartbeat, and at `stop()`. [`getInstances()`](../api/ops.md#getinstances-options) reads it.
 
 ```sql
 CREATE TABLE pgboss.instance (

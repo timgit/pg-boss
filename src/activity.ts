@@ -55,7 +55,8 @@ export function trackActivity<T extends IDatabase> (db: T): { db: T, idle: () =>
 
   const wrapDb = <D extends IDatabase>(inner: D): D => {
     const overrides: Record<PropertyKey, unknown> = {
-      executeSql: track((text: string, values?: unknown[]) => inner.executeSql(text, values))
+      // Every argument, not only text and values: pg-boss's own Db takes BAM's stop signals as a third.
+      executeSql: track((...args: unknown[]) => (inner.executeSql as (...args: unknown[]) => Promise<unknown>)(...args))
     }
     // Only when present: callers detect the capability with typeof.
     if (typeof inner.beginTransaction === 'function') {

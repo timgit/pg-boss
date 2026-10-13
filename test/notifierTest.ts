@@ -7,7 +7,7 @@ import type { IDatabase } from '../src/types.ts'
 // live connection won't reliably produce.
 
 const config = { schema: 'pgboss' } as any
-const fakeManager = { notifyQueue () {}, forceFetchLnWorkers () {} } as any
+const fakeManager = { instanceId: 'instance-1', notifyQueue () {}, forceFetchLnWorkers () {} } as any
 
 function fakeDb (over: Partial<IDatabase>): IDatabase {
   return {
@@ -43,6 +43,57 @@ describe('notifier', function () {
     expect(warnings).toHaveLength(1)
     expect(warnings[0].data.type).toBe('listen_notify_unavailable')
     expect(warnings[0].data.error).toBe('listen failed')
+
+    await notifier.stop()
+  })
+
+  // A listener that fails is an event in the database's history; a backend or adapter without
+  // LISTEN is the configuration, restated on every start.
+  it('writes a failed listener to the warning table, but not a backend without LISTEN', async function () {
+    const inserts: unknown[][] = []
+    const recording = (over: Partial<IDatabase>) => fakeDb({
+      executeSql: async (sql: string, values?: unknown[]) => {
+        if (sql.includes('INSERT INTO pgboss.warning')) inserts.push(values!)
+        return { rows: [{ channel: 'pgboss_chan' }] } as any
+      },
+      ...over
+    })
+    const persisting = { schema: 'pgboss', persistWarnings: true }
+
+    const failing = new Notifier(recording({ listen: async () => { throw new Error('listen failed') } }), fakeManager, persisting as any)
+    failing.on('warning', () => {})
+    await failing.start()
+    await failing.stop()
+
+    expect(inserts).toHaveLength(1)
+    expect(inserts[0][0]).toBe('listen_notify_unavailable')
+    expect(JSON.parse(inserts[0][2] as string)).toMatchObject({ instance: 'instance-1', error: 'listen failed' })
+
+    const noListen = new Notifier(recording({}), fakeManager, persisting as any)
+    noListen.on('warning', () => {})
+    await noListen.start()
+
+    const noBackend = new Notifier(recording({}), fakeManager, { ...persisting, backend: 'cockroachdb', noListenNotify: true } as any)
+    noBackend.on('warning', () => {})
+    await noBackend.start()
+
+    expect(inserts).toHaveLength(1)
+  })
+
+  // The connection that broke LISTEN can break the warning's INSERT too. With no `error` listener,
+  // emitting that failure throws, and start() must still fall back to polling.
+  it('starts when the failed listener\'s warning cannot be written and nothing listens for errors', async function () {
+    const db = fakeDb({
+      executeSql: async (sql: string) => {
+        if (sql.includes('INSERT INTO pgboss.warning')) throw new Error('connection terminated')
+        return { rows: [{ channel: 'pgboss_chan' }] } as any
+      },
+      listen: async () => { throw new Error('listen failed') }
+    })
+    const notifier = new Notifier(db, fakeManager, { schema: 'pgboss', persistWarnings: true } as any)
+
+    await expect(notifier.start()).resolves.toBeUndefined()
+    expect(notifier.available).toBe(false)
 
     await notifier.stop()
   })

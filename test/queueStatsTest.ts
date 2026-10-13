@@ -1,11 +1,12 @@
 import { afterAll, expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
-import { addBins, percentile } from '../src/index.ts'
+import { addBins, percentile, TestClock } from '../src/index.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
 import { ctx } from './hooks.ts'
 import pg from 'pg'
+import Db from '../src/db.ts'
 
 // One database handle for the whole file. Each helper.getDb() is a pool of its own that is never closed,
 // and this file asks for one on every monitor pass and every finished job, which ran a CI database at
@@ -137,6 +138,266 @@ describe('queueStats', function () {
     expect(queueData.queuedCount).toBe(0)
     expect(queueData.readyCount).toBe(0)
     expect(queueData.totalCount).toBe(1)
+  })
+
+  it('should count completed and cancelled jobs in totalCount between maintenance passes', async function () {
+    const clock = new TestClock()
+    // No background pass, so the claims are still open for the supervise() calls below.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1, __test__walk_batch_size: 2 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    const ids = await Promise.all([1, 2, 3, 4, 5, 6].map(() => ctx.boss!.send(queue)))
+    const fetched = await ctx.boss.fetch(queue, { batchSize: 3 })
+    await ctx.boss.complete(queue, fetched.map(job => job.id))
+    const queued = ids.filter(id => !fetched.some(job => job.id === id))
+    await ctx.boss.cancel(queue, queued[0]!)
+
+    // The monitor counts the 2 waiting, then maintenance walks the queue in batches of 2 and counts
+    // the 4 completed and cancelled it keeps.
+    await ctx.boss.supervise(queue)
+
+    let [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.queuedCount).toBe(2)
+    expect(stats.totalCount).toBe(6)
+
+    // Completed after that maintenance pass (the clock moves on first, as a real one would): the next
+    // monitor pass moves it from the live jobs to the retained ones, so the total holds.
+    await clock.tick(1001)
+    const [job] = await ctx.boss.fetch(queue)
+    await ctx.boss.complete(queue, job.id)
+    await ctx.boss.supervise(queue)
+
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.queuedCount).toBe(1)
+    expect(stats.totalCount).toBe(6)
+
+    // A bulk delete takes what it removed off at once.
+    expect(await ctx.boss.deleteStoredJobs(queue)).toBe(5)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(1)
+  })
+
+  it('should keep totalCount right when deleteJob() or resume() moves a completed or cancelled job', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    const ids = await Promise.all([1, 2, 3, 4].map(() => ctx.boss!.send(queue)))
+    const fetched = await ctx.boss.fetch(queue, { batchSize: 2 })
+    await ctx.boss.complete(queue, fetched.map(job => job.id))
+    const cancelled = ids.filter(id => !fetched.some(job => job.id === id)) as string[]
+    await ctx.boss.cancel(queue, cancelled)
+
+    // Maintenance counts the 4 completed and cancelled jobs, once they finished DELTA_LAG ago.
+    await clock.tick(plans.DELTA_LAG_SECONDS * 1000 + 1000)
+    await ctx.boss.supervise(queue)
+    let [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(4)
+
+    // A deleted completed job leaves the total at once.
+    await ctx.boss.deleteJob(queue, fetched[0].id)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(3)
+
+    // A resumed job leaves the retained jobs at once, and the next monitor pass (maintenance is not
+    // due yet) counts it as queued, so it is counted once.
+    await ctx.boss.resume(queue, cancelled[0])
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.queuedCount).toBe(1)
+    expect(stats.totalCount).toBe(3)
+
+    // Deleting a live job leaves retained_count alone.
+    await ctx.boss.deleteJob(queue, cancelled[0])
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(2)
+  })
+
+  // The job is deleted by the time the count is adjusted, so a failed adjustment is reported, not thrown.
+  // Skipped on PGlite, which runs through its own adapter rather than Db.
+  helper.itPglite('should resolve deleteJob() and report the error when taking the job off totalCount fails', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1 })
+    const errors: Error[] = []
+    ctx.boss.on('error', err => errors.push(err))
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    await ctx.boss.send(queue)
+    const [job] = await ctx.boss.fetch(queue)
+    await ctx.boss.complete(queue, job.id)
+
+    await clock.tick(plans.DELTA_LAG_SECONDS * 1000 + 1000)
+    await ctx.boss.supervise(queue)
+
+    const executeSql = Db.prototype.executeSql
+    Db.prototype.executeSql = function (this: Db, text: string, ...rest: any[]) {
+      if (text.includes('GREATEST(retained_count - $2')) return Promise.reject(new Error('count update failed'))
+      return executeSql.call(this, text, ...rest)
+    } as typeof executeSql
+
+    try {
+      expect((await ctx.boss.deleteJob(queue, job.id)).affected).toBe(1)
+    } finally {
+      Db.prototype.executeSql = executeSql
+    }
+
+    expect(errors.map(error => error.message)).toEqual(['count update failed'])
+    expect(await ctx.boss.getJobById(queue, job.id)).toBeNull()
+  })
+
+  // A queue the retention sweep has not counted yet, as after the upgrade to 12.38: retained_count and
+  // retained_on are null and maintenance is not due.
+  async function uncounted (queue: string, totalCount: number) {
+    const db = await getDb()
+    await db.executeSql(`UPDATE ${ctx.schema}.queue SET retained_count = NULL, retained_on = NULL, total_count = $2, maintain_on = ${ctx.schema}.job_now() WHERE name = $1`, [queue, totalCount])
+  }
+
+  it('should take a bulk delete off totalCount before the queue\'s first maintenance pass', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+    await Promise.all([1, 2, 3, 4].map(() => ctx.boss!.send(queue)))
+    await uncounted(queue, 4)
+
+    expect(await ctx.boss.deleteQueuedJobs(queue)).toBe(4)
+    let [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(0)
+
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(0)
+  })
+
+  // The truncate leaves nothing that finished before it, so the monitor counts completions from then on.
+  it('should count completions after a truncate before the queue\'s first maintenance pass', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+    await ctx.boss.send(queue)
+    await uncounted(queue, 1)
+
+    expect(await ctx.boss.deleteAllJobs()).toBeNull()
+
+    await Promise.all([1, 2, 3].map(() => ctx.boss!.send(queue)))
+    const fetched = await ctx.boss.fetch(queue, { batchSize: 3 })
+    await ctx.boss.complete(queue, fetched.map(job => job.id))
+
+    // Past DELTA_LAG, so a pass takes the completions into retained_count.
+    await clock.tick(plans.DELTA_LAG_SECONDS * 1000 + 1000)
+    await ctx.boss.supervise(queue)
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+
+    const [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(3)
+  })
+
+  // On a caller's db the adjustment would lock the queue row until the caller commits, so it is left
+  // to the next maintenance pass.
+  it('should leave the queue row alone when deleteJob() or resume() run on a caller\'s db', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, supervise: false, monitorIntervalSeconds: 1, maintenanceIntervalSeconds: 1 })
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    const [completedId, cancelledId] = await Promise.all([1, 2].map(() => ctx.boss!.send(queue))) as string[]
+    const [job] = await ctx.boss.fetch(queue)
+    const cancelled = job.id === completedId ? cancelledId : completedId
+    await ctx.boss.complete(queue, job.id)
+    await ctx.boss.cancel(queue, cancelled)
+
+    await clock.tick(plans.DELTA_LAG_SECONDS * 1000 + 1000)
+    await ctx.boss.supervise(queue)
+    let [stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(2)
+
+    const db = await getDb()
+    const statements: string[] = []
+    const caller = { executeSql: (text: string, values?: unknown[]) => { statements.push(text); return db.executeSql(text, values) } }
+
+    expect((await ctx.boss.deleteJob(queue, job.id, { db: caller })).affected).toBe(1)
+    expect((await ctx.boss.resume(queue, cancelled, { db: caller })).affected).toBe(1)
+    expect(statements.some(text => text.includes('retained_count'))).toBe(false)
+
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(2)
+
+    // Maintenance recounts: the resumed job is live, and the deleted one is gone.
+    await clock.tick(1001)
+    await ctx.boss.supervise(queue)
+    ;[stats] = await ctx.boss.getQueueStats(queue)
+    expect(stats.totalCount).toBe(1)
+  })
+
+  // A completion is stamped with its transaction's start. One that commits after a monitor pass has
+  // already counted past that stamp would be in neither the live jobs nor the finished ones.
+  helper.describeMultiConnectionOnly('with a completion committed after a monitor pass', function () {
+    it('still counts it in totalCount', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, monitorIntervalSeconds: 1 })
+      const queue = randomUUID()
+      await ctx.boss.createQueue(queue)
+
+      await ctx.boss.send(queue)
+      const [done] = await ctx.boss.fetch(queue)
+      await ctx.boss.complete(queue, done.id)
+      await ctx.boss.supervise(queue)
+
+      await ctx.boss.send(queue)
+      const [late] = await ctx.boss.fetch(queue)
+
+      const tx = new pg.Client({ connectionString: helper.getConnectionString() })
+      await tx.connect()
+
+      try {
+        await tx.query('BEGIN')
+        await ctx.boss.complete(queue, late.id, null, { db: { executeSql: (text: string, values?: unknown[]) => tx.query(text, values as any[]) } })
+
+        await new Promise(resolve => setTimeout(resolve, 1_100))
+        await ctx.boss.supervise(queue)
+        expect((await ctx.boss.getQueue(queue))!.totalCount).toBe(2)
+
+        await tx.query('COMMIT')
+      } finally {
+        await tx.end()
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1_100))
+      await ctx.boss.supervise(queue)
+      expect((await ctx.boss.getQueue(queue))!.totalCount).toBe(2)
+
+      // Once its stamp is behind the window's end, a pass takes it into retained_count.
+      const db = await getDb()
+      const { table } = (await ctx.boss.getQueue(queue))!
+      await db.executeSql(plans.cacheQueueStats(ctx.schema, table, [queue], true, false, { lag: "interval '0'" }))
+      const { rows } = await db.executeSql(`SELECT retained_count, total_count FROM ${ctx.schema}.queue WHERE name = $1`, [queue])
+      expect(rows[0]).toEqual({ retained_count: 2, total_count: 2 })
+    })
+  })
+
+  // A drift between job_i14's predicate and the aggregate's would quietly put the monitor back on a
+  // scan of every retained job.
+  helper.itPostgresOnly('counts the live gauges from job_i14', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    const { text } = plans.getQueueStats(ctx.schema, 'job_common', [queue])
+    const literal = text.replaceAll('$1::text[]', plans.serializeArrayParam([queue]))
+
+    const db = await getDb()
+    const result = await db.executeSql(`BEGIN; SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off; EXPLAIN ${literal}; COMMIT`)
+    const plan = (Array.isArray(result) ? result : [result]).flatMap((r: any) => r.rows ?? []).map((r: any) => r['QUERY PLAN']).join('\n')
+
+    expect(plan).toMatch(/Index Only Scan using \w*i14 /)
   })
 
   // Skipped on PGlite, whose adapter does not route through pg-types.
@@ -1307,9 +1568,9 @@ describe('queueStats', function () {
 
         // Past the retention of the three completed jobs, not of the open send.
         await new Promise(resolve => setTimeout(resolve, 2_900))
-        const deleted = await db.executeSql(plans.deletion(schema, table, [queue], true))
-        const affected = Array.isArray(deleted) ? deleted.reduce((n, r) => n + (r.rowCount ?? 0), 0) : deleted.rowCount
-        expect(affected).toBe(3)
+        const deleted = await db.executeSql(plans.deletion(schema, table, queue, { noAdvisoryLocks: true }))
+        const batch = (Array.isArray(deleted) ? deleted : [deleted]).flatMap(r => r.rows ?? []).find(r => r.walkCursor !== undefined)
+        expect(batch.deleted).toBe(3)
         await tx.query('COMMIT')
       } finally {
         await tx.end()

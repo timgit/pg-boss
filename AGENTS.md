@@ -37,6 +37,8 @@ grep -n "plans\." src/migrationStore.ts
 
 Only comments and those three helpers should match. When an older migration needs a snapshot of DDL that later changes, add it to a version-keyed map in `migrationStore.ts` (like `createQueueFn`), and leave the older entries untouched.
 
+An index on a table that already holds rows goes in the migration's `async` list on every backend, so the upgrade does not wait for its build. Without partitioning there is no `job_table_run_async()`, so give each command `table: 'job'` (or the table it builds on) and BAM gets the row directly. Build an index inline only when a statement needs it to be correct, such as a unique index that `ON CONFLICT` or a dedupe relies on, and say why in the migration comment.
+
 Migration comments cover the migration only: table rewrites, backfill, existing rows, build order, backend quirks. What a column or index means belongs above its builder in `plans.ts`.
 
 Do not write a test per migration. `test/migrationTest.ts` rolls back the newest few versions (`MIGRATION_DEPTH`), replays them and compares the result with a fresh install, so a new migration is covered the moment it lands.
@@ -52,8 +54,14 @@ Do not write a test per migration. `test/migrationTest.ts` rolls back the newest
 - VitePress slugs headings its own way: `fetch(name, options)` becomes `#fetch-name-options`. `npm run docs:anchors` checks every anchor link in `docs/` and every `pgboss.io` link in `src/`, and CI runs it. Add `-- --fix` to rewrite a broken anchor that has a single matching heading.
 - Write separate sentences instead of em or en dashes.
 
+## Branches
+
+Name a branch `<type>/<topic>`, with a conventional-commit type (`fix`, `chore`, `docs`) and a few words that say what changes, like `chore/dashboard-proxy-pg-boss-12.37.1` or `fix/schedule-dst-skip`. No generated names. Keep one concern per branch.
+
 ## Commits
 
-One line, with the conventional-commit prefix the history uses (`feat:`, `fix(schedule):`, `docs:`, `test:`, `ci:`). No body and no trailers. If it does not fit on one line, split the commit.
+One line. No body and no trailers. If it does not fit on one line, split the commit.
+
+A conventional-commit prefix the history uses (`fix(schedule):`, `docs:`, `test:`, `ci:`) is optional. Use one when the type says something, and leave it off, `feat:` especially, for a commit that is just a task, like `bam runs pending commands back to back once a poll finds one`.
 
 Never put a closing keyword (`fixes #N`, `closes #N`, `resolves #N`) in a commit message: GitHub closes the issue as soon as the commit reaches the default branch. `refs #N` is fine. `closes #N` belongs in the PR description.

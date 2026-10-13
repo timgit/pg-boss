@@ -61,6 +61,20 @@ function inlineAsyncCommand (schema: string, asyncMigration: string | types.Asyn
 
   const commandName = isLegacy ? nameMatch![1] : asyncMigration.name
   const body = (isLegacy ? bodyMatch![1] : asyncMigration.command).trim()
+
+  // Add IF NOT EXISTS so the exported script is re-runnable. The negative lookahead keeps it
+  // idempotent when the async command already spells out IF NOT EXISTS (the live BAM path needs it
+  // there for its own idempotency, e.g. migration v36's job_i9 build), avoiding a double insert.
+  const reRunnable = (ddl: string) => ddl.replace(
+    /(CREATE (?:UNIQUE )?INDEX CONCURRENTLY)(?! IF NOT EXISTS) /,
+    '$1 IF NOT EXISTS '
+  )
+
+  // A command pinned to one table already names it, so it is emitted once and never rewritten.
+  if (!isLegacy && asyncMigration.table) {
+    return [`-- inlined from ${schema}.bam (migration v${version}, command: ${commandName})\n${reRunnable(body)}`]
+  }
+
   // A policy-scoped build only belongs on partitions of that policy; unscoped builds fan out to all.
   const partitionPolicy = isLegacy ? undefined : asyncMigration.partitionPolicy
   const eligiblePartitions = partitionTables
@@ -69,15 +83,8 @@ function inlineAsyncCommand (schema: string, asyncMigration: string | types.Asyn
   const targetTables = tableMatch ? [tableMatch[1]] : ['job_common', ...eligiblePartitions]
 
   return targetTables.map(table => {
-    // Add IF NOT EXISTS so the exported script is re-runnable. The negative lookahead keeps it
-    // idempotent when the async command already spells out IF NOT EXISTS (the live BAM path needs it
-    // there for its own idempotency, e.g. migration v36's job_i9 build), avoiding a double insert.
-    const ddl = formatJobTable(body, table).replace(
-      /(CREATE (?:UNIQUE )?INDEX CONCURRENTLY)(?! IF NOT EXISTS) /,
-      '$1 IF NOT EXISTS '
-    )
     const comment = `-- inlined from ${schema}.job_table_run_async (migration v${version}, command: ${commandName})`
-    return `${comment}\n${ddl}`
+    return `${comment}\n${reRunnable(formatJobTable(body, table))}`
   })
 }
 
@@ -87,6 +94,14 @@ function renderAsyncCommand (schema: string, asyncMigration: string | types.Asyn
   }
 
   const name = asyncMigration.name.replaceAll("'", "''")
+
+  // A schema without partitioning has no job_table_run_async(), and its one job table needs no
+  // fan-out, so the row is written directly.
+  if (asyncMigration.table) {
+    return `INSERT INTO ${schema}.bam (name, version, status, table_name, command)
+    VALUES ('${name}', ${version}, 'pending', '${asyncMigration.table.replaceAll("'", "''")}', $$${asyncMigration.command}$$)`
+  }
+
   const policy = asyncMigration.partitionPolicy?.replaceAll("'", "''")
   if (!policy) {
     return `SELECT ${schema}.job_table_run_async('${name}', ${version}, $$${asyncMigration.command}$$)`
@@ -1252,6 +1267,103 @@ const createQueueFn: Record<number, (schema: string) => string> = {
     END;
     $$
     LANGUAGE plpgsql;
+  `,
+  46: (schema) => `
+    CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
+    RETURNS VOID AS
+    $$
+    DECLARE
+    tablename varchar := CASE WHEN options->>'partition' = 'true'
+    THEN 'j' || encode(sha224(queue_name::bytea), 'hex')
+    ELSE 'job_common'
+    END;
+    queue_created_on timestamptz;
+    BEGIN
+
+    WITH q as (
+    INSERT INTO ${schema}.queue (
+    name,
+    policy,
+    retry_limit,
+    retry_delay,
+    retry_backoff,
+    retry_delay_max,
+    expire_seconds,
+    retention_seconds,
+    deletion_seconds,
+    warning_queued,
+    dead_letter,
+    partition,
+    table_name,
+    heartbeat_seconds,
+    notify,
+    created_on,
+    updated_on
+    )
+    VALUES (
+    queue_name,
+    options->>'policy',
+    COALESCE((options->>'retryLimit')::int, 2),
+    COALESCE((options->>'retryDelay')::int, 0),
+    COALESCE((options->>'retryBackoff')::bool, false),
+    (options->>'retryDelayMax')::int,
+    COALESCE((options->>'expireInSeconds')::int, 900),
+    COALESCE((options->>'retentionSeconds')::int, 1209600),
+    COALESCE((options->>'deleteAfterSeconds')::int, 604800),
+    COALESCE((options->>'warningQueueSize')::int, 0),
+    options->>'deadLetter',
+    COALESCE((options->>'partition')::bool, false),
+    tablename,
+    (options->>'heartbeatSeconds')::int,
+    COALESCE((options->>'notify')::bool, false),
+    ${schema}.job_now(),
+    ${schema}.job_now()
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING created_on
+    )
+    SELECT created_on into queue_created_on from q;
+
+    IF queue_created_on IS NULL OR options->>'partition' IS DISTINCT FROM 'true' THEN
+    RETURN;
+    END IF;
+
+    EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
+
+    EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
+
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> 'cancelled' AND singleton_on IS NOT NULL$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = 'completed'$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i13 ON ${schema}.job (name, singleton_key) WHERE state = 'created' AND upsert_by_key$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE state IN ('created', 'retry', 'active', 'failed')$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i15 ON ${schema}.job (name, created_on)$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i17 ON ${schema}.job (name, singleton_key, created_on) WHERE state < 'active' AND singleton_key IS NOT NULL$cmd$, tablename);
+
+    IF options->>'policy' = 'short' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'created' AND policy = 'short'$cmd$, tablename);
+    ELSIF options->>'policy' = 'singleton' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i2 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'active' AND policy = 'singleton'$cmd$, tablename);
+    ELSIF options->>'policy' = 'stately' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i3 ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, tablename);
+    ELSIF options->>'policy' = 'exclusive' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
+    ELSIF options->>'policy' = 'key_strict_fifo' THEN
+    EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) INCLUDE (start_after) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'$cmd$, tablename);
+    EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, tablename);
+    END IF;
+
+    EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
+    EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);
+    END;
+    $$
+    LANGUAGE plpgsql;
   `
 }
 
@@ -1890,13 +2002,21 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
       release: '12.28.0',
       version: 38,
       previous: 37,
+      // Without partitioning there is nothing for install to do: job_i10 goes through BAM on the one job
+      // table, as a row written directly. It was built inline here until 12.38.0, which held a
+      // CockroachDB upgrade on the build. noCovering backends (CockroachDB) have no INCLUDE, so they
+      // get the narrow index. The partitioned path is PostgreSQL-only and always covering.
       install: noPartitioning
-        // noCovering backends (CockroachDB) have no INCLUDE, so they get the narrow index. The
-        // partitioned path is PostgreSQL-only and always covering.
-        ? [`CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id)${noCovering ? '' : ' INCLUDE (start_after)'} WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`]
+        ? []
         : [createQueueFn[38](schema)],
       async: noPartitioning
-        ? []
+        ? [
+            {
+              name: 'key_strict_fifo_head_index',
+              table: 'job',
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id)${noCovering ? '' : ' INCLUDE (start_after)'} WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`
+            }
+          ]
         : [
             {
               name: 'key_strict_fifo_head_index',
@@ -1940,28 +2060,22 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
         ...(noAddColumnBackfill
           ? []
           : [`UPDATE ${schema}.queue SET monitor_claim_on = monitor_on WHERE monitor_claim_on IS NULL`]),
-        ...(noPartitioning
-          // Single transaction, so both statements commit together and no window exists to protect.
-          ? [
-              `CREATE INDEX job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked`,
-              `DROP INDEX IF EXISTS ${schema}.job_i5`
-            ]
-          : [createQueueFn[40](schema)])
+        ...(noPartitioning ? [] : [createQueueFn[40](schema)])
       ],
-      // Build before retire. BAM applies these in created_on order, so job_i11 is complete on a
-      // table before job_i5 is dropped from it.
-      async: noPartitioning
-        ? []
-        : [
-            {
-              name: 'fetch_index_priority_build',
-              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked`
-            },
-            {
-              name: 'fetch_index_retire',
-              command: `DROP INDEX CONCURRENTLY IF EXISTS ${schema}.job_i5`
-            }
-          ],
+      // Build before retire. BAM applies these in created_on order and holds the retire on a table
+      // until its build has completed, so job_i5 is never dropped beside a failed job_i11. Without
+      // partitioning both run on the one job table, as rows written directly. They ran inline in this
+      // transaction until 12.38.0, which held a CockroachDB upgrade on the build.
+      async: [
+        {
+          name: 'fetch_index_priority_build',
+          command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked`
+        },
+        {
+          name: 'fetch_index_retire',
+          command: `DROP INDEX CONCURRENTLY IF EXISTS ${schema}.job_i5`
+        }
+      ].map(cmd => noPartitioning ? { ...cmd, table: 'job' } : cmd),
       // Restore before retire, the mirror of the install. Rollback can land at any point in the async
       // sequence (before the build, between build and retire, or after both) and IF NOT EXISTS is
       // what makes all three the same statement: v40 never reshapes job_i5, it only drops it, so a
@@ -2071,8 +2185,9 @@ AS $function$
       // letter queue keep the output they were copied with, and a row dead-lettered before
       // source_root_id existed has none, so its first redrive falls back to source_id.
       //
-      // job_i12 is built the way v40 built job_i11: inline without partitioning, otherwise through
-      // create_queue for new partitions and BAM, concurrently, for the tables that already exist.
+      // job_i12 is built the way v40 builds job_i11: through BAM on the one job table without
+      // partitioning, otherwise through create_queue for new partitions and BAM, concurrently, for the
+      // tables that already exist. It was built inline without partitioning until 12.38.0.
       //
       // One ALTER per table, not one per column. On CockroachDB every ALTER is a schema change job
       // inside the migration's transaction, and seven of them held it open long enough to lose
@@ -2093,18 +2208,15 @@ AS $function$
         `ALTER TABLE ${schema}.job
           ADD COLUMN IF NOT EXISTS source_output jsonb,
           ADD COLUMN IF NOT EXISTS source_root_id uuid`,
-        noPartitioning
-          ? `CREATE INDEX job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
-          : createQueueFn[43](schema)
+        ...(noPartitioning ? [] : [createQueueFn[43](schema)])
       ],
-      async: noPartitioning
-        ? []
-        : [
-            {
-              name: 'source_root_index_build',
-              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
-            }
-          ],
+      async: [
+        {
+          name: 'source_root_index_build',
+          ...(noPartitioning ? { table: 'job' } : {}),
+          command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i12 ON ${schema}.job (source_root_id) WHERE source_root_id IS NOT NULL`
+        }
+      ],
       // The index goes before its column. Dropping the column would take the index with it, but
       // partitioned, create_queue has to be restored first, or a queue created mid-rollback would
       // build an index on a column that is about to be gone.
@@ -2205,8 +2317,10 @@ AS $function$
       previous: 44,
       // upsert_by_key is nullable with no default, so adding it rewrites no rows, and no existing job
       // carries it. job_i13 therefore starts empty and cannot fail on existing duplicates.
-      // It is built the way v43 built job_i12: inline without partitioning, otherwise through
-      // create_queue for new partitions and BAM, concurrently, for the tables that already exist.
+      // Without partitioning it is built inline, unlike job_i12, because upsert() relies on it to keep
+      // concurrent upserts of one key on one job. The build still scans the table and holds back
+      // writes until it finishes. With partitioning it goes through create_queue for new partitions
+      // and BAM, concurrently, for the tables that already exist.
       install: [
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS upsert_by_key bool`,
         noPartitioning
@@ -2231,6 +2345,71 @@ AS $function$
               `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i13$cmd$)`
             ]),
         `ALTER TABLE ${schema}.job DROP COLUMN upsert_by_key`
+      ]
+    },
+    {
+      release: '12.38.0',
+      version: 46,
+      previous: 45,
+      // job_i14, job_i15, job_i16 and job_i17 are built by BAM on every backend, so none of them holds
+      // up the upgrade. They start full (job_i15 holds every job, job_i17 every queued job with a key).
+      // Until one is valid, the monitor's aggregate, and update() and upsert() by key, read the queue
+      // without it, as before v46. With partitioning, create_queue builds them on new partitions and
+      // BAM builds them concurrently on the tables that already exist. Without it, there is one job
+      // table, its BAM rows are written directly, and CockroachDB accepts CONCURRENTLY as a no-op.
+      // queue_stats_i2 exists only without partitions, where retention deletes rows instead of
+      // dropping day partitions, and goes through BAM too: queue_stats there is one plain table.
+      // retained_count and retained_on are nullable with no default, so adding them rewrites no rows,
+      // and they are not seeded: each queue's next maintenance pass counts them, and until then the
+      // monitor keeps total_count. They are added in one ALTER, which CockroachDB runs as one schema
+      // change job.
+      install: [
+        `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS retained_count int, ADD COLUMN IF NOT EXISTS retained_on timestamp with time zone`,
+        ...(noPartitioning ? [] : [createQueueFn[46](schema)])
+      ],
+      async: [
+        {
+          name: 'live_index_build',
+          command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i14 ON ${schema}.job (name, state, blocked, start_after) WHERE state IN ('created', 'retry', 'active', 'failed')`
+        },
+        {
+          name: 'created_index_build',
+          command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i15 ON ${schema}.job (name, created_on)`
+        },
+        {
+          name: 'completed_index_build',
+          command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i16 ON ${schema}.job (name, completed_on) WHERE completed_on IS NOT NULL`
+        },
+        {
+          name: 'queued_key_index_build',
+          command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i17 ON ${schema}.job (name, singleton_key, created_on) WHERE state < 'active' AND singleton_key IS NOT NULL`
+        }
+      ]
+        .map(cmd => noPartitioning ? { ...cmd, table: 'job' } : cmd)
+        .concat(noPartitioning
+          ? [{
+              name: 'queue_stats_retention_index_build',
+              table: 'queue_stats',
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS queue_stats_i2 ON ${schema}.queue_stats (captured_on, id)`
+            }]
+          : []),
+      uninstall: [
+        ...(noPartitioning
+          ? [
+              `DROP INDEX IF EXISTS ${schema}.queue_stats_i2`,
+              `DROP INDEX IF EXISTS ${schema}.job_i17`,
+              `DROP INDEX IF EXISTS ${schema}.job_i16`,
+              `DROP INDEX IF EXISTS ${schema}.job_i15`,
+              `DROP INDEX IF EXISTS ${schema}.job_i14`
+            ]
+          : [
+              createQueueFn[45](schema),
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i17$cmd$)`,
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i16$cmd$)`,
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i15$cmd$)`,
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i14$cmd$)`
+            ]),
+        `ALTER TABLE ${schema}.queue DROP COLUMN retained_on, DROP COLUMN retained_count`
       ]
     }
   ]

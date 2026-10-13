@@ -24,23 +24,6 @@ boss.on('warning', ({ message, data }) => {
 });
 ```
 
-### Warning Types
-
-| Type | Description | Data Properties |
-|------|-------------|-----------------|
-| `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds) |
-| `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueued` |
-| `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
-| `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); pg-boss continues with polling only | `type`, `error` |
-| `index_bloat` | A job index is holding far more pages than its live entries need and was not rebuilt, because rebuilds are disabled, the connected role does not own the index, the index exceeds `maxIndexBytes`, or `REINDEX CONCURRENTLY` failed. The message names the reason. Emitted once per index rather than on every pass, and again if the condition returns after being cleared | `name`, `table`, `pages`, `entries`, `bytes`, `owned` |
-| `xmin_horizon` | Something is holding the database's MVCC transaction horizon back: an open transaction, a replication slot, a standby with `hot_standby_feedback`, or a prepared transaction. Autovacuum then cannot reclaim the rows pg-boss deletes, and both tables and indexes grow without bound. Fires on measured evidence: a job table past the point Postgres would vacuum it, a vacuum that has since run and reclaimed nothing, and a holder old enough to explain it (see [`monitorVacuum`](./constructor.md#monitorvacuum)). The message names the holder class and the table it was measured on. Emitted once per episode rather than on every pass, and again if the horizon is pinned a second time | `source`, `holder`, `transactions`, `table`, `tables`, `liveTuples`, `deadTuples`, `budget`, `vacuumAgeSeconds`, `oldestTransactionSeconds`, `unreadableSources` |
-| `autovacuum_disabled` | (see [`monitorVacuum`](./constructor.md#monitorvacuum)) A job table has `autovacuum_enabled = false`, holds more dead rows than Postgres's own vacuum point, and is still growing with no vacuum running against it at all. Distinct from `xmin_horizon`, where vacuum does run and cannot reclaim: here the fix is autovacuum rather than a stuck transaction, so no holder is named. Stays quiet for an operator vacuuming on their own schedule, whose manual vacuum both moves the timestamp and drops the count. Emitted once per episode | `table`, `tables`, `liveTuples`, `deadTuples`, `budget`, `vacuumAgeSeconds` |
-| `monitor_backoff` | The queue-stats aggregate spent long enough scanning the job table to risk holding autovacuum back, so the next refresh is deferred (see [`monitorVacuum`](./constructor.md#monitorvacuum)). Cached counts are served in the meantime, including to `getQueueStats({ force: true })`; `capturedOn` tells you how old they are. Job expiry and heartbeat failure are unaffected. The fix is to shrink the job table (retention, `deleteAfterSeconds`) or partition its busiest queues | `elapsedSeconds`, `naptimeSeconds`, `backoffSeconds`, `backoffUntil` |
-| `transactional_pool_headroom` | A [`transactional`](./workers.md#work-name-options-handler) worker was registered on a pool with no connections to spare. Each handler in flight holds one for its own duration, so at this size the fetches, the failures, and maintenance have nothing left to run on and wait out `connectionTimeoutMillis` instead. Emitted from `work()`, once per call. Event only, never written to the `warning` table | `type`, `max`, `transactionalWorkers` |
-| `transaction_timeout_probe` | pg-boss asked the server which transaction timeout it recognises, or rehearsed the `pg_settings` read that applying it needs, and the statement failed, so transactional handlers run with no database-side bound (see [`transactionTimeoutSeconds`](./workers.md#work-name-options-handler)). Every other bound still applies: the handler's own timeout, the rollback deadline, and `expireInSeconds`. The probe is retried a minute later; the warning is emitted once per process. Event only, never written to the `warning` table | `type` |
-| `start_retry` | [`start({ attempts })`](./ops.md#start-options) failed its first try and will try again. Emitted once per call, not per try. Event only, never written to the `warning` table, since the database is what failed | `type`, `attempts`, `error` |
-| `invalid_schedule` | A stored schedule could not be evaluated (for example an unusable `timezone` or an empty expression written by an older release, or a recurrence rule on an instance whose release predates rule support) and was skipped for this cron pass; the remaining schedules are unaffected. Emitted once per broken schedule rather than on every pass, and again if the schedule is edited or the instance restarts | `queue`, `key`, `cron`, `timezone` |
-
 ### Warning Persistence
 
 Warnings are emitted as events by default. To also persist warnings to the database for historical tracking, enable the `persistWarnings` option:
@@ -54,7 +37,7 @@ const boss = new PgBoss({
 
 When enabled, warnings are stored in the `warning` table and can be queried directly or viewed in the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard). See [SQL](/sql/warning-table) for the table schema.
 
-The table records episodes: a condition the database entered and can leave again. Two types are left out of it and emitted as events and nothing else, because neither is an episode. `transactional_pool_headroom` reports a fixed relationship between `max` and the workers you registered, which no restart or later pass resolves. `transaction_timeout_probe` reports a backend or `db` adapter that does not understand the probe, and one that cannot answer it today will not answer it tomorrow either.
+Only the types under [Warning Types](#warning-types) are written. [Startup and configuration warnings](#startup-and-configuration-warnings) are emitted as events only. `listen_notify_unavailable` appears in both tables, since the cause decides: a listener that fails to start is written, and a backend or adapter without `LISTEN` is not.
 
 Warnings older than 365 days are pruned automatically. To keep them for less time, set the `warningRetentionDays` option:
 
@@ -65,6 +48,36 @@ const boss = new PgBoss({
   warningRetentionDays: 30  // Auto-delete warnings older than 30 days
 });
 ```
+
+### Warning Types
+
+These warnings are written to the `warning` table when [`persistWarnings`](#warning-persistence) is enabled.
+
+| Type | Description | Data Properties |
+|------|-------------|-----------------|
+| `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds) |
+| `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueued` |
+| `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
+| `listen_notify_unavailable` | `useListenNotify` is enabled and establishing the `LISTEN/NOTIFY` listener failed, for example through PgBouncer transaction pooling or a dropped connection. pg-boss continues with polling only. Emitted once per `start()` | `type`, `instance`, `error` |
+| `index_bloat` | A job index is holding far more pages than its live entries need and was not rebuilt, because rebuilds are disabled, the connected role does not own the index, the index exceeds `maxIndexBytes`, or `REINDEX CONCURRENTLY` failed. The message names the reason. Emitted once per index rather than on every pass, and again if the condition returns after being cleared | `name`, `table`, `pages`, `entries`, `bytes`, `owned` |
+| `xmin_horizon` | Something is holding the database's MVCC transaction horizon back: an open transaction, a replication slot, a standby with `hot_standby_feedback`, or a prepared transaction. Autovacuum then cannot reclaim the rows pg-boss deletes, and both tables and indexes grow without bound. Fires on measured evidence: a job table past the point Postgres would vacuum it, a vacuum that has since run and reclaimed nothing, and a holder old enough to explain it (see [`monitorVacuum`](./constructor.md#monitorvacuum)). The message names the holder class and the table it was measured on. Emitted once per episode rather than on every pass, and again if the horizon is pinned a second time. Also emitted once per instance, with `instance` and `error`, when the connected role can read none of the horizon sources and the check is disabled | `source`, `holder`, `transactions`, `table`, `tables`, `liveTuples`, `deadTuples`, `budget`, `vacuumAgeSeconds`, `oldestTransactionSeconds`, `unreadableSources`, `instance`, `error` |
+| `autovacuum_disabled` | (see [`monitorVacuum`](./constructor.md#monitorvacuum)) A job table has `autovacuum_enabled = false`, holds more dead rows than Postgres's own vacuum point, and is still growing with no vacuum running against it at all. Distinct from `xmin_horizon`, where vacuum does run and cannot reclaim: here the fix is autovacuum rather than a stuck transaction, so no holder is named. Stays quiet for an operator vacuuming on their own schedule, whose manual vacuum both moves the timestamp and drops the count. Emitted once per episode | `table`, `tables`, `liveTuples`, `deadTuples`, `budget`, `vacuumAgeSeconds` |
+| `monitor_backoff` | The queue-stats aggregate spent long enough scanning the job table to risk holding autovacuum back, so the next refresh is deferred (see [`monitorVacuum`](./constructor.md#monitorvacuum)). Cached counts are served in the meantime, including to `getQueueStats({ force: true })`; `capturedOn` tells you how old they are. Job expiry and heartbeat failure are unaffected. The fix is to shrink the job table (retention, `deleteAfterSeconds`) or partition its busiest queues | `elapsedSeconds`, `naptimeSeconds`, `backoffSeconds`, `backoffUntil` |
+| `handler_overrun` | A [`work()`](./workers.md#work-name-options-handler) handler ran past `expireInSeconds` and was still running after its batch was failed and its signals aborted. Its worker fetches nothing until the handler returns, or until the worker is stopped with [`offWork()`](./workers.md#offwork-name-options) or [`stop()`](./ops.md#stop-options), which do not wait for it. Emitted once per batch. Written to the `warning` table once per queue per hour rather than per batch (see below) | `type`, `instance`, `queue`, `jobs`, `expireInSeconds` |
+| `invalid_schedule` | A stored schedule could not be evaluated (for example an unusable `timezone` or an empty expression written by an older release, or a recurrence rule on an instance whose release predates rule support) and was skipped for this cron pass; the remaining schedules are unaffected. Emitted once per broken schedule rather than on every pass, and again if the schedule is edited or the instance restarts | `queue`, `key`, `cron`, `timezone` |
+
+`handler_overrun` is emitted once per batch, but a handler that overruns on every job would write a row per batch. The first overrun on a queue is written at once, and after that each instance counts the queue's overruns and writes one row an hour while they continue. Each row carries `count`, the overruns since the previous row, the `since` and `until` of that window, the largest `expireInSeconds` in it, up to 10 of the jobs, and `instance`, the id [`getInstances()`](./ops.md#getinstances-options) reports for the instance that wrote it. An hour without one ends the count, so the next overrun is written at once again. `stop()` writes the count so far.
+
+### Startup and configuration warnings
+
+These warnings describe how this instance is set up, not the state of its queues or the database. Each fires when the instance starts, a worker registers, or a transactional worker first runs, and would fire again on every restart, so they are emitted as events only and never written to the `warning` table. Log them from a `warning` listener at startup.
+
+| Type | Description | Data Properties |
+|------|-------------|-----------------|
+| `listen_notify_unavailable` | `useListenNotify` is enabled on a backend without `LISTEN/NOTIFY`, such as CockroachDB, or with a `db` adapter that has no `listen`. pg-boss continues with polling only. Emitted once per `start()` | `type`, `backend` |
+| `transactional_pool_headroom` | A [`transactional`](./workers.md#work-name-options-handler) worker was registered on a pool with no connections to spare. Each handler in flight holds one for its own duration, so at this size the fetches, the failures, and maintenance have nothing left to run on and wait out `connectionTimeoutMillis` instead. Emitted from `work()`, once per call | `type`, `max`, `transactionalWorkers` |
+| `transaction_timeout_probe` | pg-boss asked the server which transaction timeout it recognises, or rehearsed the `pg_settings` read that applying it needs, and the statement failed, so transactional handlers run with no database-side bound (see [`transactionTimeoutSeconds`](./workers.md#work-name-options-handler)). Every other bound still applies: the handler's own timeout, the rollback deadline, and `expireInSeconds`. The probe is retried a minute later; the warning is emitted once per process | `type` |
+| `start_retry` | [`start({ attempts })`](./ops.md#start-options) failed its first try and will try again. Emitted once per call, not per try | `type`, `attempts`, `error` |
 
 ## `wip`
 
@@ -111,7 +124,7 @@ After `stop({ close: false })` this fires while the connection pool is still ope
 
 ## `bam`
 
-Emitted when a boss async migration (BAM) command changes status. BAM commands are database operations that run asynchronously after schema migrations, such as creating indexes on partitioned tables.
+Emitted when a boss async migration (BAM) command changes status. BAM commands are database operations that run asynchronously after schema migrations, such as index builds.
 
 ```js
 boss.on('bam', event => {

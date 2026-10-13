@@ -180,6 +180,36 @@ describe('queues', function () {
 
     spy.mockRestore()
   })
+  // delete_queue() would fail on the foreign key only after the shared table's jobs were deleted in
+  // batches, so the queue is refused before any of them are.
+  for (const referrer of ['queue', 'job'] as const) {
+    it(`deleteQueue keeps a dead letter queue and its jobs while ${referrer === 'queue' ? 'another queue' : 'a job of another queue'} names it`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      const deadLetter = `${ctx.schema}_dlq`
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.createQueue(ctx.schema, { deadLetter })
+      await ctx.boss.send(deadLetter)
+      await ctx.boss.send(deadLetter)
+
+      if (referrer === 'job') {
+        await ctx.boss.send(ctx.schema)
+        await ctx.boss.updateQueue(ctx.schema, { deadLetter: null })
+      }
+
+      await expect(ctx.boss.deleteQueue(deadLetter)).rejects.toThrow(referrer === 'queue'
+        ? `Queue ${deadLetter} was not deleted: queue ${ctx.schema} uses it as its dead letter queue`
+        : `Queue ${deadLetter} was not deleted: jobs in queue ${ctx.schema} name it as their dead letter queue`)
+
+      expect(await ctx.boss.getQueue(deadLetter)).toBeTruthy()
+      expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', [deadLetter])).toBe(2)
+
+      await ctx.boss.deleteQueue(ctx.schema)
+      await ctx.boss.deleteQueue(deadLetter)
+
+      expect(await ctx.boss.getQueue(deadLetter)).toBeNull()
+    })
+  }
+
   // Without table partitioning a queue never has its own table to drop. The YugabyteDB profile turns
   // partitioning off and otherwise runs on Postgres, which is how this reaches that path here.
   it.skipIf(helper.isPglite || helper.isCockroachDb)('deleteQueue removes a queue and its jobs without table partitioning', async function () {
@@ -299,6 +329,22 @@ describe('queues', function () {
         await other.stop({ graceful: false })
       }
     })
+
+    // Against a dropped table they would fail on every poll and hold the commands queued after them.
+    it('removes the BAM commands for its table that have not completed', async function () {
+      const table = await partitioned()
+
+      // In progress and fresh, so the running BAM worker leaves it, and the pending one waits behind it.
+      for (const [name, status] of [['done', 'completed'], ['building', 'in_progress'], ['next', 'pending']]) {
+        await run(`INSERT INTO ${ctx.schema}.bam (name, version, status, started_on, queue, table_name, command)
+          VALUES ('${name}', 99, '${status}', now(), '${ctx.schema}', '${table}', 'SELECT 1')`)
+      }
+
+      await ctx.boss!.deleteQueue(ctx.schema)
+
+      const rows = await run(`SELECT name FROM ${ctx.schema}.bam WHERE table_name = '${table}' ORDER BY name`)
+      expect(rows.map(row => row.name)).toEqual(['done'])
+    })
   })
 
   it('should create a queue', async function () {
@@ -413,8 +459,50 @@ describe('queues', function () {
 
     await ctx.boss.createQueue(ctx.schema, { partition: true })
     await ctx.boss.send(ctx.schema)
-    await ctx.boss.deleteAllJobs(ctx.schema)
+    // A truncate reports no count, and pg-boss does not count to find one.
+    expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBeNull()
     await ctx.boss.deleteQueue(ctx.schema)
+  })
+
+  it('should say how many jobs a delete removed', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+
+    expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBe(2)
+    expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBe(0)
+  })
+
+  it('should delete jobs in batches and count all of them', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__walk_batch_size: 2 })
+
+    await ctx.boss.createQueue(ctx.schema)
+
+    await Promise.all([1, 2, 3].map(() => ctx.boss!.send(ctx.schema)))
+    const fetched = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
+    await ctx.boss.complete(ctx.schema, fetched.map(job => job.id))
+    await Promise.all([1, 2, 3, 4, 5].map(() => ctx.boss!.send(ctx.schema)))
+
+    expect(await ctx.boss.deleteQueuedJobs(ctx.schema)).toBe(5)
+    expect(await ctx.boss.deleteStoredJobs(ctx.schema)).toBe(3)
+
+    await Promise.all([1, 2, 3].map(() => ctx.boss!.send(ctx.schema)))
+    expect(await ctx.boss.deleteAllJobs(ctx.schema)).toBe(3)
+    expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])).toBe(0)
+  })
+
+  it('should delete a queue in the shared table with all its jobs when they span several batches', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__walk_batch_size: 2 })
+
+    await ctx.boss.createQueue(ctx.schema)
+    await Promise.all([1, 2, 3, 4, 5].map(() => ctx.boss!.send(ctx.schema)))
+
+    await ctx.boss.deleteQueue(ctx.schema)
+
+    expect(await ctx.boss.getQueue(ctx.schema)).toBeNull()
+    expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])).toBe(0)
   })
 
   helper.itPostgresOnly('should delete all jobs from all queues, included partitioned', async function () {
@@ -452,7 +540,7 @@ describe('queues', function () {
 
     expect(await getCount()).toBe(1)
 
-    await ctx.boss.deleteQueuedJobs(ctx.schema)
+    expect(await ctx.boss.deleteQueuedJobs(ctx.schema)).toBe(1)
 
     expect(await getCount()).toBe(0)
   })
@@ -478,7 +566,7 @@ describe('queues', function () {
 
     expect(await getCount()).toBe(2)
 
-    await ctx.boss.deleteStoredJobs(ctx.schema)
+    expect(await ctx.boss.deleteStoredJobs(ctx.schema)).toBe(2)
 
     expect(await getCount()).toBe(0)
   })
@@ -489,20 +577,17 @@ describe('queues', function () {
     expect(queue).toBe(null)
   })
 
-  it('getQueues() returns queues array', async function () {
+  it('getQueues() returns queues array sorted by name', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue1 = `${ctx.bossConfig.schema}_1`
     const queue2 = `${ctx.bossConfig.schema}_2`
 
-    await ctx.boss.createQueue(queue1)
     await ctx.boss.createQueue(queue2)
+    await ctx.boss.createQueue(queue1)
 
     const queues = await ctx.boss.getQueues()
 
-    expect(queues.length).toBe(2)
-
-    expect(queues.some(q => q.name === queue1)).toBeTruthy()
-    expect(queues.some(q => q.name === queue2)).toBeTruthy()
+    expect(queues.map(q => q.name)).toEqual([queue1, queue2])
   })
 
   it('getQueues(names) filters to the requested queues', async function () {

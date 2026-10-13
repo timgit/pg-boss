@@ -569,7 +569,8 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
       const after = await indexSizes(ctx.schema)
 
       expect(after.job_common_i11).toBe(before.job_common_i11)
-      expect(warnings.filter(m => m.includes('does not exist')).length).toBe(2)
+      // job_common_i11, job_common_i14 and the primary key, each attempted.
+      expect(warnings.filter(m => m.includes('does not exist')).length).toBe(3)
     } finally {
       await db.close()
     }
@@ -646,12 +647,12 @@ helper.describePostgresOnly('reindex', { timeout: blockTimeout }, function () {
       await guest.supervise()
 
       expect((await indexSizes(ctx.schema)).job_common_i11).toBe(before.job_common_i11)
-      // Both indexes report the wrapper, not just the one that was attempted: the others were
-      // skipped by the giveup, so a size-cap message would name a limit they are nowhere near.
-      expect(warnings.filter(m => m.includes('cannot run inside a transaction block')).length).toBe(2)
+      // Every bloated index reports the wrapper, not just the one that was attempted: the others
+      // were skipped by the giveup, so a size-cap message would name a limit they are nowhere near.
+      expect(warnings.filter(m => m.includes('cannot run inside a transaction block')).length).toBe(3)
       expect(warnings.some(m => m.includes('larger than maxIndexBytes'))).toBe(false)
 
-      // Both bloated indexes are candidates, but the wrapper is a property of the adapter rather
+      // Every bloated index is a candidate, but the wrapper is a property of the adapter rather
       // than of one index, so the pass stops after the first and never retries on a later one.
       expect(reindexAttempts).toBe(1)
 

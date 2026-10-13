@@ -116,8 +116,54 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     }
   }
 
-  async executeSql (text: string, values?: unknown[]) {
+  // signal and retire are internal to BAM. Aborting signal drops this statement's connection, so
+  // stop() can close the pool without waiting for a statement the server goes on to finish or cancel
+  // by itself. If retire is aborted by the time the statement ends, its connection is closed instead
+  // of returned to the pool, so a pg_cancel_backend aimed at the statement cannot reach whatever runs
+  // on that connection next. Either one aborted before the statement starts keeps it from starting.
+  // A connection whose statement failed is closed too, as pool.query does, so a failure inside an
+  // explicit transaction cannot hand the next query an aborted transaction.
+  async executeSql (text: string, values?: unknown[], { signal, retire }: { signal?: AbortSignal, retire?: AbortSignal } = {}) {
     assert(this.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
+
+    if (signal || retire) {
+      signal?.throwIfAborted()
+      retire?.throwIfAborted()
+
+      const client = await this.pool.connect()
+
+      if (signal?.aborted || retire?.aborted) {
+        client.release()
+        signal?.throwIfAborted()
+        retire?.throwIfAborted()
+      }
+
+      let dropped = false
+      const drop = () => {
+        dropped = true
+        client.release(new Error('connection dropped by stop()'))
+      }
+      signal?.addEventListener('abort', drop, { once: true })
+
+      let failed = false
+
+      // The pool takes its own error listener off a client it hands out, and a socket that dies
+      // mid-statement emits 'error' on the client, which unheard is an uncaught exception. The
+      // statement rejects with the same error, so the listener has nothing else to do.
+      const onClientError = () => { failed = true }
+      client.on('error', onClientError)
+
+      try {
+        return await client.query(text, values)
+      } catch (err) {
+        failed = true
+        throw err
+      } finally {
+        signal?.removeEventListener('abort', drop)
+        client.removeListener('error', onClientError)
+        if (!dropped) client.release(failed || retire?.aborted)
+      }
+    }
 
     // if (this.config.debug === true) {
     //   console.log(`${new Date().toISOString()}: DEBUG SQL`)

@@ -48,6 +48,17 @@ describe('tools.unwrapSQLResult', function () {
     expect(output).toEqual({ rows: [part1.rows, part2.rows].flat() })
   })
 
+  it('should flatten one array of rows per statement, as postgres.js returns them', function () {
+    const output = unwrapSQLResult([[], [{ pg_advisory_xact_lock: '' }], [{ id: 'a' }, { id: 'b' }], []])
+
+    expect(output).toEqual({ rows: [{ pg_advisory_xact_lock: '' }, { id: 'a' }, { id: 'b' }] })
+  })
+
+  it('should return the rows of a single statement as postgres.js returns them', function () {
+    const rows = [{ id: 'a' }, { id: 'b' }]
+    expect(unwrapSQLResult(rows)).toEqual({ rows })
+  })
+
   it('should handle empty array by returning empty rows', function () {
     const output = unwrapSQLResult([])
     expect(output).toEqual({ rows: [] })

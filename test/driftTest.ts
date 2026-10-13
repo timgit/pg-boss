@@ -17,7 +17,7 @@ describe('drift', function () {
 
       // 5 is absent by design: the fetch index was replaced by job_i11 in v40 and the number was
       // retired rather than reused. See createIndexJobFetch.
-      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]) {
+      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]) {
         expect(names).toContain(`job_i${n}`)
       }
       expect(names).not.toContain('job_i5')
@@ -31,7 +31,7 @@ describe('drift', function () {
     it('partitioned puts the full set on job_common', function () {
       const names = plans.expectedManagedIndexes('pgboss', true, []).map(i => i.name)
 
-      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]) {
+      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]) {
         expect(names).toContain(`job_common_i${n}`)
       }
       expect(names).not.toContain('job_common_i5')
@@ -41,11 +41,10 @@ describe('drift', function () {
     it('a per-queue partition only carries the base set plus its policy index', function () {
       const names = plans.expectedManagedIndexes('pgboss', true, [{ table: 'jabc', policy: 'short' }]).map(i => i.name)
 
-      // base: throttle/fetch/group/blocking
-      expect(names).toContain('jabc_i4')
-      expect(names).toContain('jabc_i11')
-      expect(names).toContain('jabc_i7')
-      expect(names).toContain('jabc_i9')
+      // base: throttle, fetch, group, blocking, source root, upsert, live, created, completed, queued key
+      for (const n of [4, 7, 9, 11, 12, 13, 14, 15, 16, 17]) {
+        expect(names).toContain(`jabc_i${n}`)
+      }
       // short -> i1
       expect(names).toContain('jabc_i1')
       // other policy indexes absent
@@ -836,6 +835,28 @@ describe('drift', function () {
         await repair.close()
       }
       expect((await ctx.boss.detectSchemaDrift()).ok).toBe(true)
+    })
+
+    // A queue with its own table gets every unconditional job index, and a missing one there is drift
+    // like one on job_common.
+    it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('expects every unconditional job index on a queue with its own table', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig })
+      const schema = ctx.schema
+      await ctx.boss.createQueue(`${schema}_own`, { partition: true })
+      const queue = await ctx.boss.getQueue(`${schema}_own`)
+      helper.assertTruthy(queue)
+
+      let report = await ctx.boss.detectSchemaDrift()
+      expect(report.ok).toBe(true)
+      expect(report.extraIndexes).toHaveLength(0)
+
+      const db = await helper.getDb()
+      await db.executeSql(`DROP INDEX ${schema}.${queue.table}_i14`)
+      await db.close()
+
+      report = await ctx.boss.detectSchemaDrift()
+      expect(report.ok).toBe(false)
+      expect(report.missing.map(i => i.name)).toEqual([`${queue.table}_i14`])
     })
 
     it('treats a missing index with a pending BAM build as building, not missing', async function () {

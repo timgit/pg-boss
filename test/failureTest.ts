@@ -319,6 +319,41 @@ describe('failure', function () {
     expect((await ctx.boss.previewRedrive(deadLetter)).total).toBe(0)
   })
 
+  // Ids are unique per queue, not per table, so redrive must move or fail only the dead letter
+  // queue's own job.
+  for (const distributed of [false, true]) {
+    it(`redrive leaves another queue's job with the same id alone${distributed ? ' (distributed)' : ''}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__distributed: distributed })
+
+      const deadLetter = `${ctx.schema}_dlq`
+      const other = `${ctx.schema}_other`
+      const plain = `${ctx.schema}_plain`
+      const short = `${ctx.schema}_short`
+
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.createQueue(other)
+      await ctx.boss.createQueue(plain)
+      await ctx.boss.createQueue(short, { policy: 'short' })
+      // Holds short's one created slot, so a job redriven there conflicts.
+      await ctx.boss.send(short)
+
+      const moved = crypto.randomUUID()
+      const conflicted = crypto.randomUUID()
+      for (const id of [moved, conflicted]) {
+        await ctx.boss.send(deadLetter, null, { id })
+        await ctx.boss.send(other, null, { id })
+      }
+
+      expect(await ctx.boss.redrive(deadLetter, { destination: short, ids: [conflicted] })).toBe(0)
+      expect(await ctx.boss.redrive(deadLetter, { destination: plain, ids: [moved] })).toBe(1)
+
+      expect(await ctx.boss.getJobById(deadLetter, moved)).toBeNull()
+      expect((await ctx.boss.getJobById(deadLetter, conflicted))?.state).toBe('failed')
+      expect((await ctx.boss.getJobById(other, moved))?.state).toBe('created')
+      expect((await ctx.boss.getJobById(other, conflicted))?.state).toBe('created')
+    })
+  }
+
   it('redrive moves a dead-lettered job back to its source queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
@@ -752,6 +787,23 @@ describe('failure', function () {
         destinations: [{ name: queueB, count: 2 }],
         unroutable: 0
       })
+    })
+
+    it('previews by reading at most limit jobs of each kind, never counting them all', async function () {
+      const { deadLetter, queueA } = await setup()
+      await deadLetterAll(queueA, deadLetter, [{ n: 1 }, { n: 2 }, { n: 3 }])
+      await ctx.boss!.send(deadLetter, { n: 4 })
+      await ctx.boss!.send(deadLetter, { n: 5 })
+
+      // Each kind stops at the limit, so a count that reaches it means at least that many.
+      expect(await ctx.boss!.previewRedrive(deadLetter, { limit: 2 })).toEqual({
+        total: 4,
+        destinations: [{ name: queueA, count: 2 }],
+        unroutable: 2
+      })
+      for (const limit of [0, 1.5, 100_001]) {
+        await expect(ctx.boss!.previewRedrive(deadLetter, { limit })).rejects.toThrow('previewRedrive: limit must be an integer between 1 and 100000')
+      }
     })
 
     it('rejects filters that would silently match nothing or everything', async function () {
