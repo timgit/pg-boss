@@ -18,7 +18,9 @@ import { FilterSelect } from '~/components/ui/filter-select'
 import { ErrorCard } from '~/components/error-card'
 import type { WarningType, WarningResult } from '~/lib/types'
 import {
-  parsePageNumber,
+  parsePaging,
+  pagingSearchParams,
+  resetPaging,
   isValidWarningType,
   formatDateWithSeconds,
   formatWarningData,
@@ -36,9 +38,8 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   // Validate warning type filter - invalid values are treated as no filter
   const typeFilter = isValidWarningType(typeParam) ? typeParam : null
 
-  const page = parsePageNumber(url.searchParams.get('page'))
+  const { page, cursor } = parsePaging(url.searchParams)
   const limit = 50
-  const offset = (page - 1) * limit
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
@@ -46,16 +47,26 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     getWarnings(DB_URL, SCHEMA, {
       type: typeFilter,
       limit,
-      offset,
+      cursor,
       sort,
       dir,
     }),
     getWarningCount(DB_URL, SCHEMA, typeFilter),
   ])
 
-  const totalPages = Math.ceil(totalCount / limit)
+  const totalPages = totalCount.capped ? null : Math.ceil(totalCount.count / limit)
 
-  return { warnings, totalCount, page, totalPages, typeFilter }
+  return {
+    warnings: warnings.rows,
+    totalCount,
+    page: warnings.atStart ? 1 : page,
+    totalPages,
+    hasNextPage: warnings.hasNextPage,
+    hasPrevPage: warnings.hasPrevPage,
+    nextCursor: warnings.nextCursor,
+    prevCursor: warnings.prevCursor,
+    typeFilter,
+  }
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
@@ -69,7 +80,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function Warnings ({ loaderData }: Route.ComponentProps) {
-  const { warnings, totalCount, page, totalPages, typeFilter } = loaderData
+  const { warnings, totalCount, page, totalPages, hasNextPage, hasPrevPage, typeFilter } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
 
   const handleFilterChange = (key: string, value: string | null) => {
@@ -79,21 +90,19 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
     } else {
       params.delete(key)
     }
-    params.delete('page')
+    resetPaging(params)
     setSearchParams(params)
   }
 
   const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
-    setSearchParams(params)
+    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
   }
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Warnings"
-        subtitle={`${totalCount.toLocaleString()} warning${totalCount !== 1 ? 's' : ''} recorded · events emitted while persistWarnings is enabled`}
+        subtitle={`${totalCount.count.toLocaleString()}${totalCount.capped ? '+' : ''} warning${totalCount.count !== 1 || totalCount.capped ? 's' : ''} recorded · events emitted while persistWarnings is enabled`}
       />
 
       <Card>
@@ -149,8 +158,8 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
         <Pagination
           page={page}
           totalPages={totalPages}
-          hasNextPage={page < totalPages}
-          hasPrevPage={page > 1}
+          hasNextPage={hasNextPage}
+          hasPrevPage={hasPrevPage}
           onPageChange={handlePageChange}
         />
       </Card>

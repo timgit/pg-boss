@@ -3,6 +3,7 @@ import {
   DEFAULT_JOB_COLUMNS,
   DEFAULT_QUEUE_JOB_COLUMNS,
   createJobColumn,
+  defaultJobColumnsFor,
   getRowCellValue,
   parseJobColumns,
   appendJobColumns,
@@ -46,6 +47,21 @@ describe('job columns', () => {
   it('does not serialize initial columns and filters into the URL', () => {
     const params = buildParams(defaultFilters, DEFAULT_JOB_COLUMNS)
     expect(params.toString()).toBe('')
+  })
+
+  it('shows Completed before Created by default for finished states', () => {
+    const paths = (columns: JobColumn[]) => columns.map(c => c.path)
+    expect(paths(defaultJobColumnsFor('completed'))).toEqual(['id', 'name', 'state', 'retries', 'completedOn', 'createdOn'])
+    expect(paths(defaultJobColumnsFor('failed', DEFAULT_QUEUE_JOB_COLUMNS))).toEqual(['id', 'state', 'priority', 'retries', 'completedOn', 'createdOn'])
+    expect(defaultJobColumnsFor('pending')).toBe(DEFAULT_JOB_COLUMNS)
+    expect(defaultJobColumnsFor('all', DEFAULT_QUEUE_JOB_COLUMNS)).toBe(DEFAULT_QUEUE_JOB_COLUMNS)
+  })
+
+  it('leaves the state filter default columns out of the URL', () => {
+    const completed = { ...defaultFilters, state: 'completed' as const }
+    expect(buildParams(completed).toString()).toBe('state=completed')
+    expect(buildParams(completed, defaultJobColumnsFor('completed')).toString()).toBe('state=completed')
+    expect(buildParams(completed, DEFAULT_JOB_COLUMNS).getAll('col')).toHaveLength(DEFAULT_JOB_COLUMNS.length)
   })
 
   it('builds view params separately from filter params', () => {

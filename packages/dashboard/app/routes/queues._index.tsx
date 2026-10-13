@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues._index'
 import { useCan } from '~/lib/use-capabilities'
-import { getQueues, getQueueCount } from '~/lib/queries.server'
+import { getQueuePage, getQueueCount } from '~/lib/queries.server'
 import { Sparkline } from '~/components/ui/sparkline'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
@@ -19,18 +19,17 @@ import {
   TableCell,
   SortableHeader,
 } from '~/components/ui/table'
-import { formatTimeAgo, parsePageNumber, cn } from '~/lib/utils'
+import { formatTimeAgo, parsePaging, pagingSearchParams, resetPaging, cn } from '~/lib/utils'
 import type { QueueResult } from '~/lib/types'
 import { dbContext } from '~/lib/db-context'
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
-  const page = parsePageNumber(url.searchParams.get('page'))
+  const { page, cursor } = parsePaging(url.searchParams)
   const filter = url.searchParams.get('filter') || 'all'
   const search = url.searchParams.get('search') || ''
   const limit = 50
-  const offset = (page - 1) * limit
 
   // Validate filter
   const validFilter = ['all', 'attention', 'partitioned'].includes(filter)
@@ -41,9 +40,9 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const dir = url.searchParams.get('dir')
 
   const [queues, totalCount] = await Promise.all([
-    getQueues(DB_URL, SCHEMA, {
+    getQueuePage(DB_URL, SCHEMA, {
       limit,
-      offset,
+      cursor,
       filter: validFilter,
       search,
       sort,
@@ -56,16 +55,16 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   ])
 
   const totalPages = Math.ceil(totalCount / limit)
-  const hasNextPage = queues.length === limit
-  const hasPrevPage = page > 1
 
   return {
-    queues,
+    queues: queues.rows,
     totalCount,
-    page,
+    page: queues.atStart ? 1 : page,
     totalPages,
-    hasNextPage,
-    hasPrevPage,
+    hasNextPage: queues.hasNextPage,
+    hasPrevPage: queues.hasPrevPage,
+    nextCursor: queues.nextCursor,
+    prevCursor: queues.prevCursor,
     filter: validFilter,
     search,
   }
@@ -104,9 +103,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
   }, [search])
 
   const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
-    setSearchParams(params)
+    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
   }
 
   const handleSearch = (value: string) => {
@@ -116,7 +113,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
     } else {
       params.delete('search')
     }
-    params.delete('page') // Reset to page 1 when searching
+    resetPaging(params) // Reset to page 1 when searching
     setSearchParams(params)
   }
 
@@ -127,7 +124,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
     } else {
       params.set('filter', newFilter)
     }
-    params.delete('page') // Reset to page 1 when filtering
+    resetPaging(params) // Reset to page 1 when filtering
     setSearchParams(params)
   }
 
@@ -340,7 +337,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
         </CardContent>
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {(hasPrevPage || hasNextPage) && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--border-subtle)]">
             <div className="text-sm text-[var(--text-tertiary)]">
               Page <b className="pgb-num text-[var(--text-secondary)] font-medium">{page}</b> of <b className="pgb-num text-[var(--text-secondary)] font-medium">{totalPages}</b>

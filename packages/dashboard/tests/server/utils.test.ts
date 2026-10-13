@@ -7,6 +7,7 @@ import {
   formatDateWithSeconds,
   formatWarningData,
   isValidJobState,
+  jobListSortColumn,
   isValidWarningType,
   isValidBamStatus,
   warningTypeLabel,
@@ -148,6 +149,13 @@ describe('utils', () => {
     })
   })
 
+  describe('jobListSortColumn', () => {
+    it('orders finished states by completion and the rest by creation', () => {
+      for (const state of ['completed', 'cancelled', 'failed']) expect(jobListSortColumn(state)).toBe('completedOn')
+      for (const state of ['pending', 'all', 'created', 'retry', 'active', null]) expect(jobListSortColumn(state)).toBe('createdOn')
+    })
+  })
+
   describe('isValidJobState', () => {
     it('returns true for null (no filter)', () => {
       expect(isValidJobState(null)).toBe(true)
@@ -193,7 +201,8 @@ describe('utils', () => {
 
   describe('WARNING_TYPES constant', () => {
     // Mirrors WarningType in the pg-boss core; index_bloat arrived with reindex maintenance in
-    // 12.29.0 and xmin_horizon/autovacuum_disabled/monitor_backoff with vacuum monitoring in 12.30.0
+    // 12.29.0, xmin_horizon/autovacuum_disabled/monitor_backoff with vacuum monitoring in 12.30.0
+    // and handler_overrun in 12.38.0. The startup warnings are only emitted, never written
     it('covers every warning type the core writes', () => {
       expect([...WARNING_TYPES]).toEqual([
         'slow_query',
@@ -205,6 +214,7 @@ describe('utils', () => {
         'xmin_horizon',
         'autovacuum_disabled',
         'monitor_backoff',
+        'handler_overrun',
       ])
     })
 

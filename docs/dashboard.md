@@ -24,7 +24,7 @@ Landing page with aggregate counts across all queues (queued, deferred, ready, a
 
 ### Jobs
 
-Recently created jobs across all queues. Filter by job ID, queue, state (pending, created, retry, active, completed, cancelled or failed) and minimum retry count, or open the advanced filters to match on keys inside the job's `data` or `output` JSON. **Manage view** lets you add custom columns sourced from job fields (for example `data.tenantId`), and **Copy link** produces a shareable URL with the current filters and columns. Clicking a job opens its detail page.
+Recently created jobs across all queues. Filter by job ID, queue, state (pending, created, retry, active, completed, cancelled or failed) and minimum retry count, or open the advanced filters to match on keys inside the job's `data` or `output` JSON. Jobs list newest created first, or newest finished first with the completed, cancelled or failed filter. **Manage view** lets you add custom columns sourced from job fields (for example `data.tenantId`), and **Copy link** produces a shareable URL with the current filters and columns. Clicking a job opens its detail page.
 
 ![Jobs page](./images/dashboard-jobs.png)
 
@@ -72,10 +72,14 @@ Each dashboard release is built with a specific pg-boss and only works against a
 
 | Dashboard | pg-boss | Schema version |
 | - | - | - |
+| 1.12.x | 12.38.x | 46 |
+| 1.11.x | 12.37.x | 45 |
 | 1.10.x | 12.35.x | 43 |
 | 1.9.x | 12.33.x – 12.34.x | 42 |
 | 1.8.x | 12.31.x – 12.32.x | 41 |
 | 1.7.x | 12.30.x | 40 |
+
+No dashboard release matches pg-boss 12.36.x (schema 44). Move the application to 12.37 and use 1.11.x.
 
 The dashboard does not migrate your schema. If the versions do not match, the overview, queue, job and schedule lists and the warnings page still load. However, opening a job, cancelling, resuming or deleting one, sending a job, creating a queue, and adding or removing a schedule all fail with `pg-boss database requires migrations`. When your application moves to a pg-boss release with a new schema version, upgrade the dashboard with it.
 

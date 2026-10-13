@@ -46,16 +46,20 @@ import { JobColumnsEditor } from '~/components/job-columns-editor'
 import { JobColumnCell } from '~/components/job-column-cell'
 import type { JobResult } from '~/lib/types'
 import {
-  parsePageNumber,
+  parsePaging,
+  pagingSearchParams,
+  resetPaging,
   isValidJobState,
   formatDate,
   JOB_STATE_OPTIONS,
   DEFAULT_STATE_FILTER,
+  jobListSortColumn,
   cn,
 } from '~/lib/utils'
 import { dbContext } from '~/lib/db-context'
 import {
   DEFAULT_QUEUE_JOB_COLUMNS,
+  defaultJobColumnsFor,
   parseJobColumns,
   appendJobColumns,
   type JobColumn,
@@ -65,17 +69,16 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const stateParam = url.searchParams.get('state')
-  const jobColumns = parseJobColumns(url.searchParams, DEFAULT_QUEUE_JOB_COLUMNS)
 
   // Default to 'pending' filter to avoid showing completed/failed jobs in large queues
   // Users can explicitly select 'all' to see all jobs
   const stateFilter = stateParam !== null && isValidJobState(stateParam)
     ? stateParam
     : DEFAULT_STATE_FILTER
+  const jobColumns = parseJobColumns(url.searchParams, defaultJobColumnsFor(stateFilter, DEFAULT_QUEUE_JOB_COLUMNS))
 
-  const page = parsePageNumber(url.searchParams.get('page'))
+  const { page, cursor } = parsePaging(url.searchParams)
   const limit = 50
-  const offset = (page - 1) * limit
 
   const queue = await getQueue(DB_URL, SCHEMA, params.name)
 
@@ -86,7 +89,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
   // The Ready sparkline comes from the always-on queue.ready_history column (loaded with `queue`).
   // collection drives the banner that points at the interactive metrics chart (needs persistQueueStats).
   const [jobs, collection] = await Promise.all([
-    getJobs(DB_URL, SCHEMA, params.name, { state: stateFilter, limit, offset, jobColumns }),
+    getJobs(DB_URL, SCHEMA, params.name, { state: stateFilter, limit, cursor, jobColumns }),
     getQueueStatsCollectionStatus(DB_URL, SCHEMA),
   ])
 
@@ -95,20 +98,18 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const totalCount = getJobCountFromQueue(queue, stateFilter)
   const totalPages = totalCount !== null ? Math.ceil(totalCount / limit) : null
 
-  // Determine if there are more pages based on results
-  const hasNextPage = jobs.length === limit
-  const hasPrevPage = page > 1
-
   return {
     queue,
-    jobs,
+    jobs: jobs.rows,
     totalCount,
-    page,
+    page: jobs.atStart ? 1 : page,
     totalPages,
     stateFilter,
     jobColumns,
-    hasNextPage,
-    hasPrevPage,
+    hasNextPage: jobs.hasNextPage,
+    hasPrevPage: jobs.hasPrevPage,
+    nextCursor: jobs.nextCursor,
+    prevCursor: jobs.prevCursor,
     statsAvailable: collection.available,
   }
 }
@@ -205,26 +206,27 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     } else {
       params.delete(key)
     }
-    params.delete('page')
+    resetPaging(params)
     setSearchParams(params)
   }
 
   const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams)
-    params.set('page', newPage.toString())
-    setSearchParams(params)
+    setSearchParams(pagingSearchParams(searchParams, newPage, loaderData))
   }
+
+  // Default columns are left out of the URL, so they follow the state filter's defaults.
+  const defaultColumns = defaultJobColumnsFor(stateFilter, DEFAULT_QUEUE_JOB_COLUMNS)
 
   const handleColumnsChange = (columns: JobColumn[]) => {
     const params = new URLSearchParams(searchParams)
-    appendJobColumns(params, columns, DEFAULT_QUEUE_JOB_COLUMNS)
-    params.delete('page')
+    appendJobColumns(params, columns, defaultColumns)
+    resetPaging(params)
     setSearchParams(params)
   }
 
   const getShareUrl = (columns: JobColumn[]) => {
     const params = new URLSearchParams(searchParams)
-    appendJobColumns(params, columns, DEFAULT_QUEUE_JOB_COLUMNS)
+    appendJobColumns(params, columns, defaultColumns)
     return `${window.location.origin}${window.location.pathname}?${params.toString()}`
   }
 
@@ -386,7 +388,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
           </div>
           <JobColumnsEditor
             columns={jobColumns}
-            defaultColumns={DEFAULT_QUEUE_JOB_COLUMNS}
+            defaultColumns={defaultColumns}
             getShareUrl={getShareUrl}
             onColumnsChange={handleColumnsChange}
           />
@@ -396,7 +398,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
             <TableHeader>
               <TableRow>
                 {jobColumns.map((col, index) => (
-                  <TableHead key={`${col.path}-${index}`}>{col.name}</TableHead>
+                  <TableHead key={`${col.path}-${index}`} sortedDesc={col.path === jobListSortColumn(stateFilter)}>{col.name}</TableHead>
                 ))}
                 <TableHead>Actions</TableHead>
               </TableRow>

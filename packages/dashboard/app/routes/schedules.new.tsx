@@ -5,7 +5,7 @@ import type { Route } from './+types/schedules.new'
 import { useCan } from '~/lib/use-capabilities'
 import { ReadOnlyNotice } from '~/components/read-only-notice'
 import { schedule } from '~/lib/boss.server'
-import { getQueues } from '~/lib/queries.server'
+import { getQueueNames } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Button } from '~/components/ui/button'
@@ -14,7 +14,7 @@ import { cn } from '~/lib/utils'
 
 export async function loader ({ context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
-  const queues = await getQueues(DB_URL, SCHEMA)
+  const queues = await getQueueNames(DB_URL, SCHEMA)
   return { queues }
 }
 
@@ -141,7 +141,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   )
 }
 
-export default function CreateSchedule ({ loaderData, actionData }: any) {
+export default function CreateSchedule ({ loaderData, actionData }: Route.ComponentProps) {
   const mayAct = useCan('schedule:create')
   const actionDataResult = useActionData<typeof action>()
   const navigation = useNavigation()
@@ -153,8 +153,8 @@ export default function CreateSchedule ({ loaderData, actionData }: any) {
   const [showDropdown, setShowDropdown] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
 
-  const filteredQueues = queues.filter((q: any) =>
-    q.name.toLowerCase().includes(queueSearch.toLowerCase())
+  const filteredQueues = queues.filter((name) =>
+    name.toLowerCase().includes(queueSearch.toLowerCase())
   )
 
   const handleQueueSelect = (queueName: string) => {
@@ -281,14 +281,14 @@ export default function CreateSchedule ({ loaderData, actionData }: any) {
 
                   {showDropdown && filteredQueues.length > 0 && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                      {filteredQueues.map((queue: any) => (
+                      {filteredQueues.map((name) => (
                         <button
-                          key={queue.name}
+                          key={name}
                           type="button"
-                          onClick={() => handleQueueSelect(queue.name)}
+                          onClick={() => handleQueueSelect(name)}
                           className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-900 dark:text-gray-100 cursor-pointer text-sm"
                         >
-                          {queue.name}
+                          {name}
                         </button>
                       ))}
                     </div>

@@ -4,7 +4,6 @@ import type { Route } from './+types/jobs'
 import { useCan } from '~/lib/use-capabilities'
 import {
   getRecentJobs,
-  getRecentJobsCount,
   getQueueNames,
   type RecentJobsFilterOptions,
 } from '~/lib/queries.server'
@@ -31,24 +30,27 @@ import { isQueryTimeoutError, getQueryTimeoutMs } from '~/lib/db.server'
 import type { JobResult } from '~/lib/types'
 import {
   DEFAULT_JOB_COLUMNS,
+  defaultJobColumnsFor,
+  jobColumnsEqual,
   parseJobColumns,
   appendJobColumns,
   type JobColumn,
 } from '~/lib/job-columns'
 import {
-  parsePageNumber,
+  parsePaging,
+  pagingSearchParams,
   isValidJobState,
   DEFAULT_STATE_FILTER,
   ALL_STATES_FILTER,
   parseJsonFilterPairs,
   jsonFilterPairsToObject,
+  jobListSortColumn,
   type JobStateFilter,
 } from '~/lib/utils'
 
 interface ParsedFilters extends JobsFilters {
   serverFilters: RecentJobsFilterOptions
   hasActiveFilters: boolean
-  shouldRunCount: boolean
 }
 
 // Exported for tests: buildSearchParams must round-trip through this parser.
@@ -62,9 +64,7 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
   const queuesRaw = (searchParams.get('queues') || '').trim()
   const queues = queuesRaw ? queuesRaw.split(',').filter(Boolean) : []
   const minRetriesRaw = (searchParams.get('minRetries') || '').trim()
-  // 0 is normalized away: retry_count >= 0 matches every job, but a non-empty
-  // value here would still flip hasNarrowingFilters and trigger an unbounded
-  // COUNT(*) even though buildRecentJobsWhere adds no condition for it.
+  // 0 is normalized away: retry_count >= 0 matches every job, so it would only add an empty chip.
   const minRetries = /^\d+$/.test(minRetriesRaw) && Number(minRetriesRaw) > 0 ? minRetriesRaw : ''
 
   const dataPairs = parseJsonFilterPairs(searchParams, 'data')
@@ -72,21 +72,14 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
   const dataObject = jsonFilterPairsToObject(dataPairs.filter(p => p.key.trim() && p.value !== ''))
   const outputObject = jsonFilterPairsToObject(outputPairs.filter(p => p.key.trim() && p.value !== ''))
 
-  // Cosmetic vs cost-bearing distinction:
-  //   hasActiveFilters drives the "X jobs found" subtitle and the chip strip.
-  //   shouldRunCount gates the COUNT(*) — we only run it when there's a WHERE
-  //   that actually shrinks the scan. state='all' alone adds no WHERE and would
-  //   force a full table scan to count every row, which is exactly what we
-  //   wanted to avoid by skipping the count for the default view.
-  const hasNarrowingFilters =
+  // Drives the active filter chips.
+  const hasActiveFilters =
+    state !== DEFAULT_STATE_FILTER ||
     id !== '' ||
     queues.length > 0 ||
     minRetries !== '' ||
     Object.keys(dataObject).length > 0 ||
     Object.keys(outputObject).length > 0
-
-  const hasActiveFilters = hasNarrowingFilters || state !== DEFAULT_STATE_FILTER
-  const shouldRunCount = hasNarrowingFilters || (state !== DEFAULT_STATE_FILTER && state !== 'all')
 
   const serverFilters: RecentJobsFilterOptions = {
     state,
@@ -106,7 +99,6 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
     output: outputPairs,
     serverFilters,
     hasActiveFilters,
-    shouldRunCount,
   }
 }
 
@@ -114,49 +106,37 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const parsed = parseFiltersFromUrl(url.searchParams)
-  const jobColumns = parseJobColumns(url.searchParams)
+  const jobColumns = parseJobColumns(url.searchParams, defaultJobColumnsFor(parsed.state))
 
-  const page = parsePageNumber(url.searchParams.get('page'))
+  const { page, cursor } = parsePaging(url.searchParams)
   const limit = 20
-  const offset = (page - 1) * limit
 
-  const [recentJobsResult, queueNames, totalCount] = await Promise.all([
+  const [recentJobsResult, queueNames] = await Promise.all([
     getRecentJobs(DB_URL, SCHEMA, {
       ...parsed.serverFilters,
       limit,
-      offset,
+      cursor,
       jobColumns,
     }).then(
-      (rows) => ({ rows, timedOut: false }),
+      (jobs) => ({ jobs, timedOut: false }),
       (err) => {
         // A cancelled list query (statement_timeout) is an expected outcome on
         // large tables with broad filters — render an inline banner instead of
         // the ErrorBoundary so the user can remove the expensive filter.
-        if (isQueryTimeoutError(err)) return { rows: [] as JobResult[], timedOut: true }
+        if (isQueryTimeoutError(err)) return { jobs: null, timedOut: true }
         throw err
       }
     ),
     getQueueNames(DB_URL, SCHEMA),
-    // Count is best-effort: a failure here would block the entire page even
-    // though the result list already loaded. Degrade to a null count so the
-    // subtitle silently falls back to the next-page heuristic.
-    parsed.shouldRunCount
-      ? getRecentJobsCount(DB_URL, SCHEMA, parsed.serverFilters)
-        .catch(() => null)
-      : Promise.resolve<number | null>(null),
   ])
 
-  const recentJobs = recentJobsResult.rows
-  const hasNextPage = !recentJobsResult.timedOut && (totalCount != null
-    ? page * limit < totalCount
-    : recentJobs.length === limit)
-  const hasPrevPage = page > 1
+  const { jobs } = recentJobsResult
+  const recentJobs: JobResult[] = jobs?.rows ?? []
 
   return {
     recentJobs,
     queueNames,
-    totalCount,
-    page,
+    page: jobs?.atStart ? 1 : page,
     timedOut: recentJobsResult.timedOut,
     queryTimeoutMs: getQueryTimeoutMs(),
     filters: {
@@ -168,8 +148,10 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
       output: parsed.output,
     } satisfies JobsFilters,
     hasActiveFilters: parsed.hasActiveFilters,
-    hasNextPage,
-    hasPrevPage,
+    hasNextPage: jobs?.hasNextPage ?? false,
+    hasPrevPage: jobs?.hasPrevPage ?? page > 1,
+    nextCursor: jobs?.nextCursor ?? null,
+    prevCursor: jobs?.prevCursor ?? null,
     jobColumns,
   }
 }
@@ -201,19 +183,20 @@ export function buildSearchParams (
 }
 
 export function buildViewParams (
-  jobColumns: JobColumn[] = DEFAULT_JOB_COLUMNS
+  jobColumns: JobColumn[] = DEFAULT_JOB_COLUMNS,
+  defaultColumns: JobColumn[] = DEFAULT_JOB_COLUMNS
 ): URLSearchParams {
   const params = new URLSearchParams()
-  appendJobColumns(params, jobColumns)
+  appendJobColumns(params, jobColumns, defaultColumns)
   return params
 }
 
 export function buildParams (
   filters: JobsFilters,
-  jobColumns: JobColumn[] = DEFAULT_JOB_COLUMNS
+  jobColumns: JobColumn[] = defaultJobColumnsFor(filters.state)
 ): URLSearchParams {
   const params = buildSearchParams(filters)
-  const viewParams = buildViewParams(jobColumns)
+  const viewParams = buildViewParams(jobColumns, defaultJobColumnsFor(filters.state))
 
   for (const [key, value] of viewParams) {
     params.append(key, value)
@@ -227,7 +210,6 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
   const {
     recentJobs,
     queueNames,
-    totalCount,
     page,
     filters,
     hasActiveFilters,
@@ -237,6 +219,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     queryTimeoutMs,
     jobColumns,
   } = loaderData
+  const sortColumn = jobListSortColumn(filters.state)
   const [, setSearchParams] = useSearchParams()
 
   const setQueryParams = (params: URLSearchParams) => {
@@ -252,8 +235,13 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     return `${window.location.origin}${window.location.pathname}?${params.toString()}`
   }
 
+  // Columns left at their defaults follow the state filter's defaults; chosen ones stay.
+  const defaultColumns = defaultJobColumnsFor(filters.state)
+  const columnsFor = (next: JobsFilters) =>
+    jobColumnsEqual(jobColumns, defaultColumns) ? defaultJobColumnsFor(next.state) : jobColumns
+
   const handleFiltersChange = (next: JobsFilters) => {
-    setQueryParams(buildParams(next, jobColumns))
+    setQueryParams(buildParams(next, columnsFor(next)))
   }
 
   const handleColumnsChange = (columns: JobColumn[]) => {
@@ -261,25 +249,22 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
   }
 
   const handlePageChange = (newPage: number) => {
-    const params = buildParams(filters, jobColumns)
-    if (newPage > 1) params.set('page', newPage.toString())
-    setQueryParams(params)
+    setQueryParams(pagingSearchParams(buildParams(filters, jobColumns), newPage, loaderData))
   }
 
   const clearAll = () => {
-    setQueryParams(buildParams({
+    const cleared: JobsFilters = {
       state: DEFAULT_STATE_FILTER,
       id: '',
       queues: [],
       minRetries: '',
       data: [],
       output: [],
-    }, jobColumns))
+    }
+    setQueryParams(buildParams(cleared, columnsFor(cleared)))
   }
 
-  const subtitle = hasActiveFilters && totalCount != null
-    ? `${totalCount.toLocaleString()} job${totalCount === 1 ? '' : 's'} found`
-    : 'Recently created jobs across all queues'
+  const subtitle = `${sortColumn === 'completedOn' ? 'Recently finished' : 'Recently created'} jobs ${filters.queues.length > 0 ? 'in the selected queues' : 'across all queues'}`
 
   return (
     <div className="space-y-4">
@@ -299,6 +284,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
 
       <JobColumnsEditor
         columns={jobColumns}
+        defaultColumns={defaultColumns}
         getShareUrl={getShareUrl}
         onColumnsChange={handleColumnsChange}
       />
@@ -319,7 +305,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
             <TableHeader>
               <TableRow>
                 {jobColumns.map((col, index) => (
-                  <TableHead key={`${col.path}-${index}`}>{col.name}</TableHead>
+                  <TableHead key={`${col.path}-${index}`} sortedDesc={col.path === sortColumn}>{col.name}</TableHead>
                 ))}
               </TableRow>
             </TableHeader>

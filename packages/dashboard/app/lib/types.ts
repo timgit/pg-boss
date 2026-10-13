@@ -1,5 +1,6 @@
 // Types based on or imported from pg-boss
 import type { JobWithMetadata, QueuePolicy, QueueResult as PgBossQueueResult, ScheduleKind } from 'pg-boss'
+import type { WarningTypeValue } from './utils'
 export type { JobWithMetadata, QueuePolicy, ScheduleKind }
 
 // SendOptions type from pg-boss (defined locally for compatibility)
@@ -61,7 +62,7 @@ export type JobResult =
     'groupId' | 'groupTier' | 'deadLetter' | 'policy'
   >>
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff'
+export type WarningType = WarningTypeValue
 
 export interface WarningResult {
   id: number;
