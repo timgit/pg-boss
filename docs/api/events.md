@@ -37,7 +37,7 @@ const boss = new PgBoss({
 
 When enabled, warnings are stored in the `warning` table and can be queried directly or viewed in the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard). See [SQL](/sql/warning-table) for the table schema.
 
-Only the types under [Warning Types](#warning-types) are written. [Startup and configuration warnings](#startup-and-configuration-warnings) are emitted as events only.
+Only the types under [Warning Types](#warning-types) are written. [Startup and configuration warnings](#startup-and-configuration-warnings) are emitted as events only. `listen_notify_unavailable` appears in both tables, since the cause decides: a listener that fails to start is written, and a backend or adapter without `LISTEN` is not.
 
 Warnings older than 365 days are pruned automatically. To keep them for less time, set the `warningRetentionDays` option:
 
