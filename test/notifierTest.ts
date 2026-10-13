@@ -80,6 +80,24 @@ describe('notifier', function () {
     expect(inserts).toHaveLength(1)
   })
 
+  // The connection that broke LISTEN can break the warning's INSERT too. With no `error` listener,
+  // emitting that failure throws, and start() must still fall back to polling.
+  it('starts when the failed listener\'s warning cannot be written and nothing listens for errors', async function () {
+    const db = fakeDb({
+      executeSql: async (sql: string) => {
+        if (sql.includes('INSERT INTO pgboss.warning')) throw new Error('connection terminated')
+        return { rows: [{ channel: 'pgboss_chan' }] } as any
+      },
+      listen: async () => { throw new Error('listen failed') }
+    })
+    const notifier = new Notifier(db, fakeManager, { schema: 'pgboss', persistWarnings: true } as any)
+
+    await expect(notifier.start()).resolves.toBeUndefined()
+    expect(notifier.available).toBe(false)
+
+    await notifier.stop()
+  })
+
   it('available reflects the listener handle lifecycle', async function () {
     const db = fakeDb({ listen: async () => ({ close: async () => {} }) })
     const notifier = new Notifier(db, fakeManager, config)

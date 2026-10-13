@@ -31,7 +31,7 @@ export async function emitAndPersistWarning (
 
 /**
  * Writes a warning to the warning table without emitting it, for a caller that emits its events on
- * another cadence than it writes rows. A failed write is emitted as an error, not thrown.
+ * another cadence than it writes rows. A failed write is emitted as an error and never thrown.
  */
 export async function persistWarning (
   ctx: Pick<WarningContext, 'emitter' | 'db' | 'schema' | 'errorEvent'>,
@@ -43,6 +43,12 @@ export async function persistWarning (
     const sql = plans.insertWarning(ctx.schema)
     await ctx.db.executeSql(sql, [type, message, JSON.stringify(data)])
   } catch (err) {
-    ctx.emitter.emit(ctx.errorEvent, err)
+    try {
+      ctx.emitter.emit(ctx.errorEvent, err)
+    } catch {
+      // With no `error` listener on the PgBoss instance, emit() throws ERR_UNHANDLED_ERROR (see
+      // Manager.failWip()). A warning that could not be written must not fail start() or crash the
+      // process from a timer, so it is dropped.
+    }
   }
 }
