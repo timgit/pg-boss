@@ -225,6 +225,54 @@ describe('pg-boss on Bun.SQL', () => {
     expect(rows[0].data).toEqual({ elapsed: 3 })
   })
 
+  test('commits a transactional worker\'s writes with its job, and rolls them back with a failure', async () => {
+    const queue = 'transactional'
+    await boss.createQueue(queue)
+    await client.unsafe(`CREATE TABLE ${schema}.side_effect (note text)`)
+
+    const kept = await boss.send(queue, { note: 'kept' }, { retryLimit: 0 })
+    const dropped = await boss.send(queue, { note: 'dropped' }, { retryLimit: 0 })
+
+    // the transaction comes from sql.begin(), settled by pg-boss after the handler returns
+    await boss.work(queue, { transactional: true }, async ([job], tx) => {
+      const { note } = job.data as { note: string }
+      await tx.executeSql(`INSERT INTO ${schema}.side_effect VALUES ($1)`, [note])
+      if (note === 'dropped') throw new Error('handler failed')
+    })
+
+    const deadline = Date.now() + 10_000
+    let states: (string | undefined)[] = []
+
+    while (Date.now() < deadline) {
+      states = await Promise.all([kept, dropped].map(async id => (await boss.getJobById(queue, id!))?.state))
+      if (states[0] === 'completed' && states[1] === 'failed') break
+      await Bun.sleep(100)
+    }
+
+    expect(states).toEqual(['completed', 'failed'])
+
+    const notes = await client.unsafe(`SELECT note FROM ${schema}.side_effect`)
+    expect(notes.map((row: { note: string }) => row.note)).toEqual(['kept'])
+  }, 15_000)
+
+  test('refuses statements on a transaction the server ended, and rejects its commit', async () => {
+    const tx = await db.beginTransaction!()
+
+    // transaction_timeout arrived in PostgreSQL 17; on an older server there is nothing to end it
+    const { rows: [{ guc }] } = await tx.db.executeSql("SELECT current_setting('transaction_timeout', true) AS guc")
+    if (guc === null) return tx.rollback()
+
+    await tx.db.executeSql('SET LOCAL transaction_timeout = 200')
+    await Bun.sleep(400)
+
+    await expect(tx.db.executeSql('SELECT 1')).rejects.toThrow()
+    await expect(tx.db.executeSql('SELECT 1')).rejects.toThrow()
+    await expect(tx.commit()).rejects.toThrow()
+
+    const { rows } = await db.executeSql('SELECT 1::int4 AS one')
+    expect(rows).toEqual([{ one: 1 }])
+  })
+
   test('runs maintenance, whose locked scripts also need a reserved connection', async () => {
     await boss.supervise()
 

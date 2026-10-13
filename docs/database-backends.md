@@ -339,7 +339,8 @@ schema and data persist wherever the PGlite instance stores its data directory.
 
 [Bun](https://bun.sh) ships its own PostgreSQL client, `Bun.SQL`. It talks to an ordinary PostgreSQL
 server, so this is not a backend profile. The default `postgres` profile applies and every feature
-works. It is a different *driver*, reached through an adapter instead of the `pg` connection pool.
+works, transactional workers included, except a [`TestClock`](api/testing.md#new-testclock-start). It
+is a different *driver*, reached through an adapter instead of the `pg` connection pool.
 
 You do not need it to run pg-boss on Bun: the bundled `pg` driver works under the Bun runtime, and a
 connection string is the simpler choice. Reach for an adapter when you want one client, and one
@@ -411,7 +412,12 @@ be fixed out from under this note.
 Transaction handling differs too, though it is invisible from the outside: pg-boss installs its
 schema, migrates, and runs maintenance as `BEGIN; ... COMMIT;` scripts, and Bun refuses those on a
 pooled connection (`Only use sql.begin, sql.reserved or max: 1`). `fromBunSql` reserves a connection
-for the duration of one.
+for the duration of one. A [transactional worker](api/workers.md#work-name-options-handler) runs its
+handler inside `sql.begin()`.
+
+A `TestClock` has to reach every session pg-boss opens, and the adapter cannot run statements on each
+new `Bun.SQL` connection, so `start()` refuses one. Use a connection string in tests that need a
+`TestClock`.
 
 #### LISTEN/NOTIFY
 

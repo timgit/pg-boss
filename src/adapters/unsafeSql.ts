@@ -1,10 +1,13 @@
-import type { IDatabase } from '../types.ts'
+import type { IDatabase, TransactionHandle } from '../types.ts'
+import { TRANSACTION_ROLLBACK_TIMEOUT_MS } from '../db.ts'
+import { delay } from '../tools.ts'
 import { expandArrayParams } from './placeholders.ts'
 
 // Bun.SQL copied its client API from postgres.js, so both drivers run pg-boss the same way: `unsafe`
 // runs a statement (or a multi-statement script, when there are no parameters), `reserve` pins a
-// connection out of the pool, and `listen` subscribes a channel on a connection of its own. A
-// postgres.js transaction has neither of the last two, and needs neither: it is already pinned.
+// connection out of the pool, `listen` subscribes a channel on a connection of its own, and `begin`
+// runs a callback in a transaction. A postgres.js transaction has none of the last three, and needs
+// none: it is already pinned.
 export interface UnsafeSqlLike {
   unsafe(text: string, values?: unknown[]): Promise<unknown>
   reserve?(): Promise<ReservedUnsafeSqlLike>
@@ -13,6 +16,7 @@ export interface UnsafeSqlLike {
     onNotification: (payload: string) => void,
     onSubscribe?: () => void
   ): Promise<{ unlisten(): Promise<void> | void }>
+  begin?<T>(fn: (tx: UnsafeSqlLike) => T | Promise<T>): Promise<unknown>
 }
 
 export interface ReservedUnsafeSqlLike {
@@ -25,6 +29,10 @@ interface UnsafeSqlOptions {
   expandArrays: boolean
   // Move a driver-specific error shape onto the one pg-boss reads.
   mapError?: (err: unknown) => unknown
+  // Return from a transaction's begin() callback once the server has ended the transaction. Bun's
+  // sql.end() waits for that callback forever. postgres.js answers it with a ROLLBACK on the dead
+  // connection, which throws from a timer and ends the process (3.4.9), so its callback stays parked.
+  releaseEndedTransaction?: boolean
 }
 
 // pg-boss ships schema installation, migration and maintenance as `BEGIN; ... COMMIT;` scripts
@@ -73,6 +81,10 @@ export function fromUnsafeSql (client: UnsafeSqlLike, options: UnsafeSqlOptions)
     }
   }
 
+  if (typeof client.begin === 'function') {
+    db.beginTransaction = () => beginTransaction(client, options)
+  }
+
   return db
 }
 
@@ -102,4 +114,87 @@ function unwrapRows (result: unknown): { rows: any[] } {
   }
 
   return { rows: result.some(Array.isArray) ? result.flat() : result }
+}
+
+// A transactional worker settles its transaction from a different call frame than the one that
+// opened it, and sql.begin() wants a callback that does both. The callback here parks on a promise
+// that commit() resolves and rollback() rejects, which leaves BEGIN, COMMIT, ROLLBACK and a dropped
+// connection to the driver: the connection goes back to the pool only once the transaction is over.
+async function beginTransaction (client: UnsafeSqlLike, options: UnsafeSqlOptions): Promise<TransactionHandle> {
+  const mapError = (err: unknown) => options.mapError ? options.mapError(err) : err
+  const opened = Promise.withResolvers<UnsafeSqlLike>()
+  const settle = Promise.withResolvers<void>()
+
+  const done = client.begin!(async tx => {
+    opened.resolve(tx)
+    await settle.promise
+  }).catch(err => { throw mapError(err) })
+
+  let settled = false
+  // Why the transaction ended, when it ended on its own (the server dropped the connection, say)
+  // rather than through commit() or rollback().
+  let endedError: unknown = null
+  const settledError = () => endedError ?? new Error('Transaction is already settled')
+
+  const end = (err: unknown) => {
+    if (settled || endedError) return
+    endedError = err
+    if (options.releaseEndedTransaction) settle.reject(err)
+  }
+
+  // A BEGIN that fails rejects `done` before the callback runs. Later, a rejection that arrives
+  // before either settle call means the connection is gone. postgres.js keeps routing a
+  // transaction's statements to its connection after the socket closes, and a write there throws
+  // from a timer and ends the process (postgres.js 3.4.9), so nothing may reach it once it ends.
+  done.catch(err => {
+    opened.reject(err)
+    end(err)
+  })
+
+  const tx = fromUnsafeSql(await opened.promise, options)
+
+  return {
+    db: {
+      // Refuses to run once the transaction is settled or ended. A statement issued late by a
+      // handler that outlived its timeout would otherwise run on a connection that has left the
+      // transaction. A statement that fails because the connection died ends it on the spot,
+      // before the caller's own error handling can send another down the same connection.
+      executeSql: (text: string, values?: unknown[]) => settled || endedError
+        ? Promise.reject(settledError())
+        : tx.executeSql(text, values).catch(err => {
+          if (endsSession(err)) end(err)
+          throw err
+        })
+    },
+    commit: async () => {
+      if (settled || endedError) throw settledError()
+      settled = true
+
+      settle.resolve()
+      await done
+    },
+    // Statements queue per connection, so a ROLLBACK issued while the handler's own statement is in
+    // flight waits as long as that statement does. Past the deadline this returns and leaves the
+    // ROLLBACK queued: the driver keeps the connection out of the pool until it gets through.
+    rollback: async () => {
+      if (settled || endedError) return
+      settled = true
+
+      settle.reject(new Error('rolled back'))
+      const deadline = delay(TRANSACTION_ROLLBACK_TIMEOUT_MS)
+
+      try {
+        await Promise.race([done.catch(() => {}), deadline])
+      } finally {
+        deadline.abort()
+      }
+    }
+  }
+}
+
+// A driver or socket error (no SQLSTATE), or a server error severe enough to end the session.
+function endsSession (err: unknown) {
+  const { code, severity } = err as { code?: string, severity?: string }
+
+  return !/^[0-9A-Z]{5}$/.test(code ?? '') || severity === 'FATAL' || severity === 'PANIC'
 }

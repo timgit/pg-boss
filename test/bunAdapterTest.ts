@@ -165,6 +165,51 @@ describe('bun adapter', () => {
     await expect(fromBunSql(client).executeSql('SELECT 1')).rejects.toMatchObject({ code: '23505' })
   })
 
+  it('opens a transaction through sql.begin(), settled from outside the callback', async () => {
+    const { client } = fakeBunSql(call => {
+      if (call.text === 'SELECT fail') {
+        throw Object.assign(new Error('deadlock detected'), { code: 'ERR_POSTGRES_SERVER_ERROR', errno: '40P01' })
+      }
+      return []
+    })
+    const outcomes: string[] = []
+
+    // Bun.SQL commits when the callback resolves and rolls back when it rejects
+    const transactional = {
+      ...client,
+      async begin<T> (fn: (tx: BunSqlLike) => T | Promise<T>) {
+        try {
+          const result = await fn(client)
+          outcomes.push('commit')
+          return result
+        } catch (err) {
+          outcomes.push('rollback')
+          throw err
+        }
+      }
+    } satisfies BunSqlLike
+
+    const db = fromBunSql(transactional)
+
+    const committed = await db.beginTransaction!()
+    await committed.db.executeSql('SELECT 1')
+    await committed.commit()
+
+    const rolledBack = await db.beginTransaction!()
+    // a statement in the transaction gets its SQLSTATE moved onto code, as one on the pool does
+    await expect(rolledBack.db.executeSql('SELECT fail')).rejects.toMatchObject({ code: '40P01' })
+    await rolledBack.rollback()
+
+    expect(outcomes).toEqual(['commit', 'rollback'])
+    await expect(committed.db.executeSql('SELECT 1')).rejects.toThrow('already settled')
+  })
+
+  it('omits beginTransaction when the client has no begin, so pg-boss refuses transactional workers', async () => {
+    const { client } = fakeBunSql()
+
+    expect(fromBunSql(client).beginTransaction).toBeUndefined()
+  })
+
   it('exposes listen when the client has it, and closes the subscription', async () => {
     const { client } = fakeBunSql()
     let unlistened = false

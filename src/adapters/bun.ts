@@ -13,6 +13,8 @@ export interface BunSqlLike {
     onNotification: (payload: string) => void,
     onSubscribe?: () => void
   ): Promise<BunSubscriptionLike>
+  // Opens a transactional worker's transaction. Without it, pg-boss refuses transactional workers.
+  begin?<T>(fn: (tx: BunSqlLike) => T | Promise<T>): Promise<unknown>
 }
 
 export interface BunSubscriptionLike {
@@ -51,7 +53,7 @@ const BUN_SERVER_ERROR = 'ERR_POSTGRES_SERVER_ERROR'
  */
 export function fromBunSql (client: BunSqlLike): IDatabase {
   // Bun stringifies an array parameter instead of encoding it (oven-sh/bun#18775); see expandArrayParams.
-  return fromUnsafeSql(client, { expandArrays: true, mapError: withSqlState })
+  return fromUnsafeSql(client, { expandArrays: true, mapError: withSqlState, releaseEndedTransaction: true })
 }
 
 function withSqlState (err: unknown) {
