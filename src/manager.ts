@@ -2913,8 +2913,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
         after = rows[0].walkCursor
       }
     } finally {
+      // The batches have committed, so a failed count update is reported rather than thrown, and does
+      // not hide a batch's own error. The next maintenance pass corrects the count.
       if (deleted) {
-        await this.db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained, deleted])
+        try {
+          await this.db.executeSql(plans.reduceRetainedCount(this.config.schema), [name, retained, deleted])
+        } catch (err) {
+          this.emit(events.error, err)
+        }
       }
     }
   }

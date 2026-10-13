@@ -584,9 +584,14 @@ class Boss extends EventEmitter implements types.EventsMixin {
       done = await this.#walk((after) => plans.deletion(schema, table, name, { after, batchSize, backend, noAdvisoryLocks, retainedBefore }), retention)
     } finally {
       // A walk that a stop or a failed batch cut short has not counted what it kept, so it only
-      // takes what it deleted off the counts, as a bulk delete does.
+      // takes what it deleted off the counts, as a bulk delete does. A failed update is reported so
+      // that it does not hide the batch's own error, and the next full walk sets the count.
       if (!done && retention.deleted) {
-        await this.#executeQuery({ text: plans.reduceRetainedCount(schema), values: [name, retention.deletedRetained, retention.deleted] })
+        try {
+          await this.#executeQuery({ text: plans.reduceRetainedCount(schema), values: [name, retention.deletedRetained, retention.deleted] })
+        } catch (err) {
+          this.emit(events.error, err)
+        }
       }
     }
 

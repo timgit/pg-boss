@@ -337,6 +337,65 @@ describe('delete', function () {
     })
   }
 
+  // The deletes have committed by the time the counts are updated, so a failed update is reported
+  // and does not replace the result or a batch's own error.
+  it('should report a failed count update after deletion batches instead of throwing it', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
+    const queue = await ctx.boss.getQueue(ctx.schema)
+    assertTruthy(queue)
+
+    const db = await helper.getDb()
+    const config = Attorney.getConfig({ ...ctx.bossConfig, supervise: false, __test__walk_batch_size: 2 })
+
+    for (const failBatch of [false, true]) {
+      await Promise.all([1, 2, 3, 4].map(() => ctx.boss!.send(ctx.schema)))
+      let batches = 0
+
+      const failing: IDatabase = {
+        executeSql: async (text: string, values?: unknown[]) => {
+          if (failBatch && text.includes('"walkCursor"') && ++batches === 2) throw new Error('batch failed')
+          if (text.includes('GREATEST(total_count - $3')) throw new Error('count update failed')
+          return await db.executeSql(text, values)
+        }
+      }
+
+      const manager = new Manager(failing, config)
+      const errors: Error[] = []
+      manager.on('error', err => errors.push(err))
+
+      const result = await manager.deleteQueuedJobs(ctx.schema).then(count => count, (err: Error) => err.message)
+      expect(result).toBe(failBatch ? 'batch failed' : 4)
+      expect(errors.map(err => err.message)).toEqual(['count update failed'])
+
+      await ctx.boss.deleteQueuedJobs(ctx.schema)
+    }
+
+    await Promise.all([1, 2, 3].map(() => ctx.boss!.send(ctx.schema, null, { deleteAfterSeconds: 1 })))
+    const fetched = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
+    await ctx.boss.complete(ctx.schema, fetched.map(job => job.id))
+    await delay(1500)
+
+    let walkBatches = 0
+    const failingWalk: IDatabase = {
+      executeSql: async (text: string, values?: unknown[]) => {
+        if (text.includes('"deletedRetained"') && text.includes('"walkCursor"') && ++walkBatches === 2) throw new Error('batch failed')
+        if (text.includes('GREATEST(total_count - $3')) throw new Error('count update failed')
+        return await db.executeSql(text, values)
+      }
+    }
+
+    const boss = new Boss(failingWalk, new Manager(failingWalk, config), config)
+    const errors: Error[] = []
+    boss.on('error', err => errors.push(err))
+    await boss.start()
+
+    await expect(boss.supervise([queue])).rejects.toThrow('batch failed')
+    expect(errors.map(err => err.message)).toEqual(['count update failed'])
+
+    await boss.stop()
+    if (!helper.isPglite) await db.close()
+  })
+
   it('should never delete a completed job when deleteAfterSeconds is 0', async function () {
     const config = {
       ...ctx.bossConfig,
