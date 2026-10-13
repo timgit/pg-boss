@@ -610,8 +610,10 @@ describe('queueStatsHistory', function () {
 
   // The cursor one batch returns is read by the next, which may run on another pooled connection.
   // Day and month swap between DMY and MDY, so a cursor printed in one and read in the other would
-  // skip the rows between the two dates.
-  helper.describeMultiConnectionOnly('stats retention cursor', function () {
+  // skip the rows between the two dates. CockroachDB only prints ISO, so there the connections differ
+  // in TimeZone alone, where unpartitioned retention is the default. The two rows a microsecond apart
+  // catch a cursor that loses precision.
+  helper.describePglite('stats retention cursor', function () {
     it('reads back the same on a connection with another DateStyle and TimeZone', async function () {
       const q = `q${randomUUID().replaceAll('-', '')}`
       ctx.boss = await helper.start({ ...ctx.bossConfig, backend: 'cockroachdb', noDefault: true })
@@ -623,11 +625,11 @@ describe('queueStatsHistory', function () {
       await mdy.connect()
 
       try {
-        await dmy.query("SET DateStyle = 'SQL, DMY'; SET TimeZone = 'Asia/Kolkata'")
+        await dmy.query(`SET DateStyle = '${helper.isCockroachDb ? 'ISO' : 'SQL'}, DMY'; SET TimeZone = 'Asia/Kolkata'`)
         await mdy.query("SET DateStyle = 'ISO, MDY'; SET TimeZone = 'UTC'")
         await dmy.query(
           `INSERT INTO ${ctx.schema}.queue_stats (name, captured_on) SELECT $1, d FROM unnest($2::timestamptz[]) d`,
-          [q, ['2025-03-01T10:00:00Z', '2025-03-04T10:00:00Z', '2025-03-10T10:00:00Z', '2025-03-20T10:00:00Z', '2025-03-25T10:00:00Z']])
+          [q, ['2025-03-01T10:00:00Z', '2025-03-04T10:00:00Z', '2025-03-10T10:00:00Z', '2025-03-10T10:00:00.000001Z', '2025-03-20T10:00:00Z', '2025-03-25T10:00:00Z']])
 
         const first = await dmy.query(plans.deleteOldQueueStats(ctx.schema, 7, { batchSize: 2 }))
         let after: string | undefined = first.rows[0].walkCursor
@@ -636,8 +638,8 @@ describe('queueStatsHistory', function () {
           after = rows[0].walkCursor
         }
 
-        const { rows } = await mdy.query(`SELECT count(*)::int AS c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])
-        expect(rows[0].c).toBe(0)
+        const { rows } = await mdy.query(`SELECT count(*) AS c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [q])
+        expect(Number(rows[0].c)).toBe(0)
       } finally {
         await dmy.end()
         await mdy.end()
