@@ -122,7 +122,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     const contractor = new Contractor(db, config)
 
-    const manager = new Manager(db, config)
+    const manager = new Manager(db, config, instanceId)
 
     const boss = new Boss(db, manager, config)
 

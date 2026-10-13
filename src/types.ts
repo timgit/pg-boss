@@ -720,6 +720,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @internal
    */
   __test__transactionTimeoutProbeCooldownMs?: number;
+  /**
+   * How long a queue's `handler_overrun` tally runs before it is written to the warning table, in
+   * milliseconds. Defaults to an hour.
+   * @internal
+   */
+  __test__handlerOverrunWindowMs?: number;
   /** @internal */
   migrations?: Migration[];
 }

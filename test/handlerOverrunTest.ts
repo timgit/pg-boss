@@ -12,6 +12,18 @@ function heldHandler () {
   return { release, released }
 }
 
+async function storedOverruns (schema: string) {
+  const db = await helper.getDb()
+
+  try {
+    const { rows } = await db.executeSql(
+      `SELECT message, data FROM ${schema}.warning WHERE type = 'handler_overrun' ORDER BY created_on, data->>'until'`)
+    return rows.map(row => row.data)
+  } finally {
+    await db.close()
+  }
+}
+
 function overrunWarnings (boss: PgBoss) {
   const warnings: any[] = []
   boss.on('warning', warning => {
@@ -269,5 +281,103 @@ describe('handler overrun', function () {
     } finally {
       held.release()
     }
+  })
+
+  // One row for the first overrun, then a count, rather than a row per batch.
+  it('writes the first overrun to the warning table and counts the rest until stop()', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistWarnings: true })
+    const boss = ctx.boss
+    const warnings = overrunWarnings(boss)
+
+    const jobIds = [
+      await boss.send(ctx.schema, { n: 1 }, { retryLimit: 0, expireInSeconds: 1 }),
+      await boss.send(ctx.schema, { n: 2 }, { retryLimit: 0, expireInSeconds: 1 }),
+      await boss.send(ctx.schema, { n: 3 }, { retryLimit: 0, expireInSeconds: 1 })
+    ]
+
+    // Ignores its signal and returns a little after its timeout.
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(1200) })
+
+    await helper.until(() => warnings.length === 3, 15000)
+
+    const [instance] = await boss.getInstances()
+    expect(warnings.map(w => w.data.instance)).toEqual([instance.id, instance.id, instance.id])
+
+    const beforeStop = await storedOverruns(ctx.schema)
+    expect(beforeStop).toHaveLength(1)
+    expect(beforeStop[0]).toMatchObject({ instance: instance.id, queue: ctx.schema, count: 1, jobs: [warnings[0].data.jobs[0]], expireInSeconds: 1 })
+    expect(beforeStop[0].since).toBe(beforeStop[0].until)
+
+    await boss.stop({ graceful: false })
+
+    const rows = await storedOverruns(ctx.schema)
+    expect(rows).toHaveLength(2)
+    expect(rows[1]).toMatchObject({ instance: instance.id, queue: ctx.schema, count: 2, since: rows[0].since, expireInSeconds: 1 })
+    expect(rows[1].jobs).toEqual(warnings.slice(1).map(w => w.data.jobs[0]))
+    expect(new Set(warnings.map(w => w.data.jobs[0]))).toEqual(new Set(jobIds))
+  })
+
+  it('writes a window\'s count when the window ends', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistWarnings: true, __test__handlerOverrunWindowMs: 2500 })
+    const boss = ctx.boss
+
+    for (let n = 0; n < 4; n++) {
+      await boss.send(ctx.schema, { n }, { retryLimit: 0, expireInSeconds: 1 })
+    }
+
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(1200) })
+
+    // The first row is written at once and the second by the window's timer, before any stop().
+    await helper.until(async () => (await storedOverruns(ctx.schema)).length >= 2, 15000)
+
+    const rows = await storedOverruns(ctx.schema)
+    expect(rows[0].count).toBe(1)
+    expect(rows[1].count).toBeGreaterThanOrEqual(1)
+    expect(rows[1].since).toBe(rows[0].since)
+    expect(rows[1].until > rows[1].since).toBe(true)
+  })
+
+  // A window that counted nothing closes its tally, so the next overrun is not held back.
+  it('writes an overrun at once again after a window with none', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistWarnings: true, __test__handlerOverrunWindowMs: 300 })
+    const boss = ctx.boss
+
+    await boss.send(ctx.schema, { n: 1 }, { retryLimit: 0, expireInSeconds: 1 })
+
+    const held = heldHandler()
+    let calls = 0
+
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+      if (++calls === 1) await held.released
+      else await delay(1200)
+    })
+
+    await helper.until(async () => (await storedOverruns(ctx.schema)).length === 1, 10000)
+
+    // Several windows pass with the worker held and nothing counted.
+    await delay(1000)
+    held.release()
+
+    await boss.send(ctx.schema, { n: 2 }, { retryLimit: 0, expireInSeconds: 1 })
+
+    await helper.until(async () => (await storedOverruns(ctx.schema)).length === 2, 10000)
+
+    const rows = await storedOverruns(ctx.schema)
+    expect(rows.map(row => row.count)).toEqual([1, 1])
+    expect(rows[1].since).toBe(rows[1].until)
+  })
+
+  it('emits but does not write without persistWarnings', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = ctx.boss
+    const warnings = overrunWarnings(boss)
+
+    await boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(1200) })
+
+    await helper.until(() => warnings.length === 1, 10000)
+    await boss.stop({ graceful: false })
+
+    expect(await storedOverruns(ctx.schema)).toEqual([])
   })
 })

@@ -15,6 +15,7 @@ import { delay, resolveWithinSeconds } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
 import { JobSpy, type JobSpyInterface } from './spy.ts'
+import { persistWarning } from './warning.ts'
 import Telemetry, { type TraceCarrier } from './telemetry.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
@@ -42,6 +43,10 @@ const WARNING_TYPES = {
   TRANSACTION_TIMEOUT_PROBE: 'transaction_timeout_probe',
   HANDLER_OVERRUN: 'handler_overrun'
 } as const
+
+function overrunMessage (name: string, expireInSeconds: number) {
+  return `a handler on queue ${name} is still running after exceeding ${expireInSeconds}s. Its jobs were failed and their signals aborted, and this worker fetches nothing until it returns. Stop the handler on job.signal.`
+}
 
 const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
@@ -93,6 +98,19 @@ const TRANSACTION_TIMEOUT_REHEARSE = `SELECT ${TRANSACTION_TIMEOUT_TIGHTEST}`
 // is a backstop, so the retry has to stay; a backend that will never answer does not need to be
 // asked on every batch for the life of the process either.
 const TRANSACTION_TIMEOUT_PROBE_COOLDOWN_MS = 60_000
+
+// How long a queue's handler_overrun tally runs before it is written to the warning table, and how
+// many job ids a row samples.
+const HANDLER_OVERRUN_WINDOW_MS = 60 * 60 * 1000
+const HANDLER_OVERRUN_SAMPLE_JOBS = 10
+
+interface OverrunTally {
+  since: number
+  count: number
+  expireInSeconds: number
+  jobs: string[]
+  timer: types.ClockTimer
+}
 
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
 // fields must be coerced back to numbers when backend === 'cockroachdb'.
@@ -250,11 +268,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
   #localGroupMaxLimit: Map<string, number>
+  #instanceId: string
+  // handler_overrun is emitted per batch but written to the warning table per queue per window, so
+  // a handler that overruns on every job does not write a row per batch. See #recordOverrun.
+  #overruns: Map<string, OverrunTally>
+  #overrunWindowMs: number
+  #overrunWrites: Set<Promise<void>>
   #telemetry: Telemetry
   // The trace context each fetched job was sent with, kept off the job object handed to the handler.
   #traceContexts: WeakMap<object, TraceCarrier>
 
-  constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
+  constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions, instanceId: string = randomUUID()) {
     super()
 
     this.config = config
@@ -273,6 +297,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
     this.#localGroupMaxLimit = new Map()
+    this.#instanceId = instanceId
+    this.#overruns = new Map()
+    this.#overrunWindowMs = config.__test__handlerOverrunWindowMs ?? HANDLER_OVERRUN_WINDOW_MS
+    this.#overrunWrites = new Set()
     this.#telemetry = new Telemetry(config.openTelemetry, config.schema, () => this.queues)
     this.#traceContexts = new WeakMap()
   }
@@ -869,9 +897,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (worker) worker.jobs = []
 
     this.emit(events.warning, {
-      message: `a handler on queue ${name} is still running after exceeding ${expireInSeconds}s. Its jobs were failed and their signals aborted, and this worker fetches nothing until it returns. Stop the handler on job.signal.`,
-      data: { type: WARNING_TYPES.HANDLER_OVERRUN, queue: name, jobs: jobIds, expireInSeconds }
+      message: overrunMessage(name, expireInSeconds),
+      data: { type: WARNING_TYPES.HANDLER_OVERRUN, instance: this.#instanceId, queue: name, jobs: jobIds, expireInSeconds }
     })
+
+    this.#recordOverrun(name, jobIds, expireInSeconds)
 
     let onEnded: (() => void) | undefined
 
@@ -884,6 +914,84 @@ class Manager extends EventEmitter implements types.EventsMixin {
     } finally {
       if (onEnded) ended?.removeEventListener('abort', onEnded)
     }
+  }
+
+  // The first overrun on a queue is written to the warning table at once, then the queue keeps a
+  // tally for the window that write opened, and the window's end writes one row with the count if
+  // there were more. A window that counted none closes the tally, so the queue's next overrun is
+  // written at once again. Each row counts only the overruns since the previous one.
+  #recordOverrun (name: string, jobIds: string[], expireInSeconds: number) {
+    if (!this.config.persistWarnings || this.stopped) return
+
+    const tally = this.#overruns.get(name)
+
+    if (tally) {
+      tally.count++
+      tally.expireInSeconds = Math.max(tally.expireInSeconds, expireInSeconds)
+      tally.jobs = [...tally.jobs, ...jobIds].slice(-HANDLER_OVERRUN_SAMPLE_JOBS)
+      return
+    }
+
+    const now = this.config.clock.now()
+
+    this.#writeOverrun(name, now, now, 1, expireInSeconds, jobIds)
+    this.#overruns.set(name, { since: now, count: 0, expireInSeconds: 0, jobs: [], timer: this.#overrunTimer(name) })
+  }
+
+  #overrunTimer (name: string): types.ClockTimer {
+    return this.config.clock.setTimeout(() => this.#closeOverrunWindow(name, true), this.#overrunWindowMs)
+  }
+
+  #closeOverrunWindow (name: string, reopen: boolean) {
+    const tally = this.#overruns.get(name)
+
+    if (!tally) return
+
+    this.config.clock.clearTimeout(tally.timer)
+
+    if (!tally.count || !reopen) this.#overruns.delete(name)
+
+    if (!tally.count) return
+
+    const now = this.config.clock.now()
+
+    this.#writeOverrun(name, tally.since, now, tally.count, tally.expireInSeconds, tally.jobs)
+
+    if (reopen) {
+      this.#overruns.set(name, { since: now, count: 0, expireInSeconds: 0, jobs: [], timer: this.#overrunTimer(name) })
+    }
+  }
+
+  #writeOverrun (name: string, since: number, until: number, count: number, expireInSeconds: number, jobIds: string[]) {
+    const message = count === 1
+      ? overrunMessage(name, expireInSeconds)
+      : `${count} handlers on queue ${name} kept running after exceeding their timeout of up to ${expireInSeconds}s between ${new Date(since).toISOString()} and ${new Date(until).toISOString()}. Their jobs were failed and their signals aborted, and each held its worker until it returned. Stop the handler on job.signal.`
+
+    const data = {
+      type: WARNING_TYPES.HANDLER_OVERRUN,
+      instance: this.#instanceId,
+      queue: name,
+      count,
+      since: new Date(since).toISOString(),
+      until: new Date(until).toISOString(),
+      expireInSeconds,
+      jobs: jobIds.slice(0, HANDLER_OVERRUN_SAMPLE_JOBS)
+    }
+
+    const write = persistWarning({ emitter: this, db: this.db, schema: this.config.schema, errorEvent: events.error }, WARNING_TYPES.HANDLER_OVERRUN, message, data)
+      .finally(() => this.#overrunWrites.delete(write))
+
+    this.#overrunWrites.add(write)
+  }
+
+  // On stop, while the pool is still open: each open window writes what it has counted, and every
+  // write in flight finishes.
+  async #flushOverruns () {
+    for (const name of [...this.#overruns.keys()]) {
+      this.#closeOverrunWindow(name, false)
+    }
+
+    await Promise.allSettled([...this.#overrunWrites])
   }
 
   /**
@@ -1175,6 +1283,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Clean up local group config on full stop; active counts drop as their handlers settle
     this.#localGroupConfig.clear()
     this.#localGroupMaxLimit.clear()
+
+    await this.#flushOverruns()
   }
 
   // Last step of a shutdown: closing the pool, marking the instance stopped, and emitting
@@ -1417,7 +1527,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // built-in pool, and a warning rather than an assert, because the ceiling is the operator's call.
   //
   // Emitted only, never persisted. The `warning` table records episodes, and every type in it is
-  // deduped by a flag that clears when the condition does. This one is an assertion about static
+  // deduped, by a flag that clears when the condition does or, for handler_overrun, by an hourly
+  // count. This one is an assertion about static
   // configuration with no episode behind it: `max` is fixed for the life of the process, so every
   // later transactional work() call trips it again with a larger `pinned`, and every restart writes
   // the same rows once more. Persisting it would bury the warnings someone actually needs.

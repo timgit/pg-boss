@@ -289,7 +289,7 @@ The default number of jobs in the created or retry state a queue may hold before
 
 Bool, default false
 
-If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
+If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) and by workers (handlers that outran their timeout) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
 
 ### `warningRetentionDays`
 

@@ -25,11 +25,24 @@ export async function emitAndPersistWarning (
   ctx.emitter.emit(ctx.warningEvent, { message, data })
 
   if (ctx.persistWarnings) {
-    try {
-      const sql = plans.insertWarning(ctx.schema)
-      await ctx.db.executeSql(sql, [type, message, JSON.stringify(data)])
-    } catch (err) {
-      ctx.emitter.emit(ctx.errorEvent, err)
-    }
+    await persistWarning(ctx, type, message, data)
+  }
+}
+
+/**
+ * Writes a warning to the warning table without emitting it, for a caller that emits its events on
+ * another cadence than it writes rows. A failed write is emitted as an error, not thrown.
+ */
+export async function persistWarning (
+  ctx: Pick<WarningContext, 'emitter' | 'db' | 'schema' | 'errorEvent'>,
+  type: string,
+  message: string,
+  data: object
+): Promise<void> {
+  try {
+    const sql = plans.insertWarning(ctx.schema)
+    await ctx.db.executeSql(sql, [type, message, JSON.stringify(data)])
+  } catch (err) {
+    ctx.emitter.emit(ctx.errorEvent, err)
   }
 }
