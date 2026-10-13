@@ -1302,7 +1302,7 @@ describe('bam', function () {
     // that ends just before then goes back to the pool and the signal hits the next query on that
     // connection, so stop() closes it instead. Catching the cancel stands in for a command that ends
     // without it: the command succeeds and its connection still has to close.
-    helper.itPostgresOnly('should close the connection of a command it set out to cancel instead of returning it to the pool', async function () {
+    it.skipIf(helper.usesAdapter || helper.isCockroachDb)('should close the connection of a command it set out to cancel instead of returning it to the pool', async function () {
       const command = 'DO $$ BEGIN PERFORM pg_sleep(60); EXCEPTION WHEN query_canceled THEN NULL; END $$'
       const { boss, errors } = await startCommand('caught_cmd', command)
 
@@ -1328,7 +1328,7 @@ describe('bam', function () {
 
     // CockroachDB through pg-boss's own pool drops the connection rather than cancelling. Started with
     // the CockroachDB backend on Postgres, as distributedDatabaseTest does, so the path runs here too.
-    it('should drop the connection of a running command on CockroachDB', async function () {
+    helper.itBundledPool('should drop the connection of a running command on CockroachDB', async function () {
       const { boss, errors } = await startCommand('drop_cmd', 'SELECT pg_sleep(3)', { backend: 'cockroachdb' })
 
       const begun = Date.now()
@@ -1671,7 +1671,7 @@ describe('bam', function () {
     }, 30000)
 
     // CockroachDB index builds do not wait on open snapshots, so only Postgres can park one.
-    helper.itPostgresOnly('should leave an index build running on the server and complete its row once it finishes', async function () {
+    it.skipIf(helper.usesAdapter || helper.isCockroachDb)('should leave an index build running on the server and complete its row once it finishes', async function () {
       const db = await helper.getDb()
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
       await db.executeSql(`CREATE TABLE ${ctx.schema}.abandon_test (a int)`)
