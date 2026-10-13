@@ -3217,10 +3217,10 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
 }
 
 // Self-contained (parameter-less) insert for one queue's slice of a flow batch. The JSON
-// payload is embedded directly so the whole flow can be sent as a single multi-statement
-// round-trip regardless of db adapter. Guarded so a skipped row (ON CONFLICT) raises
-// 'division by zero', aborting the surrounding transaction. The divisor references the
-// row count so it isn't constant-folded at plan time.
+// payload is embedded directly so pg-boss's own pool can send the whole flow as one transaction
+// script. Guarded so a skipped row (ON CONFLICT) raises 'division by zero', aborting the
+// surrounding transaction. The divisor references the row count so it isn't constant-folded at
+// plan time.
 export function insertFlowJobs (schema: string, { table, name }: { table: string, name: string }, jobs: unknown[]): string {
   const insert = insertJobs(schema, { table, name, returnId: true })
     .replace('$1', () => serializeJsonParam(jobs))

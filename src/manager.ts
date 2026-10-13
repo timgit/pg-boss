@@ -2166,8 +2166,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       byQueue.set(job.name, group)
     }
 
-    // Build one self-contained, parameter-less statement list so the whole flow
-    // commits atomically in a single executeSql call, regardless of db adapter.
+    // Self-contained, parameter-less statements, so pg-boss's own pool can send the whole flow
+    // as one transaction script.
     // Each insert is guarded so a skipped row (ON CONFLICT) aborts the transaction.
     const statements: string[] = []
 
@@ -2217,13 +2217,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
       statements.push(plans.insertDependencies(this.config.schema, depRows))
     }
 
-    // When the caller provides a db they own the transaction; otherwise wrap the
-    // statements so they run atomically as a single round-trip on any adapter.
-    const db = options.db ?? this.db
-    const sql = options.db ? statements.join(';\n') : plans.transaction(statements)
-
+    // Without a caller's db, the statements run as one transaction script in a single round trip.
+    // A caller's db owns the transaction, so each statement runs on its own: some drivers (Prisma's
+    // $queryRawUnsafe) reject a query with several statements.
     try {
-      await db.executeSql(sql)
+      if (options.db) {
+        for (const statement of statements) {
+          await options.db.executeSql(statement)
+        }
+      } else {
+        await this.db.executeSql(plans.transaction(statements))
+      }
     } catch (err) {
       await this.#rethrowInsertError(err, [...byQueue.keys()], !options.db)
     }

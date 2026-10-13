@@ -596,6 +596,47 @@ describe('prisma adapter', () => {
     expect(check.rows.length).toBe(0)
   })
 
+  // Prisma's $queryRawUnsafe rejects a query with several statements.
+  it('should create a flow through a prisma transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    if (!prisma) {
+      const adapter = new PrismaPg(pool)
+      prisma = new PrismaClient({ adapter })
+    }
+
+    const flow = await prisma.$transaction(async (tx) => ctx.boss!.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+    ], { db: fromPrisma(tx) }))
+
+    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    expect(child?.blocked).toBe(true)
+    expect(await ctx.boss.getDependencies(ctx.schema, flow.child)).toEqual([{ name: ctx.schema, id: flow.parent }])
+  })
+
+  it('should roll back a flow with its prisma transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    if (!prisma) {
+      const adapter = new PrismaPg(pool)
+      prisma = new PrismaClient({ adapter })
+    }
+
+    let flow: Record<string, string> | undefined
+    await expect(prisma.$transaction(async (tx) => {
+      flow = await ctx.boss!.flow([
+        { ref: 'parent', name: ctx.schema },
+        { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+      ], { db: fromPrisma(tx) })
+      throw new Error('force rollback')
+    })).rejects.toThrow('force rollback')
+
+    expect(flow).toBeDefined()
+    expect(await ctx.boss.getJobById(ctx.schema, flow!.parent)).toBeNull()
+    expect(await ctx.boss.getDependencies(ctx.schema, flow!.child)).toEqual([])
+  })
+
   it('should handle repeated parameter placeholders (prisma)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!pool) pool = new pg.Pool({ connectionString: connString })
