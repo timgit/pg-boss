@@ -217,6 +217,7 @@ export const WARNING_TYPES = [
   'xmin_horizon',
   'autovacuum_disabled',
   'monitor_backoff',
+  'handler_overrun',
 ] as const
 
 export type WarningTypeValue = (typeof WARNING_TYPES)[number]
@@ -240,6 +241,7 @@ export const WARNING_TYPE_VARIANTS: Record<WarningTypeValue, BadgeVariant> = {
   xmin_horizon: 'error',
   autovacuum_disabled: 'error',
   monitor_backoff: 'gray',
+  handler_overrun: 'warning',
 }
 
 // Human-readable labels for warning types
@@ -253,6 +255,7 @@ export const WARNING_TYPE_LABELS: Record<WarningTypeValue, string> = {
   xmin_horizon: 'Xmin Horizon',
   autovacuum_disabled: 'Autovacuum Disabled',
   monitor_backoff: 'Monitor Backoff',
+  handler_overrun: 'Handler Overrun',
 }
 
 // A warning type written by a newer pg-boss core than this dashboard knows about still has to
