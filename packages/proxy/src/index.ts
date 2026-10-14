@@ -116,6 +116,9 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
   if (!('schedule' in providedOptions)) {
     resolvedOptions.schedule = false
   }
+  if (!('instanceName' in providedOptions)) {
+    resolvedOptions.instanceName = providedEnv.PGBOSS_PROXY_INSTANCE_NAME || 'pg-boss-proxy'
+  }
 
   const prefix = resolvePrefix(config.prefix)
 

@@ -30,6 +30,7 @@ async function getInstance (dbUrl: string, schema: string): Promise<PgBoss> {
     supervise: false,
     migrate: false,
     createSchema: false,
+    instanceName: 'pg-boss-dashboard',
   })
 
   // Without a listener, a dropped connection throws and takes the process down.

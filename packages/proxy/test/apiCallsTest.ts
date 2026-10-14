@@ -1617,3 +1617,29 @@ describe('env.ts configuration', () => {
     })).resolves.not.toThrow()
   })
 })
+
+describe('proxy instance name', () => {
+  const resolveOptions = async (options: Record<string, unknown>, env: Record<string, string> = {}) => {
+    const { boss } = createBossMock()
+    let received: Record<string, unknown> = {}
+    await createProxyService({
+      options,
+      env,
+      bossFactory: (resolved) => { received = resolved as Record<string, unknown>; return boss as any }
+    })
+    return received
+  }
+
+  it('registers as pg-boss-proxy by default', async () => {
+    expect((await resolveOptions({})).instanceName).toBe('pg-boss-proxy')
+  })
+
+  it('takes PGBOSS_PROXY_INSTANCE_NAME when no instanceName is passed', async () => {
+    expect((await resolveOptions({}, { PGBOSS_PROXY_INSTANCE_NAME: 'edge-proxy' })).instanceName).toBe('edge-proxy')
+  })
+
+  it('keeps a passed instanceName over the environment', async () => {
+    const resolved = await resolveOptions({ instanceName: 'billing-proxy' }, { PGBOSS_PROXY_INSTANCE_NAME: 'edge-proxy' })
+    expect(resolved.instanceName).toBe('billing-proxy')
+  })
+})

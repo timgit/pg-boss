@@ -232,6 +232,7 @@ Alternatively, configure everything via environment variables:
 | `DATABASE_URL` | - | PostgreSQL connection string |
 | `PORT` | `3000` | Listening port |
 | `HOST` | `localhost` | Listening hostname |
+| `PGBOSS_PROXY_INSTANCE_NAME` | `pg-boss-proxy` | Name in the instance registry, used when `instanceName` is not passed |
 | `PGBOSS_PROXY_PREFIX` | `/api` | URL prefix for API routes |
 | `PGBOSS_PROXY_REQUEST_LOGGER` | `true` | Enable request logging |
 | `PGBOSS_PROXY_LOG_FORMAT` | `text` | Log format: `text` or `json` |
@@ -270,6 +271,8 @@ const { app, boss } = await createProxyService({
 ```
 
 By default, `supervise`, `schedule`, and `migrate` are set to `false` to run the proxy in a stateless manner. Set any of these to `true` to enable that functionality.
+
+The proxy registers in the [instance registry](./api/ops.md#getinstances-options) as `pg-boss-proxy`. Pass `instanceName`, or set `PGBOSS_PROXY_INSTANCE_NAME`, to name each deployment.
 
 ### Authentication
 
