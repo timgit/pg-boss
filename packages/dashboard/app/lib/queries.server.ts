@@ -1139,16 +1139,22 @@ function throughputSql (s: string, oneQueue: boolean, latency: boolean, histogra
         AND delta_seconds > 0
         ${byName}`
   const bins = latency && histograms
+  const binAgg = bins
+    ? `,
+        ${slotSums('wait_bins')},
+        ${slotSums('run_bins')}`
+    : ''
+  const binCols = bins
+    ? `
+      d.wait_bins                   AS "waitBins",
+      d.run_bins                    AS "runBins",`
+    : ''
   const latencyAgg = latency
     ? `,
-        max(ready_oldest_seconds) AS ready_oldest_seconds${bins ? `,
-        ${slotSums('wait_bins')},
-        ${slotSums('run_bins')}` : ''}`
+        max(ready_oldest_seconds) AS ready_oldest_seconds${binAgg}`
     : ''
   const latencyCols = latency
-    ? `,${bins ? `
-      d.wait_bins                   AS "waitBins",
-      d.run_bins                    AS "runBins",` : ''}
+    ? `,${binCols}
       d.ready_oldest_seconds        AS "readyOldestSeconds"`
     : ''
   return `
