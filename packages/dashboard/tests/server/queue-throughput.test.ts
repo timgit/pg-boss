@@ -240,6 +240,12 @@ describe('wait and run times', () => {
     expect(current?.waitBins?.[7]).toBe(2)
     expect(current?.waitBins?.reduce((a, b) => a + b, 0)).toBe(2)
 
+    const windows = { previous: { from: at(0), to: at(1800) }, current: { from: at(1800), to: at(3600) } }
+    expect(await getLatencyWindows(ctx.connectionString, ctx.schema, windows, ['another-queue'])).toEqual([])
+    expect(await getLatencyWindows(ctx.connectionString, ctx.schema, windows, [])).toEqual([])
+    const named = await getLatencyWindows(ctx.connectionString, ctx.schema, windows, ['tp-latency-windows'])
+    expect(named.map((r) => r.window).sort()).toEqual(['current', 'previous'])
+
     const [series] = await getThroughputOverview(ctx.connectionString, ctx.schema, { ...window, histograms: false })
     expect(series.points[0].waitBins).toBeNull()
     expect(series.points[0].readyOldestSeconds).toBe(30)

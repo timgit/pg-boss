@@ -1269,14 +1269,16 @@ export interface LatencyWindowRow {
 }
 
 // Every queue's wait and run histograms summed over each of two windows, by when their passes
-// counted, as a list's tiles show them: two histograms a queue rather than one a bucket. [] before
-// the v44 columns.
+// counted, as a list's tiles show them: two histograms a queue rather than one a bucket. With
+// `names`, only those queues, each read through queue_stats_i1. [] before the v44 columns.
 export async function getLatencyWindows (
   dbUrl: string,
   schema: string,
-  windows: { previous: { from: Date, to: Date }, current: { from: Date, to: Date } }
+  windows: { previous: { from: Date, to: Date }, current: { from: Date, to: Date } },
+  names?: string[]
 ): Promise<LatencyWindowRow[]> {
   const s = validateIdentifier(schema)
+  if (names?.length === 0) return []
   if (!(await hasLatencyColumns(dbUrl, schema))) return []
   const sql = `
     SELECT * FROM (
@@ -1292,13 +1294,16 @@ export async function getLatencyWindows (
         AND delta_on >= least($1::timestamptz, $3::timestamptz)
         AND delta_on < greatest($2::timestamptz, $4::timestamptz)
         AND delta_seconds > 0
+        ${names ? 'AND name = ANY($5::text[])' : ''}
       GROUP BY 1, 2
     ) w
     WHERE "window" IS NOT NULL
   `
+  const params: unknown[] = [windows.previous.from, windows.previous.to, windows.current.from, windows.current.to]
+  if (names) params.push(names)
   try {
     const rows = await query<{ name: string, window: 'previous' | 'current', wait_bins: unknown, run_bins: unknown }>(
-      dbUrl, sql, [windows.previous.from, windows.previous.to, windows.current.from, windows.current.to]
+      dbUrl, sql, params
     )
     return rows.map((row) => ({ name: row.name, window: row.window, waitBins: toBins(row.wait_bins), runBins: toBins(row.run_bins) }))
   } catch (err: unknown) {
