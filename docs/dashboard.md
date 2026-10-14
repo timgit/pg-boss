@@ -6,7 +6,7 @@ A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npm
 
 - **Overview**: Aggregate statistics, problem queues, and recent warnings at a glance
 - **Queues**: View all queues with cached statistics
-- **Stats**: Arrival and finishing rates for each queue and all queues together, against the previous interval
+- **Queue Metrics**: Chart a queue's counts over time from its recorded history
 - **Subscriptions**: Each event and the queues subscribed to it
 - **Job List**: View jobs with state and queue filtering
 - **Job Details**: View full job payloads, output data, and metadata
@@ -39,28 +39,15 @@ A job copied into a dead letter queue shows why it's there, from the original jo
 
 ### Queues
 
-Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline, storage mode (shared or partitioned) and a status badge (idle, processing or backlogged). Columns are sortable and the list can be searched by name. Clicking a queue opens its detail page with configuration, a 24-hour ready-count history and the jobs in that queue. **View stats** opens the queue's [stats page](#stats).
+Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline, storage mode (shared or partitioned) and a status badge (idle, processing or backlogged). Columns are sortable and the list can be searched by name. Clicking a queue opens its detail page with configuration, a 24-hour ready-count history and the jobs in that queue. **View metrics**, or any of the page's six counts, opens the queue's [metrics page](#queue-metrics).
 
 ![Queues page](./images/dashboard-queues.png)
 
-### Stats
+### Queue metrics
 
-How work moves through your queues: how fast jobs arrive, how fast they finish, and whether the backlog is growing. The Queues page shows what each queue holds; the Stats pages show the rate it changes.
+One queue's counts over time (`/queues/:name/metrics`), charted from what pg-boss records in `queue_stats`. Ready and failed are drawn by default. Add active, queued, deferred and total from the series picker, and choose whether each point is the maximum, minimum or average of the samples it covers. The range runs from the last hour to the last 30 days (24 hours by default), or set your own start and end.
 
-Both pages compare an interval with the one before it. Pick 1 hour (the default), 6 hours or 24 hours. Intervals are rolling: "this hour" is the last 60 minutes, and "previous hour" is the 60 minutes before that. Rates are jobs per minute, however long the chart's buckets are, so a line keeps its height when you change the interval. A job is *finishing* when it completes or fails for the last time; a failure that will be retried is neither.
-
-**All queues (`/stats`).** The arrival rate and finishing rate summed over every queue, each with its change against the previous interval and a sparkline across both. Below them, one throughput chart for all queues together, and a tile per queue: its arrival and finishing rates, a small chart on its own scale, and its share of all arrivals. Tiles are ordered busiest first. The first eight are shown, with a button for the rest and a filter by name. A tile opens that queue's stats page.
-
-**One queue (`/stats/:queue`).** The same two rates for one queue, and two charts on one time axis. Hovering one moves the cursor on both.
-
-- **Throughput**: arrived and finishing per minute as two lines, the gap between them shaded amber where arrivals lead and blue where finishing leads, and failures as bars along the bottom. The previous interval is shaded.
-- **Depth**: the ready count by default. Add active, queued, deferred, failed and total from the series picker, and choose whether each point is the maximum, minimum or average of the samples it covers.
-
-The old metrics page, `/queues/:name/metrics`, redirects here, keeping its series, its aggregate and a 1h, 6h or 24h range. A 7-day, 30-day or custom range opens on the default interval.
-
-**Colours.** Arrived is amber, finishing blue, failed red and ready violet, in every theme. Arrivals and finishing are the pair read against each other, so they are chosen to stay apart for readers with red-green colour blindness.
-
-**Requirements.** The pages chart what pg-boss records in `queue_stats`, so they need [`persistQueueStats: true`](./api/constructor.md#persistqueuestats) on the pg-boss instances that run the monitor. The rates also need schema version 43 (pg-boss 12.35), which is when pg-boss started counting jobs created, completed and failed on each monitor pass. With history from before 12.35 the depth chart still draws and the rates read "No rate". See [Stats pages are empty](#stats-pages-are-empty).
+**Requirements.** The chart needs [`persistQueueStats: true`](./api/constructor.md#persistqueuestats) on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty and the page says so. See [Queue metrics are empty](#queue-metrics-are-empty).
 
 ### Schedules
 
@@ -373,10 +360,10 @@ A warning type written by a newer pg-boss core than the dashboard is displayed u
 
 Queue statistics are cached in the `queue` table by pg-boss's monitoring system. They update based on your `monitorStateIntervalSeconds` configuration (default: 30 seconds).
 
-### Stats pages are empty
+### Queue metrics are empty
 
-- Ensure `persistQueueStats: true` is set on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty and both pages show a banner saying so.
-- Rates need pg-boss 12.35 or later (schema version 43) and at least one monitor pass since the upgrade. History recorded before then has no counts, so the rates read "No rate" until the interval has some.
+- Ensure `persistQueueStats: true` is set on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty, and the queue and metrics pages show a banner saying so.
+- History starts with the first monitor pass after the option is turned on, so a range that reaches back before then is empty for that stretch.
 
 ## Contributing
 
