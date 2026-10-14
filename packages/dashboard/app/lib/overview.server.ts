@@ -10,10 +10,11 @@ import {
 /**
  * What the overview shows: the stat row, the async migrations in flight, the busiest queues and the
  * latest warnings. Apart from the route so a Pro overview that replaces the page can load it too.
+ * `warnings: false` skips the warnings read, for an overview that leaves the card out.
  */
-export async function loadOverview (DB_URL: string, SCHEMA: string) {
+export async function loadOverview (DB_URL: string, SCHEMA: string, options: { warnings?: boolean } = {}) {
   const [warnings, stats, topQueues, totalQueues, problemQueuesCount, bamSummary] = await Promise.all([
-    getWarnings(DB_URL, SCHEMA, { limit: 5 }),
+    options.warnings === false ? null : getWarnings(DB_URL, SCHEMA, { limit: 5 }),
     getQueueStats(DB_URL, SCHEMA),
     getTopQueues(DB_URL, SCHEMA, 5),
     getQueueCount(DB_URL, SCHEMA),
@@ -34,7 +35,7 @@ export async function loadOverview (DB_URL: string, SCHEMA: string) {
 
   return {
     stats,
-    warnings: warnings.rows,
+    warnings: warnings?.rows ?? null,
     topQueues,
     migrations,
     queueStats: {

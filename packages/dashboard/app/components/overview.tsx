@@ -21,7 +21,7 @@ import {
   warningTypeVariant,
   warningTypeLabel,
 } from '~/lib/utils'
-import type { ComponentType, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { QueueResult, WarningResult } from '~/lib/types'
 import type { OverviewData } from '~/lib/overview.server'
 import type { StatKey } from '~/components/stats-cards'
@@ -49,8 +49,6 @@ export interface OverviewExtensions {
     /** Leave out the status column, when a column added above says more. */
     hideStatus?: boolean
   }
-  /** Under each recent warning. */
-  WarningFooter?: ComponentType<{ warning: WarningResult }>
   /**
    * A row of the overlay's own above everything else, such as what needs attention: drawn in one
    * card with the migrations row when both show, rather than as two cards. Leave it out when there
@@ -71,13 +69,13 @@ export function OverviewHeader () {
 
 /**
  * The overview's body: the migrations banner when there is one, the stat row, and top queues beside recent warnings.
+ * Data loaded without warnings leaves their card out and gives the queues the width.
  * `narrow` lays it out for a column beside something else, three stats to a row and the two cards
  * stacked. Exported so an overlay that replaces the page composes it rather than copying it.
  */
 export function OverviewSections ({ data, narrow = false, extensions = {} }: { data: OverviewData, narrow?: boolean, extensions?: OverviewExtensions }) {
   const { stats, warnings, topQueues, migrations } = data
   const q = extensions.queues ?? {}
-  const { WarningFooter } = extensions
   const headOf = (c: OverviewQueueColumn) => (
     <TableHead key={c.header} className={c.align === 'right' ? 'text-right' : undefined}>{c.header}</TableHead>
   )
@@ -100,7 +98,7 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
       </div>
 
       {/* Two column: top queues + recent warnings */}
-      <div className={narrow ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4'}>
+      <div className={narrow || !warnings ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4'}>
         <Card>
           <CardHeader>
             <CardTitle>{q.title ?? 'Top Queues'}</CardTitle>
@@ -174,45 +172,46 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
         </Card>
 
         {/* Recent Warnings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Warnings</CardTitle>
-            <DbLink
-              to="/warnings"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-            >
-              View all
-            </DbLink>
-          </CardHeader>
-          <div className="flex flex-col gap-2 p-3">
-            {warnings.length === 0 ? (
-              <p className="text-sm text-[var(--text-tertiary)] p-2">No warnings recorded</p>
-            ) : (
-              warnings.map((warning: WarningResult) => (
-                <WarningItem key={warning.id} id={warning.id}>
-                  <WarningIcon className="w-[18px] h-[18px] text-[var(--warning-500)] flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge
-                        variant={warningTypeVariant(warning.type)}
-                        size="sm"
-                      >
-                        {warningTypeLabel(warning.type)}
-                      </Badge>
-                      <span className="text-[11px] text-[var(--text-tertiary)] pgb-num">
-                        {formatTimeAgo(new Date(warning.createdOn))}
-                      </span>
+        {warnings && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Warnings</CardTitle>
+              <DbLink
+                to="/warnings"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              >
+                View all
+              </DbLink>
+            </CardHeader>
+            <div className="flex flex-col gap-2 p-3">
+              {warnings.length === 0 ? (
+                <p className="text-sm text-[var(--text-tertiary)] p-2">No warnings recorded</p>
+              ) : (
+                warnings.map((warning: WarningResult) => (
+                  <WarningItem key={warning.id} id={warning.id}>
+                    <WarningIcon className="w-[18px] h-[18px] text-[var(--warning-500)] flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge
+                          variant={warningTypeVariant(warning.type)}
+                          size="sm"
+                        >
+                          {warningTypeLabel(warning.type)}
+                        </Badge>
+                        <span className="text-[11px] text-[var(--text-tertiary)] pgb-num">
+                          {formatTimeAgo(new Date(warning.createdOn))}
+                        </span>
+                      </div>
+                      <DbLink to={`/warnings/${warning.id}`} className="block truncate text-sm text-[var(--text-secondary)] hover:underline">
+                        {warning.message}
+                      </DbLink>
                     </div>
-                    <DbLink to={`/warnings/${warning.id}`} className="block truncate text-sm text-[var(--text-secondary)] hover:underline">
-                      {warning.message}
-                    </DbLink>
-                    {WarningFooter && <WarningFooter warning={warning} />}
-                  </div>
-                </WarningItem>
-              ))
-            )}
-          </div>
-        </Card>
+                  </WarningItem>
+                ))
+              )}
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   )

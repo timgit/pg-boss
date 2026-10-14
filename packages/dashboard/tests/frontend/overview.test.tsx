@@ -29,10 +29,10 @@ const data = {
   queueStats: { totalQueues: 2, problemQueues: 0 },
 } as unknown as OverviewData
 
-function renderSections (extensions?: Parameters<typeof OverviewSections>[0]['extensions']) {
+function renderSections (extensions?: Parameters<typeof OverviewSections>[0]['extensions'], over: Partial<OverviewData> = {}) {
   return render(
     <MemoryRouter>
-      <OverviewSections data={data} extensions={extensions} />
+      <OverviewSections data={{ ...data, ...over }} extensions={extensions} />
     </MemoryRouter>
   )
 }
@@ -45,9 +45,18 @@ describe('OverviewSections', () => {
 
     expect(screen.getByText('Top Queues')).toBeInTheDocument()
     expect(headers()).toEqual(['Name', 'Queued', 'Active', 'Trend', 'Status'])
+    expect(screen.getByText('Recent Warnings')).toBeInTheDocument()
+    expect(screen.getByText('emails has 900 queued')).toBeInTheDocument()
   })
 
-  it('takes an overlay\'s title, link, columns, stat footers and warning footer', () => {
+  it('leaves the warnings card out when loaded without warnings', () => {
+    renderSections(undefined, { warnings: null })
+
+    expect(screen.getByText('Top Queues')).toBeInTheDocument()
+    expect(screen.queryByText('Recent Warnings')).not.toBeInTheDocument()
+  })
+
+  it('takes an overlay\'s title, link, columns and stat footers', () => {
     renderSections({
       statFooters: { totalFailed: <span>+7 in the last hour</span> },
       queues: {
@@ -57,7 +66,6 @@ describe('OverviewSections', () => {
         afterActive: [{ header: 'p95 wait', align: 'right', cell: () => '4 s' }],
         hideStatus: true,
       },
-      WarningFooter: ({ warning: w }) => <span>footer for {w.message}</span>,
     })
 
     expect(screen.getByText('Queues, worst first')).toBeInTheDocument()
@@ -65,6 +73,5 @@ describe('OverviewSections', () => {
     expect(headers()).toEqual(['Name', 'Health', 'Queued', 'Active', 'p95 wait', 'Trend'])
     expect(screen.getByText('health of reports')).toBeInTheDocument()
     expect(screen.getByText('+7 in the last hour')).toBeInTheDocument()
-    expect(screen.getByText('footer for emails has 900 queued')).toBeInTheDocument()
   })
 })
