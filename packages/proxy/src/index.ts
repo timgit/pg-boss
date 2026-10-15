@@ -11,6 +11,7 @@ import {
   type ConstructorOptions
 } from 'pg-boss'
 import type { Context, MiddlewareHandler } from 'hono'
+import { basePath } from 'hono/route'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import {
   errorResultSchema,
@@ -93,6 +94,10 @@ const resultResponse = (context: Context, result: unknown) => {
   return context.json({ ok: true, result: result ?? null }, 200)
 }
 
+// Where the app is mounted when a parent serves it with `parent.route(path, app)`, empty at the root.
+// The pages link through it, so several services can be mounted side by side in one app.
+const mountPath = (context: Context) => normalizePrefix(basePath(context))
+
 export async function createProxyService (options: ProxyOptions): Promise<ProxyService> {
   const providedEnv = options.env ?? process.env
   const envConfig = configureFromEnv(providedEnv)
@@ -159,26 +164,29 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
   configureAuth(app, config.auth, prefix)
   configureCors(app, config.cors, prefix)
 
-  const base = prefix || '/'
-
   const openapiPath = '/openapi.json'
   const docsPath = '/docs'
 
   const pages = config.pages ?? {}
 
   if (pages.openapi !== false) {
-    app.doc31(openapiPath, {
-      openapi: '3.1.0',
-      info: {
-        title: 'pg-boss proxy',
-        version,
-        description: 'HTTP proxy for pg-boss methods.'
+    app.doc31(openapiPath, (context) => {
+      const mount = mountPath(context)
+      return {
+        openapi: '3.1.0',
+        info: {
+          title: 'pg-boss proxy',
+          version,
+          description: 'HTTP proxy for pg-boss methods.'
+        },
+        ...(mount ? { servers: [{ url: mount }] } : {})
       }
     })
   }
 
   if (pages.docs !== false) {
-    app.get(docsPath, swaggerUI({ url: openapiPath }))
+    const docs: MiddlewareHandler = (context, next) => swaggerUI({ url: `${mountPath(context)}${openapiPath}` })(context, next)
+    app.get(docsPath, docs)
   }
 
   app.onError((error, context) => {
@@ -219,11 +227,15 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
   const enabledRoutes = applyRouteFilter(allRoutes)
   const enabledMethodInfos = enabledRoutes.map(({ method, httpMethod }) => ({ method, httpMethod }))
 
-  const homeHtml = renderHome({ base, openapiPath, docsPath, methods: enabledMethodInfos })
-
   if (pages.root !== false) {
     app.openapi(homeRoute, (context) => {
-      return context.html(homeHtml)
+      const mount = mountPath(context)
+      return context.html(renderHome({
+        base: `${mount}${prefix}`,
+        openapiPath: `${mount}${openapiPath}`,
+        docsPath: `${mount}${docsPath}`,
+        methods: enabledMethodInfos
+      }))
     })
   }
 

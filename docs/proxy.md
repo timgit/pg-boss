@@ -356,6 +356,32 @@ const { app, boss } = await createProxyService({
 - A hook that throws answers `500`, with the message only when `exposeErrors` is on.
 - Methods removed by `routes.allow` or `routes.deny` have no route, so they answer `404` before `authorize` is called.
 
+### Mounting Several Services
+
+`app` is a Hono app, so it can be mounted in another one with `route()`. Each service wraps its own `PgBoss` instance, so one parent app can serve several databases:
+
+```ts
+import { Hono } from 'hono'
+import { createProxyService } from '@pg-boss/proxy'
+
+const parent = new Hono()
+
+for (const [name, connectionString] of Object.entries(databases)) {
+  const { app, boss } = await createProxyService({
+    options: { connectionString },
+    prefix: '',
+    env: {}
+  })
+  await boss.start()
+  parent.route(`/db/${name}`, app)
+}
+```
+
+- With `prefix: ''`, a database's methods are at `/db/<name>/send` and so on. With the default prefix they are at `/db/<name>/api/send`.
+- The root page, the docs and the OpenAPI spec are served under the mount too (`/db/<name>/docs`) and link through it. The spec lists the mount as its server, so the docs' **Try it out** calls the right database.
+- `env: {}` keeps every service from reading `PGBOSS_PROXY_*` variables and `DATABASE_URL` from the process, which would otherwise apply to all of them.
+- Each service has its own `stop()`. Call each one when the parent shuts down.
+
 ### Custom PgBoss Factory
 
 For advanced customization, you can provide a custom `bossFactory` function to wrap or modify pg-boss behavior:
