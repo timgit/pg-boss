@@ -73,6 +73,10 @@ A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/packag
 
 See the [proxy documentation](https://pgboss.io/proxy) for details.
 
+## Pro
+
+[pg-boss Pro](https://pgboss.io/pro/) is the dashboard for teams: sending, retrying and deleting jobs and running operations over many at once from the console, by role, with alerts to email, webhooks and PagerDuty, accounts with single sign-on, an audit log, and an HTTP API and Prometheus metrics. It is a subscription.
+
 ## Requirements
 * Node 22.12 or higher, or Bun
 * PostgreSQL 13 or higher
