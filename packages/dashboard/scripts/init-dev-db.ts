@@ -107,7 +107,6 @@ async function main () {
   await seedQueueStats()
 
   console.log('\nDone. Start the dashboard with `npm run dev`.')
-  console.log('Read-only mode:  PGBOSS_DASHBOARD_READ_ONLY=1 npm run dev')
   console.log('Process jobs:    npm run dev:worker (in a second terminal)')
 }
 
