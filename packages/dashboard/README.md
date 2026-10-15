@@ -45,6 +45,15 @@ npm run build
 npm start
 ```
 
+The dashboard runs against the published `pg-boss` in its `dependencies`. To work on a change that needs core from this repository that is not on npm yet, set `PGBOSS_CORE=src` for dev and tests. The build refuses it, so a release always runs against the published package.
+
+```bash
+PGBOSS_CORE=src npm run dev
+PGBOSS_CORE=src npm test
+TSX_TSCONFIG_PATH=tsconfig.core-src.json npm run dev:init-db
+npx tsc --noEmit -p tsconfig.core-src.json
+```
+
 ### Testing
 
 ```bash

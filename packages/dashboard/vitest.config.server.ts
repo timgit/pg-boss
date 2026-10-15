@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import { resolve } from 'path'
 import { proAlias, proServerAlias } from './app/lib/pro-overlay.ts'
+import { coreAlias } from './scripts/core-alias.ts'
 
 export default defineConfig({
   test: {
@@ -38,7 +39,7 @@ export default defineConfig({
       '~': resolve(import.meta.dirname, './app'),
       '~pro': proAlias(),
       '~pro-server': proServerAlias(),
-      'pg-boss': resolve(import.meta.dirname, '../../src'),
+      ...coreAlias(),
     },
   },
 })
