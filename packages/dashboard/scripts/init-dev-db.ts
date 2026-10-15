@@ -18,7 +18,7 @@
  * - A fleet of further queues (60 by default, `PGBOSS_SEED_QUEUES` to change it)
  *   with a few ready jobs each and nothing working them, so lists, cards and the
  *   honeycomb can be seen at a realistic size.
- * - The `demo-*` queues hold jobs pinned in every state the UI knows how to render
+ * - Six queues (`payments`, `billing`, `data-exports`, `data-imports`, `webhook-delivery`, `dead-letters`) hold jobs pinned in every state the UI knows how to render
  *   (active, completed, failed, retry, cancelled, dead-lettered). Their pending
  *   jobs use a far-future `startAfter`, so a running worker cannot drain them and
  *   the states stay put while you click around.
@@ -187,30 +187,30 @@ async function seedFleetQueues () {
 }
 
 /**
- * The `demo-*` queues, holding jobs in every state the dashboard renders.
+ * The queues holding jobs in every state the dashboard renders.
  *
  * All `standard`: the singleton policies collapse repeated sends into a single
  * job, which is correct behaviour and useless here, where the point is to end up
  * with a countable number of jobs in each state.
  */
 async function seedEveryJobState () {
-  await boss.createQueue('demo-dlq', { policy: 'standard' })
-  await boss.createQueue('demo-payments', {
+  await boss.createQueue('dead-letters', { policy: 'standard' })
+  await boss.createQueue('payments', {
     policy: 'standard',
     retryLimit: 2,
     retryDelay: 60,
-    deadLetter: 'demo-dlq',
+    deadLetter: 'dead-letters',
     warningQueueSize: 5,
   })
-  await boss.createQueue('demo-exports', { policy: 'standard', retryLimit: 0, expireInSeconds: 120 })
-  await boss.createQueue('demo-webhooks', { policy: 'standard', retryLimit: 3, retryBackoff: true })
-  await boss.createQueue('demo-billing', { policy: 'standard', retryLimit: 1 })
-  await boss.createQueue('demo-imports', { policy: 'standard', retryLimit: 0, deadLetter: 'demo-dlq' })
+  await boss.createQueue('data-exports', { policy: 'standard', retryLimit: 0, expireInSeconds: 120 })
+  await boss.createQueue('webhook-delivery', { policy: 'standard', retryLimit: 3, retryBackoff: true })
+  await boss.createQueue('billing', { policy: 'standard', retryLimit: 1 })
+  await boss.createQueue('data-imports', { policy: 'standard', retryLimit: 0, deadLetter: 'dead-letters' })
 
   // created — the far-future startAfter is what keeps these out of `dev:worker`'s
   // reach, so the dataset survives running a worker alongside the dashboard.
   for (let i = 0; i < 12; i++) {
-    await boss.send('demo-payments',
+    await boss.send('payments',
       { orderId: `ord-${1000 + i}`, amount: Number((19.99 * (i + 1)).toFixed(2)), currency: 'USD' },
       { startAfter: 3600, priority: i % 4 })
   }
@@ -218,26 +218,26 @@ async function seedEveryJobState () {
   // active — fetched and deliberately never completed. The only state whose row
   // offers Cancel but not Delete.
   for (let i = 0; i < 3; i++) {
-    await boss.send('demo-exports', { report: `export-${i}`, rows: 5000 * (i + 1) })
+    await boss.send('data-exports', { report: `export-${i}`, rows: 5000 * (i + 1) })
   }
-  const active = await boss.fetch('demo-exports', { batchSize: 3 })
+  const active = await boss.fetch('data-exports', { batchSize: 3 })
 
   // completed — gives the metrics view some history to draw.
   for (let i = 0; i < 9; i++) {
-    await boss.send('demo-webhooks', { url: `https://hooks.example.com/${i}`, attempt: 1 })
+    await boss.send('webhook-delivery', { url: `https://hooks.example.com/${i}`, attempt: 1 })
   }
-  const completed = await boss.fetch('demo-webhooks', { batchSize: 9 })
+  const completed = await boss.fetch('webhook-delivery', { batchSize: 9 })
   for (const job of completed) {
-    await boss.complete('demo-webhooks', job.id, { status: 200, ms: 90 + (job.id.charCodeAt(0) % 200) })
+    await boss.complete('webhook-delivery', job.id, { status: 200, ms: 90 + (job.id.charCodeAt(0) % 200) })
   }
 
   // failed — terminal, because this queue's retryLimit is 0. Offers Retry.
   for (let i = 0; i < 4; i++) {
-    await boss.send('demo-exports', { report: `broken-${i}`, rows: 0 })
+    await boss.send('data-exports', { report: `broken-${i}`, rows: 0 })
   }
-  const failed = await boss.fetch('demo-exports', { batchSize: 4 })
+  const failed = await boss.fetch('data-exports', { batchSize: 4 })
   for (const job of failed) {
-    await boss.fail('demo-exports', job.id, {
+    await boss.fail('data-exports', job.id, {
       message: 'ETIMEDOUT: upstream did not respond within 30s',
       stack: 'Error: ETIMEDOUT\n    at Socket.onTimeout (node:net:589:8)',
     })
@@ -246,46 +246,46 @@ async function seedEveryJobState () {
   // retry — failed once against a retryLimit of 2, with a retryDelay long enough
   // that they stay visible in `retry` rather than becoming fetchable again.
   for (let i = 0; i < 3; i++) {
-    await boss.send('demo-payments', { orderId: `ord-retry-${i}`, amount: 42.5 })
+    await boss.send('payments', { orderId: `ord-retry-${i}`, amount: 42.5 })
   }
-  const retrying = await boss.fetch('demo-payments', { batchSize: 3 })
+  const retrying = await boss.fetch('payments', { batchSize: 3 })
   for (const job of retrying) {
-    await boss.fail('demo-payments', job.id, { message: 'card declined, will retry' })
+    await boss.fail('payments', job.id, { message: 'card declined, will retry' })
   }
 
   // cancelled — offers Resume.
   const cancelIds: string[] = []
   for (let i = 0; i < 4; i++) {
-    const id = await boss.send('demo-billing', { invoice: `inv-${300 + i}`, total: 120 * (i + 1) }, { startAfter: 3600 })
+    const id = await boss.send('billing', { invoice: `inv-${300 + i}`, total: 120 * (i + 1) }, { startAfter: 3600 })
     if (id) cancelIds.push(id)
   }
   if (cancelIds.length) {
-    await boss.cancel('demo-billing', cancelIds)
+    await boss.cancel('billing', cancelIds)
   }
 
   // dead letter — retryLimit 0 makes one failure terminal, so these land in
-  // `demo-dlq` immediately instead of waiting out a retry delay.
+  // `dead-letters` immediately instead of waiting out a retry delay.
   for (let i = 0; i < 5; i++) {
-    await boss.send('demo-imports', { file: `customers-${i}.csv`, rows: 1200 * (i + 1) })
+    await boss.send('data-imports', { file: `customers-${i}.csv`, rows: 1200 * (i + 1) })
   }
-  const dead = await boss.fetch('demo-imports', { batchSize: 5 })
+  const dead = await boss.fetch('data-imports', { batchSize: 5 })
   for (const job of dead) {
-    await boss.fail('demo-imports', job.id, {
+    await boss.fail('data-imports', job.id, {
       message: 'CSV parse error at line 412: unexpected end of quoted field',
       file: (job.data as { file: string }).file,
     })
   }
 
   console.log(
-    `  demo queues: 12 created, ${active.length} active, ${completed.length} completed, ` +
+    `  job-state queues: 6 created, ${active.length} active, ${completed.length} completed, ` +
     `${failed.length} failed, ${retrying.length} retry, ${cancelIds.length} cancelled, ${dead.length} dead-lettered`
   )
 }
 
 async function seedSchedules () {
-  await boss.schedule('demo-exports', '0 * * * *', { report: 'hourly-rollup' }, { tz: 'UTC' })
-  await boss.schedule('demo-billing', '30 2 * * 1', { run: 'weekly-invoices' }, { tz: 'America/Chicago' })
-  await boss.schedule('demo-webhooks', '*/15 * * * *', { ping: true })
+  await boss.schedule('data-exports', '0 * * * *', { report: 'hourly-rollup' }, { tz: 'UTC' })
+  await boss.schedule('billing', '30 2 * * 1', { run: 'weekly-invoices' }, { tz: 'America/Chicago' })
+  await boss.schedule('webhook-delivery', '*/15 * * * *', { ping: true })
   console.log('  schedules: 3')
 }
 
@@ -294,10 +294,10 @@ async function seedSchedules () {
  * queue's page shows the events it is subscribed to.
  */
 const SUBSCRIPTIONS: Array<[string, string[]]> = [
-  ['order.placed', ['demo-payments', 'demo-exports', 'demo-webhooks']],
-  ['order.refunded', ['demo-payments', 'demo-billing']],
-  ['invoice.due', ['demo-billing']],
-  ['customer.imported', ['demo-imports', 'demo-webhooks']],
+  ['order.placed', ['payments', 'data-exports', 'webhook-delivery']],
+  ['order.refunded', ['payments', 'billing']],
+  ['invoice.due', ['billing']],
+  ['customer.imported', ['data-imports', 'webhook-delivery']],
 ]
 
 async function seedSubscriptions () {
@@ -325,12 +325,12 @@ async function seedWarnings () {
     await client.query(`DELETE FROM ${schema}.warning WHERE data->>'seed' = 'demo'`)
     await client.query(`
       INSERT INTO ${schema}.warning (type, message, data, created_on) VALUES
-        ('queue_backlog', 'Queue "demo-payments" backlog of 13 exceeds its warning size of 5',
-         '{"seed":"demo","queue":"demo-payments","queued":13,"threshold":5}', now() - interval '4 minutes'),
+        ('queue_backlog', 'Queue "payments" backlog of 13 exceeds its warning size of 5',
+         '{"seed":"demo","queue":"payments","queued":13,"threshold":5}', now() - interval '4 minutes'),
         ('slow_query', 'Dashboard query exceeded 1000ms',
          '{"seed":"demo","ms":1420,"query":"getQueues"}', now() - interval '2 hours'),
-        ('queue_backlog', 'Queue "demo-exports" backlog of 9 exceeds its warning size of 5',
-         '{"seed":"demo","queue":"demo-exports","queued":9,"threshold":5}', now() - interval '1 day')
+        ('queue_backlog', 'Queue "data-exports" backlog of 9 exceeds its warning size of 5',
+         '{"seed":"demo","queue":"data-exports","queued":9,"threshold":5}', now() - interval '1 day')
     `)
     console.log('  warnings: 3')
   } finally {
@@ -353,10 +353,10 @@ async function seedAsyncMigrations () {
     const rows: Array<[string, number, string, string | null, string, string | null, string, string | null, string | null]> = [
       // name, version, status, queue, command, error, created ago, started ago, completed ago
       ['job_i7', version - 1, 'completed', null, index('job_i7', "(name, group_id) WHERE state = 'active' AND group_id IS NOT NULL"), null, '3 hours', '3 hours', '2 hours 52 minutes'],
-      ['job_i8', version, 'completed', 'demo-exports', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', '38 minutes', '35 minutes'],
-      ['job_i8', version, 'in_progress', 'demo-payments', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', '4 minutes', null],
-      ['job_i8', version, 'pending', 'demo-webhooks', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', null, null],
-      ['job_i6', version - 1, 'failed', 'demo-imports', index('job_i6', '(name, keep_until) WHERE state >= \'completed\''), 'canceling statement due to lock timeout', '1 day', '1 day', null],
+      ['job_i8', version, 'completed', 'data-exports', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', '38 minutes', '35 minutes'],
+      ['job_i8', version, 'in_progress', 'payments', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', '4 minutes', null],
+      ['job_i8', version, 'pending', 'webhook-delivery', index('job_i8', '(name, singleton_on) WHERE singleton_on IS NOT NULL'), null, '40 minutes', null, null],
+      ['job_i6', version - 1, 'failed', 'data-imports', index('job_i6', '(name, keep_until) WHERE state >= \'completed\''), 'canceling statement due to lock timeout', '1 day', '1 day', null],
     ]
 
     for (const [name, v, status, queue, command, error, created, started, completed] of rows) {
@@ -412,18 +412,18 @@ async function seedReadyHistory () {
 
   const shapes: Record<string, (i: number) => number> = {
     // A backlog that built up and was then worked off.
-    'demo-payments': (i) => Math.round(45 * Math.sin((i / WINDOW) * Math.PI)),
+    'payments': (i) => Math.round(45 * Math.sin((i / WINDOW) * Math.PI)),
     // A steady plateau ending in a cliff — the shape a queue makes when workers
     // are scaled up.
-    'demo-webhooks': (i) => (i < 44 ? 26 + ((i * 7) % 5) : Math.max(0, 26 - (i - 43) * 2)),
+    'webhook-delivery': (i) => (i < 44 ? 26 + ((i * 7) % 5) : Math.max(0, 26 - (i - 43) * 2)),
     // Bursty arrivals, each drained before the next.
-    'demo-exports': (i) => Math.round(Math.abs(Math.sin(i / 3.5)) * (18 - i / 6)),
+    'data-exports': (i) => Math.round(Math.abs(Math.sin(i / 3.5)) * (18 - i / 6)),
     // Low background noise, never much of a backlog.
-    'demo-billing': (i) => (i * 13) % 4,
+    'billing': (i) => (i * 13) % 4,
     // Flat until a single import spike, then back to nothing.
-    'demo-imports': (i) => (i >= 30 && i <= 36 ? 22 - (i - 30) * 3 : 0),
+    'data-imports': (i) => (i >= 30 && i <= 36 ? 22 - (i - 30) * 3 : 0),
     // Dead letters only accumulate, so this one is a staircase.
-    'demo-dlq': (i) => Math.floor(i / 10),
+    'dead-letters': (i) => Math.floor(i / 10),
     'email-notifications': (i) => Math.round(8 * Math.sin((i / WINDOW) * Math.PI) + (i % 3)),
     'payment-processing': (i) => Math.round(Math.abs(Math.sin(i / 4)) * 9),
     'report-generation': (i) => (i * 7) % 5,
