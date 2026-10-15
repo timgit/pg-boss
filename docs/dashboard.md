@@ -75,11 +75,15 @@ Event log of warnings emitted by pg-boss when [`persistWarnings`](#enabling-warn
 
 - Node.js 22.12+
 - PostgreSQL database with pg-boss schema
-- A pg-boss schema version that matches the dashboard release (see below)
+- A database on pg-boss schema version 32 or later, which is pg-boss 12.21 (see below)
 
 ### Matching pg-boss versions
 
-Each dashboard release is built with a specific pg-boss and only works against a database on that pg-boss's schema version. Use the dashboard release that matches the pg-boss version your application runs:
+Dashboard 2.x reads a database on pg-boss schema version 32 or later, which is pg-boss 12.21 or later, so it does not have to match the pg-boss your application runs. 2.0 has been run against every schema from 32 to 46 (pg-boss 12.38). Pages show what a newer schema stores, such as the wait and run times from schema 44, and leave it out on an older one.
+
+The dashboard does not migrate your schema, and it starts no pg-boss instance of its own, so it never appears in [`getInstances()`](./api/ops.md#getinstances-options).
+
+Releases before 2.0 were each built for one schema version and only work against a database on that version. Opening a job on another version fails with `pg-boss database requires migrations`:
 
 | Dashboard | pg-boss | Schema version |
 | - | - | - |
@@ -90,9 +94,7 @@ Each dashboard release is built with a specific pg-boss and only works against a
 | 1.8.x | 12.31.x – 12.32.x | 41 |
 | 1.7.x | 12.30.x | 40 |
 
-No dashboard release matches pg-boss 12.36.x (schema 44). Move the application to 12.37 and use 1.11.x.
-
-The dashboard does not migrate your schema. If the versions do not match, its pages still load, but they can leave out what the other version stores differently. When your application moves to a pg-boss release with a new schema version, upgrade the dashboard with it.
+No 1.x release matches pg-boss 12.36.x (schema 44). 2.x reads it.
 
 ## Installation
 

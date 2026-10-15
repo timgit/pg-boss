@@ -326,7 +326,7 @@ String, optional
 
 A label for this instance in the registry, such as `api` or `billing-worker`. It does not need to be unique, since each instance is recorded under its own id. Instances with the same name are grouped for pruning stopped rows and for counting crash restarts; see [`getInstances()`](./ops.md#getinstances-options).
 
-The [dashboard](../dashboard.md) registers as `pg-boss-dashboard` and the [proxy](../proxy.md) as `pg-boss-proxy`.
+The [proxy](../proxy.md) registers as `pg-boss-proxy`, and [dashboard](../dashboard.md) 1.12.x as `pg-boss-dashboard`. Dashboard 2.0 starts no instance.
 
 ### `instanceHeartbeatSeconds`
 
