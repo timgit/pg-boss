@@ -8,6 +8,7 @@ A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npm
 - **Queues**: View all queues with cached statistics
 - **Queue Metrics**: Chart a queue's counts over time from its recorded history
 - **Subscriptions**: Each event and the queues subscribed to it
+- **Instances**: The pg-boss instances registered in the database, with their workers and options
 - **Job List**: View jobs with state and queue filtering
 - **Job Details**: View full job payloads, output data, and metadata
 - **Warning History**: When `persistWarnings` is enabled, browse through previously emitted warning events
@@ -59,15 +60,19 @@ Schedules registered with `boss.schedule()`, showing the target queue, optional 
 
 Events registered with [`boss.subscribe()`](./api/pubsub.md), one row per event with every queue subscribed to it, sortable by event, queue count or when a queue last subscribed. A queue's page shows how many events it is subscribed to and links here, filtered to those events.
 
+### Instances
+
+Every pg-boss instance registered in the database's [instance registry](./api/ops.md#getinstances-options), one row each, with its status (live, quiet or stopped), the pg-boss version it runs, its roles and the queues it works. Filter by status, or by **Recent** for the ones that started, stopped or went quiet in the last 24 hours. An instance's page shows its workers, its process, and its options with the ones it changed from the defaults listed first. The registry needs pg-boss 12.36 (schema 44). On an older schema the page says so.
+
 ### Migrations
 
-Status of background async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. Shows pending, in-progress, completed and failed counts, and for each command its version, target table, timestamps and the SQL that was (or will be) executed, including any error message.
+Status of background async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. Shows pending, in-progress, completed and failed counts, and each command's version, target table and status. A command opens a page with the SQL that was (or will be) executed, any error message, and when it was queued, started and ended.
 
 ![Migrations page](./images/dashboard-migrations.png)
 
 ### Warnings
 
-Event log of warnings emitted by pg-boss when [`persistWarnings`](#enabling-warning-persistence) is enabled, such as slow queries, queue backlogs or clock skew. Each entry shows its type, message, key details (for example the queue and its size, or the query duration) and time, and the list can be filtered by warning type.
+Event log of warnings emitted by pg-boss when [`persistWarnings`](#enabling-warning-persistence) is enabled, such as slow queries, queue backlogs or clock skew. Each entry shows its type, message, key details (for example the queue and its size, or the query duration) and time, and the list can be filtered by warning type. An entry opens a page with its full message, its queue and every detail it recorded.
 
 ![Warnings page](./images/dashboard-warnings.png)
 
