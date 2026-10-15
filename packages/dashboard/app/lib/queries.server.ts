@@ -160,7 +160,6 @@ const QUEUE_COLUMNS = `
   failed_count as "failedCount",
   total_count as "totalCount",
   warning_queued as "warningQueueSize",
-  singletons_active as "singletonsActive",
   table_name as "table",
   monitor_on as "monitorOn",
   maintain_on as "maintainOn",
