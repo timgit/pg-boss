@@ -36,6 +36,7 @@ export default defineConfig({
     nav: [
       { text: 'Get Started', link: '/introduction' },
       { text: 'API', link: '/api/constructor', activeMatch: '/api/' },
+      { text: 'Pro', link: '/pro/', activeMatch: '/pro/' },
       { text: 'Sponsors', link: '/sponsors' },
       {
         text: pkg.version,
@@ -45,43 +46,99 @@ export default defineConfig({
         ]
       }
     ],
-    sidebar: [
-      { text: 'Introduction', link: '/introduction' },
-      { text: 'CLI', link: '/cli' },
-      { text: 'Dashboard', link: '/dashboard' },
-      { text: 'Proxy', link: '/proxy' },
-      { text: 'Database Install', link: '/install' },
-      { text: 'Database Backends', link: '/database-backends' },
-      { text: 'OpenTelemetry', link: '/opentelemetry' },
-      { text: 'Sponsors', link: '/sponsors' },
-      {
-        text: 'API',
-        collapsed: false,
-        items: [
-          { text: 'Constructor', link: '/api/constructor' },
-          { text: 'Events', link: '/api/events' },
-          { text: 'Operations', link: '/api/ops' },
-          { text: 'Queues', link: '/api/queues' },
-          { text: 'Jobs', link: '/api/jobs' },
-          { text: 'Scheduling', link: '/api/scheduling' },
-          { text: 'PubSub', link: '/api/pubsub' },
-          { text: 'Workers', link: '/api/workers' },
-          { text: 'Testing', link: '/api/testing' },
-          { text: 'Utils', link: '/api/utils' },
-          { text: 'Adapters', link: '/api/adapters' }
-        ]
-      },
-      {
-        text: 'SQL',
-        collapsed: false,
-        items: [
-          { text: 'Job Table', link: '/sql/job-table' },
-          { text: 'Queue Functions', link: '/sql/queue-functions' },
-          { text: 'Warning Table', link: '/sql/warning-table' },
-          { text: 'Instance Table', link: '/sql/instance-table' }
-        ]
-      }
-    ],
+    sidebar: {
+      '/pro/': [
+        { text: 'Overview', link: '/pro/' },
+        { text: 'Install and run', link: '/pro/install' },
+        { text: 'Mount in your application', link: '/pro/mount' },
+        { text: 'pg-boss versions', link: '/pro/versions' },
+        {
+          text: 'The Console',
+          items: [
+            { text: 'Overview and queues', link: '/pro/queues' },
+            { text: 'Status', link: '/pro/status' },
+            { text: 'Instances', link: '/pro/instances' },
+            { text: 'Jobs and queues', link: '/pro/changes' },
+            { text: 'Operations', link: '/pro/operations' }
+          ]
+        },
+        {
+          text: 'Alerts',
+          items: [
+            { text: 'Alerts', link: '/pro/alerts' },
+            { text: 'Alert rules', link: '/pro/alert-rules' },
+            { text: 'Destinations', link: '/pro/destinations' }
+          ]
+        },
+        {
+          text: 'People and access',
+          items: [
+            { text: 'Accounts and groups', link: '/pro/accounts' },
+            { text: 'Roles and access', link: '/pro/roles' },
+            { text: 'Single sign-on', link: '/pro/sso' },
+            { text: 'API tokens and service accounts', link: '/pro/api-tokens' },
+            { text: 'Audit log', link: '/pro/audit-log' }
+          ]
+        },
+        {
+          text: 'Administration',
+          items: [
+            { text: 'Databases', link: '/pro/databases' },
+            { text: 'Retention and secrets', link: '/pro/administration' },
+            { text: 'License', link: '/pro/license' },
+            { text: 'Network activity', link: '/pro/network' }
+          ]
+        },
+        {
+          text: 'Reference',
+          items: [
+            { text: 'HTTP API', link: '/pro/api' },
+            { text: 'Metrics', link: '/pro/metrics' },
+            { text: 'Environment variables', link: '/pro/environment' },
+            { text: 'Release notes', link: '/pro/releases' }
+          ]
+        },
+        { text: 'pg-boss', link: '/introduction' }
+      ],
+      '/': [
+        { text: 'Introduction', link: '/introduction' },
+        { text: 'CLI', link: '/cli' },
+        { text: 'Dashboard', link: '/dashboard' },
+        { text: 'Proxy', link: '/proxy' },
+        { text: 'Pro', link: '/pro/' },
+        { text: 'Database Install', link: '/install' },
+        { text: 'Database Backends', link: '/database-backends' },
+        { text: 'OpenTelemetry', link: '/opentelemetry' },
+        { text: 'Sponsors', link: '/sponsors' },
+        {
+          text: 'API',
+          collapsed: false,
+          items: [
+            { text: 'Constructor', link: '/api/constructor' },
+            { text: 'Events', link: '/api/events' },
+            { text: 'Operations', link: '/api/ops' },
+            { text: 'Queues', link: '/api/queues' },
+            { text: 'Jobs', link: '/api/jobs' },
+            { text: 'Scheduling', link: '/api/scheduling' },
+            { text: 'PubSub', link: '/api/pubsub' },
+            { text: 'Workers', link: '/api/workers' },
+            { text: 'Testing', link: '/api/testing' },
+            { text: 'Utils', link: '/api/utils' },
+            { text: 'Adapters', link: '/api/adapters' }
+          ]
+        },
+        {
+          text: 'SQL',
+          collapsed: false,
+          items: [
+            { text: 'Job Table', link: '/sql/job-table' },
+            { text: 'Queue Functions', link: '/sql/queue-functions' },
+            { text: 'Warning Table', link: '/sql/warning-table' },
+            { text: 'Instance Table', link: '/sql/instance-table' }
+          ]
+        }
+      ]
+    },
     editLink: {
       pattern: 'https://github.com/timgit/pg-boss/edit/master/docs/:path',
       text: 'Suggest changes to this page'
