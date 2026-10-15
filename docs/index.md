@@ -100,7 +100,7 @@ See the [CLI documentation](/cli) for details.
 
 ## Dashboard
 
-A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring and managing jobs, queues and schedules.
+A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring jobs, queues and schedules.
 
 See the [dashboard documentation](/dashboard) for details.
 

@@ -207,7 +207,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 
 // The title is rendered by `DocumentTitle`, which can see every matched page; `meta` cannot.
 export function meta() {
-  return [{ name: "description", content: "Monitor and manage pg-boss job queues" }];
+  return [{ name: "description", content: "Monitor pg-boss job queues" }];
 }
 
 export function links() {
