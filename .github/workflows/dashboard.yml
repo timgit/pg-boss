@@ -5,13 +5,11 @@ on:
     tags-ignore: ['**']
     paths:
       - 'packages/dashboard/**'
-      - 'src/**'
       - '.github/workflows/dashboard.yml'
   pull_request:
     branches: [master]
     paths:
       - 'packages/dashboard/**'
-      - 'src/**'
       - '.github/workflows/dashboard.yml'
 
 name: Dashboard CI
@@ -44,6 +42,9 @@ jobs:
           package-lock.json
           packages/dashboard/package-lock.json
 
+    # Not for core: the dashboard runs on the published pg-boss. Vite resolves a file outside the
+    # dashboard tsconfig's `include`, such as react-router.config.ts, against the root tsconfig, which
+    # extends @tsconfig/node22 from the root install.
     - name: Install root dependencies
       run: npm ci
 
