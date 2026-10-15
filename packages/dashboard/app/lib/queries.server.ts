@@ -30,6 +30,7 @@ import type {
   BamEntryResult,
   BamStatusSummary,
   Instance,
+  JobWithMetadata,
 } from './types'
 
 export interface SortOptions {
@@ -1548,5 +1549,62 @@ export async function getSubscriptionEventCount (
   return result?.count ?? 0
 }
 
-// Re-exported so routes read jobs through one module
-export { getJobById } from './boss.server'
+// A job row's columns by the name findJobs() gives each one, so the page reads the same shape core
+// returns. Columns a schema older than the dashboard's lacks are absent from the row and left out.
+const JOB_FIELDS: Record<string, string> = {
+  id: 'id',
+  name: 'name',
+  data: 'data',
+  retry_count: 'retryCount',
+  expire_seconds: 'expireInSeconds',
+  heartbeat_seconds: 'heartbeatSeconds',
+  group_id: 'groupId',
+  group_tier: 'groupTier',
+  policy: 'policy',
+  state: 'state',
+  priority: 'priority',
+  retry_limit: 'retryLimit',
+  retry_delay: 'retryDelay',
+  retry_backoff: 'retryBackoff',
+  retry_delay_max: 'retryDelayMax',
+  start_after: 'startAfter',
+  started_on: 'startedOn',
+  singleton_key: 'singletonKey',
+  singleton_on: 'singletonOn',
+  deletion_seconds: 'deleteAfterSeconds',
+  heartbeat_on: 'heartbeatOn',
+  created_on: 'createdOn',
+  completed_on: 'completedOn',
+  keep_until: 'keepUntil',
+  dead_letter: 'deadLetter',
+  blocked: 'blocked',
+  blocking: 'blocking',
+  pending_dependencies: 'pendingDependencies',
+  output: 'output',
+  source_name: 'sourceName',
+  source_id: 'sourceId',
+  source_created_on: 'sourceCreatedOn',
+  source_retry_count: 'sourceRetryCount',
+  source_output: 'sourceOutput',
+  source_root_id: 'sourceRootId',
+}
+
+// One job as findJobs() returns it, read with SQL like every other page rather than through a started
+// PgBoss, whose start() refuses any schema version but its own.
+export async function getJobById<T = object> (
+  dbUrl: string,
+  schema: string,
+  name: string,
+  id: string
+): Promise<JobWithMetadata<T> | null> {
+  if (!UUID_REGEX.test(id)) return null
+  const s = validateIdentifier(schema)
+  const row = await queryOne<Record<string, unknown>>(dbUrl, `SELECT * FROM ${s}.job WHERE name = $1 AND id = $2`, [name, id])
+  if (!row) return null
+
+  const job: Record<string, unknown> = {}
+  for (const [column, field] of Object.entries(JOB_FIELDS)) {
+    if (column in row) job[field] = row[column]
+  }
+  return job as unknown as JobWithMetadata<T>
+}

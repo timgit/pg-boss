@@ -92,7 +92,7 @@ Each dashboard release is built with a specific pg-boss and only works against a
 
 No dashboard release matches pg-boss 12.36.x (schema 44). Move the application to 12.37 and use 1.11.x.
 
-The dashboard does not migrate your schema. If the versions do not match, the overview, queue, job and schedule lists and the warnings page still load. However, opening a job fails with `pg-boss database requires migrations`. When your application moves to a pg-boss release with a new schema version, upgrade the dashboard with it.
+The dashboard does not migrate your schema. If the versions do not match, its pages still load, but they can leave out what the other version stores differently. When your application moves to a pg-boss release with a new schema version, upgrade the dashboard with it.
 
 ## Installation
 
@@ -304,7 +304,7 @@ A few things worth knowing:
 - **It is lazy.** Nothing is imported and no database connection is opened until the first request arrives. The connection pool drains again when the dashboard is idle.
 - **It does not depend on the working directory.** Static assets are resolved relative to the installed package.
 - **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, a sibling of the mount path rather than a child, so a `/admin/queues/*` pattern alone misses it and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
-- **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`; the handler leaves signals to you. Opening a job starts a pg-boss instance whose timers keep the process alive until `await dashboard.close()`. A closed handler answers 503.
+- **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`; the handler leaves signals to you, and `await dashboard.close()` ends its database pools. A closed handler answers 503.
 - **Behind a reverse proxy, list your public host.** React Router rejects a form submission whose `Origin` does not match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `allowedActionOrigins: ['admin.example.com']`.
 - **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` applies. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST` and `PGBOSS_DASHBOARD_BASE_PATH` do not: the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`, and if it is set while `auth` is off the dashboard says so when you construct the handler rather than ignoring it quietly.
 

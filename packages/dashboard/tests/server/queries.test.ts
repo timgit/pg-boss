@@ -746,6 +746,38 @@ describe('Job Queries', () => {
       expect(job!.data).toEqual({ foo: 'bar' })
     })
 
+    it('returns the job as findJobs() does', async () => {
+      await createTestQueue('test-queue')
+      const jobId = await sendTestJob('test-queue', { foo: 'bar' }, { priority: 5, singletonKey: 'k' })
+
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const [expected] = await getBoss().findJobs('test-queue', { id: jobId! })
+
+      expect(job).toEqual(expected)
+    })
+
+    it('returns null for an id that is not a uuid', async () => {
+      await createTestQueue('test-queue')
+
+      expect(await getJobById(ctx.connectionString, ctx.schema, 'test-queue', 'not-a-uuid')).toBeNull()
+    })
+
+    it('reads a job when the schema version is not the one this pg-boss expects', async () => {
+      await createTestQueue('test-queue')
+      const jobId = await sendTestJob('test-queue', { foo: 'bar' })
+
+      const client = new pg.Client({ connectionString: ctx.connectionString })
+      await client.connect()
+      try {
+        await client.query(`UPDATE ${ctx.schema}.version SET version = version - 1`)
+        const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+        expect(job?.id).toBe(jobId)
+      } finally {
+        await client.query(`UPDATE ${ctx.schema}.version SET version = version + 1`)
+        await client.end()
+      }
+    })
+
     it('returns null source-tracking fields for a job that was not dead-lettered', async () => {
       await createTestQueue('test-queue')
       const jobId = await sendTestJob('test-queue', { foo: 'bar' })

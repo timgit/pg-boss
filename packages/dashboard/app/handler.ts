@@ -58,9 +58,7 @@ export interface CreateDashboardHandlerOptions {
 export interface DashboardHandler {
   (request: Request): Promise<Response>;
   /**
-   * Releases everything this handler holds: the database pools and the pg-boss
-   * instances behind the write paths, whose timers otherwise keep the event
-   * loop alive.
+   * Releases everything this handler holds: its database pools.
    *
    * Final. Requests after it answer 503 rather than reopening what was closed.
    */
@@ -69,7 +67,6 @@ export interface DashboardHandler {
 
 const EMBEDDED_KEY = Symbol.for('pgboss.dashboard.embedded')
 const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
-const STOP_INSTANCES_KEY = Symbol.for('pgboss.dashboard.stopAllInstances')
 
 /**
  * A Fetch API handler for the dashboard, to mount inside an existing application.
@@ -118,7 +115,6 @@ export function createDashboardHandler (
   const globalStore = globalThis as typeof globalThis & {
     [EMBEDDED_KEY]?: boolean
     [CLOSE_POOLS_KEY]?: () => Promise<void>
-    [STOP_INSTANCES_KEY]?: () => Promise<void>
   }
 
   const load = async (): Promise<Hono> => {
@@ -178,7 +174,6 @@ export function createDashboardHandler (
     closed = true
     // A load in flight has not published its hooks yet.
     await app?.catch(() => {})
-    await globalStore[STOP_INSTANCES_KEY]?.()
     await globalStore[CLOSE_POOLS_KEY]?.()
   }
 
