@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getConfig } from '../../../../src/attorney.ts'
+import { getConfig } from 'pg-boss/dist/attorney.js'
 import { OPTION_DEFAULTS, isChangedOption } from '~/lib/instances'
 
 // The dashboard highlights the options an instance changed by comparing them with these. Core

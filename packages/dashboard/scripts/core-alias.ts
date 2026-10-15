@@ -10,6 +10,9 @@ import { resolve } from 'node:path'
  */
 export const coreFromSource = process.env.PGBOSS_CORE === 'src'
 
+// `pg-boss/dist/*` first: a test reads core internals from the package's build output, which in
+// the source tree are the modules themselves.
 export function coreAlias (): Record<string, string> {
-  return coreFromSource ? { 'pg-boss': resolve(import.meta.dirname, '../../../src') } : {}
+  const src = resolve(import.meta.dirname, '../../../src')
+  return coreFromSource ? { 'pg-boss/dist': src, 'pg-boss': src } : {}
 }
