@@ -80,8 +80,17 @@ function * walk (dir) {
 
 const offenders = new Map()
 
+/**
+ * The source with its comment lines blanked. A bundled package keeps its doc comments, and their
+ * examples (`* import { Hono } from 'hono'`) are not imports. Whole lines only, by their first
+ * character: removing `/* … *\/` spans would also swallow code after a string such as '/api/*'.
+ */
+function withoutCommentLines (source) {
+  return source.split('\n').map((line) => (/^\s*(\*|\/\/)/.test(line) ? '' : line)).join('\n')
+}
+
 for (const file of walk(join(root, 'build'))) {
-  const source = readFileSync(file, 'utf8')
+  const source = withoutCommentLines(readFileSync(file, 'utf8'))
 
   for (const pattern of PATTERNS) {
     for (const [, specifier] of source.matchAll(pattern)) {
