@@ -11,6 +11,7 @@ import {
   type ConstructorOptions
 } from 'pg-boss'
 import type { Context, MiddlewareHandler } from 'hono'
+import { basePath } from 'hono/route'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import {
   errorResultSchema,
@@ -25,6 +26,8 @@ import { honoLogger } from '@logtape/hono'
 
 type ProxyEnv = Record<string, string | undefined>
 
+type AuthorizeResult = boolean | { status: ContentfulStatusCode, message: string }
+
 type ProxyOptions = {
   options?: ConstructorOptions
   bossFactory?: (options: ConstructorOptions) => PgBoss
@@ -33,6 +36,7 @@ type ProxyOptions = {
   hostname?: string
   env?: ProxyEnv
   middleware?: MiddlewareHandler | MiddlewareHandler[]
+  authorize?: (context: Context, method: string) => AuthorizeResult | Promise<AuthorizeResult>
   requestLogger?: boolean
   logFormat?: 'text' | 'json'
   exposeErrors?: boolean
@@ -90,6 +94,10 @@ const resultResponse = (context: Context, result: unknown) => {
   return context.json({ ok: true, result: result ?? null }, 200)
 }
 
+// Where the app is mounted when a parent serves it with `parent.route(path, app)`, empty at the root.
+// The pages link through it, so several services can be mounted side by side in one app.
+const mountPath = (context: Context) => normalizePrefix(basePath(context))
+
 export async function createProxyService (options: ProxyOptions): Promise<ProxyService> {
   const providedEnv = options.env ?? process.env
   const envConfig = configureFromEnv(providedEnv)
@@ -115,6 +123,9 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
   }
   if (!('schedule' in providedOptions)) {
     resolvedOptions.schedule = false
+  }
+  if (!('instanceName' in providedOptions)) {
+    resolvedOptions.instanceName = providedEnv.PGBOSS_PROXY_INSTANCE_NAME || 'pg-boss-proxy'
   }
 
   const prefix = resolvePrefix(config.prefix)
@@ -153,26 +164,29 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
   configureAuth(app, config.auth, prefix)
   configureCors(app, config.cors, prefix)
 
-  const base = prefix || '/'
-
   const openapiPath = '/openapi.json'
   const docsPath = '/docs'
 
   const pages = config.pages ?? {}
 
   if (pages.openapi !== false) {
-    app.doc31(openapiPath, {
-      openapi: '3.1.0',
-      info: {
-        title: 'pg-boss proxy',
-        version,
-        description: 'HTTP proxy for pg-boss methods.'
+    app.doc31(openapiPath, (context) => {
+      const mount = mountPath(context)
+      return {
+        openapi: '3.1.0',
+        info: {
+          title: 'pg-boss proxy',
+          version,
+          description: 'HTTP proxy for pg-boss methods.'
+        },
+        ...(mount ? { servers: [{ url: mount }] } : {})
       }
     })
   }
 
   if (pages.docs !== false) {
-    app.get(docsPath, swaggerUI({ url: openapiPath }))
+    const docs: MiddlewareHandler = (context, next) => swaggerUI({ url: `${mountPath(context)}${openapiPath}` })(context, next)
+    app.get(docsPath, docs)
   }
 
   app.onError((error, context) => {
@@ -213,11 +227,15 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
   const enabledRoutes = applyRouteFilter(allRoutes)
   const enabledMethodInfos = enabledRoutes.map(({ method, httpMethod }) => ({ method, httpMethod }))
 
-  const homeHtml = renderHome({ base, openapiPath, docsPath, methods: enabledMethodInfos })
-
   if (pages.root !== false) {
     app.openapi(homeRoute, (context) => {
-      return context.html(homeHtml)
+      const mount = mountPath(context)
+      return context.html(renderHome({
+        base: `${mount}${prefix}`,
+        openapiPath: `${mount}${openapiPath}`,
+        docsPath: `${mount}${docsPath}`,
+        methods: enabledMethodInfos
+      }))
     })
   }
 
@@ -239,6 +257,23 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
     }
   }
 
+  // Registered per route after `middleware`, so it runs once a caller is known and before the
+  // request is validated. Only `true` lets a call through: a hook that returns nothing refuses it.
+  const authorize = options.authorize
+  const authorizeRoute = (path: string, method: string) => {
+    if (!authorize) return
+    app.use(path, async (context, next) => {
+      const decision = await authorize(context, method)
+      if (decision === true) {
+        await next()
+        return
+      }
+      return typeof decision === 'object' && decision !== null
+        ? errorResponse(context, decision.status, decision.message)
+        : errorResponse(context, 403, 'Forbidden')
+    })
+  }
+
   const metaRoute = createRoute({
     method: 'get',
     path: `${prefix}/meta`,
@@ -253,6 +288,8 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
       }
     }
   })
+
+  authorizeRoute(`${prefix}/meta`, 'meta')
 
   app.openapi(metaRoute, (context) => {
     return context.json({ ok: true, result: { states, policies, events, scheduleKinds, scheduleMissedPolicies } }, 200)
@@ -331,6 +368,8 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
 
     const route = createRoute(routeDef as Parameters<typeof createRoute>[0])
 
+    authorizeRoute(`${prefix}/${method}`, method)
+
     app.openapi(route, async (context) => {
       let args: unknown[]
 
@@ -394,6 +433,6 @@ export {
   createDenoShutdownAdapter
 } from './shutdown.js'
 
-export type { ProxyOptions, ProxyService }
+export type { AuthorizeResult, ProxyOptions, ProxyService }
 export type { ShutdownHandler, ShutdownAdapter } from './shutdown.js'
 export type { EnvConfig, AuthConfig, CorsConfig } from './env.js'

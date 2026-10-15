@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProxyService } from '../src/index.js'
 import { bossMethodNames } from '../src/routes.js'
 import { findJobsOptionsSchema } from '../src/contracts.js'
-import type { MiddlewareHandler } from 'hono'
+import { Hono, type MiddlewareHandler } from 'hono'
 
 type BossMethod = string
 
@@ -1615,5 +1615,179 @@ describe('env.ts configuration', () => {
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_ROUTES_DENY: 'deleteQueue,badRoute' }
     })).resolves.not.toThrow()
+  })
+})
+
+describe('proxy instance name', () => {
+  const resolveOptions = async (options: Record<string, unknown>, env: Record<string, string> = {}) => {
+    const { boss } = createBossMock()
+    let received: Record<string, unknown> = {}
+    await createProxyService({
+      options,
+      env,
+      bossFactory: (resolved) => { received = resolved as Record<string, unknown>; return boss as any }
+    })
+    return received
+  }
+
+  it('registers as pg-boss-proxy by default', async () => {
+    expect((await resolveOptions({})).instanceName).toBe('pg-boss-proxy')
+  })
+
+  it('takes PGBOSS_PROXY_INSTANCE_NAME when no instanceName is passed', async () => {
+    expect((await resolveOptions({}, { PGBOSS_PROXY_INSTANCE_NAME: 'edge-proxy' })).instanceName).toBe('edge-proxy')
+  })
+
+  it('keeps a passed instanceName over the environment', async () => {
+    const resolved = await resolveOptions({ instanceName: 'billing-proxy' }, { PGBOSS_PROXY_INSTANCE_NAME: 'edge-proxy' })
+    expect(resolved.instanceName).toBe('billing-proxy')
+  })
+})
+
+describe('authorize', () => {
+  const serve = async (authorize: NonNullable<Parameters<typeof createProxyService>[0]['authorize']>, extra: Record<string, unknown> = {}) => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, authorize, ...extra })
+    return { app, calls }
+  }
+
+  it('is called with the pg-boss method, and true lets the call through', async () => {
+    const seen: string[] = []
+    const { app, calls } = await serve(async (_context, method) => { seen.push(method); return true })
+
+    const response = await app.fetch(await postJson('http://local/api/send', { name: 'queue' }))
+    expect(response.status).toBe(200)
+    expect(seen).toEqual(['send'])
+    expect(calls.get('send')).toHaveLength(1)
+  })
+
+  it('false refuses with 403 and the method is not called', async () => {
+    const { app, calls } = await serve(() => false)
+
+    const response = await app.fetch(await postJson('http://local/api/send', { name: 'queue' }))
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ ok: false, error: { message: 'Forbidden' } })
+    expect(calls.get('send')).toHaveLength(0)
+  })
+
+  it('a status and message refuse with that status, keeping headers the hook set', async () => {
+    const { app } = await serve((context) => {
+      context.header('WWW-Authenticate', 'Bearer')
+      return { status: 401, message: 'Token expired' }
+    })
+
+    const response = await app.fetch(new Request('http://local/api/getQueues'))
+    expect(response.status).toBe(401)
+    expect(response.headers.get('www-authenticate')).toBe('Bearer')
+    expect(await response.json()).toEqual({ ok: false, error: { message: 'Token expired' } })
+  })
+
+  it('refuses when the hook returns nothing', async () => {
+    const { app, calls } = await serve((() => undefined) as any)
+
+    const response = await app.fetch(await postJson('http://local/api/send', { name: 'queue' }))
+    expect(response.status).toBe(403)
+    expect(calls.get('send')).toHaveLength(0)
+  })
+
+  it('runs after middleware and before the request is validated', async () => {
+    const order: string[] = []
+    const middleware: MiddlewareHandler = async (_context, next) => { order.push('middleware'); await next() }
+    const { app } = await serve(() => { order.push('authorize'); return false }, { middleware })
+
+    const response = await app.fetch(await postJson('http://local/api/send', { name: '' }))
+    expect(response.status).toBe(403)
+    expect(order).toEqual(['middleware', 'authorize'])
+  })
+
+  it('covers /meta as meta, and not the pages', async () => {
+    const seen: string[] = []
+    const { app } = await serve((_context, method) => { seen.push(method); return false })
+
+    expect((await app.fetch(new Request('http://local/api/meta'))).status).toBe(403)
+    expect((await app.fetch(new Request('http://local/'))).status).toBe(200)
+    expect((await app.fetch(new Request('http://local/docs'))).status).toBe(200)
+    expect((await app.fetch(new Request('http://local/openapi.json'))).status).toBe(200)
+    expect(seen).toEqual(['meta'])
+  })
+
+  it('works with a custom prefix', async () => {
+    const seen: string[] = []
+    const { app } = await serve((_context, method) => { seen.push(method); return true }, { prefix: '/v1' })
+
+    expect((await app.fetch(new Request('http://local/v1/isInstalled'))).status).toBe(200)
+    expect(seen).toEqual(['isInstalled'])
+  })
+
+  it('a hook that throws answers 500 without the message', async () => {
+    const { app } = await serve(() => { throw new Error('store is down') })
+
+    const response = await app.fetch(new Request('http://local/api/getQueues'))
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ ok: false, error: { message: 'Internal server error' } })
+  })
+})
+
+describe('mounted in a parent app', () => {
+  const mountTwo = async () => {
+    const a = createBossMock()
+    const b = createBossMock()
+    const serviceA = await createProxyService({ options: {}, bossFactory: () => a.boss as any, prefix: '', env: {} })
+    const serviceB = await createProxyService({ options: {}, bossFactory: () => b.boss as any, prefix: '', env: {} })
+    const parent = new Hono()
+    parent.route('/db/a', serviceA.app)
+    parent.route('/db/b', serviceB.app)
+    return { parent, a, b }
+  }
+
+  it('sends each request to its own service', async () => {
+    const { parent, a, b } = await mountTwo()
+
+    const response = await parent.fetch(await postJson('http://local/db/b/send', { name: 'queue' }))
+    expect(response.status).toBe(200)
+    expect(b.calls.get('send')?.[0]).toEqual(['queue'])
+    expect(a.calls.get('send')).toHaveLength(0)
+  })
+
+  it('the home page links through the mount', async () => {
+    const { parent } = await mountTwo()
+
+    const html = await (await parent.fetch(new Request('http://local/db/a'))).text()
+    expect(html).toContain('/db/a/send')
+    expect(html).toContain('href="/db/a/openapi.json"')
+    expect(html).toContain('href="/db/a/docs"')
+    expect(html).toContain('href="/db/a/meta"')
+  })
+
+  it('the docs load the spec through the mount, and the spec names the mount as its server', async () => {
+    const { parent } = await mountTwo()
+
+    const docs = await (await parent.fetch(new Request('http://local/db/b/docs'))).text()
+    expect(docs).toContain('/db/b/openapi.json')
+
+    const spec = await (await parent.fetch(new Request('http://local/db/b/openapi.json'))).json() as any
+    expect(spec.servers).toEqual([{ url: '/db/b' }])
+    expect(spec.paths['/send']).toBeDefined()
+  })
+
+  it('a failing method answers with the proxy error body', async () => {
+    const { parent, a } = await mountTwo()
+    ;(a.boss as any).getQueues = vi.fn(async () => { throw new Error('boom') })
+
+    const response = await parent.fetch(new Request('http://local/db/a/getQueues'))
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ ok: false, error: { message: 'Internal server error' } })
+  })
+
+  it('served at the root, the spec names no server and an empty prefix links to /meta', async () => {
+    const { boss } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, prefix: '' })
+
+    const spec = await (await app.fetch(new Request('http://local/openapi.json'))).json() as any
+    expect(spec.servers).toBeUndefined()
+
+    const html = await (await app.fetch(new Request('http://local/'))).text()
+    expect(html).toContain('href="/meta"')
+    expect(html).not.toContain('//meta')
   })
 })
