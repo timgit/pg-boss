@@ -1643,3 +1643,87 @@ describe('proxy instance name', () => {
     expect(resolved.instanceName).toBe('billing-proxy')
   })
 })
+
+describe('authorize', () => {
+  const serve = async (authorize: NonNullable<Parameters<typeof createProxyService>[0]['authorize']>, extra: Record<string, unknown> = {}) => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, authorize, ...extra })
+    return { app, calls }
+  }
+
+  it('is called with the pg-boss method, and true lets the call through', async () => {
+    const seen: string[] = []
+    const { app, calls } = await serve(async (_context, method) => { seen.push(method); return true })
+
+    const response = await app.fetch(await postJson('http://local/api/send', { name: 'queue' }))
+    expect(response.status).toBe(200)
+    expect(seen).toEqual(['send'])
+    expect(calls.get('send')).toHaveLength(1)
+  })
+
+  it('false refuses with 403 and the method is not called', async () => {
+    const { app, calls } = await serve(() => false)
+
+    const response = await app.fetch(await postJson('http://local/api/send', { name: 'queue' }))
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ ok: false, error: { message: 'Forbidden' } })
+    expect(calls.get('send')).toHaveLength(0)
+  })
+
+  it('a status and message refuse with that status, keeping headers the hook set', async () => {
+    const { app } = await serve((context) => {
+      context.header('WWW-Authenticate', 'Bearer')
+      return { status: 401, message: 'Token expired' }
+    })
+
+    const response = await app.fetch(new Request('http://local/api/getQueues'))
+    expect(response.status).toBe(401)
+    expect(response.headers.get('www-authenticate')).toBe('Bearer')
+    expect(await response.json()).toEqual({ ok: false, error: { message: 'Token expired' } })
+  })
+
+  it('refuses when the hook returns nothing', async () => {
+    const { app, calls } = await serve((() => undefined) as any)
+
+    const response = await app.fetch(await postJson('http://local/api/send', { name: 'queue' }))
+    expect(response.status).toBe(403)
+    expect(calls.get('send')).toHaveLength(0)
+  })
+
+  it('runs after middleware and before the request is validated', async () => {
+    const order: string[] = []
+    const middleware: MiddlewareHandler = async (_context, next) => { order.push('middleware'); await next() }
+    const { app } = await serve(() => { order.push('authorize'); return false }, { middleware })
+
+    const response = await app.fetch(await postJson('http://local/api/send', { name: '' }))
+    expect(response.status).toBe(403)
+    expect(order).toEqual(['middleware', 'authorize'])
+  })
+
+  it('covers /meta as meta, and not the pages', async () => {
+    const seen: string[] = []
+    const { app } = await serve((_context, method) => { seen.push(method); return false })
+
+    expect((await app.fetch(new Request('http://local/api/meta'))).status).toBe(403)
+    expect((await app.fetch(new Request('http://local/'))).status).toBe(200)
+    expect((await app.fetch(new Request('http://local/docs'))).status).toBe(200)
+    expect((await app.fetch(new Request('http://local/openapi.json'))).status).toBe(200)
+    expect(seen).toEqual(['meta'])
+  })
+
+  it('works with a custom prefix', async () => {
+    const seen: string[] = []
+    const { app } = await serve((_context, method) => { seen.push(method); return true }, { prefix: '/v1' })
+
+    expect((await app.fetch(new Request('http://local/v1/isInstalled'))).status).toBe(200)
+    expect(seen).toEqual(['isInstalled'])
+  })
+
+  it('a hook that throws answers 500 without the message', async () => {
+    const { app } = await serve(() => { throw new Error('store is down') })
+
+    const response = await app.fetch(new Request('http://local/api/getQueues'))
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ ok: false, error: { message: 'Internal server error' } })
+  })
+})

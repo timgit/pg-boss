@@ -25,6 +25,8 @@ import { honoLogger } from '@logtape/hono'
 
 type ProxyEnv = Record<string, string | undefined>
 
+type AuthorizeResult = boolean | { status: ContentfulStatusCode, message: string }
+
 type ProxyOptions = {
   options?: ConstructorOptions
   bossFactory?: (options: ConstructorOptions) => PgBoss
@@ -33,6 +35,7 @@ type ProxyOptions = {
   hostname?: string
   env?: ProxyEnv
   middleware?: MiddlewareHandler | MiddlewareHandler[]
+  authorize?: (context: Context, method: string) => AuthorizeResult | Promise<AuthorizeResult>
   requestLogger?: boolean
   logFormat?: 'text' | 'json'
   exposeErrors?: boolean
@@ -242,6 +245,23 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
     }
   }
 
+  // Registered per route after `middleware`, so it runs once a caller is known and before the
+  // request is validated. Only `true` lets a call through: a hook that returns nothing refuses it.
+  const authorize = options.authorize
+  const authorizeRoute = (path: string, method: string) => {
+    if (!authorize) return
+    app.use(path, async (context, next) => {
+      const decision = await authorize(context, method)
+      if (decision === true) {
+        await next()
+        return
+      }
+      return typeof decision === 'object' && decision !== null
+        ? errorResponse(context, decision.status, decision.message)
+        : errorResponse(context, 403, 'Forbidden')
+    })
+  }
+
   const metaRoute = createRoute({
     method: 'get',
     path: `${prefix}/meta`,
@@ -256,6 +276,8 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
       }
     }
   })
+
+  authorizeRoute(`${prefix}/meta`, 'meta')
 
   app.openapi(metaRoute, (context) => {
     return context.json({ ok: true, result: { states, policies, events, scheduleKinds, scheduleMissedPolicies } }, 200)
@@ -334,6 +356,8 @@ export async function createProxyService (options: ProxyOptions): Promise<ProxyS
 
     const route = createRoute(routeDef as Parameters<typeof createRoute>[0])
 
+    authorizeRoute(`${prefix}/${method}`, method)
+
     app.openapi(route, async (context) => {
       let args: unknown[]
 
@@ -397,6 +421,6 @@ export {
   createDenoShutdownAdapter
 } from './shutdown.js'
 
-export type { ProxyOptions, ProxyService }
+export type { AuthorizeResult, ProxyOptions, ProxyService }
 export type { ShutdownHandler, ShutdownAdapter } from './shutdown.js'
 export type { EnvConfig, AuthConfig, CorsConfig } from './env.js'

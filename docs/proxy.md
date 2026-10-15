@@ -208,6 +208,7 @@ const { app, boss } = await createProxyService({
 | `hostname` | `string` | `localhost` | Listening hostname |
 | `env` | `Record<string, string>` | `process.env` | Environment variables |
 | `middleware` | `MiddlewareHandler \| MiddlewareHandler[]` | - | Hono middleware to apply to API routes |
+| `authorize` | `(context, method) => AuthorizeResult` | - | Decides each API request with the pg-boss method it calls. See [Authorizing Each Call](#authorizing-each-call) |
 | `requestLogger` | `boolean` | `true` | Enable/disable default request logging middleware |
 | `logFormat` | `'text' \| 'json'` | `text` | Log output format |
 | `exposeErrors` | `boolean` | `false` | Return actual error messages to clients |
@@ -328,6 +329,32 @@ const { app, boss } = await createProxyService({
   ]
 })
 ```
+
+### Authorizing Each Call
+
+`middleware` runs before every route under the prefix without knowing which method was called. `authorize` is called for each API request with the pg-boss method name, so access can depend on the method and the caller:
+
+```ts
+const { app, boss } = await createProxyService({
+  options: { connectionString: 'postgres://user:pass@host/database' },
+  middleware: [identifyCaller],
+  authorize: async (context, method) => {
+    const caller = context.get('caller')
+    if (!caller) {
+      context.header('WWW-Authenticate', 'Bearer')
+      return { status: 401, message: 'Missing or invalid token' }
+    }
+    return caller.methods.includes(method)
+  }
+})
+```
+
+- It runs after `middleware`, so anything a middleware sets on the context is available, and before the request body or query is validated.
+- Return `true` to let the call through. `false` refuses it with `403 Forbidden`, and `{ status, message }` refuses it with that status. Anything else, including returning nothing, refuses the call with `403`.
+- Headers set on the context before returning, such as `WWW-Authenticate`, are kept on the refusal.
+- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec are not API routes and are not passed to it.
+- A hook that throws answers `500`, with the message only when `exposeErrors` is on.
+- Methods removed by `routes.allow` or `routes.deny` have no route, so they answer `404` before `authorize` is called.
 
 ### Custom PgBoss Factory
 
