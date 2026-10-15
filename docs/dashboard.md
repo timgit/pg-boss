@@ -36,6 +36,9 @@ Recently created jobs across all queues. Filter by job ID, queue, state (pending
 
 One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on. A running job shows how long it has been running, its heartbeat, and a countdown to its time limit, and the page picks up a new state without a reload. A completed job opens on its output.
 
+![A failed job's page](./images/dashboard-job.webp){.light-only}
+![A failed job's page](./images/dashboard-job-dark.webp){.dark-only}
+
 The timeline shows the times the job's row keeps. A retry overwrites the start time and output, so earlier attempts appear only as a count. The last entry is when [retention](./api/queues.md#createqueue-name-queue) deletes the job: `deleteAfterSeconds` after it finished, or at `keepUntil` if it never ran.
 
 A job copied into a dead letter queue shows why it's there, from the original job's output, and a lineage chain from the first job to this one. Only the first job (the root) and the job this one was copied from (the source) are recorded, so any hops between them show as a gap. Select either to see its timeline, taken from its own row while it still exists, or from what was copied onto this job once it has been deleted. The root is looked up in the queue a redrive returns jobs to, so a root redriven into a different queue is reported as not found.
@@ -47,9 +50,15 @@ Every queue in the schema with its policy and cached counts (queued, deferred, r
 ![Queues page](./images/dashboard-queues.webp){.light-only}
 ![Queues page](./images/dashboard-queues-dark.webp){.dark-only}
 
+![A queue's page](./images/dashboard-queue.webp){.light-only}
+![A queue's page](./images/dashboard-queue-dark.webp){.dark-only}
+
 ### Queue metrics
 
 One queue's counts over time (`/queues/:name/metrics`), charted from what pg-boss records in `queue_stats`. Ready and failed are drawn by default. Add active, queued, deferred and total from the series picker, and choose whether each point is the maximum, minimum or average of the samples it covers. The range runs from the last hour to the last 30 days (24 hours by default), or set your own start and end.
+
+![A queue's metrics page](./images/dashboard-queue-metrics.webp){.light-only}
+![A queue's metrics page](./images/dashboard-queue-metrics-dark.webp){.dark-only}
 
 **Requirements.** The chart needs [`persistQueueStats: true`](./api/constructor.md#persistqueuestats) on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty and the page says so. See [Queue metrics are empty](#queue-metrics-are-empty).
 
@@ -64,9 +73,15 @@ Schedules registered with `boss.schedule()`, showing the target queue, optional 
 
 Events registered with [`boss.subscribe()`](./api/pubsub.md), one row per event with every queue subscribed to it, sortable by event, queue count or when a queue last subscribed. A queue's page shows how many events it is subscribed to and links here, filtered to those events.
 
+![Subscriptions page](./images/dashboard-subscriptions.webp){.light-only}
+![Subscriptions page](./images/dashboard-subscriptions-dark.webp){.dark-only}
+
 ### Instances
 
 Every pg-boss instance registered in the database's [instance registry](./api/ops.md#getinstances-options), one row each, with its status (live, quiet or stopped), the pg-boss version it runs, its roles and the queues it works. Filter by status, or by **Recent** for the ones that started, stopped or went quiet in the last 24 hours. An instance's page shows its workers, its process, and its options with the ones it changed from the defaults listed first. The registry needs pg-boss 12.36 (schema 44). On an older schema the page says so.
+
+![Instances page](./images/dashboard-instances.webp){.light-only}
+![Instances page](./images/dashboard-instances-dark.webp){.dark-only}
 
 ### Migrations
 
