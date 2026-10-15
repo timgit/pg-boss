@@ -70,8 +70,7 @@ export function OverviewHeader () {
 /**
  * The overview's body: the migrations banner when there is one, the stat row, and top queues beside recent warnings.
  * Data loaded without warnings leaves their card out and gives the queues the width.
- * `narrow` lays it out for a column beside something else, three stats to a row and the two cards
- * stacked. Exported so an overlay that replaces the page composes it rather than copying it.
+ * `narrow` lays it out for a column beside something else, the two cards stacked. Exported so an overlay that replaces the page composes it rather than copying it.
  */
 export function OverviewSections ({ data, narrow = false, extensions = {} }: { data: OverviewData, narrow?: boolean, extensions?: OverviewExtensions }) {
   const { stats, warnings, topQueues, migrations } = data
@@ -89,11 +88,7 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
           failed, which need somebody to look. */}
       <Notices notice={extensions.notice} migrations={migrations} />
 
-      {/* Stat row */}
-      <div className={narrow
-        ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 mb-4'
-        : 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 mb-4'}
-      >
+      <div className="mb-4">
         <StatsCards stats={stats} footers={extensions.statFooters} />
       </div>
 

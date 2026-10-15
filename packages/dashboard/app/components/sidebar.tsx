@@ -147,8 +147,9 @@ export function AppSidebar () {
 
   return (
     <Sidebar>
-      <SidebarHeader>
-        <div className="flex items-center gap-2.5 pl-1.5 pr-3 py-2">
+      {/* The top bar's height, centered, so the lockup sits on one line with the database beside it. */}
+      <SidebarHeader className="h-14 shrink-0 justify-center py-0">
+        <div className="flex items-center gap-2.5 pl-1.5 pr-3">
           {/*
             The square is a themed element and the glyph is the knockout mark on
             top of it, rather than one image carrying both. An <img> is an
@@ -257,12 +258,15 @@ export function AppSidebar () {
         palette hangs off the mark above.
       */}
       {/*
-        Pinned to the foot of the sidebar, over the menu as it scrolls, so collapsing and expanding are
-        always in the same place: here, and on the icon rail it collapses to.
+        At the foot of the sidebar, so collapsing and expanding are always in the same place: here,
+        and on the icon rail it collapses to. The menu scrolls in its own box above it, so nothing
+        passes under the footer and it has no background or rule of its own: the sidebar's one
+        gradient runs to the bottom rather than starting again here as a band. The toggle is smaller
+        and quieter than the menu's icons, so it does not read as one more page.
       */}
-      <SidebarFooter className="sticky bottom-0 border-t border-sidebar-border" style={{ background: 'var(--sidebar-bg)' }}>
+      <SidebarFooter className="sticky bottom-0">
         <ProSlot name="sidebarFooter" />
-        <SidebarTrigger className="self-start" title={`${state === 'expanded' ? 'Collapse' : 'Expand'} the sidebar (Ctrl+B)`} />
+        <SidebarTrigger className="ml-2 self-start p-1.5 text-sidebar-foreground/60 [&>svg]:size-4" title={`${state === 'expanded' ? 'Collapse' : 'Expand'} the sidebar (Ctrl+B)`} />
       </SidebarFooter>
     </Sidebar>
   )

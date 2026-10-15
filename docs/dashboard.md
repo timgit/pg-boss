@@ -19,7 +19,7 @@ A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npm
 
 ### Overview
 
-Landing page with aggregate counts across all queues (queued, deferred, ready, active, failed and total jobs), the top queues by backlog with a ready-count trend sparkline and status badge, and the most recent warnings.
+Landing page with one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the top queues by backlog with a ready-count trend sparkline and status badge, and the most recent warnings.
 
 ![Overview page](./images/dashboard-overview.png)
 
