@@ -1,6 +1,6 @@
 {
   "name": "@pg-boss/proxy",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "HTTP proxy for pg-boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -36,17 +36,17 @@
     "prepublishOnly": "npm run typecheck && npm run build && npm test"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.1",
+    "@hono/node-server": "^2.1.5",
     "@hono/swagger-ui": "^0.6.1",
     "@hono/zod-openapi": "^1.6.3",
-    "@logtape/hono": "^2.3.8",
-    "@logtape/logtape": "^2.3.8",
-    "hono": "^4.13.9",
+    "@logtape/hono": "^2.4.1",
+    "@logtape/logtape": "^2.4.1",
+    "hono": "^4.13.13",
     "pg-boss": "^12.38.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^22.20.4",
+    "@types/node": "^22.20.5",
     "cross-env": "^10.1.0",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",

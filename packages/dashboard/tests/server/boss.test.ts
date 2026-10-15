@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { PgBoss } from 'pg-boss'
-import { ctx, createTestQueue } from './helpers'
+import { ctx, createTestQueue, getBoss } from './helpers'
 import { sendJob, stopAllInstances } from '~/lib/boss.server'
 
 describe('boss.server', () => {
@@ -60,6 +60,19 @@ describe('boss.server', () => {
         .resolves.toEqual(expect.any(String))
 
       await stopAllInstances()
+    })
+
+    it('registers each instance as pg-boss-dashboard', async () => {
+      const queue = 'instance-name'
+      await createTestQueue(queue)
+      await sendJob(ctx.connectionString, ctx.schema, queue, {})
+
+      try {
+        const instances = await getBoss().getInstances()
+        expect(instances.some(i => i.name === 'pg-boss-dashboard' && !i.supervise)).toBe(true)
+      } finally {
+        await stopAllInstances()
+      }
     })
 
     it('listens for errors on every instance, so a dropped connection cannot take the process down', async () => {

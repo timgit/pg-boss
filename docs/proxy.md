@@ -208,6 +208,7 @@ const { app, boss } = await createProxyService({
 | `hostname` | `string` | `localhost` | Listening hostname |
 | `env` | `Record<string, string>` | `process.env` | Environment variables |
 | `middleware` | `MiddlewareHandler \| MiddlewareHandler[]` | - | Hono middleware to apply to API routes |
+| `authorize` | `(context, method) => AuthorizeResult` | - | Decides each API request with the pg-boss method it calls. See [Authorizing Each Call](#authorizing-each-call) |
 | `requestLogger` | `boolean` | `true` | Enable/disable default request logging middleware |
 | `logFormat` | `'text' \| 'json'` | `text` | Log output format |
 | `exposeErrors` | `boolean` | `false` | Return actual error messages to clients |
@@ -232,6 +233,7 @@ Alternatively, configure everything via environment variables:
 | `DATABASE_URL` | - | PostgreSQL connection string |
 | `PORT` | `3000` | Listening port |
 | `HOST` | `localhost` | Listening hostname |
+| `PGBOSS_PROXY_INSTANCE_NAME` | `pg-boss-proxy` | Name in the instance registry, used when `instanceName` is not passed |
 | `PGBOSS_PROXY_PREFIX` | `/api` | URL prefix for API routes |
 | `PGBOSS_PROXY_REQUEST_LOGGER` | `true` | Enable request logging |
 | `PGBOSS_PROXY_LOG_FORMAT` | `text` | Log format: `text` or `json` |
@@ -270,6 +272,8 @@ const { app, boss } = await createProxyService({
 ```
 
 By default, `supervise`, `schedule`, and `migrate` are set to `false` to run the proxy in a stateless manner. Set any of these to `true` to enable that functionality.
+
+The proxy registers in the [instance registry](./api/ops.md#getinstances-options) as `pg-boss-proxy`. Pass `instanceName`, or set `PGBOSS_PROXY_INSTANCE_NAME`, to name each deployment.
 
 ### Authentication
 
@@ -325,6 +329,58 @@ const { app, boss } = await createProxyService({
   ]
 })
 ```
+
+### Authorizing Each Call
+
+`middleware` runs before every route under the prefix without knowing which method was called. `authorize` is called for each API request with the pg-boss method name, so access can depend on the method and the caller:
+
+```ts
+const { app, boss } = await createProxyService({
+  options: { connectionString: 'postgres://user:pass@host/database' },
+  middleware: [identifyCaller],
+  authorize: async (context, method) => {
+    const caller = context.get('caller')
+    if (!caller) {
+      context.header('WWW-Authenticate', 'Bearer')
+      return { status: 401, message: 'Missing or invalid token' }
+    }
+    return caller.methods.includes(method)
+  }
+})
+```
+
+- It runs after `middleware`, so anything a middleware sets on the context is available, and before the request body or query is validated.
+- Return `true` to let the call through. `false` refuses it with `403 Forbidden`, and `{ status, message }` refuses it with that status. Anything else, including returning nothing, refuses the call with `403`.
+- Headers set on the context before returning, such as `WWW-Authenticate`, are kept on the refusal.
+- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec are not API routes and are not passed to it.
+- A hook that throws answers `500`, with the message only when `exposeErrors` is on.
+- Methods removed by `routes.allow` or `routes.deny` have no route, so they answer `404` before `authorize` is called.
+
+### Mounting Several Services
+
+`app` is a Hono app, so it can be mounted in another one with `route()`. Each service wraps its own `PgBoss` instance, so one parent app can serve several databases:
+
+```ts
+import { Hono } from 'hono'
+import { createProxyService } from '@pg-boss/proxy'
+
+const parent = new Hono()
+
+for (const [name, connectionString] of Object.entries(databases)) {
+  const { app, boss } = await createProxyService({
+    options: { connectionString },
+    prefix: '',
+    env: {}
+  })
+  await boss.start()
+  parent.route(`/db/${name}`, app)
+}
+```
+
+- With `prefix: ''`, a database's methods are at `/db/<name>/send` and so on. With the default prefix they are at `/db/<name>/api/send`.
+- The root page, the docs and the OpenAPI spec are served under the mount too (`/db/<name>/docs`) and link through it. The spec lists the mount as its server, so the docs' **Try it out** calls the right database.
+- `env: {}` keeps every service from reading `PGBOSS_PROXY_*` variables and `DATABASE_URL` from the process, which would otherwise apply to all of them.
+- Each service has its own `stop()`. Call each one when the parent shuts down.
 
 ### Custom PgBoss Factory
 
