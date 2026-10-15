@@ -10,6 +10,9 @@ recounts as you go and shows the exact number, a sentence saying what will
 happen, how the matches split across queues, and a few of the actual jobs. The
 queue picker takes typing, and each suggestion shows how many matches it adds.
 
+![Operations, previewing a retry](../images/pro/operations.webp){.light-only}
+![Operations, previewing a retry](../images/pro/operations-dark.webp){.dark-only}
+
 Nothing runs until you press **Review**, which freezes the number, and then
 the button that names it. The number is what you are agreeing to, not the
 filter. If more jobs land in the set while you are reading the confirmation,
@@ -50,6 +53,9 @@ and cap the pace at 1,000, 100 or 10 jobs a second so a large redrive does not
 flood the queue again. The summary shows how the jobs split across
 destinations, and the first few it would move, with the error each one failed
 with.
+
+![A redrive](../images/pro/redrive.webp){.light-only}
+![A redrive](../images/pro/redrive-dark.webp){.dark-only}
 
 - Only waiting jobs are moved. A job that failed inside the dead letter queue
   stays there.

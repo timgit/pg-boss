@@ -12,6 +12,9 @@ database's id, which comes from its name in `DATABASE_URL`. Renaming it there
 changes the id, so rename it here instead. Adding or removing a database is still
 done in `DATABASE_URL`. Only administrators can change these.
 
+![The databases page](../images/pro/databases.webp){.light-only}
+![The databases page](../images/pro/databases-dark.webp){.dark-only}
+
 Some of the console is about one database and some about the whole install. A page
 about one database shows that database at the start of the top bar; Settings and your
 Profile name the area there instead.

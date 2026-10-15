@@ -5,6 +5,9 @@ Google, Auth0, Keycloak. Paste the issuer, the client id and the client secret,
 copy the redirect URI it shows you into your provider, and the login page gains
 a **Sign in with…** button.
 
+![The single sign-on page](../images/pro/sso.webp){.light-only}
+![The single sign-on page](../images/pro/sso-dark.webp){.dark-only}
+
 People are matched on their **verified** email address, so somebody invited here
 first and signing in through your provider afterwards lands on the same account
 with the roles they already had. An address your provider has not verified is

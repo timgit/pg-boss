@@ -15,4 +15,7 @@ Grants read as the role, then where it applies: `Operator › All databases`, or
 
 `/pro/access` answers the question asked in an incident: who can act on this database, and why. Choose the database to show, and each person or service account with a role there is listed with the role they end up with beside every grant that produced it, direct or through a group. A role granted for every database appears for each one.
 
+![Who can act on a database](../images/pro/access.webp){.light-only}
+![Who can act on a database](../images/pro/access-dark.webp){.dark-only}
+
 Two changes are always refused, and both say so: removing the last administrator over every database, by demotion, disabling or deletion, since nobody would be left to undo it; and disabling or deleting your own account.

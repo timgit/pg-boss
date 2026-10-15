@@ -22,13 +22,15 @@ A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npm
 
 Landing page with one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the top queues by backlog with a ready-count trend sparkline and status badge, and the most recent warnings.
 
-![Overview page](./images/dashboard-overview.png)
+![Overview page](./images/dashboard-overview.webp){.light-only}
+![Overview page](./images/dashboard-overview-dark.webp){.dark-only}
 
 ### Jobs
 
 Recently created jobs across all queues. Filter by job ID, queue, state (pending, created, retry, active, completed, cancelled or failed) and minimum retry count, or open the advanced filters to match on keys inside the job's `data` or `output` JSON. Jobs list newest created first, or newest finished first with the completed, cancelled or failed filter. **Manage view** lets you add custom columns sourced from job fields (for example `data.tenantId`), and **Copy link** produces a shareable URL with the current filters and columns. Clicking a job opens its detail page.
 
-![Jobs page](./images/dashboard-jobs.png)
+![Jobs page](./images/dashboard-jobs.webp){.light-only}
+![Jobs page](./images/dashboard-jobs-dark.webp){.dark-only}
 
 ### Job detail
 
@@ -42,7 +44,8 @@ A job copied into a dead letter queue shows why it's there, from the original jo
 
 Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline, storage mode (shared or partitioned) and a status badge (idle, processing or backlogged). Columns are sortable and the list can be searched by name. Clicking a queue opens its detail page with configuration, a 24-hour ready-count history and the jobs in that queue. **View metrics**, or any of the page's six counts, opens the queue's [metrics page](#queue-metrics).
 
-![Queues page](./images/dashboard-queues.png)
+![Queues page](./images/dashboard-queues.webp){.light-only}
+![Queues page](./images/dashboard-queues-dark.webp){.dark-only}
 
 ### Queue metrics
 
@@ -54,7 +57,8 @@ One queue's counts over time (`/queues/:name/metrics`), charted from what pg-bos
 
 Schedules registered with `boss.schedule()`, showing the target queue, optional key, expression, a human-readable frequency, the next occurrence and timezone. Both schedule kinds are read through pg-boss itself, so a schedule stored as an [RRULE](./api/scheduling.md#rrule-expressions) is badged as one and gets the same next occurrence the scheduling pass will use. Each schedule's detail page shows its data, options and the last job it created.
 
-![Schedules page](./images/dashboard-schedules.png)
+![Schedules page](./images/dashboard-schedules.webp){.light-only}
+![Schedules page](./images/dashboard-schedules-dark.webp){.dark-only}
 
 ### Subscriptions
 
@@ -68,13 +72,15 @@ Every pg-boss instance registered in the database's [instance registry](./api/op
 
 Status of background async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. Shows pending, in-progress, completed and failed counts, and each command's version, target table and status. A command opens a page with the SQL that was (or will be) executed, any error message, and when it was queued, started and ended.
 
-![Migrations page](./images/dashboard-migrations.png)
+![Migrations page](./images/dashboard-migrations.webp){.light-only}
+![Migrations page](./images/dashboard-migrations-dark.webp){.dark-only}
 
 ### Warnings
 
 Event log of warnings emitted by pg-boss when [`persistWarnings`](#enabling-warning-persistence) is enabled, such as slow queries, queue backlogs or clock skew. Each entry shows its type, message, key details (for example the queue and its size, or the query duration) and time, and the list can be filtered by warning type. An entry opens a page with its full message, its queue and every detail it recorded.
 
-![Warnings page](./images/dashboard-warnings.png)
+![Warnings page](./images/dashboard-warnings.webp){.light-only}
+![Warnings page](./images/dashboard-warnings-dark.webp){.dark-only}
 
 ## Requirements
 

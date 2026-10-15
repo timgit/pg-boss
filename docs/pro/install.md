@@ -40,6 +40,9 @@ DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-pro
 
 Open `http://localhost:3000`. On first run there are no accounts, so open `/setup` and create the first administrator. That page closes for good once the first account exists.
 
+![Signing in to Pro](../images/pro/login.webp){.light-only}
+![Signing in to Pro](../images/pro/login-dark.webp){.dark-only}
+
 Pro keeps its own tables, accounts, rules, alerts and the audit log among them, in a `pgboss_pro` schema it creates and migrates on startup, separate from pg-boss's. Nothing in it touches your job tables. Every variable is listed under [environment variables](./environment.md).
 
 `DATABASE_URL` takes several databases, as the free dashboard's does, separated by `|`, each optionally named (`Production=postgres://…`). See [databases](./databases.md).

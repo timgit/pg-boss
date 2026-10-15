@@ -20,9 +20,15 @@ An administrator whose role covers **every** database manages accounts at
 to a single database does not get this screen: it would let them widen their own
 scope.
 
+![The accounts page](../images/pro/accounts.webp){.light-only}
+![The accounts page](../images/pro/accounts-dark.webp){.dark-only}
+
 From there: add an account with a role, change or remove a role per database,
 set a password, disable an account, or delete it. Disabling, deleting or changing
 a password ends that account's sessions immediately.
+
+![An account's page](../images/pro/account.webp){.light-only}
+![An account's page](../images/pro/account-dark.webp){.dark-only}
 
 Two changes are always refused, and both say so:
 
@@ -43,6 +49,9 @@ An account can hold a role directly, or through a group that holds one. Groups
 live at `/pro/groups`: give a group a role over a database (or over every
 database), put people in it by pasting their addresses, and everyone in it has
 that role. Where two roles apply to the same database, the stronger wins.
+
+![A group's page](../images/pro/group.webp){.light-only}
+![A group's page](../images/pro/group-dark.webp){.dark-only}
 
 `/pro/access` answers the question that actually gets asked in an incident: who
 can act on this database, and why: showing the role each person ends up with

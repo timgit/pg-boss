@@ -23,9 +23,15 @@ the bell rather than an inbox. A default rule can be edited and turned off but n
 deleted, and **Reset to default** puts back its original definition. A database
 added to `DATABASE_URL` later gets its default rules on the evaluator's next pass.
 
+![The rules list](../images/pro/alert-rules.webp){.light-only}
+![The rules list](../images/pro/alert-rules-dark.webp){.dark-only}
+
 ## Writing a rule
 
 **New rule** opens the builder, which writes one of four kinds:
+
+![A rule's page](../images/pro/alert-rule.webp){.light-only}
+![A rule's page](../images/pro/alert-rule-dark.webp){.dark-only}
 
 - **Threshold** compares a queue's metrics with numbers you choose. Conditions
   combine with *all* or *any*, with one level of grouping inside, as in "ready
@@ -100,6 +106,9 @@ version. Saving the same definition again adds nothing. Going back to an earlier
 one adds a new version, which the rule's history marks as the same as the earlier
 one. Each version has a page that shows its definition and what changed between
 it and the current one.
+
+![A rule version against the current one](../images/pro/alert-rule-version.webp){.light-only}
+![A rule version against the current one](../images/pro/alert-rule-version-dark.webp){.dark-only}
 
 Each alert keeps the version that raised it, and its page links there. When a
 rule changes while it has open alerts, they keep their version, and from the next

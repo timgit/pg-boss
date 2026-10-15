@@ -2,6 +2,9 @@
 
 The free dashboard only reads. Pro adds the changes, each checked against the person's [role](./roles.md) on the database, made through pg-boss itself, and recorded in the [audit log](./audit-log.md) before it runs. A change that cannot be recorded is not made.
 
+![A failed job's page, with its actions](../images/pro/job.webp){.light-only}
+![A failed job's page, with its actions](../images/pro/job-dark.webp){.dark-only}
+
 | Change | Where | Needs |
 | - | - | - |
 | Send a job | **Send Job** on the overview | operator |

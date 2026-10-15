@@ -2,6 +2,9 @@
 
 pg-boss Pro is the [pg-boss dashboard](../dashboard.md) with the parts a team runs pg-boss with: the changes the free dashboard leaves to code, alerts that reach the people on call, accounts and roles, an audit log, and an API for the scripts and workers around it. It is the same application, configured the same way, so moving from `@pg-boss/dashboard` is a change of package name.
 
+![The Pro overview](../images/pro/overview.webp){.light-only}
+![The Pro overview](../images/pro/overview-dark.webp){.dark-only}
+
 ## What it adds
 
 - **Changes, by role.** Send, retry, cancel, resume and delete jobs, create and delete queues and schedules, and run [Operations](./operations.md) over every job a filter matches, from the console, each checked against the person's role on that database.

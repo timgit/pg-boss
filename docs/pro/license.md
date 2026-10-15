@@ -4,6 +4,9 @@ Separate from the registry token, and it does a smaller job than you might
 expect: it names your company on the Pro page, so anyone looking at the
 dashboard can see what it is licensed under. **It does not gate anything.**
 
+![The license page](../images/pro/license.webp){.light-only}
+![The license page](../images/pro/license-dark.webp){.dark-only}
+
 To fetch one:
 
 ```bash

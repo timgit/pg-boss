@@ -5,6 +5,9 @@ database: email, a webhook, or PagerDuty. **Send test** sends a sample alert tha
 fires and then resolves, so a receiver's handling of both is proven, and every
 attempt, tests included, is listed with what the far end said.
 
+![The destinations page](../images/pro/destinations.webp){.light-only}
+![The destinations page](../images/pro/destinations-dark.webp){.dark-only}
+
 Every alert is told when it fires and again when it closes, whichever way it
 closes: the condition ended, somebody resolved or acknowledged an event, an event
 expired, or its rule changed, was turned off or was deleted. A resolve goes only

@@ -31,3 +31,14 @@
       #6a5cf6 70%,
       #8a5cf6);
 }
+/* Screenshots come in a light and a dark copy; each theme shows its own. */
+.dark .vp-doc img.light-only,
+html:not(.dark) .vp-doc img.dark-only {
+  display: none;
+}
+
+.vp-doc img.light-only,
+.vp-doc img.dark-only {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}

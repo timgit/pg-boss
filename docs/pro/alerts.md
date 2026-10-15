@@ -5,10 +5,16 @@ first, with filters for those that need attention, open, closed and all. The bel
 in the top bar counts the open ones, colored by the most severe. An alert's page
 says what matched, which rule raised it and at which version, and who was told.
 
+![The alerts list](../images/pro/alerts.webp){.light-only}
+![The alerts list](../images/pro/alerts-dark.webp){.dark-only}
+
 Alerts come only from rules: nothing opens an alert unless a rule that is turned
 on matched it. A rule belongs to one database, the one selected when it was made.
 Administrators manage rules from the **Rules** button on the alerts page
 (`/pro/alerts/rules`).
+
+![An alert's page](../images/pro/alert.webp){.light-only}
+![An alert's page](../images/pro/alert-dark.webp){.dark-only}
 
 Operators and administrators can **acknowledge** an open alert, until it closes
 or for an hour, four hours or a day. It then leaves everybody's count and its
