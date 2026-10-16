@@ -7,8 +7,8 @@ export interface Parent {
 }
 
 /**
- * The way up from a detail page, above its title: `‹ Queues` on a queue, `‹ demo-billing` on one of
- * its jobs. One level only; the sidebar reaches the sections and the browser's back button the rest.
+ * The way up from a detail page, above its title: `‹ Queues` on a queue, `‹ demo-billing` on its
+ * metrics. One level only; the sidebar reaches the sections and the browser's back button the rest.
  */
 export function ParentLink ({ to, label }: Parent) {
   return (

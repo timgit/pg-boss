@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import { useRevalidator } from 'react-router'
 import { Inbox } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
-import { ParentLink } from '~/components/parent-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
 import { ProSlot } from '~/components/pro-slot'
 import {
@@ -31,7 +30,7 @@ import { formatDate } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
 
 /** The browser tab's name for this page. */
-export const handle: TitleHandle = { title: ({ params }) => (params.jobId ? `Job ${params.jobId.slice(0, 8)} · ${params.name}` : null) }
+export const handle: TitleHandle = { title: ({ params }) => (params.jobId ? `Job in ${params.name} · ${params.jobId.slice(0, 8)}` : null) }
 
 // How often an unfinished job's page checks for a new state while it is open and visible.
 const REFRESH_MS = 10_000
@@ -167,9 +166,15 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <ParentLink to={`/queues/${encodeURIComponent(queueName)}`} label={queueName} />
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* The queue is the way up, so no parent link above the title. */}
+            <h1 className="min-w-0 break-all text-2xl font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
+              <span className="font-normal text-[var(--text-secondary)]">Job in </span>
+              <DbLink to={`/queues/${encodeURIComponent(queueName)}`} className="hover:underline hover:decoration-[var(--text-tertiary)] hover:underline-offset-4">
+                {queueName}
+              </DbLink>
+            </h1>
             {isDeadLetterQueue && (
               <span
                 title="At least one queue sends its failed jobs here"
@@ -180,10 +185,8 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
               </span>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="break-all font-mono text-xl font-medium tracking-[-0.01em] text-[var(--text-primary)] sm:text-2xl">
-              <span className="font-sans">Job: </span>{job.id}
-            </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="break-all font-mono text-[13px] text-[var(--text-secondary)]">{job.id}</span>
             <CopyButton value={job.id} label="Copy job ID" />
             <StateBadge state={state} />
           </div>
