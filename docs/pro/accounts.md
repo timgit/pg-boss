@@ -23,9 +23,21 @@ scope.
 ![The accounts page](../images/pro/accounts.webp){.light-only}
 ![The accounts page](../images/pro/accounts-dark.webp){.dark-only}
 
-From there: add an account with a role, change or remove a role per database,
-set a password, disable an account, or delete it. Disabling, deleting or changing
-a password ends that account's sessions immediately.
+From there, add an account with a role. Its own page shows:
+
+- **Access by database**: the role in effect on each database, and every grant behind it, direct
+  or through a group. A direct grant can be removed here; a group's is changed on the group. When a
+  direct grant adds nothing a group already gives, the page says so.
+- **Groups** it is in, with what each grants, to add it to or take it out of.
+- **Signing in**: set a password, or create an invitation link that lets them choose one, and the
+  browsers it is signed in on, with where from and when. **Sign out everywhere** ends every session.
+- **Recent activity**: what it did through the console, from the [audit log](./audit-log.md).
+
+Its name can be edited, and the account disabled or deleted. Disabling, deleting or changing a
+password ends that account's sessions immediately.
+
+Machines get [service accounts](./api-tokens.md) instead, at `/pro/service-accounts`, which act
+only through API tokens.
 
 ![An account's page](../images/pro/account.webp){.light-only}
 ![An account's page](../images/pro/account-dark.webp){.dark-only}
@@ -36,9 +48,9 @@ Two changes are always refused, and both say so:
   disabling or deletion: there would be nobody left who could undo it
 - disabling or deleting your own account: another administrator can
 
-There is no invitation email. Pro runs inside your network and has no mail
-credentials, so an administrator sets the first password and hands it over: and
-the person changes it themselves at `/pro/profile`, reached from **Profile** in the
+There is no invitation email. Pro runs inside your network and may have no mail
+credentials, so an administrator sends the invitation link, or sets the first password and hands
+it over, and the person changes it themselves at `/pro/profile`, reached from **Profile** in the
 account menu at the top right. That page needs no role: it shows who you are and what you may
 do, and takes your current password, a new one, and the new one again. Changing
 it signs out every other session, and keeps the one you are using.
@@ -48,7 +60,9 @@ it signs out every other session, and keeps the one you are using.
 An account can hold a role directly, or through a group that holds one. Groups
 live at `/pro/groups`: give a group a role over a database (or over every
 database), put people in it by pasting their addresses, and everyone in it has
-that role. Where two roles apply to the same database, the stronger wins.
+that role. Where two roles apply to the same database, the stronger wins. A group's page lists its
+members with the roles each holds on their own, says whether [SSO](./sso.md) maps a provider group
+to it, and shows its recent changes. Service accounts cannot join a group.
 
 ![A group's page](../images/pro/group.webp){.light-only}
 ![A group's page](../images/pro/group-dark.webp){.dark-only}

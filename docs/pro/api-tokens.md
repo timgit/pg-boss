@@ -7,7 +7,28 @@ A script, a CI job, a Prometheus scrape or a worker in another language reaches 
 - Disabling it stops every one of its tokens at once.
 - It can have several tokens, so one can be replaced with no gap: create the new one, deploy it, revoke the old one.
 
-<!-- TODO before launch: the Settings › People › Service accounts page, once it is built. -->
+## The service accounts page
+
+An administrator over every database manages them under **Settings › Service accounts**, at
+`/pro/service-accounts`. The list shows each one's purpose, roles, working tokens, when it was last
+used and from where, and marks a token that expires within 14 days.
+
+![Service accounts](../images/pro/service-accounts.webp){.light-only}
+![Service accounts](../images/pro/service-accounts-dark.webp){.dark-only}
+
+**Add service account** takes a name, what it is for, and a first role. Its page then shows:
+
+- **Access by database**: what its tokens may do on each database, with roles granted and removed
+  here. A service account cannot join a group.
+- **API tokens**: each with its name, its first characters, who created it, when it expires and
+  when it was last used. **Create token** asks for a name and an expiry and shows the token once, to
+  copy. **Revoke** stops one at once.
+- **Audit**: whether its sending, fetching, completing and failing are recorded.
+- **Using a token**: a `curl` for the API and for open alerts, with this console's address.
+- **Recent activity**: what its tokens did, and the changes made to it.
+
+![A service account's page](../images/pro/service-account.webp){.light-only}
+![A service account's page](../images/pro/service-account-dark.webp){.dark-only}
 
 ## Tokens
 

@@ -32,7 +32,7 @@ The queue list shows each queue's rates over a range, from an hour to thirty day
 
 ## A queue
 
-A queue's page adds its arrival and finishing rates, p95 wait and run times against the previous period, time to drain, and its health with the reasons for it. Its charts share one time axis: throughput, backlog, wait time and run time. Under them, a row of changes marks what people did through the console, from the audit log, and what the instances working the queue did: started, stopped, went quiet, or started on a new pg-boss version.
+A queue's page adds its arrival and finishing rates, p95 wait and run times against the previous period, time to drain, and its health with the reasons for it. Its charts share one time axis: throughput, backlog, wait time and run time. The backlog chart is the free [metrics page](../dashboard.md#queue-metrics)'s Waiting chart, ready, blocked and deferred stacked, with active drawn over them. **View metrics** and the page's counts open it, and `/queues/:name/metrics` redirects to it, so Pro has one backlog chart rather than two on different ranges. Under them, a row of changes marks what people did through the console, from the audit log, and what the instances working the queue did: started, stopped, went quiet, or started on a new pg-boss version.
 
 ![A queue's page](../images/pro/queue.webp){.light-only}
 ![A queue's page](../images/pro/queue-dark.webp){.dark-only}
