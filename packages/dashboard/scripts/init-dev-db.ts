@@ -22,6 +22,9 @@
  *   (active, completed, failed, retry, cancelled, dead-lettered). Their pending
  *   jobs use a far-future `startAfter`, so a running worker cannot drain them and
  *   the states stay put while you click around.
+ * - Flows whose parents nothing works, so their children stay blocked: payments
+ *   waiting on invoices in `billing`, and in the fleet, invoices and shipments
+ *   waiting on orders.
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Client } from 'pg'
@@ -92,6 +95,7 @@ async function main () {
   await seedWorkerQueues()
   await seedEveryJobState()
   await seedFleetQueues()
+  await seedFlows()
   await seedSchedules()
   await seedSubscriptions()
 
@@ -157,7 +161,7 @@ const FLEET_TASKS = ['sync', 'ingest', 'export', 'reindex', 'notify', 'reconcile
  * real deployment's. Named domain-task, each with a few ready jobs (none for some) and nobody working
  * them, so their backlogs stay put. Their stats history comes from `seedQueueStats`, like every queue's.
  */
-/** Fleet queues whose last hour of stats shows them in trouble, so health has every colour to draw. */
+/** Fleet queues whose last hour of stats shows them in trouble, so health has every color to draw. */
 const TROUBLE: Record<string, 'stalled' | 'behind'> = {
   'ledger-reindex': 'stalled',
   'media-ingest': 'stalled',
@@ -187,10 +191,40 @@ async function seedFleetQueues () {
 }
 
 /**
+ * Flows whose parents nobody works, so their children stay blocked: the Queued card's "blocked by a
+ * flow parent" line and the Waiting chart's Blocked band have something to show. On `payments`,
+ * which the docs screenshots show, each charge waits on its invoice in `billing`; in the fleet,
+ * each order's invoice and shipment wait on the order. No worker, `dev:worker` or the dev fleet,
+ * handles any of these queues.
+ */
+async function seedFlows () {
+  const CHARGES = 7
+  for (let i = 0; i < CHARGES; i++) {
+    await boss.flow([
+      { ref: 'invoice', name: 'billing', data: { invoice: `inv-${400 + i}`, total: 80 * (i + 1) } },
+      { ref: 'charge', name: 'payments', data: { orderId: `ord-${2000 + i}`, invoice: `inv-${400 + i}` }, dependsOn: ['invoice'] },
+    ])
+  }
+
+  const fleet = ['orders-sync', 'invoices-sync', 'shipments-sync']
+  // A smaller fleet (PGBOSS_SEED_QUEUES) may not have them.
+  const ORDERS = (await boss.getQueues(fleet)).length === fleet.length ? 9 : 0
+  for (let order = 1; order <= ORDERS; order++) {
+    await boss.flow([
+      { ref: 'order', name: 'orders-sync', data: { order } },
+      { ref: 'invoice', name: 'invoices-sync', data: { order }, dependsOn: ['order'] },
+      { ref: 'shipment', name: 'shipments-sync', data: { order }, dependsOn: ['order'] },
+    ])
+  }
+
+  console.log(`  flows: ${CHARGES} charges waiting on invoices, ${ORDERS} orders each blocking an invoice and a shipment`)
+}
+
+/**
  * The queues holding jobs in every state the dashboard renders.
  *
  * All `standard`: the singleton policies collapse repeated sends into a single
- * job, which is correct behaviour and useless here, where the point is to end up
+ * job, which is correct behavior and useless here, where the point is to end up
  * with a countable number of jobs in each state.
  */
 async function seedEveryJobState () {
@@ -636,9 +670,10 @@ async function seedQueueStats () {
       failed_count: number
       queued_count: number
       deferred_count: number
+      blocked_count: number
       total_count: number
     }>(
-      `SELECT name, ready_count, active_count, failed_count, queued_count, deferred_count, total_count
+      `SELECT name, ready_count, active_count, failed_count, queued_count, deferred_count, blocked_count, total_count
          FROM ${schema}.queue ORDER BY name`
     )
 
@@ -664,8 +699,11 @@ async function seedQueueStats () {
       const peak = 12 + (h % 48)
       const at: Date[] = []
       const series: Record<string, number[]> = {
-        ready: [], active: [], failed: [], queued: [], deferred: [], total: [],
+        ready: [], active: [], failed: [], deferred: [], blocked: [], total: [],
       }
+      // Blocked only where flows hold jobs now, on a wave of its own, so its band does not just
+      // shadow ready's.
+      const blocks = Number(queue.blocked_count) > 0
 
       for (let i = 0; i < SAMPLES; i++) {
         at.push(new Date(now - (SAMPLES - 1 - i) * INTERVAL_MINUTES * 60_000))
@@ -683,8 +721,8 @@ async function seedQueueStats () {
         // Failures accumulate over a window rather than oscillating, so this one
         // ramps instead of waving.
         series.failed.push(Math.round((peak / 6) * (i / SAMPLES)))
-        series.queued.push(Math.round(peak * 0.4 * wave) + (jitter % 2))
         series.deferred.push(Math.round(peak * 0.15 * (1 - wave)))
+        series.blocked.push(blocks ? Math.round(peak * 0.3 * (0.5 + 0.5 * Math.sin((i / PER_DAY) * 2 * Math.PI + p + 2))) : 0)
         series.total.push(Math.round(peak * (0.8 + 0.6 * wave)) + jitter)
       }
 
@@ -705,14 +743,16 @@ async function seedQueueStats () {
         ready: Number(queue.ready_count),
         active: Number(queue.active_count),
         failed: Number(queue.failed_count),
-        queued: Number(queue.queued_count),
         deferred: Number(queue.deferred_count),
+        blocked: Number(queue.blocked_count),
         total: Number(queue.total_count),
       }
 
       for (const key of Object.keys(series)) {
         series[key] = blendTail(series[key], ends[key], 12)
       }
+      // Queued is what waits, as pg-boss counts it: ready, deferred and blocked by a flow parent.
+      const queued = series.ready.map((ready, i) => ready + series.deferred[i] + series.blocked[i])
 
       // The deltas cover the window up to each sample, so delta_on is the sample's own time.
       // The bins travel as array literals, since unnest flattens a two-dimensional array.
@@ -726,7 +766,7 @@ async function seedQueueStats () {
                        $10::int[], $11::int[], $12::int[], $13::int[], $14::text[], $15::text[])
              AS s(t, r, a, f, q, d, tot, cd, cpd, fd, ros, wb, rb)`,
         [
-          queue.name, at, series.ready, series.active, series.failed, series.queued, series.deferred, series.total,
+          queue.name, at, series.ready, series.active, series.failed, queued, series.deferred, series.total,
           INTERVAL_MINUTES * 60,
           throughput.created, throughput.completed, throughput.failed, throughput.readyOldest,
           throughput.waitBins, throughput.runBins,
