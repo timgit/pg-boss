@@ -65,6 +65,10 @@ receive Pro's alerts with no relay:
 - `fingerprint` and `groupKey` are the alert's id, the same on every send for one
   alert, which is what a receiver dedupes on. A resolve has `status: "resolved"`
   and the time it closed in `endsAt`; `pgboss.closedReason` says why.
+- `summary` is the title the alert opened with, and stays so while the alert's
+  title follows what it finds, say from falling behind to stalled; the
+  description then starts with the title as it reads now. Receivers that match a
+  resolve to its alert by the summary, such as GoAlert, close what they opened.
 - `severity` is `critical`, or `warning` for a rule whose severity is watch.
 - Labels hold strings only. `pgboss` carries what each kind of alert adds, typed,
   for a receiver written for Pro; a receiver for Alertmanager ignores it.
