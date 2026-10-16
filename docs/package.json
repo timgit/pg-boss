@@ -2,6 +2,7 @@
   "name": "pg-boss-docs",
   "type": "module",
   "devDependencies": {
+    "medium-zoom": "^1.1.0",
     "vitepress": "^2.0.0-alpha.20"
   },
   "scripts": {

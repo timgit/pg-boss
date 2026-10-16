@@ -42,3 +42,9 @@ html:not(.dark) .vp-doc img.dark-only {
   border: 1px solid var(--vp-c-divider);
   border-radius: 8px;
 }
+
+/* An opened image sits above the nav bar and the sidebar. */
+.medium-zoom-overlay,
+.medium-zoom-image--opened {
+  z-index: 100;
+}
