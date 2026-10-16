@@ -446,14 +446,14 @@ async function seedReadyHistory () {
 
   const shapes: Record<string, (i: number) => number> = {
     // A backlog that built up and was then worked off.
-    'payments': (i) => Math.round(45 * Math.sin((i / WINDOW) * Math.PI)),
+    payments: (i) => Math.round(45 * Math.sin((i / WINDOW) * Math.PI)),
     // A steady plateau ending in a cliff — the shape a queue makes when workers
     // are scaled up.
     'webhook-delivery': (i) => (i < 44 ? 26 + ((i * 7) % 5) : Math.max(0, 26 - (i - 43) * 2)),
     // Bursty arrivals, each drained before the next.
     'data-exports': (i) => Math.round(Math.abs(Math.sin(i / 3.5)) * (18 - i / 6)),
     // Low background noise, never much of a backlog.
-    'billing': (i) => (i * 13) % 4,
+    billing: (i) => (i * 13) % 4,
     // Flat until a single import spike, then back to nothing.
     'data-imports': (i) => (i >= 30 && i <= 36 ? 22 - (i - 30) * 3 : 0),
     // Dead letters only accumulate, so this one is a staircase.
