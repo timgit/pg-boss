@@ -23,6 +23,10 @@ SMTP or Resend, configured on the same page.
 
 ## Webhook
 
+The page shows a webhook's URL by its origin only, since receivers often keep
+their token in the path or the query, and the audit log records it the same way.
+Editing one leaves the URL blank: leave it so to keep it, or enter a new one.
+
 A POST of [Prometheus Alertmanager's webhook body](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config),
 version 4, one alert per request, so an on-call tool that takes Alertmanager can
 receive Pro's alerts with no relay:
