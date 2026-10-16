@@ -183,6 +183,8 @@
   --stats-finishing: #1f6fb2;
   --stats-failed: #c5302b;
   --stats-ready: #6a4bc9;
+  /* Blocked by a flow parent, between Ready and Deferred on a queue's counts over time. */
+  --stats-blocked: #c2417a;
   --stats-previous-band: rgba(24, 27, 33, 0.035);
   --stats-gap-ahead: rgba(223, 138, 5, 0.20);
   --stats-gap-behind: rgba(31, 111, 178, 0.10);
@@ -297,6 +299,7 @@
   --stats-finishing: #5897e0;
   --stats-failed: #f2918d;
   --stats-ready: #a58ff0;
+  --stats-blocked: #f08bb4;
   --stats-previous-band: rgba(255, 255, 255, 0.035);
   --stats-gap-ahead: rgba(240, 179, 87, 0.18);
   --stats-gap-behind: rgba(88, 151, 224, 0.10);

@@ -13,7 +13,7 @@ export function resolveDbHref(to: To, dbParam: string | null): string {
     if (dbParam && !url.searchParams.has("db")) {
       url.searchParams.set("db", dbParam);
     }
-    return url.pathname + url.search;
+    return url.pathname + url.search + url.hash;
   } else if (typeof to === "object" && to !== null) {
     // Handle object form: { pathname, search, hash }
     const pathname = to.pathname || "";

@@ -5,7 +5,8 @@ export type ResolvedColors<K extends string> = Record<K, string>
 /**
  * CSS variables resolved to concrete colors, for canvas drawing, which can't read var(). Resolved
  * again when the theme class on <html> flips, so a chart follows light and dark like the rest of
- * the UI. Null until mounted: there is no computed style on the server.
+ * the UI, and when the color-theme picker swaps the primary scale. Null until mounted: there is no
+ * computed style on the server.
  */
 export function useCssColors<K extends string> (vars: Record<K, string>): ResolvedColors<K> | null {
   const [colors, setColors] = useState<ResolvedColors<K> | null>(null)
@@ -22,7 +23,8 @@ export function useCssColors<K extends string> (vars: Record<K, string>): Resolv
     }
     resolve()
     const observer = new MutationObserver(resolve)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
+    // class flips light and dark; data-color-theme swaps the primary scale.
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-color-theme'] })
     return () => observer.disconnect()
   }, [key])
 
@@ -46,4 +48,18 @@ export function useElementWidth<T extends HTMLElement> (initial: number): [RefOb
   }, [])
 
   return [ref, width]
+}
+
+/**
+ * A concrete color at the given opacity, for a chart's fill, whatever form the color came in (hex,
+ * rgb, oklch). The color unchanged where there is no canvas to read it back from.
+ */
+export function withAlpha (color: string, alpha: number): string {
+  if (typeof document === 'undefined') return color
+  const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+  if (!ctx) return color
+  ctx.fillStyle = color
+  ctx.fillRect(0, 0, 1, 1)
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }

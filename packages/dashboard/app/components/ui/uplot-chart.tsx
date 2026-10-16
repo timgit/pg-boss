@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import uPlot from 'uplot'
 import type { AlignedData, Options } from 'uplot'
 import 'uplot/dist/uPlot.min.css'
-import { niceMax } from '~/lib/stats'
+import { niceMax, stackSeries } from '~/lib/stats'
 
 export interface UplotSeries {
   label: string
@@ -14,6 +14,8 @@ export interface UplotSeries {
   width?: number
   /** Dash pattern, as canvas setLineDash takes it. */
   dash?: number[]
+  /** Concrete CSS color to fill under the line, down to zero or, when stacked, to the series below. */
+  fill?: string
 }
 
 export interface PlotBox {
@@ -54,6 +56,11 @@ interface UplotChartProps {
   onPlotBox?: (box: PlotBox) => void
   /** uPlot's live legend under the plot. Off when the caller draws its own legend or tooltip. */
   legend?: boolean
+  /**
+   * Stack the series bottom to top in the order given, or only the first n of them, the rest drawn
+   * over the stack as lines; the legend still reads each series' own value.
+   */
+  stacked?: boolean | number
 }
 
 // Thin React wrapper around uPlot. The instance is created in an effect (uPlot touches the DOM, so
@@ -77,6 +84,7 @@ export function UplotChart ({
   syncKey,
   onPlotBox,
   legend = true,
+  stacked = false,
 }: UplotChartProps) {
   const elRef = useRef<HTMLDivElement>(null)
   const plotRef = useRef<uPlot | null>(null)
@@ -86,9 +94,17 @@ export function UplotChart ({
   const fixedX = xRange != null
   const onPlotBoxRef = useRef(onPlotBox)
   onPlotBoxRef.current = onPlotBox
+  // Stacked, the plot draws running sums; the legend reads the caller's own values from here.
+  const rawRef = useRef(data)
+  rawRef.current = data
+  const stackCount = stacked === true ? series.length : stacked === false ? 0 : stacked
+  const plotted = useMemo<AlignedData>(
+    () => (stackCount > 0 ? [data[0], ...stackSeries(data.slice(1, stackCount + 1)), ...data.slice(stackCount + 1)] : data),
+    [data, stackCount]
+  )
 
   // Rebuild key — only the structure, not the data/size, forces a fresh uPlot instance.
-  const seriesKey = series.map((s) => `${s.label}:${s.stroke}:${s.bars ? 'bars' : 'line'}:${s.width ?? 2}:${s.dash?.join(',') ?? ''}`).join('|')
+  const seriesKey = series.map((s) => `${s.label}:${s.stroke}:${s.bars ? 'bars' : 'line'}:${s.width ?? 2}:${s.dash?.join(',') ?? ''}:${s.fill ?? ''}`).join('|')
 
   useEffect(() => {
     if (!elRef.current) return
@@ -121,6 +137,23 @@ export function UplotChart ({
         }
       : undefined
 
+    // The legend's live readout: in the axis's own format, and, when stacked, the series' own value
+    // rather than the running sum the plot draws.
+    const format = yValue ?? ((v: number) => v.toLocaleString())
+    const legendValue: uPlot.Series.Value | undefined = stackCount > 0
+      ? (_u, _v, seriesIdx, idx) => {
+          const v = idx == null ? null : rawRef.current[seriesIdx]?.[idx]
+          return v == null ? '—' : format(v)
+        }
+      : yValue
+        ? (_u, v) => (v == null ? '—' : yValue(v))
+        : undefined
+
+    // Each stacked series fills down to the one under it; the first fills down to zero.
+    const bands: uPlot.Band[] | undefined = stackCount > 1
+      ? series.slice(1, stackCount).map((_, i) => ({ series: [i + 2, i + 1] }))
+      : undefined
+
     const reportBox = (u: uPlot) => onPlotBoxRef.current?.({ left: u.bbox.left / uPlot.pxRatio, width: u.bbox.width / uPlot.pxRatio })
 
     const opts: Options = {
@@ -140,6 +173,7 @@ export function UplotChart ({
       },
       axes: [axis, yAxis],
       plugins,
+      ...(bands ? { bands } : {}),
       hooks: {
         // bbox is in canvas pixels; the page lays out in CSS pixels.
         ready: [reportBox],
@@ -160,9 +194,9 @@ export function UplotChart ({
               label: s.label,
               stroke: s.stroke,
               width: s.width ?? 2,
-              // The legend's live readout in the axis's own format, rather than the raw number.
-              ...(yValue ? { value: (_u: uPlot, v: number | null) => (v == null ? '—' : yValue(v)) } : {}),
+              ...(legendValue ? { value: legendValue } : {}),
               ...(s.dash ? { dash: s.dash } : {}),
+              ...(s.fill ? { fill: s.fill } : {}),
               points: { show: false },
               // Only when set: an explicit undefined replaces uPlot's default and breaks drawing.
               ...(gaps ? { gaps } : {}),
@@ -170,7 +204,7 @@ export function UplotChart ({
       ],
     }
 
-    const plot = new uPlot(opts, data, elRef.current)
+    const plot = new uPlot(opts, plotted, elRef.current)
     plotRef.current = plot
     return () => {
       plot.destroy()
@@ -178,12 +212,12 @@ export function UplotChart ({
     }
     // Rebuild on structure/theme change only; data & size are handled by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seriesKey, theme.grid, theme.text, plugins, zeroBased, yLog, yValue, yTick, ySplits, fixedX, bridgeSeconds, syncKey, legend])
+  }, [seriesKey, theme.grid, theme.text, plugins, zeroBased, yLog, yValue, yTick, ySplits, fixedX, bridgeSeconds, syncKey, legend, stackCount])
 
   // Update data in place (range/aggregate changes) without rebuilding.
   useEffect(() => {
-    plotRef.current?.setData(data)
-  }, [data])
+    plotRef.current?.setData(plotted)
+  }, [plotted])
 
   // Update size in place (container resize) without rebuilding.
   useEffect(() => {

@@ -55,7 +55,12 @@ Every queue in the schema with its policy and cached counts (queued, deferred, r
 
 ### Queue metrics
 
-One queue's counts over time (`/queues/:name/metrics`), charted from what pg-boss records in `queue_stats`. Ready and failed are drawn by default. Add active, queued, deferred and total from the series picker, and choose whether each point is the maximum, minimum or average of the samples it covers. The range runs from the last hour to the last 30 days (24 hours by default), or set your own start and end.
+One queue's counts over time (`/queues/:name/metrics`), charted from what pg-boss records in `queue_stats`, in two charts:
+
+- **Waiting**: every job not started yet, stacked by why it waits: ready, blocked by a flow parent, and deferred. Together they are the queue's queued count. Blocked is queued less ready and deferred, so it needs nothing more from pg-boss.
+- **Active and failed**: jobs being worked, and failures still stored. **Show total stored** adds every job the queue holds.
+
+Choose whether each point is the highest, lowest or average of the samples in its bucket. The range runs from the last hour to the last 30 days (24 hours by default), or set your own start and end. The queue page's counts open this page at the chart that holds them.
 
 ![A queue's metrics page](./images/dashboard-queue-metrics.webp){.light-only}
 ![A queue's metrics page](./images/dashboard-queue-metrics-dark.webp){.dark-only}

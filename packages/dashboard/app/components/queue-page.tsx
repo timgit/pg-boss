@@ -90,12 +90,13 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
   )
 }
 
-/** The six counts, each opening the metrics page on its series, and the banner when no history is kept. */
+/** The six counts, each opening the metrics page at the chart that holds it, and the banner when no history is kept. */
 export function QueueCounts ({ queue, statsAvailable }: { queue: QueueResult, statsAvailable: boolean }) {
   // ready_history is stored newest-first; reverse to chronological (oldest → newest) for the chart.
   const readyTrend = queue.readyHistory ? [...queue.readyHistory].reverse() : []
-  // Link a StatCard to the metrics page pre-filtered to that single series.
-  const metricsHref = (series: string) => `${metricsPath(queue.name)}?series=${series}`
+  // Link a StatCard to the metrics page, scrolled to the chart that holds its count.
+  const waitingHref = `${metricsPath(queue.name)}#waiting`
+  const activeHref = `${metricsPath(queue.name)}#active`
   const overThreshold =
     (queue.warningQueueSize ?? 0) > 0 && queue.queuedCount > (queue.warningQueueSize ?? 0)
 
@@ -110,14 +111,14 @@ export function QueueCounts ({ queue, statsAvailable }: { queue: QueueResult, st
           accent={overThreshold ? 'error' : 'neutral'}
           hint={overThreshold ? 'over threshold' : undefined}
           footer={queue.blockedCount > 0 ? `${queue.blockedCount.toLocaleString()} blocked by a flow parent` : undefined}
-          to={metricsHref('queued')}
+          to={waitingHref}
         />
-        <StatCard label="Deferred" value={<Count value={queue.deferredCount} />} to={metricsHref('deferred')} />
+        <StatCard label="Deferred" value={<Count value={queue.deferredCount} />} to={waitingHref} />
         <StatCard
           label="Ready"
           value={<Count value={queue.readyCount} />}
           accent="primary"
-          to={metricsHref('ready')}
+          to={waitingHref}
           sparkline={readyTrend.length > 0 && (
             <Sparkline
               data={readyTrend}
@@ -129,9 +130,9 @@ export function QueueCounts ({ queue, statsAvailable }: { queue: QueueResult, st
             />
           )}
         />
-        <StatCard label="Active" value={<Count value={queue.activeCount} />} accent="primary" to={metricsHref('active')} />
-        <StatCard label="Failed" value={<Count value={queue.failedCount} />} to={metricsHref('failed')} />
-        <StatCard label="Total" value={<Count value={queue.totalCount} />} to={metricsHref('total')} />
+        <StatCard label="Active" value={<Count value={queue.activeCount} />} accent="primary" to={activeHref} />
+        <StatCard label="Failed" value={<Count value={queue.failedCount} />} to={activeHref} />
+        <StatCard label="Total" value={<Count value={queue.totalCount} />} to={`${metricsPath(queue.name)}?total=1#active`} />
       </div>
     </>
   )

@@ -87,6 +87,21 @@ describe("DbLink", () => {
     expect(screen.getByRole("link")).toHaveAttribute("href", "/queues?db=other");
   });
 
+  it("keeps the target's hash after the db param", () => {
+    vi.mocked(useSearchParams).mockReturnValue([
+      new URLSearchParams("db=mydb"),
+      vi.fn(),
+    ]);
+
+    render(
+      <MemoryRouter>
+        <DbLink to="/queues/q/metrics?total=1#active">Link</DbLink>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/queues/q/metrics?total=1&db=mydb#active");
+  });
+
   it("handles object form of to prop", () => {
     vi.mocked(useSearchParams).mockReturnValue([
       new URLSearchParams("db=mydb"),
