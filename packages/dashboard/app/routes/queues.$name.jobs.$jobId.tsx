@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useRevalidator } from 'react-router'
-import { Inbox } from 'lucide-react'
+import { DeadLetterBadge } from '~/components/dead-letter-badge'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
 import { ProSlot } from '~/components/pro-slot'
@@ -175,15 +175,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
                 {queueName}
               </DbLink>
             </h1>
-            {isDeadLetterQueue && (
-              <span
-                title="At least one queue sends its failed jobs here"
-                className="inline-flex items-center gap-1 rounded-full bg-[var(--state-failed-bg)] px-2 py-0.5 text-xs text-[var(--state-failed-fg)]"
-              >
-                <Inbox className="h-3 w-3" aria-hidden="true" />
-                Dead letter queue
-              </span>
-            )}
+            {isDeadLetterQueue && <DeadLetterBadge />}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="break-all font-mono text-[13px] text-[var(--text-secondary)]">{job.id}</span>

@@ -45,7 +45,7 @@ A job copied into a dead letter queue shows why it's there, from the original jo
 
 ### Queues
 
-Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline, storage mode (shared or partitioned) and a status badge (idle, processing or backlogged). Columns are sortable and the list can be searched by name. Clicking a queue opens its detail page with configuration, a 24-hour ready-count history and the jobs in that queue. **View metrics**, or any of the page's six counts, opens the queue's [metrics page](#queue-metrics).
+Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline, storage mode (shared or partitioned) and a status badge (idle, processing or backlogged). Columns are sortable and the list can be searched by name. Clicking a queue opens its detail page: its counts in one card as on the overview, ready with a sparkline and what else is queued under it, then its jobs, with its settings beside them. A queue that other queues send failed jobs to is marked as a dead letter queue. **View metrics**, or any of the page's counts, opens the queue's [metrics page](#queue-metrics).
 
 ![Queues page](./images/dashboard-queues.webp){.light-only}
 ![Queues page](./images/dashboard-queues-dark.webp){.dark-only}

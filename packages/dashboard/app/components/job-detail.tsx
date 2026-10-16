@@ -450,10 +450,10 @@ export interface ConfigRow {
 }
 
 // The settings this job has, followed by one line naming the optional ones it doesn't.
-export function ConfigCard ({ rows, unset }: { rows: ConfigRow[], unset: string[] }) {
+export function ConfigCard ({ rows, unset, title = 'Configuration' }: { rows: ConfigRow[], unset: string[], title?: string }) {
   return (
     <Card className="flex flex-col gap-3 px-5 py-[18px]">
-      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Configuration</h2>
+      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{title}</h2>
       <dl className="flex flex-col">
         {rows.map(({ label, value, mono }) => (
           <div key={label} className="flex justify-between gap-4 border-b border-[var(--border-subtle)] py-2 last:border-b-0">

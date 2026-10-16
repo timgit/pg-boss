@@ -1,14 +1,15 @@
-import { useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
-import { ChevronDown, ChevronRight, LineChart } from 'lucide-react'
+import { LineChart } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
+import { DeadLetterBadge } from '~/components/dead-letter-badge'
+import { ConfigCard, type ConfigRow } from '~/components/job-detail'
+import { CountsCard, strong } from '~/components/stats-cards'
 import { ProSlot, hasProSlot } from '~/components/pro-slot'
 import { Sparkline } from '~/components/ui/sparkline'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
-import { StatCard } from '~/components/ui/stat-card'
-import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
   Table,
@@ -23,7 +24,8 @@ import { FilterSelect } from '~/components/ui/filter-select'
 import { JobColumnsEditor } from '~/components/job-columns-editor'
 import { JobColumnCell } from '~/components/job-column-cell'
 import type { JobResult, QueueResult } from '~/lib/types'
-import { formatDate, JOB_STATE_OPTIONS, jobListSortColumn, resetPaging, cn } from '~/lib/utils'
+import { formatDate, JOB_STATE_OPTIONS, jobListSortColumn, resetPaging } from '~/lib/utils'
+import { formatSeconds } from '~/lib/job-detail'
 import {
   DEFAULT_QUEUE_JOB_COLUMNS,
   defaultJobColumnsFor,
@@ -48,174 +50,148 @@ export interface QueuePageExtensions {
 
 const metricsPath = (name: string) => `/queues/${encodeURIComponent(name)}/metrics`
 
-/** The queue's name, the overlay's actions, View metrics, and the badges under them. */
+/** The queue's name, with a badge when other queues send it their failed jobs, the overlay's actions and View metrics. */
 export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, extensions?: QueuePageExtensions }) {
-  const { queue, isDeadLetter, subscribedEvents } = data
+  const { queue, isDeadLetter } = data
   return (
-    <>
-      <PageHeader
-        parent={{ to: '/queues', label: 'Queues' }}
-        title={`Queue: ${queue.name}`}
-        action={
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <ProSlot name="queueActions" queue={{ name: queue.name, isDeadLetter }} />
-              <Button
-                variant="outline"
-                size="md"
-                render={<DbLink to={metricsPath(queue.name)} />}
-              >
-                <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
-                View metrics
-              </Button>
-            </div>
-            {extensions?.toolbar}
+    <PageHeader
+      parent={{ to: '/queues', label: 'Queues' }}
+      title={`Queue: ${queue.name}`}
+      badge={isDeadLetter ? <DeadLetterBadge /> : undefined}
+      action={
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ProSlot name="queueActions" queue={{ name: queue.name, isDeadLetter }} />
+            <Button
+              variant="outline"
+              size="md"
+              render={<DbLink to={metricsPath(queue.name)} />}
+            >
+              <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
+              View metrics
+            </Button>
           </div>
-        }
-      />
-
-      <div className="flex flex-wrap items-center gap-2 -mt-2">
-        <Badge variant="primary">{queue.policy} policy</Badge>
-        <Badge variant="gray">{queue.partition ? 'Partitioned' : 'Shared'} storage</Badge>
-        {queue.deadLetter && <Badge variant="gray">dead letter → {queue.deadLetter}</Badge>}
-        {subscribedEvents > 0 && (
-          <DbLink to={`/subscriptions?queue=${encodeURIComponent(queue.name)}`}>
-            <Badge variant="gray">
-              subscribed to {subscribedEvents.toLocaleString()} {subscribedEvents === 1 ? 'event' : 'events'}
-            </Badge>
-          </DbLink>
-        )}
-      </div>
-    </>
+          {extensions?.toolbar}
+        </div>
+      }
+    />
   )
 }
 
-/** The six counts, each opening the metrics page at the chart that holds it, and the banner when no history is kept. */
+/**
+ * Ready, active, failed and total in one card, as on the overview, each opening the metrics page at
+ * the chart that holds it; and the banner when no history is kept.
+ */
 export function QueueCounts ({ queue, statsAvailable }: { queue: QueueResult, statsAvailable: boolean }) {
   // ready_history is stored newest-first; reverse to chronological (oldest → newest) for the chart.
   const readyTrend = queue.readyHistory ? [...queue.readyHistory].reverse() : []
-  // Link a StatCard to the metrics page, scrolled to the chart that holds its count.
   const waitingHref = `${metricsPath(queue.name)}#waiting`
   const activeHref = `${metricsPath(queue.name)}#active`
-  const overThreshold =
-    (queue.warningQueueSize ?? 0) > 0 && queue.queuedCount > (queue.warningQueueSize ?? 0)
+  const warningSize = queue.warningQueueSize ?? 0
+  const overWarning = warningSize > 0 && queue.queuedCount > warningSize
+  // Total counts the completed and canceled jobs still kept as well as the live ones.
+  const finished = Math.max(0, queue.totalCount - queue.queuedCount - queue.activeCount - queue.failedCount)
 
   return (
     <>
       {!statsAvailable && <StatsDisabledBanner />}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard
-          label="Queued"
-          value={<Count value={queue.queuedCount} />}
-          accent={overThreshold ? 'error' : 'neutral'}
-          hint={overThreshold ? 'over threshold' : undefined}
-          footer={queue.blockedCount > 0 ? `${queue.blockedCount.toLocaleString()} blocked by a flow parent` : undefined}
-          to={waitingHref}
-        />
-        <StatCard label="Deferred" value={<Count value={queue.deferredCount} />} to={waitingHref} />
-        <StatCard
-          label="Ready"
-          value={<Count value={queue.readyCount} />}
-          accent="primary"
-          to={waitingHref}
-          sparkline={readyTrend.length > 0 && (
-            <Sparkline
-              data={readyTrend}
-              width={160}
-              height={24}
-              color="var(--primary-600)"
-              area
-              aria-label="Ready count over the last hour"
-            />
-          )}
-        />
-        <StatCard label="Active" value={<Count value={queue.activeCount} />} accent="primary" to={activeHref} />
-        <StatCard label="Failed" value={<Count value={queue.failedCount} />} to={activeHref} />
-        <StatCard label="Total" value={<Count value={queue.totalCount} />} to={`${metricsPath(queue.name)}?total=1#active`} />
-      </div>
+      <CountsCard
+        label="Counts"
+        cells={[
+          {
+            key: 'ready',
+            label: 'Ready',
+            value: queue.readyCount,
+            primary: true,
+            to: waitingHref,
+            aside: readyTrend.length > 0 && (
+              <Sparkline
+                data={readyTrend}
+                width={96}
+                height={26}
+                color="var(--primary-600)"
+                area
+                aria-label="Ready count over the last hour"
+              />
+            ),
+            lines: [
+              overWarning
+                ? <>of {strong(queue.queuedCount, 'text-[var(--state-failed-fg)]')} queued, over its warning size of <Count value={warningSize} /></>
+                : <>of {strong(queue.queuedCount)} queued</>,
+              <>{queue.deferredCount > 0 ? <><Count value={queue.deferredCount} /> deferred for later</> : 'none deferred'}{queue.blockedCount > 0 && <> · <Count value={queue.blockedCount} /> blocked</>}</>,
+            ],
+          },
+          { key: 'active', label: 'Active', value: queue.activeCount, primary: true, to: activeHref, lines: ['processing now'] },
+          { key: 'failed', label: 'Failed', value: queue.failedCount, to: activeHref, lines: ['recent failures'] },
+          {
+            key: 'total',
+            label: 'Total Jobs',
+            value: queue.totalCount,
+            to: `${metricsPath(queue.name)}?total=1#active`,
+            lines: ['stored in this queue', ...(finished > 0 ? [<><Count value={finished} /> completed or canceled</>] : [])],
+          },
+        ]}
+      />
     </>
   )
 }
 
-/** The queue's settings, collapsed until opened. */
-export function QueueConfig ({ queue }: { queue: QueueResult }) {
-  const [configExpanded, setConfigExpanded] = useState(false)
+/** How a queue retries: how many times, after how long, and whether the wait grows. */
+function retries (queue: QueueResult): string {
+  const delay = queue.retryDelay ? `every ${formatSeconds(queue.retryDelay)}` : 'right away'
+  const backoff = queue.retryBackoff ? `, backing off${queue.retryDelayMax ? ` to ${formatSeconds(queue.retryDelayMax)}` : ''}` : ''
+  return `${queue.retryLimit}, ${delay}${backoff}`
+}
+
+/** The queue's settings, only those it has, and the events it is subscribed to. */
+export function QueueConfig ({ queue, subscribedEvents = 0 }: { queue: QueueResult, subscribedEvents?: number }) {
+  const rows: ConfigRow[] = [
+    { label: 'Policy', value: queue.policy || 'standard' },
+    { label: 'Storage', value: queue.partition ? 'Partitioned' : 'Shared' },
+  ]
+  if (queue.deadLetter) {
+    rows.push({
+      label: 'Dead letter queue',
+      mono: true,
+      value: (
+        <DbLink to={`/queues/${encodeURIComponent(queue.deadLetter)}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+          {queue.deadLetter}
+        </DbLink>
+      ),
+    })
+  }
+  if (queue.warningQueueSize) rows.push({ label: 'Warning size', value: `${queue.warningQueueSize.toLocaleString()} queued` })
+  if (queue.retryLimit) rows.push({ label: 'Retries', value: retries(queue) })
+  if (queue.expireInSeconds) rows.push({ label: 'Time limit', value: formatSeconds(queue.expireInSeconds) })
+  if (queue.retentionSeconds) rows.push({ label: 'Retention', value: formatSeconds(queue.retentionSeconds) })
+  if (queue.deleteAfterSeconds) rows.push({ label: 'Deletion', value: formatSeconds(queue.deleteAfterSeconds) })
+  if (subscribedEvents > 0) {
+    rows.push({
+      label: 'Subscribed to',
+      value: (
+        <DbLink to={`/subscriptions?queue=${encodeURIComponent(queue.name)}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+          {subscribedEvents.toLocaleString()} {subscribedEvents === 1 ? 'event' : 'events'}
+        </DbLink>
+      ),
+    })
+  }
+  return <ConfigCard rows={rows} unset={[]} />
+}
+
+/** When the queue was made, and when pg-boss last counted and maintained it. */
+export function QueueUpkeep ({ queue }: { queue: QueueResult }) {
+  const when = (date: Date | string | null | undefined) => (date ? formatDate(new Date(date)) : '—')
   return (
-      <Card>
-        <button
-          onClick={() => setConfigExpanded(!configExpanded)}
-          className={cn(
-            'w-full flex items-center justify-between px-5 py-4',
-            'text-left hover:bg-[var(--surface-hover)]',
-            'transition-colors cursor-pointer'
-          )}
-        >
-          <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
-            Configuration
-          </h3>
-          {configExpanded ? (
-            <ChevronDown className="h-5 w-5 text-[var(--text-tertiary)]" />
-          ) : (
-            <ChevronRight className="h-5 w-5 text-[var(--text-tertiary)]" />
-          )}
-        </button>
-
-        {configExpanded && (
-          <CardContent className="border-t border-[var(--border-subtle)]">
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
-                <ConfigItem label="Policy" value={queue.policy || '—'} />
-                <ConfigItem label="Storage" value={queue.partition ? 'Partitioned' : 'Shared'} />
-                <div>
-                  <dt className="pgb-eyebrow">Dead Letter</dt>
-                  <dd className="mt-1 text-sm text-[var(--text-primary)]">
-                    {queue.deadLetter ? (
-                      <DbLink
-                        to={`/queues/${queue.deadLetter}`}
-                        className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-                      >
-                        {queue.deadLetter}
-                      </DbLink>
-                    ) : (
-                      '—'
-                    )}
-                  </dd>
-                </div>
-                <ConfigItem label="Warning Threshold" value={queue.warningQueueSize || '—'} />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
-                <ConfigItem label="Retry Limit" value={queue.retryLimit ?? 0} />
-                <ConfigItem label="Retry Delay" value={queue.retryDelay ? `${queue.retryDelay}ms` : '—'} />
-                <ConfigItem label="Retry Delay Max" value={queue.retryDelayMax ? `${queue.retryDelayMax}ms` : '—'} />
-                <ConfigItem label="Retry Backoff" value={queue.retryBackoff ? 'Enabled' : 'Disabled'} />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
-                <ConfigItem label="Expiration" value={formatDuration(queue.expireInSeconds)} />
-                <ConfigItem label="Retention" value={formatDuration(queue.retentionSeconds)} />
-                <ConfigItem label="Deletion" value={formatDuration(queue.deleteAfterSeconds)} />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
-                <ConfigItem
-                  label="Created"
-                  value={queue.createdOn ? formatDate(new Date(queue.createdOn)) : '—'}
-                />
-                <ConfigItem
-                  label="Last monitored"
-                  value={queue.monitorOn ? formatDate(new Date(queue.monitorOn)) : '—'}
-                />
-                <ConfigItem
-                  label="Last maintained"
-                  value={queue.maintainOn ? formatDate(new Date(queue.maintainOn)) : '—'}
-                />
-              </div>
-            </div>
-          </CardContent>
-        )}
-      </Card>
+    <ConfigCard
+      title="Upkeep"
+      rows={[
+        { label: 'Created', value: when(queue.createdOn) },
+        { label: 'Last monitored', value: when(queue.monitorOn) },
+        { label: 'Last maintained', value: when(queue.maintainOn) },
+      ]}
+      unset={[]}
+    />
   )
 }
 
@@ -313,18 +289,26 @@ export function QueueJobs ({ data }: { data: QueuePageData }) {
 }
 
 /**
- * The free page whole: header, counts, configuration and jobs. An overlay that replaces the page
- * composes it with its own `extensions`.
+ * The free page whole: header, then the counts and jobs beside the queue's settings, as a job's page
+ * sets its details beside its data. An overlay that replaces the page composes it with its own
+ * `extensions`.
  */
 export function QueuePage ({ data, extensions }: { data: QueuePageData, extensions?: QueuePageExtensions }) {
   return (
-    <div className="space-y-4">
+    <div>
       <QueuePageHeader data={data} extensions={extensions} />
-      {extensions?.afterHeader}
-      <QueueCounts queue={data.queue} statsAvailable={data.statsAvailable} />
-      <QueueConfig queue={data.queue} />
-      <QueueJobs data={data} />
-      {extensions?.below}
+      {extensions?.afterHeader && <div className="mb-6">{extensions.afterHeader}</div>}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="flex min-w-0 flex-col gap-6">
+          <QueueCounts queue={data.queue} statsAvailable={data.statsAvailable} />
+          <QueueJobs data={data} />
+        </div>
+        <aside className="flex flex-col gap-6" aria-label="Queue settings">
+          <QueueConfig queue={data.queue} subscribedEvents={data.subscribedEvents} />
+          <QueueUpkeep queue={data.queue} />
+        </aside>
+      </div>
+      {extensions?.below && <div className="mt-6">{extensions.below}</div>}
     </div>
   )
 }
@@ -357,54 +341,4 @@ function JobRow ({
       )}
     </TableRow>
   )
-}
-
-function ConfigItem ({
-  label,
-  value,
-}: {
-  label: string
-  value: string | number | boolean | null
-}) {
-  return (
-    <div>
-      <dt className="pgb-eyebrow">{label}</dt>
-      <dd className="mt-1 text-sm text-[var(--text-primary)]">
-        {value?.toString() || '—'}
-      </dd>
-    </div>
-  )
-}
-
-function formatDuration (seconds: number | null | undefined): string {
-  if (!seconds) return '—'
-
-  if (seconds < 60) {
-    return `${seconds} seconds`
-  }
-
-  if (seconds < 3600) {
-    const minutes = Math.floor(seconds / 60)
-    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
-  }
-
-  if (seconds < 86400) {
-    const hours = Math.floor(seconds / 3600)
-    const remainingMinutes = Math.floor((seconds % 3600) / 60)
-
-    if (remainingMinutes === 0) {
-      return `${hours} ${hours === 1 ? 'hour' : 'hours'}`
-    }
-
-    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}`
-  }
-
-  const days = Math.floor(seconds / 86400)
-  const remainingHours = Math.floor((seconds % 86400) / 3600)
-
-  if (remainingHours === 0) {
-    return `${days} ${days === 1 ? 'day' : 'days'}`
-  }
-
-  return `${days} ${days === 1 ? 'day' : 'days'} ${remainingHours} ${remainingHours === 1 ? 'hour' : 'hours'}`
 }
