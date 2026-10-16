@@ -1,12 +1,12 @@
 # Network activity
 
-**The dashboard makes no outbound connection of its own.** There is no
-telemetry, no analytics, no phone-home, no version check, and no license check
-over the network: not at boot, not periodically, not on a schedule. The license
-is verified offline, against a public key compiled into this package.
+**The dashboard makes no outbound connection of its own.** It has no
+telemetry, analytics, phone-home, version check or network license check, at boot
+or at any time after. It verifies the license offline, against a public key
+compiled into this package.
 
-Everything below is something you configured, to somewhere you chose. Configure
-none of it and the dashboard talks to your Postgres database and nothing else.
+Every connection below is one you configured, to a place you chose. If you
+configure none of them, the dashboard talks only to your Postgres database.
 
 | What | When | Where |
 |---|---|---|
@@ -21,9 +21,9 @@ The license command sends your token and receives a signed license. It sends
 nothing about your database, your jobs, your deployment, or your machine.
 
 Alert deliveries carry what the alert is about: the rule name, the warning type
-and message, the queue and database it names, and the time. They do not carry
+and message, the queue and database it names, and the time. They don't include
 job payloads.
 
-For zero network activity beyond the install: skip the license command, set
-`PGBOSS_PRO_LICENSE` from a license you fetched elsewhere or run unlicensed, and
+To keep network activity to the install alone, skip the license command. Set
+`PGBOSS_PRO_LICENSE` from a license you fetched elsewhere, or run unlicensed, and
 configure no destinations or SSO.

@@ -2,47 +2,45 @@
 
 ### `start(options)`
 
-Returns the same PgBoss instance used during invocation
-
-Prepares the target database and begins job monitoring.
+Prepares the target database and starts job monitoring. Resolves the same PgBoss instance it was called on.
 
 ```js
 await boss.start()
 await boss.send('hey-there', { msg:'this came for you' })
 ```
 
-If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. If a new schema version is required, pg-boss will automatically migrate the internal storage to the latest installed version.
+If the required database objects don't exist in the target database, **`start()` will automatically create them**. Updates work the same way. If a new schema version is required, pg-boss migrates its internal storage to the latest installed version.
 
 > [!WARNING]
-> While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a few seconds before `start()` resolves. Most migrations are very quick, however, and are designed with performance in mind.
+> During an upgrade, `start()` resolves only after the migration script has run against your data. For example, if the job table holds millions of jobs waiting for archiving and the next schema version adds a couple of indexes, `start()` can take a few seconds to resolve. Most migrations are very quick, and they're designed with performance in mind.
 
-Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. For databases that don't support advisory locks (like CockroachDB), select the matching backend (e.g. `backend: 'cockroachdb'`) and pg-boss adjusts accordingly.
+All schema operations, both first-time provisioning and migrations, run inside advisory locks to prevent race conditions during `start()`. pg-boss takes these locks with `pg_advisory_xact_lock()`, which releases them at the end of the transaction, so they need no persistent session and no explicit unlock. For databases that don't support advisory locks (like CockroachDB), select the matching backend (e.g. `backend: 'cockroachdb'`) and pg-boss adjusts accordingly.
 
-One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system without any special startup handling.
+For example, you can call `start()` while bootstrapping a pod in a Kubernetes ReplicaSet. When you scale up job processing with a container orchestrator like k8s, pg-boss needs no special startup handling.
 
-If the database is unavailable, `start()` rejects. Pass `attempts` to have it try again instead, for a process that can start before its database is up:
+If the database is unavailable, `start()` rejects. For a process that can start before its database is up, pass `attempts` so it tries again:
 
 ```js
 await boss.start({ attempts: 10 })
 ```
 
-It is also safe to call `start()` again yourself on the same instance until it succeeds. Workers registered with [`work()`](./workers.md#work-name-options-handler) before then take jobs once it does; until then they emit `error` on each poll.
+You can also call `start()` again yourself on the same instance until it succeeds. Workers registered with [`work()`](./workers.md#work-name-options-handler) before then take jobs once it does, and until then they emit `error` on each poll.
 
 **Options**
 
 * **attempts**, int, default 1
 
-  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError`, pg-boss refusing a configuration it cannot run, is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error. An instance that started on a later try records it as `config.startAttempt` in [`getInstances()`](#getinstances-options).
+  How many times to try before rejecting with the last error. Between tries `start()` waits 1 second, doubling up to 30 seconds, so 10 attempts span about two and a half minutes. The first failure emits a [`start_retry` warning](./events.md#warning), once per call. An `AssertionError` (pg-boss refusing a configuration it can't run) is never retried. A schema another process is still creating or migrating is retried, so an instance with `migrate: false` can wait for the one that migrates. Calling `stop()` during a wait ends it, and `start()` rejects with the last error. An instance that started on a later try records that try as `config.startAttempt` in [`getInstances()`](#getinstances-options).
 
-Once started, pg-boss rides out a database that drops and comes back: workers emit `error` while it is gone and resume when it returns, with no restart needed.
+Once started, pg-boss keeps running when the database drops and comes back. Workers emit `error` while it's gone and resume when it returns, with no restart needed.
 
 ### `stop(options)`
 
 Stops all background processing, such as maintenance and scheduling, as well as all polling workers started with `work()`.
 
-By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. Emits a `stopped` event if needed.
+By default, `stop()` with no arguments waits for all workers to finish their active jobs before it resolves. It emits a `stopped` event if needed.
 
-A job a worker is still claiming when `stop()` is called gets its handler if it is ready to start within the timeout, like any active job; for a [`transactional`](./workers.md#work-name-options-handler) worker that includes opening its transaction. One that is not ready by the time the timeout runs out is failed without starting its handler, which spends an attempt like any failure (with retries left it goes to `retry`), and `stop()` waits for that to settle, which can extend shutdown beyond the timeout. With `graceful: false` such a job is failed at once.
+A job that a worker is still claiming when you call `stop()` gets its handler if it's ready to start within the timeout, like any active job. For a [`transactional`](./workers.md#work-name-options-handler) worker, ready includes opening its transaction. A job that isn't ready when the timeout runs out is failed without starting its handler. That spends an attempt like any failure (with retries left it goes to `retry`). `stop()` waits for that failure to settle, which can extend shutdown past the timeout. With `graceful: false`, such a job is failed at once.
 
 **Arguments**
 
@@ -50,24 +48,24 @@ A job a worker is still claiming when `stop()` is called gets its handler if it 
 
   * `graceful`, bool
 
-    Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period workers stop fetching, while active jobs, and any still being claimed, are allowed to finish.
+    Default: `true`. If `true`, the PgBoss instance waits for any workers processing jobs to finish, up to the timeout. During that time, workers stop fetching, and active jobs and any still being claimed can finish.
 
   * `close`, bool
-    Default: `true`. If the database connection is managed by pg-boss, it will close the connection pool. Use `false` if needed to continue allowing operations such as `send()` and `fetch()`. Calling `stop()` again later closes the pool, and from then on those operations reject with `Database not opened`.
+    Default: `true`. If pg-boss manages the database connection, it closes the connection pool. Use `false` to keep running operations such as `send()` and `fetch()`. Calling `stop()` again later closes the pool, and from then on those operations reject with `Database not opened`.
 
-    That later close happens once. If it rejects, the pool is left as the driver leaves it and a further `stop()` has nothing to retry, so treat a `stop()` that throws as terminal for that instance rather than calling it again.
+    That later close happens once. If it rejects, the pool stays as the driver leaves it, and a further `stop()` has nothing to retry. So treat a `stop()` that throws as terminal for that instance, and don't call it again.
 
   * `timeout`, int
 
-    Default: 30000. Maximum time (in milliseconds) to allow active handlers to finish before failing and aborting their jobs. Pending claims and database cleanup are still awaited before shutdown completes.
+    Default: 30000. Maximum time (in milliseconds) that active handlers get to finish before pg-boss fails and aborts their jobs. Shutdown still waits for pending claims and database cleanup before it completes.
 
     The same timeout bounds a [BAM](#getbamstatus) command that is still running. `stop()` waits for the command first and starts the handlers' timeout after it, so a stop that waits on both can take up to twice `timeout`. With `graceful: false` the command is ended at once. What happens to the command depends on what it is:
 
     - A concurrent index build or drop on PostgreSQL keeps running on the server after its connection is closed. Its row stays `in_progress` until the build ends, and then the next instance with `migrate` enabled marks it completed, or rebuilds the index if the build failed.
-    - Any other command, such as a data migration, is cancelled and rolls back. Its row is marked `failed`, and the next instance with `migrate` enabled runs it again.
-    - On CockroachDB the connection is closed. A schema change keeps running as a CockroachDB job, and any other statement is cancelled. The row is marked `failed` and runs again.
+    - Any other command, such as a data migration, is canceled and rolls back. Its row is marked `failed`, and the next instance with `migrate` enabled runs it again.
+    - On CockroachDB the connection is closed. A schema change keeps running as a CockroachDB job, and any other statement is canceled. The row is marked `failed` and runs again.
 
-    With a custom [`db`](./constructor.md#db) adapter, pg-boss has no connection to close, so it cancels every command on PostgreSQL, and waits for the command on CockroachDB. A cancel needs the connecting role to be allowed to cancel the command's backend. If it is not, `stop()` emits one `error` and waits for the command.
+    With a custom [`db`](./constructor.md#db) adapter, pg-boss has no connection to close. It cancels every command on PostgreSQL, and waits for the command on CockroachDB. To cancel, the connecting role must be allowed to cancel the command's backend. If it isn't, `stop()` emits one `error` and waits for the command.
 
     > [!WARNING]
     > This option is ignored for handlers when `graceful` is set to `false`.
@@ -88,7 +86,7 @@ await boss.stop({ graceful: false })
 
 ### `isInstalled()`
 
-Utility function to see if pg-boss is installed in the configured database.
+Checks whether pg-boss is installed in the configured database.
 
 ```js
 const installed = await boss.isInstalled()
@@ -97,7 +95,7 @@ const installed = await boss.isInstalled()
 
 ### `schemaVersion()`
 
-Utility function to get the database schema version.
+Gets the database schema version.
 
 ```js
 const version = await boss.schemaVersion()
@@ -110,11 +108,11 @@ const version = await boss.schemaVersion()
 - `name`: string, optional. Restrict the pass to a single queue. Omit for every queue.
 - `options`: object, optional
 
-Runs one maintenance pass immediately instead of waiting for the next background cycle: monitoring (backlog warnings, expired and heartbeat-abandoned jobs, cached stats), deletion of jobs past their retention, warning and queue-stat pruning, and the index bloat check.
+Runs one maintenance pass now, without waiting for the next background cycle. The pass covers monitoring (backlog warnings, expired and heartbeat-abandoned jobs, cached stats), deletion of jobs past their retention, warning and queue-stat pruning, and the index bloat check.
 
-Passing `name` restricts the pass to that queue's own rows, but the index bloat check works on tables: for a queue with `partition: false` (the default) the indexes it would rebuild belong to the shared `job_common` table, which every other unpartitioned queue also uses.
+Passing `name` restricts the pass to that queue's own rows, but the index bloat check works on whole tables. For a queue with `partition: false` (the default), the indexes it would rebuild belong to the shared `job_common` table, which every other unpartitioned queue also uses.
 
-This is the same pass the background supervisor runs on `superviseIntervalSeconds`. Call it directly when you have set `supervise: false` and drive maintenance yourself, or in tests where waiting for a timer is not an option.
+It's the same pass the background supervisor runs on `superviseIntervalSeconds`. Call it directly when you've set `supervise: false` and drive maintenance yourself, or in tests that can't wait for a timer.
 
 One pass runs at a time. A call made while another pass is in flight, from the background supervisor or an earlier `supervise()`, waits for it to finish, and `stop()` waits for the call. After `stop()`, it resolves without running.
 
@@ -139,16 +137,16 @@ await boss.supervise(undefined, { reindex: { force: true } })
 await boss.supervise(undefined, { reindex: false })
 ```
 
-Steps within a pass are individually rate-limited by their own intervals (`maintenanceIntervalSeconds`, `monitorIntervalSeconds`, `reindexIntervalSeconds`), and those limits are shared across instances, so calling `supervise()` in a loop does not run everything on every call. `reindex: { force: true }` is the one exception: it bypasses the interval as well as the bloat check.
+Each step in a pass is rate-limited by its own interval (`maintenanceIntervalSeconds`, `monitorIntervalSeconds`, `reindexIntervalSeconds`). Those limits are shared across instances, so calling `supervise()` in a loop doesn't run everything on every call. The one exception is `reindex: { force: true }`, which skips the interval as well as the bloat check.
 
 ### `getReindexCommands(options)`
 
 **Arguments**
 - `options`: object, optional. Accepts `force`, `minPages`, `maxEntriesPerPage`, `minSizeRatio`, and `maxIndexBytes`.
 
-Returns the SQL statements that would rebuild the currently bloated job indexes, in the order they should be run, including a `DROP INDEX CONCURRENTLY` for any invalid stub left behind by an interrupted rebuild.
+Returns the SQL statements that would rebuild the currently bloated job indexes, in the order to run them. They include a `DROP INDEX CONCURRENTLY` for any invalid stub that an interrupted rebuild left behind.
 
-Use this where pg-boss cannot run the rebuild itself, because the connected role does not own the indexes or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` cannot run inside one). Returns an empty array on CockroachDB, which has no btree bloat to reclaim and rejects `REINDEX` in any form. Unlike the background pass, no ownership filter and no size cap are applied unless `maxIndexBytes` is passed, since the commands are intended for an operator who may run them as a different role.
+Use it where pg-boss can't run the rebuild itself, because the connected role doesn't own the indexes or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` can't run inside one). Returns an empty array on CockroachDB, which has no btree bloat to reclaim and rejects `REINDEX` in any form. Unlike the background pass, it applies no ownership filter, and no size cap unless you pass `maxIndexBytes`, because an operator may run the commands as a different role.
 
 ```js
 const commands = await boss.getReindexCommands()
@@ -164,7 +162,7 @@ An empty array means nothing is bloated. Pass `{ force: true }` for every job in
 
 ### `isMaintaining()`
 
-Returns `true` while a maintenance pass is in flight, whether started by the background supervisor or by `supervise()`.
+Returns `true` while a maintenance pass is in flight, whether the background supervisor or `supervise()` started it.
 
 ```js
 const busy = boss.isMaintaining()
@@ -173,23 +171,23 @@ const busy = boss.isMaintaining()
 
 ### `isBamWorking()`
 
-Returns `true` while a boss async migration (BAM) command is being processed. See [`getBamStatus()`](#getbamstatus).
+Returns `true` while a boss async migration (BAM) command is running. See [`getBamStatus()`](#getbamstatus).
 
 ### `isResolvingFlow()`
 
-Returns `true` while a flow-resolution pass is unblocking dependents of completed parent jobs, whether started by the background resolver or by [`resolveFlow()`](./jobs.md#resolveflow).
+Returns `true` while a flow-resolution pass is unblocking dependents of completed parent jobs, whether the background resolver or [`resolveFlow()`](./jobs.md#resolveflow) started it.
 
 ### `isCheckingSkew()`
 
-Returns `true` while the clock skew check is running. Only relevant when `schedule` is enabled.
+Returns `true` while the clock skew check is running. It only applies when `schedule` is enabled.
 
 ### `isTimekeeping()`
 
-Returns `true` while a cron pass is in flight. Only relevant when `schedule` is enabled.
+Returns `true` while a cron pass is in flight. It only applies when `schedule` is enabled.
 
 ### `getDb()`
 
-Returns the database interface this instance is using: the `db` adapter passed in the constructor, or the connection pool pg-boss created for itself.
+Returns the database interface this instance uses, which is either the `db` adapter passed to the constructor or the connection pool pg-boss created for itself.
 
 With a [`TestClock`](./testing.md#controlling-time) as the `clock` option, it returns a wrapper around that adapter or pool which counts the statements in flight, so `tick` and `setTime` wait for queries run through it.
 
@@ -198,15 +196,15 @@ const db = boss.getDb()
 const { rows } = await db.executeSql('SELECT now()')
 ```
 
-> Reaching past the API and mutating pg-boss tables directly is not supported. This exists so an application can reuse the same pool for its own queries rather than opening a second one.
+> Changing pg-boss tables directly, outside the API, isn't supported. `getDb()` is there so an application can run its own queries on the same pool without opening a second one.
 
 ### `getInstances(options)`
 
-Returns the pg-boss instances registered in this database, oldest first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last instance's `id` as `options.after` to read the next page; it rejects if that instance has been deleted since. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never says it stopped, so its row goes quiet instead: `live` turns false once it has missed three heartbeats. Rows whose heartbeat has not moved for 7 days are deleted during maintenance.
+Returns the pg-boss instances registered in this database, oldest first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last instance's `id` as `options.after` to read the next page. It rejects if that instance has been deleted since. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes never marks itself stopped, so its row goes quiet instead, and `live` turns false once it has missed three heartbeats. Maintenance deletes rows whose heartbeat hasn't moved for 7 days.
 
-Every `start()` of a new `PgBoss` object is a new row, so a crash loop, or a deploy whose processes exit without calling `stop()`, leaves a quiet row per life. To keep that bounded, an instance deletes all but the 20 newest stopped or quiet rows with its name when it registers (with its host, when it has no name), and maintenance keeps the 1,000 newest stopped or quiet rows in all. Calling `stop()` on `SIGTERM` marks a row stopped rather than quiet, which tells a deploy apart from a crash. `crashRestarts` survives that pruning.
+Every `start()` of a new `PgBoss` object is a new row. So a crash loop, or a deploy whose processes exit without calling `stop()`, leaves a quiet row per life. To keep that bounded, an instance that registers deletes all but the 20 newest stopped or quiet rows with its name (or with its host, when it has no name). Maintenance keeps the 1,000 newest stopped or quiet rows in all. Calling `stop()` on `SIGTERM` marks a row stopped rather than quiet, which tells a deploy apart from a crash. `crashRestarts` survives that pruning.
 
-A life counts toward `crashRestarts` once it is quiet, and only if its last heartbeat came before this instance started, so a sibling process with the same name on the same host (a pm2 cluster, say) is not counted while it keeps running. A sibling that crashes is counted: the count is kept per name and host, not per process, so siblings sharing a name share one count. Give each sibling its own `instanceName` (`worker-1`, `worker-2`) to count them apart. A crash moments before a restart is counted when it goes quiet, up to three heartbeats after `start()`. A process that reuses the previous one's pid, as a container restart does, is counted at once.
+A life counts toward `crashRestarts` once it's quiet, and only if its last heartbeat came before this instance started. So a sibling process with the same name on the same host (a pm2 cluster, say) isn't counted while it keeps running. A sibling that crashes is counted. The count is kept per name and host, so siblings sharing a name share one count. Give each sibling its own `instanceName` (`worker-1`, `worker-2`) to count them apart. A crash moments before a restart is counted when it goes quiet, up to three heartbeats after `start()`. A process that reuses the previous one's pid, as a container restart does, is counted at once.
 
 ```js
 const instances = await boss.getInstances()
@@ -238,7 +236,7 @@ Array of objects with the following properties:
 | `stoppedOn` | Date \| null | Set by `stop()` |
 | `live` | boolean | Not stopped, and heard from within three heartbeats |
 
-Each `workers` entry has `id` (the id `work()` returned), `queue`, `localConcurrency`, `batchSize`, `pollingIntervalSeconds`, `active` (jobs in hand at the heartbeat), `lastFetchedOn`, `lastJobEndedOn` and `lastErrorOn` as ISO strings or null, and `options`, the other `work()` options the call set (`includeMetadata`, `ignoreStartAfter`, `minPriority`, `maxPriority`, `localGroupConcurrency`, `groupConcurrency`, `heartbeatRefreshSeconds`, `perJobResults`, `transactional`, `transactionTimeoutSeconds`, `notifyPollingIntervalSeconds`, `burstWhenReadyExceeds`, `burstWhenBatchFull`), leaving out any left at its default. Error messages are not stored, since they can carry job data.
+Each `workers` entry has `id` (the id `work()` returned), `queue`, `localConcurrency`, `batchSize`, `pollingIntervalSeconds`, `active` (jobs in hand at the heartbeat), `lastFetchedOn`, `lastJobEndedOn` and `lastErrorOn` as ISO strings or null, and `options`. `options` holds the other `work()` options the call set (`includeMetadata`, `ignoreStartAfter`, `minPriority`, `maxPriority`, `localGroupConcurrency`, `groupConcurrency`, `heartbeatRefreshSeconds`, `perJobResults`, `transactional`, `transactionTimeoutSeconds`, `notifyPollingIntervalSeconds`, `burstWhenReadyExceeds`, `burstWhenBatchFull`), leaving out any left at its default. Error messages are not stored, since they can carry job data.
 
 `metrics` is sampled on each heartbeat. Rates cover the time since the previous heartbeat, so they are null in the row written at `start()`.
 
@@ -251,16 +249,16 @@ Each `workers` entry has `id` (the id `work()` returned), `queue`, `localConcurr
 | `rss`, `heapUsed`, `heapLimit` | number \| null | Resident set size and V8 heap, in bytes |
 | `memoryUsed` | number \| null | Its container's working set in bytes (memory in use less inactive file cache, as container runtimes count it); null without a memory limit |
 | `memoryLimit` | number | Its container's memory limit in bytes, or the host's total memory |
-| `loopDelay`, `loopDelayMax` | number \| null | Event loop delay in milliseconds, p99 and worst |
+| `loopDelay`, `loopDelayMax` | number \| null | Event loop delay in milliseconds, p99 and max |
 | `loopUtilization` | number \| null | Share of the time the event loop was busy, 0 to 1 |
 
-Limits come from the cgroup the process is charged to (v1 or v2, with a private or host cgroup namespace), including limits set on a parent such as a Kubernetes pod. The host-wide figures Node reports in a container are not used: `os.totalmem()`, `os.freemem()`, `os.loadavg()` and `os.cpus()` describe the machine, and `os.availableParallelism()` ignores a CPU quota under one core. Off Linux, or where the cgroup files cannot be read, the limits are the host's and the container-only figures are null. A figure the runtime cannot provide is null; Bun, for example, has no event loop utilization.
+Limits come from the cgroup the process is charged to (v1 or v2, with a private or host cgroup namespace), including limits set on a parent such as a Kubernetes pod. pg-boss doesn't use the host-wide figures Node reports in a container. `os.totalmem()`, `os.freemem()`, `os.loadavg()` and `os.cpus()` describe the machine, and `os.availableParallelism()` ignores a CPU quota under one core. Off Linux, or where the cgroup files can't be read, the limits are the host's and the container-only figures are null. A figure the runtime can't provide is null. Bun, for example, has no event loop utilization.
 
 ### `getBamStatus()`
 
 Returns a summary of boss async migration (BAM) commands grouped by status.
 
-BAM commands are database operations that run asynchronously after schema migrations, such as index builds, so an upgrade does not wait for them. Once the worker finds a command, it runs the pending ones back to back rather than one per `bamIntervalSeconds`. Commands from one migration on one table run in order, and each waits until the one before it has completed, so a failed command holds the ones after it until a retry succeeds. This function provides a high-level overview of their progress.
+BAM commands are database operations, such as index builds, that run asynchronously after schema migrations, so an upgrade doesn't wait for them. Once the worker finds a command, it runs the pending ones back to back, without waiting `bamIntervalSeconds` between them. Commands from one migration on one table run in order, and each waits until the one before it has completed. So a failed command holds the ones after it until a retry succeeds. `getBamStatus()` gives an overview of their progress.
 
 ```js
 const status = await boss.getBamStatus()
@@ -284,7 +282,7 @@ Array of objects with the following properties:
 
 Returns boss async migration (BAM) command entries with full details, oldest version first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last entry's `id` as `options.after` to read the next page. It rejects if that entry has been deleted since.
 
-Use this function when you need to inspect individual BAM commands, troubleshoot failures, or review the command history.
+Use it to inspect individual BAM commands, troubleshoot failures, or review the command history.
 
 ```js
 const entries = await boss.getBamEntries()
@@ -325,9 +323,9 @@ Array of objects with the following properties:
 
 ### `detectSchemaDrift()`
 
-Compares what pg-boss installed against what the database actually has: tables, indexes, functions, columns, constraints, and the `job_state` enum. It reports anything that diverged, such as a manual schema change, a failed migration, an index left `INVALID` by an interrupted build.
+Compares what pg-boss installed against what the database actually has: tables, indexes, functions, columns, constraints, and the `job_state` enum. It reports anything that diverged, such as a manual schema change, a failed migration, or an index left `INVALID` by an interrupted build.
 
-The scan is catalog-only, so no locks and no table scans. Presence checks cover every managed table, including `job_common` and each per-queue partition. Those are the checks on tables, indexes, column names, functions and the enum. Default, type, nullability and constraint checks are limited to the fixed tables (version, queue, schedule, subscription, bam, warning, queue_stats, job_dependency, instance), since the job tables' `DEFERRABLE` foreign keys and interval-typed `keep_until` default would false-positive. Anything needing `pg_get_functiondef`/`pg_get_constraintdef` is skipped where a backend lacks it, and CockroachDB skips the type, default and constraint checks entirely, since its `INT8` typing and constraint rendering diverge from standard Postgres. The presence checks stay active there.
+The scan reads only the catalog, so it takes no locks and scans no tables. Presence checks cover every managed table, including `job_common` and each per-queue partition. Those are the checks on tables, indexes, column names, functions and the enum. Default, type, nullability and constraint checks cover only the fixed tables (version, queue, schedule, subscription, bam, warning, queue_stats, job_dependency, instance). On the job tables, the `DEFERRABLE` foreign keys and the interval-typed `keep_until` default would report false positives. A check that needs `pg_get_functiondef`/`pg_get_constraintdef` is skipped where a backend lacks it. CockroachDB skips the type, default and constraint checks entirely, since its `INT8` typing and constraint rendering diverge from standard Postgres. The presence checks still run there.
 
 An index altered so its definition no longer matches is flagged under `mismatched`, with the expected `definition` and the current `actualDefinition` side by side. Here `job_common_i9`'s predicate was changed from `state = 'completed'` to `state = 'active'`:
 
@@ -366,9 +364,9 @@ const report = await boss.detectSchemaDrift()
 // }
 ```
 
-Every entry carries the `definition` that repairs it, which is the full schema-qualified statement, ready to run. `mismatched` entries add `actualDefinition` for a side-by-side read. `invalid` and `missing` entries have nothing to put beside it: an invalid index already *has* the right definition (an interrupted build, not a wrong shape), and a missing one has no catalog entry at all.
+Every entry carries the `definition` that repairs it, which is the full schema-qualified statement, ready to run. `mismatched` entries add `actualDefinition` for a side-by-side read. `invalid` and `missing` entries have nothing to put beside it. An invalid index already *has* the right definition, because an interrupted build left it, and a missing one has no catalog entry at all.
 
-Comparison is normalized throughout, so only a real difference is reported. Index keys are order-significant but insensitive to casing, casts, parentheses and whitespace. A function body is compared whitespace-normalized, so re-indentation alone is never drift. A column default is compared with its casts folded (`'pending'::text` matches `'pending'`) and a type in its canonical `format_type` spelling (`int` matches `integer`; `bigint` does not), and constraints compare as a normalized set of definitions. A primary-key column counts as NOT NULL. Enum order *is* significant, since the enum's numeric base type makes it load-bearing for state comparisons. What gets printed is tidied for reading: the default `USING btree`, the outer parentheses pg wraps a predicate in, and the casts it adds to every literal are all removed.
+Comparison is normalized throughout, so only a real difference is reported. Index keys are order-significant but insensitive to casing, casts, parentheses and whitespace. A function body is compared whitespace-normalized, so re-indentation alone is never drift. A column default is compared with its casts folded (`'pending'::text` matches `'pending'`), and a type in its canonical `format_type` spelling (`int` matches `integer`; `bigint` does not). Constraints compare as a normalized set of definitions. A primary-key column counts as NOT NULL. Enum order *is* significant, because state comparisons depend on the enum's numeric base type. To make the printed definitions easier to read, pg-boss removes the default `USING btree`, the outer parentheses pg wraps a predicate in, and the casts it adds to every literal.
 
 **Returns**
 
@@ -395,7 +393,7 @@ The [`doctor`](../cli#doctor) CLI command runs this same check without writing a
 
 **Remediation**
 
-`detectSchemaDrift()` only reports. It never modifies the schema. Note that `start()` and `migrate` rebuild indexes *only* as part of a version change, so on a schema that is already at the latest version they will not repair drift; the fixes below are manual. Run `DROP`/`CREATE INDEX` with `CONCURRENTLY` on a live database so job processing is not blocked.
+`detectSchemaDrift()` only reports. It never modifies the schema. `start()` and `migrate` rebuild indexes *only* as part of a version change, so on a schema that's already at the latest version they won't repair drift. The fixes below are manual. Run `DROP`/`CREATE INDEX` with `CONCURRENTLY` on a live database so job processing isn't blocked.
 
 | Category | What it means | How to fix |
 | --- | --- | --- |

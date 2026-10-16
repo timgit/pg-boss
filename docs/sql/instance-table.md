@@ -1,6 +1,6 @@
 # Instance table
 
-Each pg-boss instance records itself here unless it was constructed with `registerInstance: false`: at `start()`, on every heartbeat, and at `stop()`. [`getInstances()`](../api/ops.md#getinstances-options) reads it.
+Each pg-boss instance records itself here at `start()`, on every heartbeat, and at `stop()`, unless it was constructed with `registerInstance: false`. [`getInstances()`](../api/ops.md#getinstances-options) reads it.
 
 ```sql
 CREATE TABLE pgboss.instance (
@@ -45,7 +45,7 @@ CREATE TABLE pgboss.instance (
 | `workers` | One entry per `work()` call at the last heartbeat |
 | `metrics` | Its process's CPU, memory and event loop at the last heartbeat, against its container's limits. Null until the first sample lands |
 | `config` | The options it runs with, for comparing instances. Connection settings and credentials are never recorded |
-| `crash_restarts` | Lives with this name on this host that ended without `stop()` before this one started |
+| `crash_restarts` | Earlier runs with this name on this host that ended without `stop()` before this one started |
 | `crash_restarts_since` | When the first of those went quiet. Null when there were none |
 | `started_on`, `heartbeat_on`, `stopped_on` | When it started, last beat, and stopped. A crashed instance never sets `stopped_on` |
 
@@ -70,4 +70,6 @@ WHERE w->>'queue' = 'emails';
 
 ## Cleanup
 
-Rows whose heartbeat has not moved for 7 days are deleted during maintenance, stopped and quiet alike.
+Maintenance deletes rows whose heartbeat hasn't moved for 7 days, whether the instance stopped or went quiet.
+
+Two limits also bound the dead rows, which belong to instances that stopped or missed 3 heartbeats. An instance that registers keeps the 20 newest dead rows under its own name (or its host, when it has no name) and deletes the rest. Maintenance keeps the 1000 newest dead rows overall.

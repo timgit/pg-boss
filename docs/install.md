@@ -1,22 +1,22 @@
 # Database install
 
-pg-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege.
+pg-boss creates its own schema in the target database (`pgboss` by default). The database user it connects as needs the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege.
 
 ```sql
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
 ```
 
-If the CREATE privilege is not available or desired, you have two options:
+If you can't or don't want to grant CREATE, you have two options:
 
-1. **CLI (recommended)** - Use the pg-boss CLI to manage schema creation and migrations. The CLI can output SQL without executing it (`--dry-run` or `plans` command), allowing DBAs to review and run the commands manually. See the [CLI documentation](./cli) for details.
+1. **CLI (recommended).** Use the pg-boss CLI to create the schema and run migrations. The CLI can print the SQL without running it (`--dry-run` or the `plans` command), so a DBA can review the commands and run them by hand. See the [CLI documentation](./cli) for details.
 
-2. **Static functions** - Use the included [utility functions](./api/utils) to export the SQL commands programmatically.
+2. **Static functions.** Use the included [utility functions](./api/utils) to get the SQL commands from code.
 
 > [!NOTE]
-> When managing schema manually, you will need to monitor future releases for schema changes.
+> If you manage the schema by hand, watch future releases for schema changes.
 
 > [!WARNING]
-> Using an existing schema is supported for advanced use cases **but discouraged**, as this opens up the possibility that creation will fail on an object name collision, and it will add more steps to the uninstallation process.
+> pg-boss supports installing into an existing schema for advanced use cases, **but it's discouraged**. Creation can fail on an object name collision, and uninstalling takes more steps.
 
 # Database uninstall
 

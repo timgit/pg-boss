@@ -5,6 +5,6 @@
 ![The status page](../images/pro/status.webp){.light-only}
 ![The status page](../images/pro/status-dark.webp){.dark-only}
 
-Opening a day that was not green shows what happened in it. On the strip for every queue, it narrows the list to the queues that made it so.
+Open a day that wasn't green to see what happened in it. On the strip across every queue, opening a day narrows the list to the queues that weren't green that day.
 
-The verdicts are the hourly ones Pro's alert evaluator writes each pass into its own tables, since pg-boss keeps a week of stats and this page shows ninety days. History starts when Pro first runs against a database.
+The page reads the hourly verdicts that Pro's alert evaluator writes to its own tables on each pass, because pg-boss keeps a week of stats and this page shows ninety days. History starts when Pro first runs against a database.

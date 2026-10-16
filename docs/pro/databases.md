@@ -1,16 +1,16 @@
 # Databases
 
-The database you are looking at is named at the start of the top bar on every
-page, with a colored dot, and a menu there switches between them when
-`DATABASE_URL` lists more than one.
+Every page names the database you're looking at, with a colored dot, at the
+start of the top bar. When `DATABASE_URL` lists more than one database, a menu
+there switches between them.
 
 `/pro/databases` gives each one a friendly name, such as Production or
 Test, and a color. Names show in the database menu, in alert emails and webhook
 payloads (`databaseName`, beside `databaseId`), and in the audit log. Renaming
 here keeps every link, alert rule and history row, because they all refer to the
 database's id, which comes from its name in `DATABASE_URL`. Renaming it there
-changes the id, so rename it here instead. Adding or removing a database is still
-done in `DATABASE_URL`. Only administrators can change these.
+changes the id, so rename it here instead. You still add or remove a database in
+`DATABASE_URL`. Only administrators can change these.
 
 ![The databases page](../images/pro/databases.webp){.light-only}
 ![The databases page](../images/pro/databases-dark.webp){.dark-only}

@@ -1,23 +1,23 @@
 # Accounts and groups
 
-Pro authenticates people, not the deployment. On first run it has no accounts,
-so open `/setup` and create the first administrator; that page closes for good
-the moment the first account exists. After that, sign in at `/login`, and sign
-out from the account menu, your picture or initials at the top right.
+Pro authenticates each person with their own account. On first run it has no
+accounts, so open `/setup` and create the first administrator. That page closes
+for good the moment the first account exists. After that, sign in at `/login`,
+and sign out from the account menu (your picture or initials at the top right).
 
-Accounts, sessions and role assignments live in Pro's own schema: `pgboss_pro`
-by default, in the first database you configured unless
-`PGBOSS_PRO_DATABASE_URL` says otherwise. It is created and migrated when the
-server starts, and it is separate from the `pgboss` schema the queue uses:
-nothing here touches your job tables.
+Accounts, sessions and role assignments live in Pro's own schema, `pgboss_pro`
+by default. It sits in the first database you configured, unless
+`PGBOSS_PRO_DATABASE_URL` says otherwise. The server creates and migrates it at
+startup. It's separate from the `pgboss` schema the queue uses, so nothing here
+touches your job tables.
 
-What each role may do is on [Roles and access](./roles.md).
+[Roles and access](./roles.md) lists what each role may do.
 
 ## Managing accounts
 
 An administrator whose role covers **every** database manages accounts at
-`/pro/accounts`, under **Settings** in the sidebar. An admin scoped
-to a single database does not get this screen: it would let them widen their own
+`/pro/accounts`, under **Settings** in the sidebar. An admin scoped to a single
+database doesn't get this screen, because it would let them widen their own
 scope.
 
 ![The accounts page](../images/pro/accounts.webp){.light-only}
@@ -26,47 +26,50 @@ scope.
 From there, add an account with a role. Its own page shows:
 
 - **Access by database**: the role in effect on each database, and every grant behind it, direct
-  or through a group. A direct grant can be removed here; a group's is changed on the group. When a
+  or through a group. You remove a direct grant here, and change a group's grant on the group. When a
   direct grant adds nothing a group already gives, the page says so.
-- **Groups** it is in, with what each grants, to add it to or take it out of.
-- **Signing in**: set a password, or create an invitation link that lets them choose one, and the
-  browsers it is signed in on, with where from and when. **Sign out everywhere** ends every session.
+- **Groups**: the groups it's in, with what each grants. You add it to a group or take it out here.
+- **Signing in**: set a password, or create an invitation link that lets the person choose one. It
+  also lists the browsers the account is signed in on, with where from and when. **Sign out
+  everywhere** ends every session.
 - **Recent activity**: what it did through the console, from the [audit log](./audit-log.md).
 
-Its name can be edited, and the account disabled or deleted. Disabling, deleting or changing a
+You can also edit its name, and disable or delete the account. Disabling, deleting or changing a
 password ends that account's sessions immediately.
 
-Machines get [service accounts](./api-tokens.md) instead, at `/pro/service-accounts`, which act
-only through API tokens.
+Machines get [service accounts](./api-tokens.md) instead, at `/pro/service-accounts`. A service
+account acts only through API tokens.
 
 ![An account's page](../images/pro/account.webp){.light-only}
 ![An account's page](../images/pro/account-dark.webp){.dark-only}
 
-Two changes are always refused, and both say so:
+Pro always refuses two changes, and says so:
 
 - removing the last administrator who covers every database, by demotion,
-  disabling or deletion: there would be nobody left who could undo it
-- disabling or deleting your own account: another administrator can
+  disabling or deletion, because nobody would be left who could undo it
+- disabling or deleting your own account (another administrator can do that)
 
-There is no invitation email. Pro runs inside your network and may have no mail
-credentials, so an administrator sends the invitation link, or sets the first password and hands
-it over, and the person changes it themselves at `/pro/profile`, reached from **Profile** in the
-account menu at the top right. That page needs no role: it shows who you are and what you may
-do, and takes your current password, a new one, and the new one again. Changing
-it signs out every other session, and keeps the one you are using.
+Pro sends no invitation email, because it runs inside your network and may have
+no mail credentials. An administrator sends the invitation link, or sets the
+first password and hands it over. The person then changes it at `/pro/profile`,
+from **Profile** in the account menu at the top right. That page needs no role.
+It shows who you are and what you may do, and takes your current password, a new
+one, and the new one again. Changing your password there signs out every other
+session and keeps the one you're using.
 
 ## Groups
 
 An account can hold a role directly, or through a group that holds one. Groups
-live at `/pro/groups`: give a group a role over a database (or over every
-database), put people in it by pasting their addresses, and everyone in it has
-that role. Where two roles apply to the same database, the stronger wins. A group's page lists its
+live at `/pro/groups`. Give a group a role over a database (or over every
+database) and put people in it by pasting their addresses, and everyone in it has
+that role. Where two roles apply to the same database, the person may do everything
+either allows, as [Roles](./roles.md) explains. A group's page lists its
 members with the roles each holds on their own, says whether [SSO](./sso.md) maps a provider group
-to it, and shows its recent changes. Service accounts cannot join a group.
+to it, and shows its recent changes. Service accounts can't join a group.
 
 ![A group's page](../images/pro/group.webp){.light-only}
 ![A group's page](../images/pro/group-dark.webp){.dark-only}
 
-`/pro/access` answers the question that actually gets asked in an incident: who
-can act on this database, and why: showing the role each person ends up with
-beside every grant that produced it.
+`/pro/access` answers the question people ask in an incident, which is who can
+act on this database and why. It shows the role each person ends up with beside
+every grant that produced it.

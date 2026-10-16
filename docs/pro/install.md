@@ -3,12 +3,12 @@
 ## Requirements
 
 - Node.js 22.12 or later.
-- A Postgres database with a pg-boss schema, version 44 (pg-boss 12.36) or later. Pro makes changes only on the schema of the pg-boss it is built with: see [pg-boss versions](./versions.md).
+- A Postgres database with a pg-boss schema, version 44 (pg-boss 12.36) or later. Pro makes changes only on the schema of the pg-boss it's built with. See [pg-boss versions](./versions.md).
 - A Pro subscription, which gives you a license key.
 
 ## Install
 
-Pro is served from a private registry, not from npmjs. Your license key is the registry credential. It is shown on your Polar purchases page, and it is the only credential involved.
+Pro is served from a private registry, not from npmjs. Your license key is the registry credential, and the only one you need. Polar shows it on your purchases page.
 
 Put both lines in the `.npmrc` of the project that installs Pro:
 
@@ -23,7 +23,7 @@ Then install it:
 npm install @pg-boss/pro
 ```
 
-The second line points the whole `@pg-boss` scope at the private registry. The free packages, `@pg-boss/dashboard` and `@pg-boss/proxy`, keep resolving from npmjs: the registry redirects anything that is not Pro.
+The second line points the whole `@pg-boss` scope at the private registry. The free packages, `@pg-boss/dashboard` and `@pg-boss/proxy`, keep resolving from npmjs, because the registry redirects anything that isn't Pro.
 
 In CI, keep the token out of the file. npm substitutes the variable when it reads `.npmrc`, so the same file works on a laptop and in a pipeline:
 
@@ -43,13 +43,13 @@ Open `http://localhost:3000`. On first run there are no accounts, so open `/setu
 ![Signing in to Pro](../images/pro/login.webp){.light-only}
 ![Signing in to Pro](../images/pro/login-dark.webp){.dark-only}
 
-Pro keeps its own tables, accounts, rules, alerts and the audit log among them, in a `pgboss_pro` schema it creates and migrates on startup, separate from pg-boss's. Nothing in it touches your job tables. Every variable is listed under [environment variables](./environment.md).
+Pro keeps its own tables (accounts, rules, alerts and the audit log among them) in a `pgboss_pro` schema, separate from pg-boss's, and creates and migrates it on startup. Nothing in it touches your job tables. [Environment variables](./environment.md) lists every variable.
 
-`DATABASE_URL` takes several databases, as the free dashboard's does, separated by `|`, each optionally named (`Production=postgres://…`). See [databases](./databases.md).
+Like the free dashboard's, `DATABASE_URL` takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
 
 ## Docker
 
-With the CI form of `.npmrc` above, pass the license key as a build secret, so it is not kept in a layer:
+With the CI form of `.npmrc` above, pass the license key as a build secret, so no image layer keeps it:
 
 ```dockerfile
 FROM node:22-alpine
@@ -72,4 +72,4 @@ PGBOSS_PRO_TOKEN=<your license key> docker build --secret id=pgboss_pro_token,en
 npm update @pg-boss/pro
 ```
 
-Each release is built with one pg-boss release, which it installs whatever your application runs. When your application moves to a pg-boss release with a new schema version, upgrade Pro with it. See [pg-boss versions](./versions.md).
+Each Pro release is built with one pg-boss release, and installs that release whatever version your application runs. When your application moves to a pg-boss release with a new schema version, upgrade Pro with it. See [pg-boss versions](./versions.md).

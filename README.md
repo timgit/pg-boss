@@ -34,11 +34,11 @@ readme()
   })
 ```
 
-pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Node.js applications.
+pg-boss is a job queue built in Node.js on top of PostgreSQL. It gives Node.js applications background processing and reliable asynchronous execution.
 
-pg-boss relies on Postgres's SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. Concurrent workers claim jobs without blocking each other, and job processing gets the safety of guaranteed atomic commits.
+pg-boss relies on SKIP LOCKED, a Postgres feature built for message queues that resolves the record locking problems relational databases have. Concurrent workers claim jobs without blocking each other, and job processing gets the guarantee of atomic commits.
 
-This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
+pg-boss suits teams who know relational database semantics and operations (SQL, querying and backups). It's most useful to a team already running PostgreSQL that wants fewer systems to monitor and support.
 
 
 ## Summary
@@ -53,29 +53,29 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Serverless function compatible
 * [OpenTelemetry](https://pgboss.io/opentelemetry) traces and metrics
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Additional database backends](https://pgboss.io/database-backends) for Postgres-based databases such as CockroachDB and Citus. Or, use embedded PGlite for running entirely in-process.
+* [Additional database backends](https://pgboss.io/database-backends) for Postgres-based databases such as CockroachDB and Citus, and embedded PGlite to run entirely in-process.
 
 ## CLI
 
-pg-boss includes a command-line interface if needed for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
+pg-boss includes a command-line interface for managing database migrations without writing code. Use it in CI/CD pipelines and database setup scripts, or to manage the schema by hand.
 
 See the [CLI documentation](https://pgboss.io/cli) for details.
 
 ## Dashboard
 
-A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring jobs, queues and schedules.
+A web dashboard in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package monitors jobs, queues and schedules.
 
 See the [dashboard documentation](https://pgboss.io/dashboard) for details.
 
 ## Proxy
 
-A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package if needed to support use cases such as platform compatibility and connection pooling or scalability.
+An HTTP proxy in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package supports use cases such as platform compatibility, connection pooling and scalability.
 
 See the [proxy documentation](https://pgboss.io/proxy) for details.
 
 ## Pro
 
-[pg-boss Pro](https://pgboss.io/pro/) is the dashboard for teams: sending, retrying and deleting jobs and running operations over many at once from the console, by role, with alerts to email, webhooks and PagerDuty, accounts with single sign-on, an audit log, and an HTTP API and Prometheus metrics. It is a subscription.
+[pg-boss Pro](https://pgboss.io/pro/) is the dashboard for teams. From its console, you can send, retry and delete jobs and run operations over many at once, as your role allows. Pro sends alerts to email, webhooks and PagerDuty, and it has accounts with single sign-on, an audit log, an HTTP API and Prometheus metrics. It's a subscription.
 
 ## Requirements
 * Node 22.12 or higher, or Bun
@@ -83,7 +83,7 @@ See the [proxy documentation](https://pgboss.io/proxy) for details.
 
 ## Sponsors
 
-pg-boss is MIT licensed and always will be. It is maintained by one person, and sponsorship is what pays for the maintenance, security response, and support behind it.
+pg-boss is MIT licensed and always will be. One person maintains it, and sponsorship pays for the maintenance, security response and support behind it.
 
 [Become a sponsor](https://github.com/sponsors/timgit), or see everyone who already does on the [sponsors page](https://pgboss.io/sponsors).
 
@@ -100,7 +100,7 @@ pg-boss is MIT licensed and always will be. It is maintained by one person, and 
 * [Docs](https://pgboss.io/)
 
 ## Contributing
-To setup a development environment for this library:
+To set up a development environment for this library:
 
 ```bash
 git clone https://github.com/timgit/pg-boss.git
@@ -112,9 +112,9 @@ To run the test suite, linter and code coverage:
 npm run cover
 ```
 
-The test suite will try and create a new database named pgboss. The [config.json](https://github.com/timgit/pg-boss/blob/master/test/config.json) file has the default credentials to connect to postgres.
+The test suite tries to create a database named pgboss. The [config.json](https://github.com/timgit/pg-boss/blob/master/test/config.json) file has the default credentials for connecting to Postgres.
 
-The [Docker Compose](https://github.com/timgit/pg-boss/blob/master/docker-compose.yaml) file can be used to start a local postgres instance for testing:
+The [Docker Compose](https://github.com/timgit/pg-boss/blob/master/docker-compose.yaml) file starts a local Postgres instance for testing:
 
 ```bash
 docker compose up

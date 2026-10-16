@@ -8,8 +8,8 @@ says what matched, which rule raised it and at which version, and who was told.
 ![The alerts list](../images/pro/alerts.webp){.light-only}
 ![The alerts list](../images/pro/alerts-dark.webp){.dark-only}
 
-Alerts come only from rules: nothing opens an alert unless a rule that is turned
-on matched it. A rule belongs to one database, the one selected when it was made.
+Alerts come only from rules, and only a rule that's turned on opens one. A rule
+belongs to one database, the one selected when the rule was created.
 Administrators manage rules from the **Rules** button on the alerts page
 (`/pro/alerts/rules`).
 
@@ -17,11 +17,12 @@ Administrators manage rules from the **Rules** button on the alerts page
 ![An alert's page](../images/pro/alert-dark.webp){.dark-only}
 
 Operators and administrators can **acknowledge** an open alert, until it closes
-or for an hour, four hours or a day. It then leaves everybody's count and its
-notifications are held. Conditions, such as a stalled queue, close by themselves
-when they stop matching. Events, such as a pg-boss warning or a failed operation,
-have nothing to stop: they close when somebody resolves them, or after 24 hours.
+or for an hour, four hours or a day. The alert then leaves everybody's count, and
+Pro holds its notifications. Conditions, such as a stalled queue, close by
+themselves when they stop matching. Events, such as a pg-boss warning or a failed
+operation, have no condition that could stop matching, so they close when somebody
+resolves them, or after 24 hours.
 
-Rules are on [their own page](./alert-rules.md), and where alerts go on [Destinations](./destinations.md).
+Rules have [their own page](./alert-rules.md), and [Destinations](./destinations.md) covers where alerts go.
 
-API tokens can list open alerts and acknowledge one: see [the API](./api.md#alerts).
+API tokens can list open alerts and acknowledge one. See [the API](./api.md#alerts).

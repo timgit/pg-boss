@@ -1,6 +1,6 @@
 # Warning table
 
-When `persistWarnings` is enabled in the constructor options, warnings are stored in this table. This enables historical tracking and can be used with the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard) for monitoring.
+When you enable `persistWarnings` in the constructor options, pg-boss stores its warnings in this table. That keeps a history you can query, and the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard) shows it.
 
 ```sql
 CREATE TABLE pgboss.warning (
@@ -35,7 +35,7 @@ SELECT * FROM pgboss.warning WHERE created_on > now() - interval '1 hour';
 
 ## Cleanup
 
-Warnings older than 365 days are deleted automatically. To keep them for less time, set the `warningRetentionDays` option:
+pg-boss deletes warnings older than 365 days. To keep them for less time, set the `warningRetentionDays` option:
 
 ```js
 const boss = new PgBoss({
@@ -45,7 +45,7 @@ const boss = new PgBoss({
 });
 ```
 
-Warnings are pruned during the regular maintenance cycle (controlled by `maintenanceIntervalSeconds`).
+Maintenance prunes them on its regular cycle, which `maintenanceIntervalSeconds` sets.
 
 For manual cleanup:
 

@@ -1,19 +1,19 @@
 # Proxy
 
-An HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package, exposing pg-boss methods over a simple JSON API. It's useful for platform compatibility (calling pg-boss from non-Node runtimes or serverless functions) and for connection pooling and scalability.
+The [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package is an HTTP proxy that exposes pg-boss methods over a JSON API. Use it to call pg-boss from non-Node runtimes or serverless functions, or to pool connections as you scale.
 
-By default the proxy runs statelessly. Job supervision, scheduling, and migrations are all disabled, so it only opens a database connection and serves requests. A pg-boss instance is started via `start()`, which opens the database connection.
+By default the proxy is stateless. It turns off job supervision, scheduling and migrations, so it only opens a database connection and serves requests. `start()` starts its pg-boss instance, which opens the database connection.
 
 ## Features
 
-- **HTTP API**: Call pg-boss methods (`send`, `fetch`, `complete`, `getQueue`, and more) over plain JSON
-- **Runtime Neutral**: Ships a runtime-neutral entry point plus a Node convenience server, with shutdown adapters for Node, Deno, and Bun
-- **Interactive Docs**: Built-in Swagger UI and an OpenAPI spec served alongside the API
-- **Route Filtering**: Allowlist or denylist specific pg-boss methods to control what's exposed
-- **Auth & CORS**: Optional basic authentication and configurable CORS
-- **Configurable**: Drive everything from code options or environment variables
+- Call pg-boss methods (`send`, `fetch`, `complete`, `getQueue`, and more) over plain JSON.
+- Run it on any runtime. It ships a runtime-neutral entry point and a Node server, with shutdown adapters for Node, Deno and Bun.
+- Explore the API in the built-in Swagger UI, with an OpenAPI spec served next to it.
+- Allowlist or denylist specific pg-boss methods to control what's exposed.
+- Turn on basic authentication and CORS, both optional.
+- Configure everything from code options or environment variables.
 
-## Quick Start
+## Quick start
 
 ```bash
 npm install @pg-boss/proxy
@@ -36,9 +36,9 @@ await proxy.start()
 // Reads DATABASE_URL from process.env, listens on PORT (default 3000)
 ```
 
-## API Usage
+## API usage
 
-Once the proxy is running, interact with it using any HTTP client:
+Once the proxy is running, call it from any HTTP client:
 
 ```bash
 # Send a job to a queue
@@ -64,9 +64,9 @@ curl "http://localhost:3000/api/getQueue?name=my-queue"
 curl "http://localhost:3000/api/getQueues"
 ```
 
-## Response Format
+## Response format
 
-All endpoints return a consistent JSON envelope:
+Every endpoint returns the same JSON envelope:
 
 ```json
 // Success
@@ -76,15 +76,15 @@ All endpoints return a consistent JSON envelope:
 { "ok": false, "error": { "message": "..." } }
 ```
 
-The `result` field contains the direct return value of the underlying pg-boss method. HTTP status codes used: `200` for success, `400` for invalid input, `413` for body too large, and `500` for server errors.
+The `result` field holds the return value of the pg-boss method. The proxy answers `200` for success, `400` for invalid input, `413` for a body that's too large, and `500` for a server error.
 
-## Entry Points
+## Entry points
 
 This package ships a runtime-neutral entry point and a Node-only entry point.
 
 ### Runtime-neutral (default)
 
-Use this when you want a runtime-neutral entry point:
+This entry point runs on any runtime:
 
 ```ts
 import { createProxyService } from '@pg-boss/proxy'
@@ -100,9 +100,9 @@ await start()
 await stop()
 ```
 
-### Node Convenience Entry Point
+### Node convenience entry point
 
-If you want a ready-to-listen Node server with automatic shutdown signal wiring:
+This entry point gives you a Node server that's ready to listen and handles shutdown signals for you:
 
 ```ts
 import { createProxyServerNode } from '@pg-boss/proxy/node'
@@ -111,11 +111,11 @@ const proxy = await createProxyServerNode()
 await proxy.start()
 ```
 
-## Lifecycle Wiring by Runtime
+## Lifecycle wiring by runtime
 
 `createProxyServerNode` automatically attaches `SIGINT` and `SIGTERM` handlers. Set `attachSignals: false` to opt out and manage shutdown yourself.
 
-For `createProxyService` (runtime-neutral), or for non-Node runtimes, wire shutdown manually using `attachShutdownListeners` and the appropriate adapter:
+With `createProxyService`, or on a runtime other than Node, wire up shutdown yourself with `attachShutdownListeners` and the adapter for your runtime:
 
 ### Node
 
@@ -163,9 +163,9 @@ attachShutdownListeners(['SIGINT', 'SIGTERM'], bunShutdownAdapter, stop)
 
 ## Configuration
 
-You can configure the proxy using either **code options** or **environment variables**. Code options take precedence over environment variables if both are set.
+Configure the proxy with **code options** or **environment variables**. When both set the same thing, the code option wins.
 
-### Code Options
+### Code options
 
 The proxy accepts the following options:
 
@@ -224,9 +224,9 @@ const { app, boss } = await createProxyService({
 | `cors.methods` | `string` | `GET,POST,PUT,DELETE,PATCH,OPTIONS` | CORS allowed methods |
 | `cors.headers` | `string` | `Content-Type,Authorization` | CORS allowed headers |
 
-### Environment Variables
+### Environment variables
 
-Alternatively, configure everything via environment variables:
+Or configure everything with environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -255,9 +255,9 @@ Alternatively, configure everything via environment variables:
 | `PGBOSS_PROXY_CORS_CREDENTIALS` | `false` | CORS allow credentials |
 | `PGBOSS_PROXY_CORS_MAX_AGE` | - | CORS preflight cache duration (seconds) |
 
-### PgBoss Constructor Options
+### PgBoss constructor options
 
-You can pass any PgBoss constructor options via the `options` object:
+Pass any PgBoss constructor options in the `options` object:
 
 ```ts
 const { app, boss } = await createProxyService({
@@ -271,24 +271,24 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-By default, `supervise`, `schedule`, and `migrate` are set to `false` to run the proxy in a stateless manner. Set any of these to `true` to enable that functionality.
+By default, the proxy sets `supervise`, `schedule` and `migrate` to `false` so it runs stateless. Set any of them to `true` to turn that feature on.
 
 The proxy registers in the [instance registry](./api/ops.md#getinstances-options) as `pg-boss-proxy`. Pass `instanceName`, or set `PGBOSS_PROXY_INSTANCE_NAME`, to name each deployment.
 
 ### Authentication
 
-Basic auth can be enabled via environment variables:
+Turn on basic auth with environment variables:
 
 ```bash
 PGBOSS_PROXY_AUTH_USERNAME=admin
 PGBOSS_PROXY_AUTH_PASSWORD=secret
 ```
 
-Both variables must be set together. When enabled, auth is applied to all routes under the prefix (e.g., `/api/*`). The root page (`/`), Swagger docs (`/docs`), and OpenAPI spec (`/openapi.json`) sit outside the prefix and remain publicly accessible.
+Set both variables or neither. Auth then applies to every route under the prefix (`/api/*`, for example). The root page (`/`), the Swagger docs (`/docs`) and the OpenAPI spec (`/openapi.json`) sit outside the prefix and stay public.
 
 ### CORS
 
-CORS can be enabled via environment variables:
+Turn on CORS with environment variables:
 
 ```bash
 # Required: comma-separated list of allowed origins (use "*" for any)
@@ -310,11 +310,11 @@ PGBOSS_PROXY_CORS_CREDENTIALS=true
 PGBOSS_PROXY_CORS_MAX_AGE=3600
 ```
 
-When `PGBOSS_PROXY_CORS_ORIGIN` is set, CORS middleware is applied to all routes under the prefix. The root page and docs remain unaffected.
+When `PGBOSS_PROXY_CORS_ORIGIN` is set, the proxy applies CORS middleware to every route under the prefix. The root page and docs don't get it.
 
-### Custom Middleware
+### Custom middleware
 
-You can add custom Hono middleware to the API routes:
+Add your own Hono middleware to the API routes:
 
 ```ts
 import { secureHeaders } from 'hono/secure-headers'
@@ -330,9 +330,9 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-### Authorizing Each Call
+### Authorizing each call
 
-`middleware` runs before every route under the prefix without knowing which method was called. `authorize` is called for each API request with the pg-boss method name, so access can depend on the method and the caller:
+`middleware` runs before every route under the prefix and doesn't know which method was called. The proxy calls `authorize` for each API request with the pg-boss method name, so you can grant access by method and by caller:
 
 ```ts
 const { app, boss } = await createProxyService({
@@ -349,16 +349,16 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-- It runs after `middleware`, so anything a middleware sets on the context is available, and before the request body or query is validated.
+- It runs after `middleware`, so it sees anything a middleware set on the context. It runs before the proxy validates the request body or query.
 - Return `true` to let the call through. `false` refuses it with `403 Forbidden`, and `{ status, message }` refuses it with that status. Anything else, including returning nothing, refuses the call with `403`.
-- Headers set on the context before returning, such as `WWW-Authenticate`, are kept on the refusal.
-- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec are not API routes and are not passed to it.
+- The refusal keeps any headers you set on the context before returning, such as `WWW-Authenticate`.
+- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec aren't API routes, so they never reach it.
 - A hook that throws answers `500`, with the message only when `exposeErrors` is on.
 - Methods removed by `routes.allow` or `routes.deny` have no route, so they answer `404` before `authorize` is called.
 
-### Mounting Several Services
+### Mounting several services
 
-`app` is a Hono app, so it can be mounted in another one with `route()`. Each service wraps its own `PgBoss` instance, so one parent app can serve several databases:
+`app` is a Hono app, so you can mount it in another one with `route()`. Each service wraps its own `PgBoss` instance, so one parent app can serve several databases:
 
 ```ts
 import { Hono } from 'hono'
@@ -377,14 +377,14 @@ for (const [name, connectionString] of Object.entries(databases)) {
 }
 ```
 
-- With `prefix: ''`, a database's methods are at `/db/<name>/send` and so on. With the default prefix they are at `/db/<name>/api/send`.
+- With `prefix: ''`, a database's methods are at `/db/<name>/send` and so on. With the default prefix they're at `/db/<name>/api/send`.
 - The root page, the docs and the OpenAPI spec are served under the mount too (`/db/<name>/docs`) and link through it. The spec lists the mount as its server, so the docs' **Try it out** calls the right database.
 - `env: {}` keeps every service from reading `PGBOSS_PROXY_*` variables and `DATABASE_URL` from the process, which would otherwise apply to all of them.
 - Each service has its own `stop()`. Call each one when the parent shuts down.
 
-### Custom PgBoss Factory
+### Custom PgBoss factory
 
-For advanced customization, you can provide a custom `bossFactory` function to wrap or modify pg-boss behavior:
+To wrap or change pg-boss behavior, pass a `bossFactory` function:
 
 ```ts
 import { PgBoss } from 'pg-boss'
@@ -410,9 +410,9 @@ const { app, boss } = await createProxyService({
 await boss.start()
 ```
 
-### Route Filtering
+### Route filtering
 
-You can allowlist or denylist pg-boss methods to control which API routes are exposed:
+Allowlist or denylist pg-boss methods to control which API routes the proxy exposes:
 
 ```ts
 const { app, boss } = await createProxyService({
@@ -436,9 +436,9 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-### Disabling Pages
+### Disabling pages
 
-You can disable the root page, docs, or OpenAPI spec:
+Turn off the root page, the docs or the OpenAPI spec:
 
 ```ts
 const { app, boss } = await createProxyService({
@@ -506,7 +506,7 @@ services:
       - "5432:5432"
 ```
 
-## API Reference
+## API reference
 
 - `http://localhost:3000/docs`: Swagger UI for exploring all endpoints
 - `http://localhost:3000/openapi.json`: machine-readable OpenAPI specification

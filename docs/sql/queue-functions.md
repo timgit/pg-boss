@@ -1,10 +1,10 @@
 # Queue functions
 
-Queues can be created or deleted from SQL functions.
+You can create and delete queues with SQL functions.
 
 ### `pgboss.create_queue(queue_name text, options jsonb)`
 
-Options are the same as in [`createQueue()`](../api/queues#createqueue-name-queue).
+`options` takes the same options as [`createQueue()`](../api/queues#createqueue-name-queue).
 
 ### `pgboss.delete_queue(queue_name text)`
 

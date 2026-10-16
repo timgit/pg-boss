@@ -1,34 +1,36 @@
 # Destinations
 
-Destinations are in Settings (`/pro/destinations`), shared by the rules of every
-database: email, a webhook, or PagerDuty. **Send test** sends a sample alert that
-fires and then resolves, so a receiver's handling of both is proven, and every
-attempt, tests included, is listed with what the far end said.
+Destinations live in Settings (`/pro/destinations`), and the rules of every
+database share them. A destination is an email, a webhook, or PagerDuty. **Send
+test** sends a sample alert that fires and then resolves, so you can see the
+receiver handle both. The page lists every attempt, tests included, with what the
+far end said.
 
 ![The destinations page](../images/pro/destinations.webp){.light-only}
 ![The destinations page](../images/pro/destinations-dark.webp){.dark-only}
 
-Every alert is told when it fires and again when it closes, whichever way it
-closes: the condition ended, somebody resolved or acknowledged an event, an event
+Pro sends every alert to its destinations when it fires and again when it
+closes, whichever way it closes: the condition ended, somebody resolved or acknowledged an event, an event
 expired, or its rule changed, was turned off or was deleted. A resolve goes only
 where the fire went, once.
 
 **Links in alerts.** Set the console's address on the same page, and emails,
-webhooks and PagerDuty link each alert to its page. Until it is set, they carry
+webhooks and PagerDuty link each alert to its page. Until you set it, they carry
 no link.
 
 ## Email
 
-SMTP or Resend, configured on the same page.
+Email goes out through SMTP or Resend, which you configure on the same page.
 
 ## Webhook
 
-A webhook's URL is stored encrypted, since receivers often keep their token in
-the path or the query, and the page and the audit log show its origin only.
-Editing one leaves the URL blank: leave it so to keep it, or enter a new one.
+Pro stores a webhook's URL encrypted, since receivers often keep their token in
+the path or the query. The page and the audit log show only its origin. When you
+edit a webhook, its URL field is blank. Leave it blank to keep the URL, or enter a
+new one.
 
-A POST of [Prometheus Alertmanager's webhook body](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config),
-version 4, one alert per request, so an on-call tool that takes Alertmanager can
+Pro sends a POST with [Prometheus Alertmanager's webhook body](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config),
+version 4, one alert per request. An on-call tool that takes Alertmanager can
 receive Pro's alerts with no relay:
 
 ```json
@@ -66,20 +68,21 @@ receive Pro's alerts with no relay:
 }
 ```
 
-- `fingerprint` and `groupKey` are the alert's id, the same on every send for one
-  alert, which is what a receiver dedupes on. A resolve has `status: "resolved"`
-  and the time it closed in `endsAt`; `pgboss.closedReason` says why.
-- `summary` is the title the alert opened with, and stays so while the alert's
-  title follows what it finds, say from falling behind to stalled; the
-  description then starts with the title as it reads now. Receivers that match a
+- `fingerprint` and `groupKey` are the alert's id, so they're the same on every
+  send for one alert, and a receiver dedupes on them. A resolve has
+  `status: "resolved"` and the time it closed in `endsAt`, and
+  `pgboss.closedReason` says why.
+- `summary` is the title the alert opened with. It stays the same when the
+  alert's title changes with what it finds, say from falling behind to stalled,
+  and the description then starts with the current title. Receivers that match a
   resolve to its alert by the summary, such as GoAlert, close what they opened.
 - `severity` is `critical`, or `warning` for a rule whose severity is watch.
-- Labels hold strings only. `pgboss` carries what each kind of alert adds, typed,
-  for a receiver written for Pro; a receiver for Alertmanager ignores it.
+- Labels hold strings only. `pgboss` holds what each kind of alert adds, typed,
+  for a receiver written for Pro. A receiver written for Alertmanager ignores it.
 - **Signing secret**, optional: every request then carries
   `pgboss-signature: t=<unix seconds>,v1=<hex>`, an HMAC-SHA256 of
   `timestamp.body`. Verify it the way you would a Stripe webhook, and reject
-  anything whose timestamp is not recent:
+  anything whose timestamp isn't recent:
 
   ```js
   import { createHmac, timingSafeEqual } from 'node:crypto'
@@ -93,18 +96,18 @@ receive Pro's alerts with no relay:
   }
   ```
 
-- **Authorization header**, optional: sent as it is, for a receiver that takes a
-  token (`Bearer …`). Stored encrypted, like the signing secret, and never shown
-  again once saved.
+- **Authorization header**, optional: Pro sends it as it is, for a receiver that
+  takes a token (`Bearer …`). Pro stores it encrypted, like the signing secret,
+  and never shows it again once saved.
 
 ## PagerDuty
 
-Posts to PagerDuty's Events API v2 with the integration key of an Events API v2
-integration on the service you want paged. Each alert triggers one incident,
+Pro posts to PagerDuty's Events API v2 with the integration key of an Events API
+v2 integration on the service you want paged. Each alert triggers one incident,
 deduplicated by the alert's id, and resolves it when the alert closes. The
-incident's summary is the alert's title, its source the database's name, its
-severity `critical` or `warning`, and its details the alert's why, rule and data,
-with a link to the alert once the console's address is set. The key is stored
-encrypted. A key PagerDuty refuses is recorded as a failed delivery.
+incident's summary is the alert's title, its source is the database's name, and
+its severity is `critical` or `warning`. Its details hold the alert's why, rule
+and data, with a link to the alert once the console's address is set. Pro stores
+the key encrypted, and records a key PagerDuty refuses as a failed delivery.
 
-Secrets need `PGBOSS_PRO_SECRET_KEY`: see [Secrets](./administration.md#secrets).
+Secrets need `PGBOSS_PRO_SECRET_KEY`. See [Secrets](./administration.md#secrets).

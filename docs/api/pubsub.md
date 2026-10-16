@@ -1,15 +1,15 @@
 # Pub-sub
 
-Pub-sub in pg-boss is a light abstraction over creating more than 1 job into multiple queues from a single event. Otherwise, use `send()` or `insert()`.
+Pub-sub in pg-boss is a light layer for creating jobs in more than 1 queue from a single event. For a single queue, use `send()` or `insert()`.
 
 ### `publish(event, data, options)`
 
-Publish an event with optional data and options (Same as `send()` args). Looks up all subscriptions for the event and sends to each queue.
+Publishes an event with optional data and options, which take the same arguments as `send()`. It looks up every subscription to the event and sends to each subscribed queue.
 
-A subscribed queue deleted while `publish()` is running is skipped, unless the send ran on a `db` you passed: a
-failed statement may have aborted your transaction, so it is reported. Other send failures reject with an
-`AggregateError` naming each failed queue after all sends settle. Outside a caller-owned transaction, successful
-deliveries remain, so retrying the publication can duplicate them.
+If a subscribed queue is deleted while `publish()` runs, `publish()` skips it. The exception is a send that ran
+on a `db` you passed, which `publish()` reports, because the failed statement may have aborted your transaction.
+Once every send settles, any other failures reject with an `AggregateError` that names each failed queue. Outside
+a transaction you own, the sends that succeeded keep their jobs, so retrying `publish()` can duplicate them.
 
 ```js
 // creates a job in each queue subscribed to 'user.signed-up'

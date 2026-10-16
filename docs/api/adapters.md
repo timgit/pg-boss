@@ -1,11 +1,11 @@
-# ORM Transaction Adapters
+# ORM transaction adapters
 
-pg-boss operations such as `send()`, `insert()`, `fetch()`, and `complete()` accept a `db` option that lets you run them inside an existing database transaction. This is how you ensure that job creation (or completion) is atomic with your application's own writes. If the transaction rolls back, so does the job.
+pg-boss operations such as `send()`, `insert()`, `fetch()`, and `complete()` accept a `db` option that lets you run them inside an existing database transaction. Use it to make creating or completing a job atomic with your application's own writes. If the transaction rolls back, so does the job.
 
 > [!NOTE]
-> To go the other way, and commit a worker's writes with the job's completion, use a [transactional worker](./workers.md#work-name-options-handler). pg-boss opens that transaction itself, so the ORM adapters below, which wrap a transaction you already have, do not apply to it.
+> To go the other way, and commit a worker's writes with the job's completion, use a [transactional worker](./workers.md#work-name-options-handler). pg-boss opens that transaction itself, so the ORM adapters below, which wrap a transaction you already have, don't apply to it.
 
-Each adapter wraps the ORM's transaction object as a pg-boss `Db` (the `executeSql` interface), so pg-boss can execute its own SQL within your transaction.
+Each adapter wraps the ORM's transaction object as a pg-boss `Db` (the `executeSql` interface), so pg-boss can run its own SQL in your transaction.
 
 ```ts
 interface Db {
@@ -41,7 +41,7 @@ await db.transaction().execute(async (trx) => {
 
 ## Drizzle
 
-The Drizzle adapter requires the `sql` tagged-template function from `drizzle-orm` as a second argument. This allows pg-boss to construct parameterised queries through Drizzle's public API without adding `drizzle-orm` as a runtime dependency. The `node-postgres`, `postgres-js` and `bun-sql` drivers are supported. For `bun-sql`, see [Bun](../database-backends.md#bun-driver), which covers running pg-boss on Bun's client as well as enqueueing through it.
+The Drizzle adapter requires the `sql` tagged-template function from `drizzle-orm` as its second argument. pg-boss uses it to build parameterized queries through Drizzle's public API, so it doesn't need `drizzle-orm` as a runtime dependency. The adapter supports the `node-postgres`, `postgres-js` and `bun-sql` drivers. For `bun-sql`, see [Bun](../database-backends.md#bun-driver), which covers running pg-boss on Bun's client as well as enqueueing through it.
 
 ```ts
 import { fromDrizzle } from 'pg-boss'
@@ -68,6 +68,6 @@ await prisma.$transaction(async (tx) => {
 })
 ```
 
-## Rollback behaviour
+## Rollback behavior
 
-When the ORM transaction is rolled back (either explicitly or by throwing an error), all pg-boss operations executed through the adapter are rolled back as well. This is the primary reason to use these adapters: it guarantees atomicity between your application writes and job scheduling.
+When the ORM transaction rolls back, whether you roll it back or an error is thrown, every pg-boss operation run through the adapter rolls back with it. Keeping your application's writes and its job scheduling atomic is the main reason to use these adapters.

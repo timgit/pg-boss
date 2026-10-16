@@ -39,9 +39,9 @@ const README_END = '<!-- sponsors:end -->'
 // sit here before the tier has sold — which is why Partner and Advisory are
 // already listed.
 const TIERS = [
-  { dollars: 1000, heading: 'Advisory Sponsors', logoSize: 128 },
-  { dollars: 500, heading: 'Partner Sponsors', logoSize: 112 },
-  { dollars: 250, heading: 'Production Sponsors', logoSize: 96 },
+  { dollars: 1000, heading: 'Advisory sponsors', logoSize: 128 },
+  { dollars: 500, heading: 'Partner sponsors', logoSize: 112 },
+  { dollars: 250, heading: 'Production sponsors', logoSize: 96 },
   { dollars: 50, heading: 'Sponsors', logoSize: 64 },
   { dollars: 10, heading: 'Backers' }
 ]

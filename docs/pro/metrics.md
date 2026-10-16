@@ -1,6 +1,6 @@
 # Metrics
 
-`/metrics` serves Prometheus the databases an [API token](./api-tokens.md)'s service account can see, from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. It never counts the job table. Under a base path, it is under it too: `/pgboss/metrics`.
+`/metrics` serves Prometheus metrics for the databases an [API token](./api-tokens.md)'s service account can see. The metrics come from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. It never counts the job table. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
 
 | Metric | Labels | What |
 | - | - | - |
@@ -17,7 +17,7 @@
 | `pgboss_instance_cpu_cores` | `database`, `instance`, `name`, `host` | CPU cores its process used. |
 | `pgboss_instance_memory_bytes` | `database`, `instance`, `name`, `host` | Its process's resident memory. |
 
-A figure pg-boss has not recorded is left out rather than reported as 0. Rates and health need `persistQueueStats`; wait and run times and the instances need pg-boss 12.36. A 0.99 quantile is reported once the hour holds 100 finished jobs.
+Pro leaves out any figure pg-boss hasn't recorded, so it never shows up as 0. Rates and health need `persistQueueStats`. Wait times, run times and the instance metrics need pg-boss 12.36. The 0.99 quantile appears once the hour holds 100 finished jobs.
 
 ## Prometheus
 
