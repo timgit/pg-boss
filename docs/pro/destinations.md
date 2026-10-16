@@ -23,8 +23,8 @@ SMTP or Resend, configured on the same page.
 
 ## Webhook
 
-The page shows a webhook's URL by its origin only, since receivers often keep
-their token in the path or the query, and the audit log records it the same way.
+A webhook's URL is stored encrypted, since receivers often keep their token in
+the path or the query, and the page and the audit log show its origin only.
 Editing one leaves the URL blank: leave it so to keep it, or enter a new one.
 
 A POST of [Prometheus Alertmanager's webhook body](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config),

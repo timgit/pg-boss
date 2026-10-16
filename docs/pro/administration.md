@@ -14,7 +14,7 @@ Pro prunes its own store once a minute.
 
 ## Secrets
 
-SMTP passwords, API keys, webhook signing secrets and Authorization headers,
+SMTP passwords, API keys, webhook URLs, signing secrets and Authorization headers,
 PagerDuty integration keys and the OIDC client secret are encrypted before they
 are stored, with a key from the environment:
 
@@ -25,4 +25,5 @@ PGBOSS_PRO_SECRET_KEY="$(openssl rand -base64 32)"
 Without it, the screens that keep secrets refuse to save them and say so.
 Nothing is ever written in the clear, and no secret is sent back to the browser
 once stored: the fields show bullets, and saving without touching them keeps
-what is there. Losing the key means re-entering those secrets, nothing worse.
+what is there. Webhooks and PagerDuty destinations therefore need the key before
+one can be added. Losing the key means re-entering those secrets, nothing worse.

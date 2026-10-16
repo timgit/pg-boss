@@ -10,7 +10,7 @@
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | | A statement timeout for the pages' reads, in milliseconds. |
 | `PGBOSS_PRO_DATABASE_URL` | the first database | Where Pro keeps its own tables. |
 | `PGBOSS_PRO_SCHEMA` | `pgboss_pro` | The schema for them, created and migrated on startup. |
-| `PGBOSS_PRO_SECRET_KEY` | | Encrypts stored secrets: email passwords and keys, webhook secrets and Authorization headers, PagerDuty keys, the SSO client secret. See [secrets](./administration.md#secrets). |
+| `PGBOSS_PRO_SECRET_KEY` | | Encrypts stored secrets: email passwords and keys, webhook URLs, secrets and Authorization headers, PagerDuty keys, the SSO client secret. See [secrets](./administration.md#secrets). |
 | `PGBOSS_PRO_LICENSE` | | The license text. See [the license](./license.md). |
 | `PGBOSS_PRO_LICENSE_FILE` | | A `license.json` somewhere other than the package. |
 
