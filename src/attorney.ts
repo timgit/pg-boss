@@ -398,7 +398,7 @@ function validateGroupConcurrencyConfig (config: any) {
 
   assert(
     !(hasGlobal && hasLocal),
-    'cannot specify both groupConcurrency and localGroupConcurrency - choose one'
+    'cannot specify both groupConcurrency and localGroupConcurrency'
   )
 
   if (hasGlobal) validateGroupConcurrencyValue(config.groupConcurrency, 'groupConcurrency')
