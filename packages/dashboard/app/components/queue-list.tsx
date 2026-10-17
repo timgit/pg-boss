@@ -6,6 +6,7 @@ import { ProSlot } from '~/components/pro-slot'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
+import { PolicyBadge } from '~/components/policy-badge'
 import { FilterSelect } from '~/components/ui/filter-select'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { Sparkline } from '~/components/ui/sparkline'
@@ -437,7 +438,7 @@ export function QueueTable ({ queues, extensions }: { queues: QueueResult[], ext
               <TableCell className={numCell}>{n(queue.activeCount)}</TableCell>
               <TableCell className={numCell}>{n(queue.failedCount)}</TableCell>
               {!hidden.has('total') && <TableCell className={numCell}>{n(queue.totalCount)}</TableCell>}
-              <TableCell><Badge variant="gray" size="sm">{queue.policy}</Badge></TableCell>
+              <TableCell><PolicyBadge policy={queue.policy} /></TableCell>
               {!hidden.has('storage') && <TableCell className="text-[var(--text-secondary)]">{queue.partition ? 'Partitioned' : 'Shared'}</TableCell>}
             </TableRow>
           ))}

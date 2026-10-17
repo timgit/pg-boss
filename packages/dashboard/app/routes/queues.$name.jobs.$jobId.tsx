@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useRevalidator } from 'react-router'
 import { DeadLetterBadge } from '~/components/dead-letter-badge'
+import { PolicyBadge } from '~/components/policy-badge'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
 import { ProSlot } from '~/components/pro-slot'
@@ -123,7 +124,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
 
   const rows: ConfigRow[] = []
   const unset: string[] = []
-  if (job.policy) rows.push({ label: 'Policy', value: job.policy })
+  if (job.policy) rows.push({ label: 'Policy', value: <PolicyBadge policy={job.policy} /> })
   rows.push({ label: 'Priority', value: job.priority, mono: true })
   if (job.singletonKey) rows.push({ label: 'Singleton key', value: job.singletonKey, mono: true })
   else unset.push('singleton key')

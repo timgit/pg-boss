@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import { LineChart } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
 import { DeadLetterBadge } from '~/components/dead-letter-badge'
+import { PolicyBadge } from '~/components/policy-badge'
 import { ConfigCard, type ConfigRow } from '~/components/job-detail'
 import { CountsCard, strong } from '~/components/stats-cards'
 import { ProSlot, hasProSlot } from '~/components/pro-slot'
@@ -147,7 +148,7 @@ function retries (queue: QueueResult): string {
 /** The queue's settings, only those it has, and the events it is subscribed to. */
 export function QueueConfig ({ queue, subscribedEvents = 0 }: { queue: QueueResult, subscribedEvents?: number }) {
   const rows: ConfigRow[] = [
-    { label: 'Policy', value: queue.policy || 'standard' },
+    { label: 'Policy', value: <PolicyBadge policy={queue.policy} /> },
     { label: 'Storage', value: queue.partition ? 'Partitioned' : 'Shared' },
   ]
   if (queue.deadLetter) {
