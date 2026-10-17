@@ -17,7 +17,7 @@ pg-boss Pro is the [pg-boss dashboard](../dashboard.md) with what a team needs t
 
 Pro costs $1,000 a year or $100 a month for one organization, with no limit on people, installations or databases. If you stop paying after twelve months paid in total, the versions released before the subscription ended stay yours to install and run. While it lasts, a subscription gets you every newer version, and support. See [the license](./license.md).
 
-<!-- TODO before launch: the checkout link. -->
+[Buy Pro](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc). Polar takes the payment and shows your license key on your purchases page.
 
 Pro sends nothing anywhere you haven't configured. See [network activity](./network.md).
 

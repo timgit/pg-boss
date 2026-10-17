@@ -4,7 +4,7 @@
 
 - Node.js 22.12 or later.
 - A Postgres database with a pg-boss schema, version 44 (pg-boss 12.36) or later. Pro makes changes only on the schema of the pg-boss it's built with. See [pg-boss versions](./versions.md).
-- A Pro subscription, which gives you a license key.
+- A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which gives you a license key.
 
 ## Install
 
