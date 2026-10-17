@@ -25,10 +25,14 @@
  * - Flows whose parents nothing works, so their children stay blocked: payments
  *   waiting on invoices in `billing`, and in the fleet, invoices and shipments
  *   waiting on orders.
+ * - A registry of instances and their workers, written directly rather than by
+ *   running them: see `dev-instances.ts`, whose `npm run dev:instances` keeps
+ *   them live.
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Client } from 'pg'
 import { PgBoss } from 'pg-boss'
+import { seedInstances } from './dev-instances.ts'
 
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/pgboss'
 const schema = process.env.PGBOSS_SCHEMA || 'pgboss_dev'
@@ -79,6 +83,9 @@ const boss = new PgBoss({
   // recorded" banner — which is accurate but makes the whole surface
   // unreviewable in dev. `queueStatRetentionDays` defaults to 7.
   persistQueueStats: true,
+  // The instance registry gets a seeded fleet instead (see dev-instances.ts); this script's own
+  // start and stop would only add a stopped run to it.
+  registerInstance: false,
 })
 
 boss.on('error', (err) => console.error('pg-boss error:', err.message))
@@ -106,6 +113,7 @@ async function main () {
   await boss.stop()
 
   await seedWarnings()
+  await seedRegistry()
   await seedAsyncMigrations()
   await seedReadyHistory()
   await seedQueueStats()
@@ -402,6 +410,20 @@ async function seedAsyncMigrations () {
       )
     }
     console.log(`  async migrations: ${rows.length}`)
+  } finally {
+    await client.end()
+  }
+}
+
+/** The instance fleet from dev-instances.ts; `PGBOSS_SEED_INSTANCES=0` leaves the registry empty for real instances. */
+async function seedRegistry () {
+  if (process.env.PGBOSS_SEED_INSTANCES === '0') return
+
+  const client = new Client({ connectionString })
+  await client.connect()
+
+  try {
+    console.log(`  instances: ${await seedInstances(client, schema)} (\`npm run dev:instances\` keeps them live)`)
   } finally {
     await client.end()
   }
