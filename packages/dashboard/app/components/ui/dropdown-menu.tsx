@@ -28,8 +28,8 @@ const DropdownMenuSubTrigger = forwardRef<
     ref={ref}
     className={cn(
       'flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none',
-      'focus:bg-gray-100 dark:focus:bg-gray-800',
-      'data-open:bg-gray-100 dark:data-open:bg-gray-800',
+      'focus:bg-[var(--surface-hover)]',
+      'data-open:bg-[var(--surface-hover)]',
       inset && 'pl-8',
       className
     )}
@@ -46,13 +46,12 @@ const DropdownMenuSubContent = forwardRef<
   ComponentPropsWithoutRef<typeof Menu.Popup>
 >(({ className, ...props }, ref) => (
   <Menu.Portal>
-    <Menu.Positioner>
+    <Menu.Positioner className="z-50">
       <Menu.Popup
         ref={ref}
         className={cn(
-          'z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-lg',
-          'bg-white border-gray-200',
-          'dark:bg-gray-900 dark:border-gray-800',
+          'z-50 min-w-[8rem] overflow-hidden rounded-lg border p-1 shadow-lg outline-none',
+          'bg-[var(--surface-card)] border-[var(--border-default)] text-[var(--text-primary)]',
           'data-open:animate-in data-closed:animate-out',
           'data-closed:fade-out-0 data-open:fade-in-0',
           'data-closed:zoom-out-95 data-open:zoom-in-95',
@@ -72,13 +71,12 @@ const DropdownMenuContent = forwardRef<
   ComponentPropsWithoutRef<typeof Menu.Popup> & Pick<ComponentPropsWithoutRef<typeof Menu.Positioner>, 'align' | 'sideOffset'>
 >(({ className, align, sideOffset, ...props }, ref) => (
   <Menu.Portal>
-    <Menu.Positioner align={align} sideOffset={sideOffset}>
+    <Menu.Positioner align={align} sideOffset={sideOffset ?? 8} className="z-50">
       <Menu.Popup
         ref={ref}
         className={cn(
-          'z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-md',
-          'bg-white border-gray-200 text-gray-900',
-          'dark:bg-gray-900 dark:border-gray-800 dark:text-gray-100',
+          'z-50 min-w-[8rem] overflow-hidden rounded-lg border p-1 shadow-lg outline-none',
+          'bg-[var(--surface-card)] border-[var(--border-default)] text-[var(--text-primary)]',
           'data-open:animate-in data-closed:animate-out',
           'data-closed:fade-out-0 data-open:fade-in-0',
           'data-closed:zoom-out-95 data-open:zoom-in-95',
@@ -103,8 +101,7 @@ const DropdownMenuItem = forwardRef<
     ref={ref}
     className={cn(
       'relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors',
-      'data-highlighted:bg-gray-100 data-highlighted:text-gray-900',
-      'dark:data-highlighted:bg-gray-800 dark:data-highlighted:text-gray-100',
+      'data-highlighted:bg-[var(--surface-hover)] data-highlighted:text-[var(--text-primary)]',
       'data-disabled:pointer-events-none data-disabled:opacity-50',
       inset && 'pl-8',
       className
@@ -122,8 +119,7 @@ const DropdownMenuCheckboxItem = forwardRef<
     ref={ref}
     className={cn(
       'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors',
-      'data-highlighted:bg-gray-100 data-highlighted:text-gray-900',
-      'dark:data-highlighted:bg-gray-800 dark:data-highlighted:text-gray-100',
+      'data-highlighted:bg-[var(--surface-hover)] data-highlighted:text-[var(--text-primary)]',
       'data-disabled:pointer-events-none data-disabled:opacity-50',
       className
     )}
@@ -146,8 +142,7 @@ const DropdownMenuRadioItem = forwardRef<
     ref={ref}
     className={cn(
       'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors',
-      'data-highlighted:bg-gray-100 data-highlighted:text-gray-900',
-      'dark:data-highlighted:bg-gray-800 dark:data-highlighted:text-gray-100',
+      'data-highlighted:bg-[var(--surface-hover)] data-highlighted:text-[var(--text-primary)]',
       'data-disabled:pointer-events-none data-disabled:opacity-50',
       className
     )}
@@ -185,7 +180,7 @@ const DropdownMenuSeparator = forwardRef<
 >(({ className, ...props }, ref) => (
   <Menu.Separator
     ref={ref}
-    className={cn('-mx-1 my-1 h-px bg-gray-200 dark:bg-gray-800', className)}
+    className={cn('-mx-1 my-1 h-px bg-[var(--border-subtle)]', className)}
     {...props}
   />
 ))
