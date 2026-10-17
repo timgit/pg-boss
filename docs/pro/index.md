@@ -1,6 +1,6 @@
 # pg-boss Pro
 
-pg-boss Pro is the [pg-boss dashboard](../dashboard.md) with what a team needs to run pg-boss. It adds the changes the free dashboard leaves to code, alerts that reach the people on call, accounts and roles, an audit log, and an API for the scripts and workers around it. It's the same application, configured the same way, so moving from `@pg-boss/dashboard` is a change of package name.
+Once your business runs on pg-boss, a stalled queue is an outage. Pro alerts whoever is on call, by email, webhook or a paging service. Your team can retry, cancel and delete jobs from the browser, each person signed in with their own role, and the audit log records every change. Pro is built and supported by the author of pg-boss. It's the [free dashboard](../dashboard.md) with all this added, so upgrading from `@pg-boss/dashboard` is a change of package name.
 
 ![The Pro overview](../images/pro/overview.webp){.light-only}
 ![The Pro overview](../images/pro/overview-dark.webp){.dark-only}
