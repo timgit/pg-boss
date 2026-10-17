@@ -40,8 +40,8 @@ DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-pro
 
 Open `http://localhost:3000`. On first run there are no accounts, so open `/setup` and create the first administrator. That page closes for good once the first account exists.
 
-![Signing in to Pro](../images/pro/login.webp){.light-only}
-![Signing in to Pro](../images/pro/login-dark.webp){.dark-only}
+![Creating the first administrator](../images/pro/setup.webp){.light-only}
+![Creating the first administrator](../images/pro/setup-dark.webp){.dark-only}
 
 Pro keeps its own tables (accounts, rules, alerts and the audit log among them) in a `pgboss_pro` schema, separate from pg-boss's, and creates and migrates it on startup. Nothing in it touches your job tables. [Environment variables](./environment.md) lists every variable.
 
