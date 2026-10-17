@@ -39,7 +39,7 @@ const inRouter = (node: React.ReactNode) => render(<MemoryRouter>{node}</MemoryR
 
 describe("QueueCounts", () => {
   it("leads with ready, active, failed and total, with queued and deferred as Ready's lines", () => {
-    inRouter(<QueueCounts queue={queue} statsAvailable />);
+    inRouter(<QueueCounts queue={queue} />);
 
     const counts = screen.getByRole("region", { name: "Counts" });
     expect(within(counts).getAllByRole("link").map((a) => a.textContent?.match(/^[A-Za-z ]+/)?.[0])).toEqual(["Ready", "Active", "Failed", "Total Jobs"]);
@@ -49,7 +49,7 @@ describe("QueueCounts", () => {
   });
 
   it("says nothing of the warning size while the queue is under it", () => {
-    inRouter(<QueueCounts queue={{ ...queue, queuedCount: 3, deferredCount: 0, blockedCount: 0, readyCount: 3 }} statsAvailable />);
+    inRouter(<QueueCounts queue={{ ...queue, queuedCount: 3, deferredCount: 0, blockedCount: 0, readyCount: 3 }} />);
 
     expect(screen.getByText(line(/^of 3 queued$/))).toBeInTheDocument();
     expect(screen.getByText("none deferred")).toBeInTheDocument();

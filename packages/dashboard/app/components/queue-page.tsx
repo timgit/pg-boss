@@ -81,9 +81,9 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
 
 /**
  * Ready, active, failed and total in one card, as on the overview, each opening the metrics page at
- * the chart that holds it; and the banner when no history is kept.
+ * the chart that holds it. An overlay that knows the queue's workers gives Active its own lines.
  */
-export function QueueCounts ({ queue, statsAvailable }: { queue: QueueResult, statsAvailable: boolean }) {
+export function QueueCounts ({ queue, activeLines = ['processing now'] }: { queue: QueueResult, activeLines?: ReactNode[] }) {
   // ready_history is stored newest-first; reverse to chronological (oldest → newest) for the chart.
   const readyTrend = queue.readyHistory ? [...queue.readyHistory].reverse() : []
   const waitingHref = `${metricsPath(queue.name)}#waiting`
@@ -94,47 +94,43 @@ export function QueueCounts ({ queue, statsAvailable }: { queue: QueueResult, st
   const finished = Math.max(0, queue.totalCount - queue.queuedCount - queue.activeCount - queue.failedCount)
 
   return (
-    <>
-      {!statsAvailable && <StatsDisabledBanner />}
-
-      <CountsCard
-        label="Counts"
-        cells={[
-          {
-            key: 'ready',
-            label: 'Ready',
-            value: queue.readyCount,
-            primary: true,
-            to: waitingHref,
-            aside: readyTrend.length > 0 && (
-              <Sparkline
-                data={readyTrend}
-                width={96}
-                height={26}
-                color="var(--primary-600)"
-                area
-                aria-label="Ready count over the last hour"
-              />
-            ),
-            lines: [
-              overWarning
-                ? <>of {strong(queue.queuedCount, 'text-[var(--state-failed-fg)]')} queued, over its warning size of <Count value={warningSize} /></>
-                : <>of {strong(queue.queuedCount)} queued</>,
-              <>{queue.deferredCount > 0 ? <><Count value={queue.deferredCount} /> deferred for later</> : 'none deferred'}{queue.blockedCount > 0 && <> · <Count value={queue.blockedCount} /> blocked</>}</>,
-            ],
-          },
-          { key: 'active', label: 'Active', value: queue.activeCount, primary: true, to: activeHref, lines: ['processing now'] },
-          { key: 'failed', label: 'Failed', value: queue.failedCount, to: activeHref, lines: ['recent failures'] },
-          {
-            key: 'total',
-            label: 'Total Jobs',
-            value: queue.totalCount,
-            to: `${metricsPath(queue.name)}?total=1#active`,
-            lines: ['stored in this queue', ...(finished > 0 ? [<><Count value={finished} /> completed or canceled</>] : [])],
-          },
-        ]}
-      />
-    </>
+    <CountsCard
+      label="Counts"
+      cells={[
+        {
+          key: 'ready',
+          label: 'Ready',
+          value: queue.readyCount,
+          primary: true,
+          to: waitingHref,
+          aside: readyTrend.length > 0 && (
+            <Sparkline
+              data={readyTrend}
+              width={96}
+              height={26}
+              color="var(--primary-600)"
+              area
+              aria-label="Ready count over the last hour"
+            />
+          ),
+          lines: [
+            overWarning
+              ? <>of {strong(queue.queuedCount, 'text-[var(--state-failed-fg)]')} queued, over its warning size of <Count value={warningSize} /></>
+              : <>of {strong(queue.queuedCount)} queued</>,
+            <>{queue.deferredCount > 0 ? <><Count value={queue.deferredCount} /> deferred for later</> : 'none deferred'}{queue.blockedCount > 0 && <> · <Count value={queue.blockedCount} /> blocked</>}</>,
+          ],
+        },
+        { key: 'active', label: 'Active', value: queue.activeCount, primary: true, to: activeHref, lines: activeLines },
+        { key: 'failed', label: 'Failed', value: queue.failedCount, to: activeHref, lines: ['recent failures'] },
+        {
+          key: 'total',
+          label: 'Total Jobs',
+          value: queue.totalCount,
+          to: `${metricsPath(queue.name)}?total=1#active`,
+          lines: ['stored in this queue', ...(finished > 0 ? [<><Count value={finished} /> completed or canceled</>] : [])],
+        },
+      ]}
+    />
   )
 }
 
@@ -301,7 +297,8 @@ export function QueuePage ({ data, extensions }: { data: QueuePageData, extensio
       {extensions?.afterHeader && <div className="mb-6">{extensions.afterHeader}</div>}
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex min-w-0 flex-col gap-6">
-          <QueueCounts queue={data.queue} statsAvailable={data.statsAvailable} />
+          {!data.statsAvailable && <StatsDisabledBanner />}
+          <QueueCounts queue={data.queue} />
           <QueueJobs data={data} />
         </div>
         <aside className="flex flex-col gap-6" aria-label="Queue settings">

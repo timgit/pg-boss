@@ -16,8 +16,12 @@ interface StatsCardsProps {
 /** One cell of a `CountsCard`: a figure, the lines under it, and where it leads. */
 export interface CountCell {
   key: string
-  label: string
-  value: number
+  /** The eyebrow, which may carry a chart's color key. */
+  label: ReactNode
+  /** A count, or a figure already formatted, such as a rate. */
+  value: number | string
+  /** After the figure in a smaller type, such as `/min`. */
+  unit?: ReactNode
   /** Drawn in the primary color, for the figures that move. */
   primary?: boolean
   /** Beside the figure, such as a sparkline. */
@@ -37,12 +41,13 @@ export const strong = (value: number, className?: string) => (
  * Counts in one card, a cell each: four across once the card itself is wide enough, two by two
  * before, whatever column it sits in.
  */
-export function CountsCard ({ cells, label }: { cells: CountCell[], label?: string }) {
+export function CountsCard ({ cells, label, caption }: { cells: CountCell[], label?: string, caption?: ReactNode }) {
   return (
     // The rules between cells are the card's border showing through a 1px gap, so they stay right
     // however the cells wrap.
     <section aria-label={label} className="@container">
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-[var(--border-default)] bg-[var(--border-default)] shadow-sm @xl:grid-cols-4">
+        {caption && <div className="col-span-full bg-[var(--surface-sunken)] px-4 py-2 text-xs text-[var(--text-tertiary)]">{caption}</div>}
         {cells.map((cell) => {
           const body = (
             <>
@@ -54,7 +59,8 @@ export function CountsCard ({ cells, label }: { cells: CountCell[], label?: stri
                     cell.primary ? 'text-primary-600 dark:text-primary-400' : 'text-gray-900 dark:text-gray-100'
                   )}
                 >
-                  <Count value={cell.value} />
+                  {typeof cell.value === 'number' ? <Count value={cell.value} /> : cell.value}
+                  {cell.unit && <span className="ml-1.5 font-sans text-[13px] font-normal tracking-normal text-[var(--text-tertiary)]">{cell.unit}</span>}
                 </span>
                 {cell.aside}
               </span>
