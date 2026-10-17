@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { MemoryRouter, useNavigate, useRouteLoaderData, useSearchParams } from 'react-router'
+import { MemoryRouter, Route, Routes, useNavigate, useRouteLoaderData, useSearchParams } from 'react-router'
 import { DatabaseSwitcher } from '~/components/database-switcher'
 import type { PublicDatabase } from '~/lib/types'
 
@@ -8,12 +8,16 @@ const main = { id: 'pgboss', name: 'pgboss', schema: 'pgboss_dev' } as PublicDat
 const reporting = { id: 'reporting', name: 'reporting', schema: 'pgboss_reporting_dev' } as PublicDatabase
 
 // The setup file mocks the router hooks that need a data router; each test says what they return.
-function renderAt (path: string, search: string, databases: PublicDatabase[], currentDb: PublicDatabase) {
+function renderAt (path: string, search: string, databases: PublicDatabase[], currentDb: PublicDatabase, pattern = path) {
   const navigate = vi.fn()
   vi.mocked(useRouteLoaderData).mockReturnValue({ databases, currentDb })
   vi.mocked(useSearchParams).mockReturnValue([new URLSearchParams(search), vi.fn()])
   vi.mocked(useNavigate).mockReturnValue(navigate)
-  render(<MemoryRouter initialEntries={[`${path}${search}`]}><DatabaseSwitcher /></MemoryRouter>)
+  render(
+    <MemoryRouter initialEntries={[`${path}${search}`]}>
+      <Routes><Route path={pattern} element={<DatabaseSwitcher />} /></Routes>
+    </MemoryRouter>
+  )
   return navigate
 }
 
@@ -31,13 +35,22 @@ describe('DatabaseSwitcher', () => {
     expect(screen.getByRole('button', { name: 'Database: reporting. Switch database' })).toBeInTheDocument()
   })
 
-  it('switches database on the same page, keeping its other parameters', async () => {
-    const navigate = renderAt('/queues/emails', '?state=failed', [main, reporting], main)
+  it('switches database on the same list page, keeping its other parameters', async () => {
+    const navigate = renderAt('/jobs', '?state=failed', [main, reporting], main)
 
     fireEvent.click(screen.getByRole('button', { name: /Switch database/ }))
     fireEvent.click(await screen.findByText('pgboss_reporting_dev'))
 
-    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues/emails', search: '?state=failed&db=reporting' })
+    expect(navigate).toHaveBeenCalledWith({ pathname: '/jobs', search: '?state=failed&db=reporting' })
+  })
+
+  it('leaves a page about one item for its list, since the other database may not have it', async () => {
+    const navigate = renderAt('/queues/emails/jobs/0b1c', '?tab=output', [main, reporting], main, '/queues/:name/jobs/:jobId')
+
+    fireEvent.click(screen.getByRole('button', { name: /Switch database/ }))
+    fireEvent.click(await screen.findByText('pgboss_reporting_dev'))
+
+    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '?db=reporting' })
   })
 
   it('names the first database too when switching back, so a remembered cookie cannot win', async () => {

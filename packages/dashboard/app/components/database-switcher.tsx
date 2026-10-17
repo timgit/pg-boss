@@ -1,4 +1,5 @@
-import { useLocation, useNavigate, useRouteLoaderData, useSearchParams } from 'react-router'
+import { useLocation, useNavigate, useParams, useRouteLoaderData, useSearchParams } from 'react-router'
+import { switchPathname } from '~/lib/database-switch'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import type { PublicDatabase } from '~/lib/types'
 import { DATABASE_COLORS, databaseColor } from '~/lib/database-colors'
@@ -30,6 +31,7 @@ export function DatabaseSwitcher () {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const routeParams = useParams()
 
   const databases = root?.databases ?? []
   const current = root?.currentDb
@@ -46,11 +48,12 @@ export function DatabaseSwitcher () {
 
   // Named even for the first database: without `?db=` a remembered `pgboss_db` cookie would win, and
   // switching back to the first would land on the database just left. Links elsewhere stay short.
+  // A page about one item lands on its list instead, with none of the item's own query string.
   const select = (id: string) => {
-    const next = new URLSearchParams(params)
+    const pathname = switchPathname(location.pathname, routeParams)
+    const next = new URLSearchParams(pathname === location.pathname ? params : undefined)
     next.set('db', id)
-    const search = next.toString()
-    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' })
+    navigate({ pathname, search: `?${next.toString()}` })
   }
 
   if (databases.length <= 1) {
