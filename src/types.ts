@@ -140,7 +140,7 @@ export interface SchedulingOptions {
  *
  * Backends fall into three kinds, standard, distributed, and embedded:
  * - `postgres` (default): standard PostgreSQL, all flags off.
- * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, `noListenNotify`, and all four `no*` schema gates.
+ * - `cockroachdb`: distributed; turns off the features CockroachDB lacks (see the flags table on the backends page).
  * - `yugabytedb`: deprecated and removed in the next major, since YugabyteDB is not supported.
  * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local); LISTEN/NOTIFY works on the coordinator.
  * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
