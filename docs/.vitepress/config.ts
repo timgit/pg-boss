@@ -36,7 +36,7 @@ export default defineConfig({
     nav: [
       { text: 'Get Started', link: '/introduction' },
       { text: 'API', link: '/api/constructor', activeMatch: '/api/' },
-      { text: 'Pro', link: '/pro/', activeMatch: '/pro/' },
+      { text: 'Pro 🚀', link: '/pro/', activeMatch: '/pro/' },
       { text: 'Sponsors', link: '/sponsors' },
       {
         text: pkg.version,
