@@ -1,7 +1,7 @@
 # Databases
 
-Every page names the database you're looking at, with a colored dot, at the
-start of the top bar. When `DATABASE_URL` lists more than one database, a menu
+Pro shows one connected database at a time. Every page names it, with a colored
+dot, at the start of the top bar. When `DATABASE_URL` lists more than one database, a menu
 there switches between them.
 
 `/pro/databases` gives each one a friendly name, such as Production or
