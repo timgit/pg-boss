@@ -167,7 +167,8 @@ const FLEET_TASKS = ['sync', 'ingest', 'export', 'reindex', 'notify', 'reconcile
 /**
  * A fleet of queues beyond the handful above, so the queue views can be judged at a size closer to a
  * real deployment's. Named domain-task, each with a few ready jobs (none for some) and nobody working
- * them, so their backlogs stay put. Their stats history comes from `seedQueueStats`, like every queue's.
+ * them, so their backlogs stay put, except the ones falling behind, which hold a few active jobs
+ * fetched and never completed. Their stats history comes from `seedQueueStats`, like every queue's.
  */
 /** Fleet queues whose last hour of stats shows them in trouble, so health has every color to draw. */
 const TROUBLE: Record<string, 'stalled' | 'behind'> = {
@@ -192,6 +193,10 @@ async function seedFleetQueues () {
     const ready = troubleOf(name) === 'stalled' ? 140 : troubleOf(name) === 'behind' ? 70 : (k * 7) % 9
     if (ready > 0) {
       await boss.insert(name, Array.from({ length: ready }, (_, i) => ({ data: { seq: i } })))
+    }
+    // A queue falling behind is being worked, just not fast enough, so a few of its jobs are active.
+    if (troubleOf(name) === 'behind') {
+      await boss.fetch(name, { batchSize: 2 + (k % 3) })
     }
   }
 
