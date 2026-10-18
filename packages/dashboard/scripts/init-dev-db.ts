@@ -429,6 +429,39 @@ async function seedRegistry () {
   }
 }
 
+/**
+ * A fleet queue's last hour of ready counts, oldest first. A stalled queue's backlog climbs the whole
+ * hour, and one falling behind holds steady until arrivals outrun its workers. The rest take one of
+ * four ordinary shapes, picked by name so a reseed draws the same lines.
+ */
+function fleetShape (name: string, count: number, window: number): (i: number) => number {
+  const hash = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7)
+  const trouble = troubleOf(name)
+  // Each troubled queue starts and turns at its own point, since the overview lists them together.
+  if (trouble === 'stalled') {
+    const from = 0.1 + (hash % 4) * 0.12
+    return (i) => Math.round(count * (from + (1 - from) * (i / window) ** (1 + (hash % 3) * 0.4)) + ((i * 7) % 5))
+  }
+  if (trouble === 'behind') {
+    const turn = 30 + (hash % 4) * 6
+    const base = 8 + (hash % 9)
+    return (i) => (i < turn ? base + Math.round(4 * Math.abs(Math.sin(i / (2 + (hash % 3))))) : Math.round(base + (count - base) * ((i - turn) / (window - turn))))
+  }
+
+  const peak = Math.max(count, 6) * 3
+  const shapes = [
+    // Bursts, each worked off before the next.
+    (i: number) => Math.round(Math.abs(Math.sin(i / 4 + (hash % 5))) * peak * 0.6),
+    // A backlog that built and drained.
+    (i: number) => Math.round(peak * Math.sin((i / window) * Math.PI)),
+    // Quiet, then a batch half an hour ago.
+    (i: number) => (i >= 24 && i <= 34 ? Math.round(peak * (1 - Math.abs(i - 29) / 6)) : (i * 3) % 3),
+    // A slow wave of daily traffic.
+    (i: number) => Math.round(peak * 0.5 * (1 + Math.sin(i / 9 + (hash % 7)))),
+  ]
+  return shapes[hash % shapes.length]
+}
+
 /** Blend the tail of a series toward `end` so it lands exactly there without a jump. */
 function blendTail (series: number[], end: number, span = 6): number[] {
   const out = [...series]
@@ -455,6 +488,9 @@ function blendTail (series: number[], end: number, span = 6): number[] {
  * The shapes are written oldest-to-newest for legibility and reversed on the way
  * in. Each is blended into the queue's real current ready count, so the last point
  * of the sparkline agrees with the number rendered beside it.
+ *
+ * The fleet queues take theirs from `fleetShape`, so whichever of them the overview
+ * lists has a line worth looking at.
  *
  * `user-sync` and `cleanup-tasks` are left deliberately flat: a flat series has a
  * zero range and takes a different path through the sparkline's normalization, so
@@ -509,17 +545,15 @@ async function seedReadyHistory () {
     // Read the counts back rather than assuming them: the monitor has just run,
     // and the last sample has to match whatever it recorded.
     const { rows: counts } = await client.query<{ name: string, ready_count: number }>(
-      `SELECT name, ready_count FROM ${schema}.queue WHERE name = ANY($1)`,
-      [Object.keys(shapes)]
+      `SELECT name, ready_count FROM ${schema}.queue WHERE name = ANY($1) OR name ~ $2`,
+      [Object.keys(shapes), `^(${FLEET_DOMAINS.join('|')})-(${FLEET_TASKS.join('|')})$`]
     )
 
     let flat = 0
 
     for (const { name, ready_count: readyCount } of counts) {
-      const shape = shapes[name]
-      if (!shape) continue
-
       const count = Number(readyCount)
+      const shape = shapes[name] ?? fleetShape(name, count, WINDOW)
       const series = FLAT.has(name)
         ? Array.from({ length: WINDOW }, () => count)
         : blendTail(Array.from({ length: WINDOW }, (_, i) => shape(i)), count)
