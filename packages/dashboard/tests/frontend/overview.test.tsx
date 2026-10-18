@@ -49,6 +49,21 @@ describe('OverviewSections', () => {
     expect(screen.getByText('emails has 900 queued')).toBeInTheDocument()
   })
 
+  it('reads Waiting for a queue with ready jobs and none active, and Idle for an empty one', () => {
+    renderSections(undefined, {
+      topQueues: [
+        { ...queue('emails', 140), activeCount: 0 },
+        { ...queue('reports', 0), activeCount: 0 },
+        queue('exports', 12),
+      ],
+    })
+
+    const status = (name: string) => within(screen.getByText(name).closest('tr')!).getAllByRole('cell').at(-1)!.textContent
+    expect(status('emails')).toBe('Waiting')
+    expect(status('reports')).toBe('Idle')
+    expect(status('exports')).toBe('Processing')
+  })
+
   it('leaves the warnings card out when loaded without warnings', () => {
     renderSections(undefined, { warnings: null })
 
