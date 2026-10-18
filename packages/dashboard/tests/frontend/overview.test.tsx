@@ -44,7 +44,7 @@ describe('OverviewSections', () => {
     renderSections()
 
     expect(screen.getByText('Top Queues')).toBeInTheDocument()
-    expect(headers()).toEqual(['Name', 'Queued', 'Active', 'Trend', 'Status'])
+    expect(headers()).toEqual(['Name', 'Ready', 'Trend', 'Active', 'Status'])
     expect(screen.getByText('Recent Warnings')).toBeInTheDocument()
     expect(screen.getByText('emails has 900 queued')).toBeInTheDocument()
   })
@@ -70,7 +70,7 @@ describe('OverviewSections', () => {
 
     expect(screen.getByText('Queues, worst first')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'All on Stats' })).toHaveAttribute('href', '/stats')
-    expect(headers()).toEqual(['Name', 'Health', 'Queued', 'Active', 'p95 wait', 'Trend'])
+    expect(headers()).toEqual(['Name', 'Health', 'Ready', 'Trend', 'Active', 'p95 wait'])
     expect(screen.getByText('health of reports')).toBeInTheDocument()
     expect(screen.getByText('+7 in the last hour')).toBeInTheDocument()
   })

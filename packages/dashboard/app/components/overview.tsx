@@ -112,10 +112,10 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
                 <TableRow>
                   <TableHead>Name</TableHead>
                   {q.afterName?.map(headOf)}
-                  <TableHead className="text-right">Queued</TableHead>
+                  <TableHead className="text-right">Ready</TableHead>
+                  <TableHead>Trend</TableHead>
                   <TableHead className="text-right">Active</TableHead>
                   {q.afterActive?.map(headOf)}
-                  <TableHead>Trend</TableHead>
                   {!q.hideStatus && <TableHead>Status</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -132,12 +132,8 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
                     </TableCell>
                     {q.afterName?.map(cellOf(queue))}
                     <TableCell className="text-right pgb-num text-[var(--text-primary)]">
-                      {queue.queuedCount.toLocaleString()}
+                      {queue.readyCount.toLocaleString()}
                     </TableCell>
-                    <TableCell className="text-right pgb-num text-[var(--text-primary)]">
-                      {queue.activeCount.toLocaleString()}
-                    </TableCell>
-                    {q.afterActive?.map(cellOf(queue))}
                     <TableCell>
                       {queue.readyHistory && queue.readyHistory.length > 0 ? (
                         <Sparkline
@@ -145,15 +141,19 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
                           data={[...queue.readyHistory].reverse()}
                           width={96}
                           height={20}
-                          color="var(--primary-600)"
+                          color="var(--stats-ready)"
                           showDot={false}
                           area
-                          aria-label={`Ready count trend for ${queue.name}`}
+                          aria-label={`Ready count over the last hour for ${queue.name}`}
                         />
                       ) : (
                         <span className="text-[var(--border-strong)]">—</span>
                       )}
                     </TableCell>
+                    <TableCell className="text-right pgb-num text-[var(--text-primary)]">
+                      {queue.activeCount.toLocaleString()}
+                    </TableCell>
+                    {q.afterActive?.map(cellOf(queue))}
                     {!q.hideStatus && (
                       <TableCell>
                         <QueueStatusBadge queue={queue} />
