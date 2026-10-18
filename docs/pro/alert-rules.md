@@ -1,6 +1,6 @@
 # Alert rules
 
-## The default rules
+## Default rules
 
 Every database starts with one rule for each check Pro can run. Five are on:
 
@@ -64,7 +64,7 @@ about the same thing (60 minutes unless you change it). Its **Silence 1h** butto
 is for a deploy or a maintenance window. A silenced rule still raises alerts but
 tells nobody, and the silence ends by itself.
 
-## As JSON
+## JSON definitions
 
 The **JSON** switch on the editor shows the same rule as its definition. The
 editor checks it as you type against the schema that parses every save, so a
@@ -119,7 +119,7 @@ closes its alerts as "the rule was turned off", and deleting one closes them as
 "the rule was deleted". A deleted rule's versions stay readable from the alerts
 that point at them.
 
-## What rules need from pg-boss
+## Requirements
 
 - Warning rules read what `persistWarnings` stores. With it off there are no
   warnings to match.

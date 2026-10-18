@@ -84,7 +84,7 @@ only a subset (see below). One further CockroachDB
 adjustment, coercing text-encoded integers back to numbers, is keyed on `backend === 'cockroachdb'`
 directly instead of on a flag (see below).
 
-### Why fetch and mutation strategy are tracked separately
+### Fetch and mutation strategies
 
 `noSkipLocked` and `noMultiMutationCte` address two unrelated limitations that happen to coincide on
 CockroachDB but are independent in principle:
@@ -330,7 +330,7 @@ const [job] = await boss.fetch('email')
 await boss.complete('email', job.id)
 ```
 
-#### Lifecycle is yours to manage
+#### Lifecycle
 
 Unlike the default `pg`-pool connection, pg-boss does **not** open or close the PGlite instance. You own it. Construct it before `boss.start()` and close it after `boss.stop()`:
 
@@ -412,7 +412,7 @@ await db.transaction(async (tx) => {
 
 Without Drizzle, wrap a `sql.begin()` transaction the same way `fromBunSql` wraps the client.
 
-#### What the adapters absorb
+#### Driver differences
 
 Three `Bun.SQL` behaviors differ from `pg` in ways pg-boss would otherwise trip over. The adapters
 handle them, so you don't need to do anything. They're listed because the first explains the shape
@@ -572,7 +572,7 @@ await boss.work('my-queue', {
 For CockroachDB specifically, consider [hash-sharded indexes](https://www.cockroachlabs.com/docs/stable/hash-sharded-indexes)
 to distribute write load across ranges. This helps avoid hotspots when inserting time-ordered jobs.
 
-### When to use alternative systems
+### Alternative systems
 
 **Use pg-boss** (database-backed queue) when:
 - Throughput is under ~10,000 jobs/second (PostgreSQL handles this comfortably)

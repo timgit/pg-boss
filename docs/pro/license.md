@@ -25,7 +25,7 @@ The token is the same license key your `.npmrc` uses. You pass it explicitly
 because npm deliberately keeps `.npmrc` tokens out of reach of installed
 packages, as a security boundary.
 
-## Keep the license as a secret
+## Storing the license
 
 A fresh `npm ci` removes `license.json`, because it lives in `node_modules`. To
 keep the license somewhere durable, fetch it once and store the string:
@@ -41,7 +41,7 @@ immutable images, and anywhere `node_modules` is read-only.
 To keep `license.json` on a mounted volume instead, point
 `PGBOSS_PRO_LICENSE_FILE` at it.
 
-## When it lapses
+## Expiration
 
 Nothing stops working. The Pro page says the term has ended and that Pro is
 unaffected.

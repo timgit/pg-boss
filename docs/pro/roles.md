@@ -11,7 +11,7 @@ Each grant gives a role on one database or on all of them, to a person, a [group
 
 Grants read as the role, then where it applies: `Operator › All databases`, or `Viewer › ● Production` with the database's color.
 
-## Who can act on a database
+## Access page
 
 `/pro/access` answers the question people ask in an incident, which is who can act on this database and why. Choose a database, and the page lists each person or service account with a role there. Beside each one it shows the role they end up with and every grant that produced it, direct or through a group. A role granted for every database appears for each one.
 

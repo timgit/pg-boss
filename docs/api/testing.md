@@ -146,7 +146,7 @@ Jumps to `t`, forwards or backwards, without firing anything. A forward jump cou
 
 `setTime` settles first, like `tick`, then jumps. It takes whole milliseconds, but Postgres timestamps carry microseconds and pg-boss jitters retry backoff. So a job's `start_after` can fall a fraction of a millisecond after the millisecond you read. Round up before jumping to it, or the job won't be due yet.
 
-### The Postgres side
+### Database clock
 
 While a `TestClock` is attached, `${schema}.job_now()`, the function every pg-boss statement reads the clock through, returns the fake time. That covers job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It doesn't change `pg_catalog.now()` or your own SQL, and it leaves the `created_on` of rows your application inserts directly unaffected.
 

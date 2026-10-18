@@ -5,7 +5,7 @@ Once your business runs on pg-boss, a stalled queue is an outage. Pro alerts who
 ![The Pro overview](../images/pro/overview.webp){.light-only}
 ![The Pro overview](../images/pro/overview-dark.webp){.dark-only}
 
-## What it adds
+## Features
 
 - From the console, you can send, retry, cancel, resume and delete jobs, create and delete queues and schedules, and run [Operations](./operations.md) over every job a filter matches. Pro checks each change against the person's role on that database.
 - [Alert rules](./alert-rules.md) decide what is an alert: a queue stalled or falling behind, nobody working a queue, a threshold on a queue's counts, rates and waits, pg-boss warnings, or an operation that failed. Alerts reach email, a webhook in Prometheus Alertmanager's format, or [PagerDuty](./destinations.md#pagerduty), and Pro tells the destination when each alert closes.
@@ -21,7 +21,7 @@ Pro costs $1,000 a year or $100 a month for one organization, with no limit on p
 
 Pro sends nothing anywhere you haven't configured. See [network activity](./network.md).
 
-## Start
+## Getting started
 
 1. [Install and run](./install.md) it.
 2. Open `/setup` and create the first administrator.

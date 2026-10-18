@@ -7,7 +7,7 @@ A script, a CI job, a Prometheus scrape or a worker in another language reaches 
 - Disabling it stops every one of its tokens at once.
 - It can have several tokens, so one can be replaced with no gap: create the new one, deploy it, revoke the old one.
 
-## The service accounts page
+## Service accounts page
 
 An administrator over every database manages them under **Settings › Service accounts**, at
 `/pro/service-accounts`. The list shows each one's purpose, roles, working tokens, when it was last

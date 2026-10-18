@@ -30,14 +30,14 @@ await boss.send('email-send', { to: 'ada@example.com' })
 
 The first `start()` creates pg-boss's tables in their own schema. If your database user can't create a schema, see [Database install](./install).
 
-## The moving parts
+## Core concepts
 
 - **Queue**: a named stream of jobs, created with [`createQueue()`](./api/queues#createqueue-name-queue) before anything is sent to it. Its options set retries, expiration, retention, and a policy for how duplicates are handled.
 - **Job**: one piece of work with a JSON payload, added with [`send()`](./api/jobs#send-name-data-options). It can be delayed, prioritized, or [scheduled](./api/scheduling) on a cron.
 - **Worker**: your handler for a queue, registered with [`work()`](./api/workers#work-name-options-handler). It fetches jobs as they become ready, marks each completed when your handler returns, and fails it (to be retried) when it throws.
 - **Instance**: a `PgBoss` object. It's meant to be long-lived. Create one per process, call `start()` once when the process starts, and call `stop()` when it shuts down. Don't create one per request or per job. Any number of Node.js processes can run one against the same database, sending jobs, working them or both, including from serverless functions. Each keeps its own connection pool, so your database's connection limit caps how many can run at once. Each also records itself in the [instance table](./sql/instance-table) while it runs. [`getInstances()`](./api/ops#getinstances-options) then shows which instances are connected, which queues each one works on, and whether each is still alive.
 
-## What to expect
+## Key properties
 
 **Jobs are delivered at least once.** If a worker crashes, or a job runs past its expiration, pg-boss retries the job, so a handler can run more than once for the same job. Write handlers so that running one twice does no harm. See [heartbeat vs expiration](./api/queues#heartbeat-vs-expiration).
 

@@ -214,7 +214,7 @@ By default, a worker fetches 1 job every 2 seconds.
   })
   ```
 
-#### Understanding concurrency options
+#### Concurrency options
 
 The three concurrency options work together to control job processing at different levels:
 

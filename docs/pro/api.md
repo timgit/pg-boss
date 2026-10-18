@@ -11,7 +11,7 @@ curl -X POST https://console.example.com/pro/api/v1/pgboss/send \
 
 Requests and responses use the proxy's format, `{ "ok": true, "result": … }` or `{ "ok": false, "error": { "message": … } }`. See the [proxy's API usage](../proxy.md#api-usage).
 
-## What a token may call
+## Permissions
 
 Each method needs a capability, which the service account gets from its role on that database. Pro refuses any method not listed.
 
@@ -28,7 +28,7 @@ Each method needs a capability, which the service account gets from its role on 
 | Refused, in the console instead | `deleteQueuedJobs`, `deleteStoredJobs`, `deleteAllJobs`. Deleting many jobs at once is an [operation](./operations.md), where a person confirms the count. |
 | Refused | `publish`, `subscribe`, `unsubscribe`, `supervise`, `getReindexCommands` |
 
-## Answers
+## Status codes
 
 | Status | When |
 | - | - |
