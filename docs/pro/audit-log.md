@@ -1,6 +1,6 @@
 # Audit log
 
-`/pro/audit` lists every change made through the console and the API, newest first: who made it, what it was, the database it was made in, and when. An entry's page shows the state on either side of the change and the address it came from.
+`/pro/audit` lists every change made through the Pro Console and the [Pro API](./api.md), newest first: who made it, what it was, the database it was made in, and when. An entry's page shows the state on either side of the change and the address it came from.
 
 ![The audit log](../images/pro/audit-log.webp){.light-only}
 ![The audit log](../images/pro/audit-log-dark.webp){.dark-only}

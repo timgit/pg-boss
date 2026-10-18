@@ -14,7 +14,7 @@ closes, whichever way it closes: the condition ended, somebody resolved or ackno
 expired, or its rule changed, was turned off or was deleted. A resolve goes only
 where the fire went, once.
 
-**Links in alerts.** Set the console's address on the same page, and emails,
+**Links in alerts.** Set the Pro Console's address on the same page, and emails,
 webhooks and PagerDuty link each alert to its page. Until you set it, they carry
 no link.
 
@@ -107,7 +107,7 @@ v2 integration on the service you want paged. Each alert triggers one incident,
 deduplicated by the alert's id, and resolves it when the alert closes. The
 incident's summary is the alert's title, its source is the database's name, and
 its severity is `critical` or `warning`. Its details hold the alert's why, rule
-and data, with a link to the alert once the console's address is set. Pro stores
+and data, with a link to the alert once the Console's address is set. Pro stores
 the key encrypted, and records a key PagerDuty refuses as a failed delivery.
 
 Secrets need `PGBOSS_PRO_SECRET_KEY`. See [Secrets](./administration.md#secrets).

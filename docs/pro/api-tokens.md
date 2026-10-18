@@ -3,7 +3,7 @@
 A script, a CI job, a Prometheus scrape or a worker in another language reaches Pro with an API token. A token belongs to a **service account**, which is an account for a machine, so the token keeps working when the person who set it up leaves.
 
 - A service account has [roles](./roles.md) on databases like a person: a viewer for a scrape, an operator on one database for a CI redrive, a worker for a worker.
-- It can't sign in to the console by password, SSO or invitation. It acts only through its tokens, and only on the API and `/metrics`.
+- It can't sign in to the Pro Console by password, SSO or invitation. It acts only through its tokens, and only on the [Pro API](./api.md) and `/metrics`.
 - Disabling it stops every one of its tokens at once.
 - It can have several tokens, so one can be replaced with no gap: create the new one, deploy it, revoke the old one.
 
@@ -24,7 +24,7 @@ used and from where, and marks a token that expires within 14 days.
   when it was last used. **Create token** asks for a name and an expiry and shows the token once, to
   copy. **Revoke** stops one at once.
 - **Audit**: whether its sending, fetching, completing and failing are recorded.
-- **Using a token**: a `curl` for the API and for open alerts, with this console's address.
+- **Using a token**: a `curl` for the API and for open alerts, with this Console's address.
 - **Recent activity**: what its tokens did, and the changes made to it.
 
 ![A service account's page](../images/pro/service-account.webp){.light-only}
@@ -40,7 +40,7 @@ Send it as a bearer token:
 curl -H "Authorization: Bearer $PGBOSS_PRO_API_TOKEN" https://console.example.com/pro/api/v1/pgboss/getQueues
 ```
 
-Tokens work only on the [API](./api.md) and [`/metrics`](./metrics.md). The console's pages ignore them, and the API ignores a session cookie. Pro answers a missing or invalid token with `401` and `WWW-Authenticate: Bearer`. After five failures from one address in fifteen minutes, Pro refuses that address for fifteen minutes.
+Tokens work only on the API and [`/metrics`](./metrics.md). The Console's pages ignore them, and the API ignores a session cookie. Pro answers a missing or invalid token with `401` and `WWW-Authenticate: Bearer`. After five failures from one address in fifteen minutes, Pro refuses that address for fifteen minutes.
 
 ## Audit
 

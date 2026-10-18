@@ -53,7 +53,7 @@ export default defineConfig({
         { text: 'Mount in your application', link: '/pro/mount' },
         { text: 'pg-boss versions', link: '/pro/versions' },
         {
-          text: 'The Console',
+          text: 'Pro Console',
           items: [
             { text: 'Overview and queues', link: '/pro/queues' },
             { text: 'Status', link: '/pro/status' },
@@ -92,7 +92,7 @@ export default defineConfig({
         {
           text: 'Reference',
           items: [
-            { text: 'HTTP API', link: '/pro/api' },
+            { text: 'Pro API', link: '/pro/api' },
             { text: 'Metrics', link: '/pro/metrics' },
             { text: 'Environment variables', link: '/pro/environment' },
             { text: 'Release notes', link: '/pro/releases' }

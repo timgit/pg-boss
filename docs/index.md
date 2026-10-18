@@ -112,7 +112,7 @@ See the [proxy documentation](/proxy) for details.
 
 ## Pro
 
-[pg-boss Pro](/pro/) is the dashboard for teams. From its console, you can send, retry and delete jobs and run operations over many at once, as your role allows. Pro sends alerts to email, webhooks and PagerDuty, and it has accounts with single sign-on, an audit log, an HTTP API and Prometheus metrics. It's a subscription.
+[pg-boss Pro](/pro/) is the dashboard for teams. From the Pro Console, you can send, retry and delete jobs and run operations over many at once, as your role allows. Pro sends alerts to email, webhooks and PagerDuty, and it has accounts with single sign-on, an audit log, the Pro API and Prometheus metrics. It's a subscription.
 
 ## Requirements
 * Node 22.12 or higher, or Bun

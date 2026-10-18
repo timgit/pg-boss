@@ -15,7 +15,7 @@ changes the id, so rename it here instead. You still add or remove a database in
 ![The databases page](../images/pro/databases.webp){.light-only}
 ![The databases page](../images/pro/databases-dark.webp){.dark-only}
 
-Some of the console is about one database and some about the whole install. A page
+Some of the Pro Console is about one database and some about the whole install. A page
 about one database shows that database at the start of the top bar; Settings and your
 Profile name the area there instead.
 
@@ -29,5 +29,5 @@ Profile name the area there instead.
 | The API at `/pro/api/v1/<database>` | Service accounts and their tokens |
 
 A role is granted for one database or for all of them, so the same person can be an
-operator on one and a viewer on another. The console remembers the last database you
+operator on one and a viewer on another. The Console remembers the last database you
 looked at for 30 days, so a page that names none, such as Settings, returns you to it.

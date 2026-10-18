@@ -32,7 +32,7 @@ From there, add an account with a role. Its own page shows:
 - **Signing in**: set a password, or create an invitation link that lets the person choose one. It
   also lists the browsers the account is signed in on, with where from and when. **Sign out
   everywhere** ends every session.
-- **Recent activity**: what it did through the console, from the [audit log](./audit-log.md).
+- **Recent activity**: what it did through the Pro Console, from the [audit log](./audit-log.md).
 
 You can also edit its name, and disable or delete the account. Disabling, deleting or changing a
 password ends that account's sessions immediately.

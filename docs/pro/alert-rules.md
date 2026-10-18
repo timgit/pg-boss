@@ -127,5 +127,5 @@ that point at them.
   `persistQueueStats` keeps (pg-boss 12.35 or later). Waits and run times need
   pg-boss 12.36, and so do the instance checks, which read its instance registry.
 - The evaluator runs once a minute as a pg-boss job in a `<schema>_queue` schema
-  of its own. The job has a singleton key, so two console replicas run one
+  of its own. The job has a singleton key, so two Pro replicas run one
   evaluation between them and send everything once.
