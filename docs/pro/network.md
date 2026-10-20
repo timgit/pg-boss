@@ -12,9 +12,9 @@ of them set up, the dashboard talks only to its Postgres database.
 |---|---|---|
 | `npm install` | at install or upgrade | `npm.pgboss.io`, the configured registry |
 | `npx pg-boss-pro-license` | when someone runs it | `npm.pgboss.io/license` |
-| A webhook alert | when a rule sending to it fires or its alert closes, or someone sends a test | the URL on that destination |
-| A PagerDuty alert | the same | `events.pagerduty.com` |
-| An email alert | the same | the configured SMTP server, or `api.resend.com` |
+| A webhook alert | only once a webhook destination exists, when a rule sending to it fires or its alert closes, or someone sends a test | the URL on that destination |
+| A PagerDuty alert | only once a PagerDuty destination exists, at the same moments | `events.pagerduty.com` |
+| An email alert | only once an email destination exists, at the same moments | the configured SMTP server, or `api.resend.com` |
 | Single sign-on | when somebody signs in or presses Test | the provider's issuer, token and key endpoints |
 
 The license command sends the token and receives a signed license. It sends
