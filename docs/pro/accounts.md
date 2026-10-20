@@ -61,7 +61,7 @@ every other session and keeps the current one.
 
 An account can hold a role directly, or through a group that holds one. Groups
 live at `/pro/groups`. Give a group a role over a database (or over every
-database) and put people in it by pasting their addresses, and everyone in it has
+database) and add users to it by pasting their addresses, and everyone in it has
 that role. Where two roles apply to the same database, the person may do everything
 either allows, as [Roles](./roles.md) explains. A group's page lists its
 members with the roles each holds on their own, says whether [SSO](./sso.md) maps a provider group

@@ -38,7 +38,7 @@ The sidebar lists the live workers on the queue, with each one's busy slots, fro
 
 The backlog chart is the Waiting chart from the free [metrics page](../dashboard.md#queue-metrics), with ready, blocked and deferred jobs stacked and active jobs drawn over them. **View metrics** and the page's counts open this chart, and `/queues/:name/metrics` redirects to it. Pro has one backlog chart, so two charts on different ranges can't disagree.
 
-Under the charts, a row of changes marks what people did through the Pro Console (from the audit log) and what the instances working the queue did. An instance mark shows when one started, stopped, went quiet, or started on a new pg-boss version.
+Under the charts, a row of changes marks what users did through the Pro Console (from the audit log) and what the instances working the queue did. An instance mark shows when one started, stopped, went quiet, or started on a new pg-boss version.
 
 ![A queue's page](../images/pro/queue.webp){.light-only}
 ![A queue's page](../images/pro/queue-dark.webp){.dark-only}

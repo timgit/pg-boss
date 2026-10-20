@@ -8,7 +8,7 @@ then gets a **Sign in with…** button.
 ![The single sign-on page](../images/pro/sso.webp){.light-only}
 ![The single sign-on page](../images/pro/sso-dark.webp){.dark-only}
 
-Pro matches people on their **verified** email address. Someone invited here
+Pro matches users on their **verified** email address. Someone invited here
 first who later signs in through the provider lands on the same account, with
 the roles they already had. Pro refuses an address the provider hasn't
 verified. A setting lets an unknown address become a new account, and it's off

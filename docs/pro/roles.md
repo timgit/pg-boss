@@ -7,7 +7,7 @@ Each grant gives a role on one database or on all of them, to a person, a [group
 | Viewer | Read. A viewer can't even send a job. |
 | Operator | Read, and retry, cancel, resume and send jobs, and acknowledge alerts. |
 | Admin | Everything an operator may, and delete jobs, create and delete queues and schedules, and manage alert rules. An admin over every database also manages accounts, groups, SSO, destinations and settings. |
-| Worker | For a service account a worker uses, over the API only: fetch, complete and fail jobs, and send them. People can't hold it. |
+| Worker | For a service account a worker uses, over the API only: fetch, complete and fail jobs, and send them. Users can't hold it. |
 
 Grants read as the role, then where it applies: `Operator › All databases`, or `Viewer › ● Production` with the database's color.
 
