@@ -1,6 +1,6 @@
 # pg-boss Pro
 
-pg-boss Pro is built for teams running pg-boss in production. It comes in two parts, the Pro Console for your team and the Pro API for automation. In the Pro Console, people send, retry, cancel and delete jobs from the browser as their [role](./roles.md) allows, and an audit log records every change. The Pro API gives scripts, CI jobs and workers in any language token-based access to pg-boss's own methods over HTTP. Pro also watches every queue and alerts whoever is on call by email, webhook or a paging service, so a stalled queue is caught before it turns into an outage.
+pg-boss Pro is built for teams running pg-boss in production. It includes 2 components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users can make changes, such as creating queues or jobs, and even modifying schedules as their [role](./roles.md) allows, each change recorded in an audit log. The Pro API gives scripts, CI jobs and other systems token-based access to pg-boss's own methods over HTTP. Pro also adds enchanced health monitoring and a configurable rules engine, which can alert whoever is on call by email, webhook or a paging service, so a stalled queue is caught before it turns into an outage.
 
 Pro is built and supported by the author of pg-boss, and upgrading from the [free dashboard](../dashboard.md) is a change of package name, from `@pg-boss/dashboard` to `@pg-boss/pro`.
 
