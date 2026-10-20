@@ -17,6 +17,35 @@ Pro is built and supported by the author of pg-boss, and upgrading from the [fre
 - [Accounts and groups](./accounts.md) get [roles](./roles.md) per database, and an [audit log](./audit-log.md) records every change.
 - Pro serves [Prometheus metrics](./metrics.md) at `/metrics`, for existing dashboards and alerting to scrape.
 
+## Free dashboard and Pro
+
+Pro includes every page of the free dashboard. The first rows below are what the two share, and the rest are Pro's alone.
+
+| Feature | Free dashboard | Pro |
+| - | :-: | :-: |
+| Overview, queues and each queue's counts over time | ✓ | ✓ |
+| Jobs, filtered by state, queue and payload, with each job's details | ✓ | ✓ |
+| Schedules, subscriptions and warnings | ✓ | ✓ |
+| Registered pg-boss instances | ✓ | ✓ |
+| Background migration status | ✓ | ✓ |
+| Several databases in one install | ✓ | ✓ |
+| Password sign-in | ✓ | ✓ |
+| Mounting in an existing Node server, or under a sub-path | ✓ | ✓ |
+| [Send, retry, cancel, resume and delete jobs](./changes.md) | | ✓ |
+| [Create and delete queues and schedules](./changes.md) | | ✓ |
+| [Operations](./operations.md) over every job a filter matches, and redrive | | ✓ |
+| [Queue health](./queues.md#health), throughput, wait and run times, and time to drain | | ✓ |
+| [Ninety days of status](./status.md) | | ✓ |
+| [Instance CPU, memory, connection pool and event loop](./instances.md) | | ✓ |
+| [Alert rules](./alert-rules.md) | | ✓ |
+| Alerts by [email, webhook or PagerDuty](./destinations.md) | | ✓ |
+| [Accounts and groups](./accounts.md), with [roles](./roles.md) per database | | ✓ |
+| [Single sign-on](./sso.md) through OpenID Connect | | ✓ |
+| [Audit log](./audit-log.md) | | ✓ |
+| [Pro API](./api.md) with [API tokens](./api-tokens.md) | | ✓ |
+| [Prometheus metrics](./metrics.md) | | ✓ |
+| Support from the author of pg-boss | | ✓ |
+
 ## Pricing
 
 Pro costs $1,000 a year or $100 a month for one organization, with no limit on people, installations or databases. After twelve months paid in total, an organization that stops paying keeps the right to install and run every version released before the subscription ended. While it lasts, a subscription includes every newer version, and support. See [the license](./license.md).
