@@ -7,6 +7,7 @@ The free dashboard lists every pg-boss instance registered in a database. Pro gr
 
 What needs attention is what the instance [alert rules](./alert-rules.md#default-rules) check:
 
+- a queue with ready jobs that nothing is taking
 - an instance restarting in a loop
 - an instance gone quiet
 - more than one pg-boss version live

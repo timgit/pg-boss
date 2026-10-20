@@ -6,12 +6,23 @@ Every database starts with one rule for each check Pro can run. Five are on:
 
 - **Queue stalled or falling behind**: the queue's health verdict, read from its
   throughput.
-- **Nobody working a queue**: jobs are ready and no live instance works the
-  queue.
+- **Nobody working a queue**: jobs are ready and nothing has taken one for two
+  monitor passes.
 - **No live instance supervising**: nothing is running pg-boss's maintenance.
 - **An operation failed**: an operation that failed, or a redrive that left
   collisions.
 - **pg-boss warnings**: every warning type pg-boss records.
+
+**Nobody working a queue** judges by what leaves the queue, whoever takes it, so
+a queue drained with `fetch()` and `complete()` counts as worked. A job active at
+the last monitor pass is activity. So is a job completed or failed in the last two
+passes, from the throughput pg-boss counts with `persistQueueStats`. Without that
+option, or when its counts don't cover those passes (as just after a supervisor
+starts), Pro reads the queue's ready count at each pass, and a fall between two
+passes is activity. That count is net, so canceling or deleting ready jobs also
+lowers it, and a consumer slower than arrivals never does. When the monitor hasn't
+written the counts in three passes, the check judges nothing. The alert names any
+live instance with a `work()` on the queue, or the last one that had one.
 
 The instance checks start off: an instance restarting in a loop, an instance gone
 quiet, more than one pg-boss version live, instances disagreeing on shared
