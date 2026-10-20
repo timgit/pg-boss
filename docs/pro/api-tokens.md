@@ -18,7 +18,7 @@ used and from where, and marks a token that expires within 14 days.
 
 **Add service account** takes a name, what it is for, and a first role. Its page then shows:
 
-- **Access by database**: what its tokens may do on each database. You grant and remove its roles
+- **Access by database**: what its tokens may do on each database. Grant and remove its roles
   here. A service account can't join a group.
 - **API tokens**: each with its name, its first characters, who created it, when it expires and
   when it was last used. **Create token** asks for a name and an expiry and shows the token once, to
@@ -32,7 +32,7 @@ used and from where, and marks a token that expires within 14 days.
 
 ## Tokens
 
-A token is `pgbp_` followed by 43 characters, and Pro shows it once, when you create it. Pro keeps only its hash and its first characters, to tell tokens apart. Each token expires after 30, 90 or 365 days or never, and you can revoke it. Pro records when and where a token was last used, at most once a minute.
+A token is `pgbp_` followed by 43 characters, and Pro shows it once, at creation. Pro keeps only its hash and its first characters, to tell tokens apart. Each token expires after 30, 90 or 365 days or never, and any token can be revoked. Pro records when and where a token was last used, at most once a minute.
 
 Send it as a bearer token:
 
@@ -44,4 +44,4 @@ Tokens work only on the API and [`/metrics`](./metrics.md). The Console's pages 
 
 ## Audit
 
-The [audit log](./audit-log.md) records what a token changes under its service account's name, with the token that did it. After you revoke a leaked token, you can see what it did. The calls a producer or worker makes at volume (sending, fetching, completing and failing jobs) are recorded only when the service account is set to record them.
+The [audit log](./audit-log.md) records what a token changes under its service account's name, with the token that did it. After a leaked token is revoked, the log shows what it did. The calls a producer or worker makes at volume (sending, fetching, completing and failing jobs) are recorded only when the service account is set to record them.

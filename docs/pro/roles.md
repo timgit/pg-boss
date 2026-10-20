@@ -18,4 +18,4 @@ Grants read as the role, then where it applies: `Operator › All databases`, or
 ![Who can act on a database](../images/pro/access.webp){.light-only}
 ![Who can act on a database](../images/pro/access-dark.webp){.dark-only}
 
-Pro always refuses two changes, and says so. It won't remove the last administrator over every database, by demotion, disabling or deletion, because nobody would be left to undo it. It also won't let you disable or delete your own account.
+Pro always refuses two changes, and says so. It won't remove the last administrator over every database, by demotion, disabling or deletion, because nobody would be left to undo it. It also won't let an account disable or delete itself.

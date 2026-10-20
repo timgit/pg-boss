@@ -4,11 +4,11 @@
 
 - Node.js 22.12 or later.
 - A Postgres database with a pg-boss schema, version 44 (pg-boss 12.36) or later. Pro makes changes only on the schema of the pg-boss it's built with. See [pg-boss versions](./versions.md).
-- A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which gives you a license key.
+- A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
 ## Install
 
-Pro is served from a private registry, not from npmjs. Your license key is the registry credential, and the only one you need. Polar shows it on your purchases page.
+Pro is served from a private registry, not from npmjs. The license key is the registry credential, and the only one needed. Polar shows it on its purchases page.
 
 Put both lines in the `.npmrc` of the project that installs Pro:
 
@@ -43,7 +43,7 @@ Open `http://localhost:3000`. On first run there are no accounts, so open `/setu
 ![Creating the first administrator](../images/pro/setup.webp){.light-only}
 ![Creating the first administrator](../images/pro/setup-dark.webp){.dark-only}
 
-Pro keeps its own tables (accounts, rules, alerts and the audit log among them) in a `pgboss_pro` schema, separate from pg-boss's, and creates and migrates it on startup. Nothing in it touches your job tables. [Environment variables](./environment.md) lists every variable.
+Pro keeps its own tables (accounts, rules, alerts and the audit log among them) in a `pgboss_pro` schema, separate from pg-boss's, and creates and migrates it on startup. Nothing in it touches the job tables. [Environment variables](./environment.md) lists every variable.
 
 Like the free dashboard's, `DATABASE_URL` takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
 
@@ -72,4 +72,4 @@ PGBOSS_PRO_TOKEN=<your license key> docker build --secret id=pgboss_pro_token,en
 npm update @pg-boss/pro
 ```
 
-Each Pro release is built with one pg-boss release, and installs that release whatever version your application runs. When your application moves to a pg-boss release with a new schema version, upgrade Pro with it. See [pg-boss versions](./versions.md).
+Each Pro release is built with one pg-boss release, and installs that release whatever version the application runs. When the application moves to a pg-boss release with a new schema version, upgrade Pro with it. See [pg-boss versions](./versions.md).

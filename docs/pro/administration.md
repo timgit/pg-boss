@@ -23,8 +23,8 @@ PGBOSS_PRO_SECRET_KEY="$(openssl rand -base64 32)"
 ```
 
 Without it, the screens that keep secrets refuse to save them and say so, which
-means you need the key before you can add a webhook or PagerDuty destination.
+means the key has to be set before adding a webhook or PagerDuty destination.
 Pro never writes a secret in the clear, and never sends a stored secret back to
 the browser. The fields show bullets, and saving without touching them keeps
-what's there. If you lose the key, you re-enter those secrets, and nothing else
+what's there. Losing the key means re-entering those secrets, and nothing else
 is lost.

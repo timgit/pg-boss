@@ -1,6 +1,6 @@
 # Alerts
 
-`/pro/alerts` lists the alerts on the database you are looking at, open ones
+`/pro/alerts` lists the alerts on the current database, open ones
 first, with filters for those that need attention, open, closed and all. The bell
 in the top bar counts the open ones, colored by the most severe. An alert's page
 says what matched, which rule raised it and at which version, and who was told.

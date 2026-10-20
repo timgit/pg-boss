@@ -18,9 +18,9 @@ quiet, more than one pg-boss version live, instances disagreeing on shared
 options, an instance out of pool connections, blocking its event loop, hitting its
 CPU limit, or near its memory limit.
 
-None of them notifies anybody until you give it a destination, so on a new install
-the alerts show up only in the bell. You can edit a default rule and turn it off,
-but you can't delete it. **Reset to default** puts back its original definition.
+None of them notifies anybody until it has a destination, so on a new install
+the alerts show up only in the bell. A default rule can be edited and turned off,
+but never deleted. **Reset to default** puts back its original definition.
 A database added to `DATABASE_URL` later gets its default rules on the
 evaluator's next pass.
 
@@ -34,7 +34,7 @@ evaluator's next pass.
 ![A rule's page](../images/pro/alert-rule.webp){.light-only}
 ![A rule's page](../images/pro/alert-rule-dark.webp){.dark-only}
 
-- **Threshold** compares a queue's metrics with numbers you choose. Conditions
+- **Threshold** compares a queue's metrics with numbers set on the rule. Conditions
   combine with *all* or *any*, with one level of grouping inside, as in "ready
   above 1,000 and (p95 wait above 10 minutes or nothing finishing)". The metrics
   are queued, ready, active, deferred, blocked and total jobs, from pg-boss's
@@ -45,13 +45,13 @@ evaluator's next pass.
 - **Check** is one of the built-in checks above with its settings: which health
   verdicts count and over which interval, how many ready jobs make a queue
   uncovered, how many restarts make a loop.
-- **Warning** turns pg-boss warnings into alerts: every type or the ones you pick,
+- **Warning** turns pg-boss warnings into alerts: every type or only the ones the rule names,
   on every queue or some.
 - **Operation** raises an alert for each failed operation and for each redrive
   that left collisions.
 
 A threshold or check raises an alert only once it has held for the number of
-minutes you set. Every rule has a severity, critical or watch.
+minutes the rule sets. Every rule has a severity, critical or watch.
 
 Queue rules apply to every queue, to a list, or to names matching patterns, less
 any exceptions. A pattern uses `*` for any run of characters and `?` for exactly
@@ -60,14 +60,14 @@ one, and matches the whole name. `/` isn't special, so `billing-*` matches
 same way, the rule's page names the other one. Each rule raises its own alert.
 
 The rule's page also sets where the rule sends, and how often at most it notifies
-about the same thing (60 minutes unless you change it). Its **Silence 1h** button
+about the same thing (60 minutes by default). Its **Silence 1h** button
 is for a deploy or a maintenance window. A silenced rule still raises alerts but
 tells nobody, and the silence ends by itself.
 
 ## JSON definitions
 
 The **JSON** switch on the editor shows the same rule as its definition. The
-editor checks it as you type against the schema that parses every save, so a
+editor checks each edit against the schema that parses every save, so a
 message under the editor is the one a save would give, at the path it applies to.
 Unknown keys are errors. Each metric has one fixed unit (jobs, per minute or
 seconds), so `"value": 600` on `waitP95Seconds` is ten minutes.
@@ -95,7 +95,7 @@ seconds), so `"value": 600` on `waitP95Seconds` is ten minutes.
 }
 ```
 
-A save stores the definition in a normal order, so conditions you ordered by hand
+A save stores the definition in a normal order, so conditions ordered by hand
 can come back sorted.
 
 ## Versions

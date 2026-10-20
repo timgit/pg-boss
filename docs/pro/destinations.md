@@ -2,8 +2,8 @@
 
 Destinations live in Settings (`/pro/destinations`), and the rules of every
 database share them. A destination is an email, a webhook, or PagerDuty. **Send
-test** sends a sample alert that fires and then resolves, so you can see the
-receiver handle both. The page lists every attempt, tests included, with what the
+test** sends a sample alert that fires and then resolves, to show the
+receiver handling both. The page lists every attempt, tests included, with what the
 far end said.
 
 ![The destinations page](../images/pro/destinations.webp){.light-only}
@@ -15,18 +15,18 @@ expired, or its rule changed, was turned off or was deleted. A resolve goes only
 where the fire went, once.
 
 **Links in alerts.** Set the Pro Console's address on the same page, and emails,
-webhooks and PagerDuty link each alert to its page. Until you set it, they carry
+webhooks and PagerDuty link each alert to its page. Until it's set, they carry
 no link.
 
 ## Email
 
-Email goes out through SMTP or Resend, which you configure on the same page.
+Email goes out through SMTP or Resend, configured on the same page.
 
 ## Webhook
 
 Pro stores a webhook's URL encrypted, since receivers often keep their token in
-the path or the query. The page and the audit log show only its origin. When you
-edit a webhook, its URL field is blank. Leave it blank to keep the URL, or enter a
+the path or the query. The page and the audit log show only its origin, and the
+edit form leaves its URL field blank. Leave it blank to keep the URL, or enter a
 new one.
 
 Pro sends a POST with [Prometheus Alertmanager's webhook body](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config),
@@ -81,7 +81,7 @@ receive Pro's alerts with no relay:
   for a receiver written for Pro. A receiver written for Alertmanager ignores it.
 - **Signing secret**, optional: every request then carries
   `pgboss-signature: t=<unix seconds>,v1=<hex>`, an HMAC-SHA256 of
-  `timestamp.body`. Verify it the way you would a Stripe webhook, and reject
+  `timestamp.body`. Verify it the same way as a Stripe webhook, and reject
   anything whose timestamp isn't recent:
 
   ```js
@@ -103,7 +103,7 @@ receive Pro's alerts with no relay:
 ## PagerDuty
 
 Pro posts to PagerDuty's Events API v2 with the integration key of an Events API
-v2 integration on the service you want paged. Each alert triggers one incident,
+v2 integration on the service to page. Each alert triggers one incident,
 deduplicated by the alert's id, and resolves it when the alert closes. The
 incident's summary is the alert's title, its source is the database's name, and
 its severity is `critical` or `warning`. Its details hold the alert's why, rule
