@@ -23,11 +23,12 @@ scope.
 ![The accounts page](../images/pro/accounts.webp){.light-only}
 ![The accounts page](../images/pro/accounts-dark.webp){.dark-only}
 
-From there, add an account with a role. Its own page shows:
+From there, add an account with a role. Its own page says under its name what it can do on each
+database, from its direct roles and its groups together. [Access](./roles.md#access-page) shows which grant
+each comes from. The page also shows:
 
-- **Access by database**: the role in effect on each database, and every grant behind it, direct
-  or through a group. Remove a direct grant here, and change a group's grant on the group. When a
-  direct grant adds nothing a group already gives, the page says so.
+- **Direct roles**: the roles granted to the account itself. Grant and remove them here. When a
+  direct role adds nothing a group already gives, the page says so.
 - **Groups**: the groups it's in, with what each grants. Add it to a group or take it out here.
 - **Signing in**: set a password, or create an invitation link that lets the person choose one. It
   also lists the browsers the account is signed in on, with where from and when. **Sign out
@@ -64,7 +65,7 @@ live at `/pro/groups`. Give a group a role over a database (or over every
 database) and add users to it by pasting their addresses, and everyone in it has
 that role. Where two roles apply to the same database, the person may do everything
 either allows, as [Roles](./roles.md) explains. A group's page lists its
-members with the roles each holds on their own, says whether [SSO](./sso.md) maps a provider group
+members with each one's direct roles, says whether [SSO](./sso.md) maps a provider group
 to it, and shows its recent changes. Service accounts can't join a group.
 
 ![A group's page](../images/pro/group.webp){.light-only}

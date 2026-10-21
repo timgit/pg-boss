@@ -18,8 +18,8 @@ used and from where, and marks a token that expires within 14 days.
 
 **Add service account** takes a name, what it is for, and a first role. Its page then shows:
 
-- **Access by database**: what its tokens may do on each database. Grant and remove its roles
-  here. A service account can't join a group.
+- **Roles**: what its tokens may do, and on which databases. Grant and remove them here. A service
+  account can't join a group.
 - **API tokens**: each with its name, its first characters, who created it, when it expires and
   when it was last used. **Create token** asks for a name and an expiry and shows the token once, to
   copy. **Revoke** stops one at once.
