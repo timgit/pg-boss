@@ -30,6 +30,9 @@ The queue list shows each queue's rates, health, time to drain and workers, with
 ![The queues page](../images/pro/queues.webp){.light-only}
 ![The queues page](../images/pro/queues-dark.webp){.dark-only}
 
+![The honeycomb of every queue](../images/pro/queues-honeycomb.webp){.light-only}
+![The honeycomb of every queue](../images/pro/queues-honeycomb-dark.webp){.dark-only}
+
 ## Queue detail
 
 A queue's page adds its arrival and finishing rates, p95 wait and run times against the previous period, time to drain, and its health with the reasons for it. Its charts share one time axis: throughput, backlog, wait time and run time.
