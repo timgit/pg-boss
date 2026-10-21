@@ -43,6 +43,51 @@ html:not(.dark) .vp-doc img.dark-only {
   border-radius: 8px;
 }
 
+/* Tiles of Pro's pages on its docs index, each a part of one page with a link to its docs. */
+.pro-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 16px;
+  margin: 24px 0 8px;
+}
+
+.pro-gallery figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.vp-doc .pro-gallery img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  object-position: top left;
+  border-radius: 6px;
+}
+
+.pro-gallery figcaption {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc .pro-gallery figcaption a {
+  display: block;
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.vp-doc .pro-gallery figcaption a:hover {
+  color: var(--vp-c-brand-1);
+}
+
+@media (max-width: 640px) {
+  .pro-gallery {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* An opened image sits above the nav bar and the sidebar. */
 .medium-zoom-overlay,
 .medium-zoom-image--opened {

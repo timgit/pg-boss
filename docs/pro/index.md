@@ -1,3 +1,19 @@
+<script setup>
+// A tile opens the whole page it is cut from.
+import queue from '../images/pro/queue.webp'
+import queueDark from '../images/pro/queue-dark.webp'
+import status from '../images/pro/status.webp'
+import statusDark from '../images/pro/status-dark.webp'
+import queuesHexview from '../images/pro/queues-hexview.webp'
+import queuesHexviewDark from '../images/pro/queues-hexview-dark.webp'
+import alertRule from '../images/pro/alert-rule.webp'
+import alertRuleDark from '../images/pro/alert-rule-dark.webp'
+import operations from '../images/pro/operations.webp'
+import operationsDark from '../images/pro/operations-dark.webp'
+import group from '../images/pro/group.webp'
+import groupDark from '../images/pro/group-dark.webp'
+</script>
+
 # pg-boss Pro
 
 pg-boss Pro is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users make changes such as creating queues and jobs or modifying schedules, as their [role](./roles.md) allows, and every change is recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds enhanced health monitoring and a configurable rules engine, which can alert whoever is on call by email, webhook or a paging service, so a stalled queue is caught before it turns into an outage.
@@ -6,6 +22,39 @@ Pro is built and supported by the author of pg-boss, and upgrading from the [fre
 
 ![The Pro overview](../images/pro/overview.webp){.light-only}
 ![The Pro overview](../images/pro/overview-dark.webp){.dark-only}
+
+<div class="pro-gallery">
+  <figure>
+    <img class="light-only" src="../images/pro/tile-health.webp" :data-zoom-src="queue" alt="A queue's health and figures">
+    <img class="dark-only" src="../images/pro/tile-health-dark.webp" :data-zoom-src="queueDark" alt="A queue's health and figures">
+    <figcaption><a href="/pro/queues#health">Queue health</a>From throughput history, with wait and run times and time to drain.</figcaption>
+  </figure>
+  <figure>
+    <img class="light-only" src="../images/pro/tile-status.webp" :data-zoom-src="status" alt="The status page">
+    <img class="dark-only" src="../images/pro/tile-status-dark.webp" :data-zoom-src="statusDark" alt="The status page">
+    <figcaption><a href="/pro/status">Status page</a>Each queue's health day by day, with the incidents on each day.</figcaption>
+  </figure>
+  <figure>
+    <img class="light-only" src="../images/pro/tile-hexview.webp" :data-zoom-src="queuesHexview" alt="Every queue as a hexagon colored by its health">
+    <img class="dark-only" src="../images/pro/tile-hexview-dark.webp" :data-zoom-src="queuesHexviewDark" alt="Every queue as a hexagon colored by its health">
+    <figcaption><a href="/pro/queues#queues">Hexview</a>Each queue as a hexagon colored by its health, up to 500 to a page.</figcaption>
+  </figure>
+  <figure>
+    <img class="light-only" src="../images/pro/tile-alert-rule.webp" :data-zoom-src="alertRule" alt="An alert rule">
+    <img class="dark-only" src="../images/pro/tile-alert-rule-dark.webp" :data-zoom-src="alertRuleDark" alt="An alert rule">
+    <figcaption><a href="/pro/alert-rules">Alert rules</a>Stalls, backlogs and failures, sent by email, a webhook or a paging service.</figcaption>
+  </figure>
+  <figure>
+    <img class="light-only" src="../images/pro/tile-operations.webp" :data-zoom-src="operations" alt="A batch operation">
+    <img class="dark-only" src="../images/pro/tile-operations-dark.webp" :data-zoom-src="operationsDark" alt="A batch operation">
+    <figcaption><a href="/pro/operations">Batch operations</a>Across multiple queues, including dead letter redrive.</figcaption>
+  </figure>
+  <figure>
+    <img class="light-only" src="../images/pro/tile-group.webp" :data-zoom-src="group" alt="A group and its roles">
+    <img class="dark-only" src="../images/pro/tile-group-dark.webp" :data-zoom-src="groupDark" alt="A group and its roles">
+    <figcaption><a href="/pro/accounts#groups">Groups and roles</a>Accounts and groups, with roles per database.</figcaption>
+  </figure>
+</div>
 
 ## Features
 
