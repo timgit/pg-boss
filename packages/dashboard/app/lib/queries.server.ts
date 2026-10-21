@@ -333,7 +333,8 @@ function queueListConditions (
   filter: 'all' | 'attention' | 'partitioned',
   search: string | undefined
 ): { conditions: string[]; params: unknown[] } {
-  const conditions: string[] = []
+  // pg-boss's own queues (the cron pass's `__pgboss__send-it`) are not the reader's.
+  const conditions: string[] = ["NOT starts_with(name, '__pgboss__')"]
   const params: unknown[] = []
 
   if (filter === 'attention') {

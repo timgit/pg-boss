@@ -70,6 +70,16 @@ describe('Queue Queries', () => {
       expect(queues[1].name).toBe('queue-b')
     })
 
+    it('leaves out pg-boss\'s own queues', async () => {
+      await createTestQueue('__pgboss__send-it')
+      await createTestQueue('queue-a')
+
+      const queues = (await getQueuePage(ctx.connectionString, ctx.schema, { limit: L })).rows
+
+      expect(queues.map(q => q.name)).toEqual(['queue-a'])
+      expect(await getQueueCount(ctx.connectionString, ctx.schema)).toBe(1)
+    })
+
     it('pages after and before a cursor', async () => {
       await createTestQueue('queue-a')
       await createTestQueue('queue-b')
