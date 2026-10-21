@@ -9,41 +9,34 @@ Pro is built and supported by the author of pg-boss, and upgrading from the [fre
 
 ## Features
 
-- One install of Pro watches any number of pg-boss databases, such as Production and Staging. Each [connected database](./databases.md) gets a name and a color, and roles, alert rules, the Pro API and metrics are all set per database.
-- The Console sends, retries, cancels, resumes and deletes jobs, creates and deletes queues and schedules, and runs [Operations](./operations.md) over every job a filter matches. Access is role-based per database, and users can sign in with [single sign-on](./sso.md) through an existing OpenID Connect provider.
-- The [Pro API](./api.md) serves pg-boss's own methods per connected database, so a deploy script, a CI job or a worker written in another language can send, fetch, complete and retry jobs without a Node.js client. Each call carries an [API token](./api-tokens.md), and the token's role decides which methods it may call.
-- [Alert rules](./alert-rules.md) decide what is an alert: a queue stalled or falling behind, nobody working a queue, a threshold on a queue's counts, rates and waits, pg-boss warnings, or an operation that failed. Alerts reach email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), and Pro tells the destination when each alert closes. Each rule has its own thresholds, queues and the time a condition must hold. Pro keeps every change to a rule as a [version](./alert-rules.md#versions) to compare with the current one or restore.
-- Pro shows each queue's throughput, wait and run times, time to drain, and whether it's keeping up. It also shows [ninety days of status](./status.md) and the [instances](./instances.md) working each queue.
-- [Accounts and groups](./accounts.md) get [roles](./roles.md) per database, and an [audit log](./audit-log.md) records every change.
-- Pro serves [Prometheus metrics](./metrics.md) at `/metrics`, for existing dashboards and alerting to scrape.
-
-## Free dashboard and Pro
-
-Pro includes every page of the free dashboard. The first rows below are what the two share, and the rest are Pro's alone.
+Pro includes every page of the free dashboard. In Pro, roles, alert rules, the Pro API and metrics are set per connected database.
 
 | Feature | Free dashboard | Pro |
 | - | :-: | :-: |
-| Overview, queues and each queue's counts over time | ✓ | ✓ |
+| Overview and queues, with each queue's status and its counts over time | ✓ | ✓ |
 | Jobs, filtered by state, queue and payload, with each job's details | ✓ | ✓ |
 | Schedules, subscriptions and warnings | ✓ | ✓ |
 | Registered pg-boss instances | ✓ | ✓ |
 | Background migration status | ✓ | ✓ |
-| Several databases in one install | ✓ | ✓ |
-| Password sign-in | ✓ | ✓ |
+| [Multiple connected databases or schemas](./databases.md), such as Production and Staging, each with a name and a color | ✓ | ✓ |
+| Sign-in | One username and password shared by everyone, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
 | Mounting in an existing Node server, or under a sub-path | ✓ | ✓ |
 | [Send, retry, cancel, resume and delete jobs](./changes.md) | | ✓ |
 | [Create and delete queues and schedules](./changes.md) | | ✓ |
-| [Operations](./operations.md) over every job a filter matches, and redrive | | ✓ |
-| [Queue health](./queues.md#health), throughput, wait and run times, and time to drain | | ✓ |
-| [Ninety days of status](./status.md) | | ✓ |
+| [Batch operations](./operations.md) across multiple queues, including [dead letter redrive](./operations.md#redrive) | | ✓ |
+| [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
+| Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
+| A [status page](./status.md) of each queue's health day by day, with the incidents on each day | | ✓ |
 | [Instance CPU, memory, connection pool and event loop](./instances.md) | | ✓ |
-| [Alert rules](./alert-rules.md) | | ✓ |
-| Alerts by [email, webhook or PagerDuty](./destinations.md) | | ✓ |
-| [Accounts and groups](./accounts.md), with [roles](./roles.md) per database | | ✓ |
-| [Single sign-on](./sso.md) through OpenID Connect | | ✓ |
-| [Audit log](./audit-log.md) | | ✓ |
-| [Pro API](./api.md) with [API tokens](./api-tokens.md) | | ✓ |
-| [Prometheus metrics](./metrics.md) | | ✓ |
+| [Alert rules](./alert-rules.md) for a queue stalled or falling behind, nobody working a queue, thresholds on a queue's counts, rates and waits, pg-boss warnings, and failed operations | | ✓ |
+| Each rule's own thresholds, queues and the time a condition must hold, with [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
+| Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |
+| [Groups](./accounts.md), with [roles](./roles.md) per database | | ✓ |
+| [Single sign-on](./sso.md) through an existing OpenID Connect provider | | ✓ |
+| An [audit log](./audit-log.md) of every change | | ✓ |
+| The [Pro API](./api.md), so a deploy script, a CI job or a worker in another language can send, fetch, complete and retry jobs without a Node.js client | | ✓ |
+| [API tokens](./api-tokens.md), each with a role that decides which methods it may call | | ✓ |
+| [Prometheus metrics](./metrics.md) at `/metrics`, for existing dashboards and alerting to scrape | | ✓ |
 | Support from the author of pg-boss | | ✓ |
 
 ## Pricing
