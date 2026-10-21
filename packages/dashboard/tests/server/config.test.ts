@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { parseDatabaseConfig, toDatabaseConfig } from '~/lib/config.server'
+import { parseAllowedActionOrigins, parseDatabaseConfig, toDatabaseConfig } from '~/lib/config.server'
 
 describe('toDatabaseConfig', () => {
   it('names the database after the connection string and defaults the schema', () => {
@@ -45,5 +45,33 @@ describe('parseDatabaseConfig', () => {
       { id: 'prod', name: 'Prod', url: 'postgres://user:p=ss@host/a', schema: 'one' },
       { id: 'b', name: 'b', url: 'postgres://host/b', schema: 'two' },
     ])
+  })
+})
+
+describe('parseAllowedActionOrigins', () => {
+  const originalEnv = { ...process.env }
+
+  afterEach(() => {
+    process.env = { ...originalEnv }
+  })
+
+  it('is undefined when unset or blank', () => {
+    delete process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS
+    expect(parseAllowedActionOrigins()).toBeUndefined()
+
+    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = ' , '
+    expect(parseAllowedActionOrigins()).toBeUndefined()
+  })
+
+  it('splits a comma-separated host list', () => {
+    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'admin.example.com, *.internal.example.com,localhost:8443'
+
+    expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', '*.internal.example.com', 'localhost:8443'])
+  })
+
+  it('rejects an entry with a scheme, which would never match', () => {
+    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'https://admin.example.com'
+
+    expect(() => parseAllowedActionOrigins()).toThrow('"https://admin.example.com" is not a host')
   })
 })

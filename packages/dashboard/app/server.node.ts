@@ -5,6 +5,7 @@ import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
 import { serverOverlay } from '~pro-server'
 import { resolveBasePath } from './lib/base-path'
+import { parseAllowedActionOrigins } from './lib/config.server'
 
 /**
  * The manifest sitting beside this bundle, read when the server starts.
@@ -52,6 +53,8 @@ const app = createHonoApp({
   serveStaticAssets: true,
   clientRoot,
   basePath,
+  // Behind a proxy that ends TLS, this server sees http:// while the browser sends an https:// Origin.
+  allowedActionOrigins: parseAllowedActionOrigins(),
   overlay: serverOverlay,
 })
 

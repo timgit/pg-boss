@@ -125,3 +125,22 @@ export function getDatabaseConfigs (): DatabaseConfig[] {
 export function resetConfigCache (): void {
   cachedConfig = null
 }
+
+/**
+ * Parse PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS, a comma-separated host list for
+ * `allowedActionOrigins`. Returns `undefined` when unset. Throws on an entry with a
+ * scheme or path, because React Router compares hosts only and would never match it.
+ */
+export function parseAllowedActionOrigins (): string[] | undefined {
+  const hosts = (process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  const invalid = hosts.find(host => host.includes('/'))
+
+  if (invalid) {
+    throw new Error(
+      `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS entry "${invalid}" is not a host. ` +
+      'Use host[:port] or *.example.com, without a scheme or path.'
+    )
+  }
+
+  return hosts.length ? hosts : undefined
+}
