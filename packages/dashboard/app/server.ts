@@ -4,7 +4,7 @@ import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'r
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
-import { getDatabaseConfigs, findDatabaseById, type DatabaseConfig } from './lib/config.server'
+import { getDatabaseConfigs, findDatabaseById, parseAllowedActionOrigins, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
@@ -64,7 +64,10 @@ export interface CreateHonoAppOptions {
   basePath?: string;
   /** Apply PGBOSS_DASHBOARD_AUTH_*. Off when embedded: the host authenticates. */
   auth?: boolean;
-  /** Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin. */
+  /**
+   * Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin.
+   * Defaults to PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS. The embedded handler passes its own option instead.
+   */
   allowedActionOrigins?: string[];
   /**
    * The Pro overlay's server half, from `loadProServer()`, or `null` for a free
@@ -88,14 +91,16 @@ export function createHonoApp ({
   databases,
   basePath,
   auth = true,
-  allowedActionOrigins,
+  allowedActionOrigins = parseAllowedActionOrigins(),
   overlay,
 }: CreateHonoAppOptions): Hono {
   const app = new Hono()
   const rehomed = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
-  const build = typeof rehomed === 'function' || !allowedActionOrigins
+  const build = !allowedActionOrigins?.length
     ? rehomed
-    : { ...rehomed, allowedActionOrigins }
+    : typeof rehomed === 'function'
+      ? async () => ({ ...await rehomed(), allowedActionOrigins })
+      : { ...rehomed, allowedActionOrigins }
   const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
 
   if (mountPath) {

@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createDashboardHandler } from '~/handler'
 
 describe('createDashboardHandler', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
   it('needs at least one database', () => {
     expect(() => createDashboardHandler({ databases: [] })).toThrow('needs at least one database')
   })
@@ -21,6 +26,15 @@ describe('createDashboardHandler', () => {
   it('rejects an unusable base path up front, not on the first request', () => {
     expect(() => createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], basePath: '/a*' }))
       .toThrow('Invalid base path')
+  })
+
+  it('says when PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS is set, since only the option applies', () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', 'admin.example.com')
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
+
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ignored/))
   })
 
   it('does not load anything until a request arrives', () => {

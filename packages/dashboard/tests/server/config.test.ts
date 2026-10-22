@@ -64,14 +64,36 @@ describe('parseAllowedActionOrigins', () => {
   })
 
   it('splits a comma-separated host list', () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'admin.example.com, *.internal.example.com,localhost:8443'
+    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'admin.example.com, *.internal.example.com,**.example.org,localhost:8443'
 
-    expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', '*.internal.example.com', 'localhost:8443'])
+    expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', '*.internal.example.com', '**.example.org', 'localhost:8443'])
   })
 
-  it('rejects an entry with a scheme, which would never match', () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'https://admin.example.com'
+  it('lowercases entries and drops default ports, as browsers do in Origin', () => {
+    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'Admin.Example.com:443,admin.example.com:80,admin.example.com:8443'
 
-    expect(() => parseAllowedActionOrigins()).toThrow('"https://admin.example.com" is not a host')
+    expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', 'admin.example.com', 'admin.example.com:8443'])
+  })
+
+  it('rejects an entry that is not a bare host, which would never match', () => {
+    for (const entry of ['https://admin.example.com', 'admin.example.com/pgboss', 'admin example.com', 'user@admin.example.com']) {
+      process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = entry
+
+      expect(() => parseAllowedActionOrigins()).toThrow(`"${entry}" is not a host`)
+    }
+  })
+
+  it('rejects a wildcard that would allow any host', () => {
+    for (const entry of ['*', '**', '*.com', '**.*', '*:8443']) {
+      process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = entry
+
+      expect(() => parseAllowedActionOrigins()).toThrow(`"${entry}" matches too many hosts`)
+    }
+  })
+
+  it('rejects ** after the first label, which never matches', () => {
+    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'admin.**.example.com'
+
+    expect(() => parseAllowedActionOrigins()).toThrow('only allowed as the first label')
   })
 })
