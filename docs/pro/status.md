@@ -1,6 +1,6 @@
 # Status
 
-`/pro/status` shows how each queue kept up over the last ninety days, a day at a time, in the shape of a public status page. A day takes the color of the least healthy hour the queue had in it: keeping up, absorbing a spike, falling behind or stalled. Rows stay in name order whatever their state, since a status page is read by position.
+`/pro/status` shows how each queue kept up over the last ninety days, a day at a time, in the shape of a public status page. A day takes the color of the least healthy state the queue held for 5 minutes or more that day: keeping up, absorbing a spike, falling behind or stalled. Rows stay in name order whatever their state, since a status page is read by position.
 
 ![The status page](../images/pro/status.webp){.light-only}
 ![The status page](../images/pro/status-dark.webp){.dark-only}

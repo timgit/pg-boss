@@ -4,8 +4,8 @@ import queue from '../images/pro/queue.webp'
 import queueDark from '../images/pro/queue-dark.webp'
 import status from '../images/pro/status.webp'
 import statusDark from '../images/pro/status-dark.webp'
-import queuesHexview from '../images/pro/queues-hexview.webp'
-import queuesHexviewDark from '../images/pro/queues-hexview-dark.webp'
+import queuesHex from '../images/pro/queues-hex.webp'
+import queuesHexDark from '../images/pro/queues-hex-dark.webp'
 import alertRule from '../images/pro/alert-rule.webp'
 import alertRuleDark from '../images/pro/alert-rule-dark.webp'
 import operations from '../images/pro/operations.webp'
@@ -35,9 +35,9 @@ Pro is built and supported by the author of pg-boss, and upgrading from the [fre
     <figcaption><a href="/pro/status">Status page</a>Each queue's health day by day, with the incidents on each day.</figcaption>
   </figure>
   <figure>
-    <img class="light-only" src="../images/pro/tile-hexview.webp" :data-zoom-src="queuesHexview" alt="Every queue as a hexagon colored by its health">
-    <img class="dark-only" src="../images/pro/tile-hexview-dark.webp" :data-zoom-src="queuesHexviewDark" alt="Every queue as a hexagon colored by its health">
-    <figcaption><a href="/pro/queues#queues">Hexview</a>Each queue as a hexagon colored by its health, up to 500 to a page.</figcaption>
+    <img class="light-only" src="../images/pro/tile-hex.webp" :data-zoom-src="queuesHex" alt="Every queue as a hexagon colored by its health">
+    <img class="dark-only" src="../images/pro/tile-hex-dark.webp" :data-zoom-src="queuesHexDark" alt="Every queue as a hexagon colored by its health">
+    <figcaption><a href="/pro/queues#queues">Hex</a>Each queue as a hexagon colored by its health, up to 500 to a page.</figcaption>
   </figure>
   <figure>
     <img class="light-only" src="../images/pro/tile-alert-rule.webp" :data-zoom-src="alertRule" alt="An alert rule">
