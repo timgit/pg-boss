@@ -387,6 +387,38 @@ await boss.send('email-welcome', { to: 'new@user.com' })
 boss.notifyWorker(workerId)
 ```
 
+### `drain(options)`
+
+Runs the workers registered with `work()` until none of them finds a ready job, then resolves. This is for a process that should work the queues and exit, such as a cron job, a serverless function, an app that scales to zero, or a test.
+
+The workers fetch, retry and settle jobs the same way they do while polling. `drain()` skips their polling interval and resolves once every worker has fetched nothing since the last batch any of them handled, since a handler may have sent jobs to another worker's queue. Jobs that are not ready yet are not waited for, including jobs sent with `startAfter` and retries waiting out `retryDelay`. A handler that throws fails its jobs as usual, and they are counted in `failed` rather than thrown. Jobs on queues with no registered worker, or outside a worker's `minPriority`/`maxPriority` range, are not counted.
+
+Workers keep polling after `drain()` resolves, so call [`stop()`](./ops.md#stop-options) or [`offWork()`](#offwork-name-options) afterwards when the process should exit. With no workers registered it resolves at once. Overlapping calls resolve at the same point, and each counts the jobs handled while it was running. A fetch that fails is retried on the worker's polling interval, so set `timeoutSeconds` if the drain must end on its own.
+
+**Arguments**
+- `options`: object *(optional)*
+
+**Options**
+
+* **timeoutSeconds**, number
+
+  How long to keep draining. When it runs out, batches already running finish and are counted, and `drain()` resolves without starting another pass. Default none.
+
+**Returns**: `{ processed: number, failed: number, timedOut: boolean }`
+
+* `processed`: jobs handed to a handler while draining, whether they completed or failed.
+* `failed`: how many of those failed.
+* `timedOut`: true if `timeoutSeconds` ran out before the workers found nothing ready.
+
+```js
+await boss.work('email', emailHandler)
+await boss.work('report', reportHandler)
+
+const { processed, failed, timedOut } = await boss.drain({ timeoutSeconds: 540 })
+
+await boss.stop()
+```
+
 ### `offWork(name, options)`
 
 Removes a worker by name or id and stops polling.

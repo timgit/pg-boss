@@ -112,6 +112,24 @@ interface OverrunTally {
   timer: types.ClockTimer
 }
 
+// One drain() call. closedAt is the batch sequence number at the moment it stopped waiting, so a
+// batch that started after that is not counted, and inFlight holds the batches it still waits for.
+interface DrainRun {
+  processed: number
+  failed: number
+  timedOut: boolean
+  closedAt: number | null
+  inFlight: Promise<unknown>[]
+  close: (timedOut: boolean) => void
+}
+
+// What #processJobs reports back past its return value: a wait for a handler that outran its timeout,
+// and how many jobs of the batch were failed.
+interface BatchOutcome {
+  wait?: () => Promise<void>
+  failed?: number
+}
+
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
 // fields must be coerced back to numbers when backend === 'cockroachdb'.
 const NUMERIC_METADATA_FIELDS = [
@@ -277,6 +295,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #telemetry: Telemetry
   // The trace context each fetched job was sent with, kept off the job object handed to the handler.
   #traceContexts: WeakMap<object, TraceCarrier>
+  // drain() bookkeeping. The epoch moves when a drain starts and after every batch handled while one
+  // runs, and a worker counts as idle only once a fetch it began in the current epoch came back
+  // empty. See drain().
+  #drains: Set<DrainRun>
+  #drainEpoch: number
+  #drainIdle: Map<string, number>
+  #batchSeq: number
+  #batchesInFlight: Set<Promise<unknown>>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions, instanceId: string = randomUUID()) {
     super()
@@ -303,6 +329,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#overrunWrites = new Set()
     this.#telemetry = new Telemetry(config.openTelemetry, config.schema, () => this.queues)
     this.#traceContexts = new WeakMap()
+    this.#drains = new Set()
+    this.#drainEpoch = 0
+    this.#drainIdle = new Map()
+    this.#batchSeq = 0
+    this.#batchesInFlight = new Set()
   }
 
   // The id getInstances() reports, for the warnings other components write about this instance.
@@ -469,11 +500,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // count. Any batch job the handler omits (or returns with an invalid shape) is failed with a
   // descriptive error so it retries / dead-letters per queue config.
   // Resolves with the error the whole batch was failed with, or undefined.
-  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<Error | undefined> {
+  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown, outcome: BatchOutcome): Promise<Error | undefined> {
     if (!Array.isArray(result)) {
       // The handler opted into perJobResults but did not return an array: a contract violation.
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
+      outcome.failed = jobs.length
       await this.fail(name, jobs, err)
       await this.#trackJobsFailed(name, jobs, err)
       return err
@@ -506,6 +538,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         failed.push({ job, output: new Error('no disposition returned by handler') })
       }
     }
+
+    outcome.failed = failed.length + deadLettered.length
 
     const items = (entries: { job: types.Job<T>, output: unknown }[]) =>
       entries.map(({ job, output }) => ({ id: job.id, retryCount: job.retryCount, output }))
@@ -671,7 +705,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     perJobResults = false,
     transactional = false,
     transactionTimeoutSeconds?: number,
-    overrun: { wait?: () => Promise<void> } = {}
+    outcome: BatchOutcome = {}
   ): Promise<unknown> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -813,7 +847,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // #settlePerJob settles each job individually and does its own (synchronous,
         // lookup-free) spy tracking via #trackJobsSettled, so the deferred tracker below
         // is skipped for this path.
-        perJobError = await this.#settlePerJob(name, jobs, result)
+        perJobError = await this.#settlePerJob(name, jobs, result, outcome)
       } else {
         // Read out before the completion below, which goes through the same complete() and would
         // otherwise record pg-boss's own settle as one the handler made.
@@ -846,6 +880,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       }
 
+      outcome.failed = jobs.length
       await this.fail(name, jobs, err)
       failedError = err
       didFail = true
@@ -861,7 +896,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // still holds the worker.
       if (handling && !handlerSettled) {
         const abandoned = handling
-        overrun.wait = async () => {
+        outcome.wait = async () => {
           if (handlerSettled) return
           await this.#awaitHandlerOverrun(name, jobIds, maxExpiration, abandoned, worker)
           if (worker && !handlerSettled) worker.abandonedHandler = abandoned
@@ -1417,15 +1452,27 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       // Counted here rather than on fetch: jobs past localGroupConcurrency are restored, not delivered.
       // A handler that outran its timeout holds the worker after the span ends (see #processJobs).
+      // drain() counts the batch once it is settled, before that wait, so a drain that timed out does
+      // not wait on a handler that ignores its signal.
       const processBatch = async (batch: types.Job<ReqData>[], worker?: Worker) => {
         this.#telemetry.consumed(name, batch.length)
-        const overrun: { wait?: () => Promise<void> } = {}
+        const outcome: BatchOutcome = {}
+        const seq = this.#batchSeq++
+        // A batch whose settle threw left its jobs to expire, so it counts as failed.
+        let failed = batch.length
+
+        const processing = this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
+          this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds, outcome))
+
+        this.#batchesInFlight.add(processing)
 
         try {
-          await this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
-            this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds, overrun))
+          await processing
+          failed = outcome.failed ?? 0
         } finally {
-          await overrun.wait?.()
+          this.#batchesInFlight.delete(processing)
+          this.#countDrained(seq, batch.length, failed)
+          await outcome.wait?.()
         }
       }
 
@@ -1480,7 +1527,24 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<ReqData>({ id: workerId, workId, name, options, resolveInterval, fetch, onFetch, onError, clock: this.config.clock })
+      // An empty fetch is how drain() learns the worker found nothing ready, and a batch handled means
+      // every worker has to look again, since it may have sent jobs or freed a group slot.
+      const fetchForDrain = async () => {
+        const epoch = this.#drainEpoch
+        const jobs = await fetch()
+        if (!jobs.length) this.#markDrainIdle(workerId, epoch)
+        return jobs
+      }
+
+      const onFetchForDrain = async (jobs: types.Job<ReqData>[]) => {
+        try {
+          await onFetch(jobs)
+        } finally {
+          if (jobs.length) this.#advanceDrain()
+        }
+      }
+
+      return new Worker<ReqData>({ id: workerId, workId, name, options, resolveInterval, fetch: fetchForDrain, onFetch: onFetchForDrain, onError, clock: this.config.clock })
     }
 
     // Spawn workers based on localConcurrency setting
@@ -1558,6 +1622,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   private removeWorker (worker: Worker<any>) {
     this.workers.delete(worker.id)
+    this.#drainIdle.delete(worker.id)
+    this.#checkDrained()
   }
 
   private getWorkers () {
@@ -1638,6 +1704,117 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   notifyWorker (workerId: string): void {
     this.workers.get(workerId)?.notify()
+  }
+
+  /**
+   * Runs the registered workers back to back until a pass over all of them finds nothing ready, then
+   * resolves with how many jobs they handled.
+   *
+   * The workers do the fetching and settling exactly as they do under work(). drain() only skips
+   * their polling delay and watches their fetches: a worker is idle once a fetch it began after the
+   * last handled batch comes back empty, and the drain ends when every worker is idle at once. A
+   * batch handled by any worker sends the others back for another look, since its handler may have
+   * sent jobs to their queues. Deferred jobs, including retries waiting out a backoff, are not ready
+   * and are not waited for.
+   *
+   * Overlapping calls each wait for the same idle point and each count what was handled while they
+   * ran. With timeoutSeconds, the drain stops waiting at the deadline but still waits for the batches
+   * already running, which are bounded by their expiration. The workers keep polling afterwards as
+   * usual until they are stopped.
+   */
+  async drain (options: types.DrainOptions = {}): Promise<types.DrainResult> {
+    const { timeoutSeconds } = options ?? {}
+
+    assert(timeoutSeconds === undefined || (typeof timeoutSeconds === 'number' && timeoutSeconds > 0), 'timeoutSeconds must be a number > 0')
+
+    let closed!: () => void
+    const done = new Promise<void>(resolve => { closed = resolve })
+
+    const run: DrainRun = {
+      processed: 0,
+      failed: 0,
+      timedOut: false,
+      closedAt: null,
+      inFlight: [],
+      close: (timedOut: boolean) => {
+        if (run.closedAt !== null) return
+        run.closedAt = this.#batchSeq
+        run.timedOut = timedOut
+        run.inFlight = [...this.#batchesInFlight]
+        closed()
+      }
+    }
+
+    this.#drains.add(run)
+
+    const timer = timeoutSeconds !== undefined
+      ? this.config.clock.setTimeout(() => run.close(true), timeoutSeconds * 1000)
+      : null
+
+    try {
+      this.#advanceDrain()
+      this.#checkDrained()
+
+      await done
+      await Promise.allSettled(run.inFlight)
+    } finally {
+      if (timer) this.config.clock.clearTimeout(timer)
+      this.#drains.delete(run)
+    }
+
+    return { processed: run.processed, failed: run.failed, timedOut: run.timedOut }
+  }
+
+  #isDraining (): boolean {
+    for (const run of this.#drains) {
+      if (run.closedAt === null) return true
+    }
+
+    return false
+  }
+
+  // The workers a drain waits on: not stopping, and not one of pg-boss's own.
+  #drainWorkers (): Worker<any>[] {
+    return this.getWorkers().filter(worker => !INTERNAL_QUEUES[worker.name] && !worker.stopping && !worker.stopped)
+  }
+
+  // Invalidates every idle mark and sends the workers to fetch now instead of after their delay.
+  #advanceDrain (): void {
+    if (!this.#isDraining()) return
+
+    this.#drainEpoch++
+
+    for (const worker of this.#drainWorkers()) {
+      worker.notify()
+    }
+  }
+
+  #markDrainIdle (workerId: string, epoch: number): void {
+    if (epoch !== this.#drainEpoch || !this.#isDraining()) return
+
+    this.#drainIdle.set(workerId, epoch)
+    this.#checkDrained()
+  }
+
+  #checkDrained (): void {
+    if (!this.#isDraining()) return
+
+    const idle = this.#drainWorkers().every(worker => this.#drainIdle.get(worker.id) === this.#drainEpoch)
+
+    if (!idle) return
+
+    for (const run of this.#drains) {
+      run.close(false)
+    }
+  }
+
+  #countDrained (seq: number, processed: number, failed: number): void {
+    for (const run of this.#drains) {
+      if (run.closedAt === null || seq < run.closedAt) {
+        run.processed += processed
+        run.failed += failed
+      }
+    }
   }
 
   // Whether a queue's `notify` opt-in actually emits a transactional pg_notify. Backends that

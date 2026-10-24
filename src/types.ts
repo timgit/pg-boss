@@ -1623,6 +1623,24 @@ export interface OffWorkOptions {
   wait?: boolean
 }
 
+export interface DrainOptions {
+  /**
+   * Seconds to keep draining before giving up. Batches already running still finish, and no new
+   * pass is started. Default none.
+   * @see https://pgboss.io/api/workers#drain-options
+   */
+  timeoutSeconds?: number
+}
+
+export interface DrainResult {
+  /** Jobs handed to a handler while draining, whether they completed or failed. */
+  processed: number
+  /** How many of those failed. A failed job retries per its queue's policy as usual. */
+  failed: number
+  /** True when `timeoutSeconds` ran out before a pass found nothing ready. */
+  timedOut: boolean
+}
+
 export interface EventsMixin extends NodeJS.EventEmitter {
   events: Record<string, string>;
 }
