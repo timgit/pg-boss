@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { parseAllowedActionOrigins, parseDatabaseConfig, toDatabaseConfig } from '~/lib/config.server'
+import { normalizeAllowedActionOrigins, parseAllowedActionOrigins, parseDatabaseConfig, toDatabaseConfig } from '~/lib/config.server'
 
 describe('toDatabaseConfig', () => {
   it('names the database after the connection string and defaults the schema', () => {
@@ -69,10 +69,10 @@ describe('parseAllowedActionOrigins', () => {
     expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', '*.internal.example.com', '**.example.org', 'localhost:8443'])
   })
 
-  it('lowercases entries and drops default ports, as browsers do in Origin', () => {
+  it('lowercases entries, and allows a default port with and without it', () => {
     process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'Admin.Example.com:443,admin.example.com:80,admin.example.com:8443'
 
-    expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', 'admin.example.com', 'admin.example.com:8443'])
+    expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', 'admin.example.com:443', 'admin.example.com:80', 'admin.example.com:8443'])
   })
 
   it('rejects an entry that is not a bare host, which would never match', () => {
@@ -90,10 +90,54 @@ describe('parseAllowedActionOrigins', () => {
       expect(() => parseAllowedActionOrigins()).toThrow(`"${entry}" matches too many hosts`)
     }
   })
+})
 
-  it('rejects ** after the first label, which never matches', () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'admin.**.example.com'
+describe('normalizeAllowedActionOrigins', () => {
+  const normalize = (entry: string) => normalizeAllowedActionOrigins([entry], 'allowedActionOrigins')
 
-    expect(() => parseAllowedActionOrigins()).toThrow('only allowed as the first label')
+  it('names the setting in the error', () => {
+    expect(() => normalize('**')).toThrow('allowedActionOrigins entry "**" matches too many hosts')
+  })
+
+  it('stores the host form browsers send in Origin', () => {
+    expect(normalizeAllowedActionOrigins(['bücher.example', '*.Bücher.example', '[0:0::1]:8080', '127.1'], 'x'))
+      .toEqual(['xn--bcher-kva.example', '*.xn--bcher-kva.example', '[::1]:8080', '127.0.0.1'])
+  })
+
+  it('returns its own output unchanged', () => {
+    const hosts = normalizeAllowedActionOrigins(['Admin.Example.com:443', '*.example.org'], 'x')
+
+    expect(normalizeAllowedActionOrigins(hosts, 'x')).toEqual(hosts)
+  })
+
+  it('rejects a wildcard anywhere but the whole first label, which never matches as intended', () => {
+    for (const entry of ['admin.**.example.com', 'example.com.*', '*.*.example.com', 'api-*.example.com']) {
+      expect(() => normalize(entry)).toThrow('only as the whole first label')
+    }
+  })
+
+  it('rejects an empty label, which never matches', () => {
+    for (const entry of ['.example.com', 'example.com.', '*.example.com.', 'a..example.com']) {
+      expect(() => normalize(entry)).toThrow('has an empty label')
+    }
+  })
+
+  it('rejects a wildcard over a top-level domain, and names it', () => {
+    expect(() => normalize('*.localhost')).toThrow('covers every host under .localhost')
+  })
+
+  it('rejects a wildcard over a domain whose subdomains belong to different owners', () => {
+    for (const entry of ['*.co.uk', '**.co.uk', '*.com.au', '*.github.io', '**.vercel.app']) {
+      expect(() => normalize(entry)).toThrow('belong to different owners')
+    }
+  })
+
+  it('accepts a wildcard under a domain someone owns there', () => {
+    expect(normalizeAllowedActionOrigins(['*.example.co.uk', '*.acme.github.io'], 'x'))
+      .toEqual(['*.example.co.uk', '*.acme.github.io'])
+  })
+
+  it('rejects a wildcard in front of an IP address', () => {
+    expect(() => normalize('*.127.0.0.1')).toThrow('in front of an IP address')
   })
 })

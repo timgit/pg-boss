@@ -4,7 +4,7 @@ import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'r
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
-import { getDatabaseConfigs, findDatabaseById, parseAllowedActionOrigins, type DatabaseConfig } from './lib/config.server'
+import { getDatabaseConfigs, findDatabaseById, normalizeAllowedActionOrigins, parseAllowedActionOrigins, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
@@ -66,7 +66,8 @@ export interface CreateHonoAppOptions {
   auth?: boolean;
   /**
    * Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin.
-   * Defaults to PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS. The embedded handler passes its own option instead.
+   * Added to any list the build already has. Defaults to PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS.
+   * The embedded handler passes its own option instead. Throws on an entry that never matches or is too broad.
    */
   allowedActionOrigins?: string[];
   /**
@@ -91,16 +92,23 @@ export function createHonoApp ({
   databases,
   basePath,
   auth = true,
-  allowedActionOrigins = parseAllowedActionOrigins(),
+  allowedActionOrigins,
   overlay,
 }: CreateHonoAppOptions): Hono {
   const app = new Hono()
   const rehomed = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
-  const build = !allowedActionOrigins?.length
+  const allowed = allowedActionOrigins === undefined
+    ? parseAllowedActionOrigins() ?? []
+    : normalizeAllowedActionOrigins(allowedActionOrigins, 'allowedActionOrigins')
+  const withAllowed = (b: ServerBuild): ServerBuild => ({
+    ...b,
+    allowedActionOrigins: [...(b.allowedActionOrigins || []), ...allowed],
+  })
+  const build = !allowed.length
     ? rehomed
     : typeof rehomed === 'function'
-      ? async () => ({ ...await rehomed(), allowedActionOrigins })
-      : { ...rehomed, allowedActionOrigins }
+      ? async () => withAllowed(await rehomed())
+      : withAllowed(rehomed)
   const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
 
   if (mountPath) {

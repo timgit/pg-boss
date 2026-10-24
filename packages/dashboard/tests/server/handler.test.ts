@@ -37,6 +37,22 @@ describe('createDashboardHandler', () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ignored/))
   })
 
+  it('stays quiet about the variable when the option is passed or the value lists nothing', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', 'admin.example.com')
+    createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: ['admin.example.com'] })
+    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', ' , ')
+    createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
+
+    expect(log).not.toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ignored/))
+  })
+
+  it('rejects a bad allowedActionOrigins entry up front, not on the first request', () => {
+    expect(() => createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: ['*.github.io'] }))
+      .toThrow('allowedActionOrigins entry "*.github.io" matches too many hosts')
+  })
+
   it('does not load anything until a request arrives', () => {
     // The build does not exist under test; a handler that loaded eagerly would throw here.
     expect(createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })).toBeTypeOf('function')
