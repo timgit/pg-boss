@@ -113,6 +113,7 @@ The dashboard is configured via environment variables:
 | `PGBOSS_DASHBOARD_READ_ONLY` | Set to `1` to disable every mutating action (see [Read-only mode](#read-only-mode)) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
+| `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` | Comma-separated hosts a form may be submitted from, as `host[:port]` or `*.example.com`. Needed behind a proxy that ends HTTPS (see [Reverse Proxy](#reverse-proxy)) | - |
 
 ### Basic Authentication
 
@@ -222,8 +223,10 @@ For production, place a reverse proxy in front of any of the above options. Exam
 
 ```nginx
 server {
-    listen 80;
+    listen 443 ssl;
     server_name pgboss.example.com;
+    ssl_certificate /etc/ssl/certs/pgboss.example.com.pem;
+    ssl_certificate_key /etc/ssl/private/pgboss.example.com.key;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -235,6 +238,16 @@ server {
     }
 }
 ```
+
+Behind this proxy, pages load but every action fails with a 400 until you list your public host. The browser sends `Origin: https://pgboss.example.com`. The proxy forwards plain HTTP, so the dashboard sees a request for `http://pgboss.example.com`, and React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch. The dashboard does not read `X-Forwarded-Proto` or `X-Forwarded-Host`, so list the hosts your browser uses:
+
+```bash
+PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS=pgboss.example.com npx pg-boss-dashboard
+```
+
+Each entry is compared with the host in the browser's `Origin` header, so leave out the scheme and path. A wildcard goes only in the first label, as in `*.example.com` or `**.example.com`. Entries with a default port, such as `pgboss.example.com:443`, also allow the host without it.
+
+The dashboard stops at startup on an entry that never matches, or on a wildcard that covers other people's hosts. That includes `*`, `**`, `*.com`, country registries such as `*.co.uk`, and a short list of hosting domains such as `*.github.io`. That list is not complete, so list only domains you own.
 
 ### Serving under a sub-path
 
@@ -313,8 +326,8 @@ A few things worth knowing:
 - **It does not depend on the working directory.** Static assets are resolved relative to the installed package.
 - **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, a sibling of the mount path rather than a child, so a `/admin/queues/*` pattern alone misses it and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
 - **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`; the handler leaves signals to you. A write action starts a pg-boss instance whose timers keep the process alive until `await dashboard.close()`. A closed handler answers 503.
-- **Behind a reverse proxy, list your public host.** React Router rejects a form submission whose `Origin` does not match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `allowedActionOrigins: ['admin.example.com']`.
-- **Environment variables.** `PGBOSS_DASHBOARD_READ_ONLY` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST` and `PGBOSS_DASHBOARD_BASE_PATH` do not: the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`, and if it is set while `auth` is off the dashboard says so when you construct the handler rather than ignoring it quietly.
+- **Behind a reverse proxy, list your public host.** React Router rejects a form submission whose `Origin` does not match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `allowedActionOrigins: ['admin.example.com']`. The handler checks the list with the same rules as the [environment variable](#reverse-proxy) and throws on a bad entry.
+- **Environment variables.** `PGBOSS_DASHBOARD_READ_ONLY` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` do not: the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`, and if it is set while `auth` is off the dashboard says so when you construct the handler rather than ignoring it quietly. It does the same when `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` is set.
 
 ## Enabling Warning Persistence
 

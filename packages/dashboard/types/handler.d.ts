@@ -36,18 +36,19 @@ export interface CreateDashboardHandlerOptions {
    *
    * **Hosts, not origins.** `throwIfPotentialCSRFAttack` compares
    * `new URL(originHeader).host` against this list (react-router
-   * `lib/actions.js:19,27`), so a scheme never matches: `https://ops.example.com`
-   * is refused, `ops.example.com` is allowed. Wildcards are matched per label.
+   * `lib/actions.js:19,27`), so `ops.example.com` is allowed and an entry with
+   * a scheme, such as `https://ops.example.com`, throws. Wildcards are matched
+   * per label, and `*` or `**` is accepted only as the whole first label.
    *
-   * `['**']` matches every host and so turns the check off completely. It is a
-   * wildcard like any other — `matchWildcardDomain` returns true for any
-   * non-empty domain once the pattern is down to `**` — and it is the wrong
-   * answer to "actions return 400 behind my proxy": name the host. React Router
-   * coerces a non-array value to `[]`, so passing `false` disables nothing.
+   * The handler throws on an entry that never matches, and on a wildcard that
+   * covers hosts you do not own: `**`, `*.com`, `*.co.uk` or `*.github.io`.
+   * The shared-domain check is a short built-in list, so list only domains you
+   * own. Entries are lowercased and converted to the form browsers send, and
+   * `host:443` also allows `host`.
    *
-   * The usual place to set it is `react-router.config.ts`, which a host cannot
-   * edit on a prebuilt package, leaving the handler as the only component that
-   * can. Passing a `Request` carrying the public URL also works and needs no
+   * React Router reads this list from `react-router.config.ts`, which a host
+   * cannot edit on a prebuilt package, so the handler adds it to the build.
+   * Passing a `Request` carrying the public URL also works and needs no
    * configuration.
    */
   allowedActionOrigins?: string[];
