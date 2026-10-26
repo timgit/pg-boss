@@ -3,7 +3,7 @@ import type { Hono } from 'hono'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
 import { serverOverlay } from '~pro-server'
-import { toDatabaseConfig, type DatabaseInput } from './lib/config.server'
+import { normalizeAllowedActionOrigins, splitEnvList, toDatabaseConfig, type DatabaseInput } from './lib/config.server'
 import { withBasePath } from './lib/runtime-base-path'
 
 export type { DatabaseInput }
@@ -38,18 +38,19 @@ export interface CreateDashboardHandlerOptions {
    *
    * **Hosts, not origins.** `throwIfPotentialCSRFAttack` compares
    * `new URL(originHeader).host` against this list (react-router
-   * `lib/actions.js:19,27`), so a scheme never matches: `https://ops.example.com`
-   * is refused, `ops.example.com` is allowed. Wildcards are matched per label.
+   * `lib/actions.js:19,27`), so `ops.example.com` is allowed and an entry with
+   * a scheme, such as `https://ops.example.com`, throws. Wildcards are matched
+   * per label, and `*` or `**` is accepted only as the whole first label.
    *
-   * `['**']` matches every host and so turns the check off completely. It is a
-   * wildcard like any other — `matchWildcardDomain` returns true for any
-   * non-empty domain once the pattern is down to `**` — and it is the wrong
-   * answer to "actions return 400 behind my proxy": name the host. React Router
-   * coerces a non-array value to `[]`, so passing `false` disables nothing.
+   * The handler throws on a value that is not an array of host strings, on an
+   * unsupported entry, and on `*`, `**` or a wildcard over one label like
+   * `*.com`. A wildcard allows every subdomain, so use one only for a domain
+   * you own. Entries are lowercased and converted to the form browsers send,
+   * and `host:443` also allows `host`.
    *
-   * The usual place to set it is `react-router.config.ts`, which a host cannot
-   * edit on a prebuilt package, leaving the handler as the only component that
-   * can. Passing a `Request` carrying the public URL also works and needs no
+   * React Router reads this list from `react-router.config.ts`, which a host
+   * cannot edit on a prebuilt package, so the handler adds it to the build.
+   * Passing a `Request` carrying the public URL also works and needs no
    * configuration.
    */
   allowedActionOrigins?: string[];
@@ -112,6 +113,19 @@ export function createDashboardHandler (
     )
   }
 
+  // Fail on a bad entry now too. `createHonoApp` runs the same check on the normalized list.
+  const allowed = allowedActionOrigins === undefined
+    ? undefined
+    : normalizeAllowedActionOrigins(allowedActionOrigins, 'allowedActionOrigins')
+
+  if (allowed === undefined && splitEnvList(process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ?? '', ',').length) {
+    console.log(
+      'PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ignored: this dashboard is mounted ' +
+      'inside a host application. Pass allowedActionOrigins to ' +
+      'createDashboardHandler() to allow form submissions from those hosts.'
+    )
+  }
+
   let app: Promise<Hono> | undefined
   let closed = false
 
@@ -127,14 +141,7 @@ export function createDashboardHandler (
 
     // Non-literal so esbuild and tsc leave it as a runtime import, as in server.node.ts.
     const buildModulePath = './server/index.js'
-    const loaded = (await import(buildModulePath)) as unknown as ServerBuild
-
-    // Spread onto a copy rather than mutating the imported module, which is
-    // shared: two handlers with different settings would otherwise fight over
-    // one object. `withBasePath` already returns a copy the same way.
-    const build = allowedActionOrigins === undefined
-      ? loaded
-      : { ...loaded, allowedActionOrigins }
+    const build = (await import(buildModulePath)) as unknown as ServerBuild
 
     return createHonoApp({
       build,
@@ -147,7 +154,9 @@ export function createDashboardHandler (
       // stdout when a credential was configured, rather than dropping it in
       // silence.
       auth,
-      allowedActionOrigins,
+      // An explicit list, so `createHonoApp` does not fall back to the environment.
+      // It adds the list to a copy of the build, leaving the shared module untouched.
+      allowedActionOrigins: allowed ?? [],
       // The same overlay the standalone server loads, through the same alias.
       // `~pro-server` is the empty stub in every build but a Pro one, so this
       // adds nothing to a free build — and in a Pro build it is the difference

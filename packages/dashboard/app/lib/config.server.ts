@@ -26,6 +26,11 @@ export function toPublicDatabase ({ id, name, schema }: DatabaseConfig): PublicD
 const SEPARATOR = '|'
 const DEFAULT_SCHEMA = 'pgboss'
 
+/** Split an environment list on `separator`, trimming entries and dropping empty ones. */
+export function splitEnvList (value: string, separator: string): string[] {
+  return value.split(separator).map(s => s.trim()).filter(Boolean)
+}
+
 /**
  * Parse DATABASE_URL and PGBOSS_SCHEMA environment variables
  * into a list of database configurations.
@@ -34,8 +39,8 @@ export function parseDatabaseConfig (): DatabaseConfig[] {
   const dbUrlEnv = process.env.DATABASE_URL || 'postgres://localhost/pgboss'
   const schemaEnv = process.env.PGBOSS_SCHEMA || DEFAULT_SCHEMA
 
-  const urlParts = dbUrlEnv.split(SEPARATOR).map(s => s.trim()).filter(Boolean)
-  const schemaParts = schemaEnv.split(SEPARATOR).map(s => s.trim()).filter(Boolean)
+  const urlParts = splitEnvList(dbUrlEnv, SEPARATOR)
+  const schemaParts = splitEnvList(schemaEnv, SEPARATOR)
 
   return urlParts.map((part, index) => {
     // Check for "name=url" format
@@ -124,4 +129,76 @@ export function getDatabaseConfigs (): DatabaseConfig[] {
 // For testing - reset cache
 export function resetConfigCache (): void {
   cachedConfig = null
+}
+
+const ALLOWED_ACTION_ORIGINS_ENV = 'PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS'
+
+/**
+ * Parse PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS, a comma-separated host list for
+ * `allowedActionOrigins`. Returns `undefined` when unset or blank.
+ * Throws on an entry `normalizeAllowedActionOrigins` rejects.
+ */
+export function parseAllowedActionOrigins (): string[] | undefined {
+  const hosts = normalizeAllowedActionOrigins(
+    splitEnvList(process.env[ALLOWED_ACTION_ORIGINS_ENV] ?? '', ','),
+    ALLOWED_ACTION_ORIGINS_ENV
+  )
+
+  return hosts.length ? hosts : undefined
+}
+
+/**
+ * Check and normalize `allowedActionOrigins` entries into the host form browsers send in
+ * `Origin`: lowercase, punycode, canonical IP. `host:80` and `host:443` also add `host`.
+ * Throws on a value that is not a list of strings, on an unsupported entry, and on `*`, `**`
+ * or a wildcard over one label like `*.com`. `source` names the setting in the error.
+ */
+export function normalizeAllowedActionOrigins (entries: unknown, source: string): string[] {
+  if (!Array.isArray(entries) || !entries.every(entry => typeof entry === 'string')) {
+    throw new Error(`${source} must be an array of host strings`)
+  }
+
+  return [...new Set(entries.flatMap(entry => toAllowedHosts(entry, source)))]
+}
+
+function toAllowedHosts (entry: string, source: string): string[] {
+  const fail = (reason: string) => new Error(`${source} entry "${entry}" ${reason}`)
+  const notAHost = () => fail('is not a host. Use host[:port] or *.example.com, without a scheme or path.')
+
+  // An optional leading `*.` or `**.`, then a host (bracketed for IPv6), then an optional port.
+  const parts = /^(?:(\*\*?)\.)?(\[[^\]]*\]|[^:]*)(?::(\d{1,5}))?$/.exec(entry.toLowerCase())
+  if (!parts) throw notAHost()
+  const [, wildcard, host, port] = parts
+
+  if (host.includes('*')) {
+    if (host.split('.').every(label => label === '*' || label === '**')) {
+      throw fail('matches too many hosts and would turn off the cross-site check. Name a domain, as in *.example.com.')
+    }
+    throw fail('is not supported. Use * or ** only as the whole first label, as in *.example.com.')
+  }
+  if (/[/?#@\\\s]/.test(host) || !URL.canParse(`http://${host}`)) throw notAHost()
+  if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) throw notAHost()
+
+  // URL does what the browser does to the Origin host: punycode, IPv4 and IPv6 canonical forms.
+  const hostname = new URL(`http://${host}`).hostname
+  const isIp = hostname.startsWith('[') || /^[\d.]+$/.test(hostname)
+
+  if (!isIp && hostname.split('.').includes('')) {
+    throw fail('has an empty label, so it never matches. Remove the leading, trailing or doubled dot.')
+  }
+  if (wildcard) {
+    if (isIp) throw fail('puts a wildcard in front of an IP address, which never matches. Name a domain.')
+    if (!hostname.includes('.')) {
+      throw fail(`matches too many hosts: it covers every host under .${hostname}. Name a domain under it, as in *.example.${hostname}.`)
+    }
+  }
+
+  const bare = (wildcard ? `${wildcard}.` : '') + hostname
+  if (port === undefined) return [bare]
+
+  // Origin drops a port only when it is the default for its own scheme, so keep the port
+  // and allow the bare host too: `host:443` covers https://host and http://host:443.
+  const portNumber = Number(port)
+  const withPort = `${bare}:${portNumber}`
+  return portNumber === 80 || portNumber === 443 ? [bare, withPort] : [withPort]
 }
