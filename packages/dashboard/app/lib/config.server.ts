@@ -150,24 +150,16 @@ export function parseAllowedActionOrigins (): string[] | undefined {
 /**
  * Check and normalize `allowedActionOrigins` entries into the host form browsers send in
  * `Origin`: lowercase, punycode, canonical IP. `host:80` and `host:443` also add `host`.
- * Throws on an entry that never matches, or on a wildcard that covers other people's hosts.
- * `source` names the setting in the error.
+ * Throws on a value that is not a list of strings, on an unsupported entry, and on `*`, `**`
+ * or a wildcard over one label like `*.com`. `source` names the setting in the error.
  */
-export function normalizeAllowedActionOrigins (entries: string[], source: string): string[] {
+export function normalizeAllowedActionOrigins (entries: unknown, source: string): string[] {
+  if (!Array.isArray(entries) || !entries.every(entry => typeof entry === 'string')) {
+    throw new Error(`${source} must be an array of host strings`)
+  }
+
   return [...new Set(entries.flatMap(entry => toAllowedHosts(entry, source)))]
 }
-
-// Domains whose subdomains belong to different owners, so `*.github.io` would allow
-// other people's sites. Not exhaustive: the docs tell operators to list only domains they own.
-const SHARED_DOMAINS = new Set([
-  'amazonaws.com', 'appspot.com', 'azurewebsites.net', 'blogspot.com', 'cloudfront.net',
-  'firebaseapp.com', 'fly.dev', 'github.io', 'gitlab.io', 'herokuapp.com', 'netlify.app',
-  'ngrok-free.app', 'ngrok.io', 'onrender.com', 'pages.dev', 'railway.app',
-  'trycloudflare.com', 'vercel.app', 'web.app', 'workers.dev',
-])
-
-// Second-level registries under a country code, such as co.uk, com.au or ac.jp.
-const COUNTRY_REGISTRY = /^(ac|co|com|edu|gov|ltd|mil|net|org|plc)\.[a-z]{2}$/
 
 function toAllowedHosts (entry: string, source: string): string[] {
   const fail = (reason: string) => new Error(`${source} entry "${entry}" ${reason}`)
@@ -182,7 +174,7 @@ function toAllowedHosts (entry: string, source: string): string[] {
     if (host.split('.').every(label => label === '*' || label === '**')) {
       throw fail('matches too many hosts and would turn off the cross-site check. Name a domain, as in *.example.com.')
     }
-    throw fail('never matches as intended. Use * or ** only as the whole first label, as in *.example.com.')
+    throw fail('is not supported. Use * or ** only as the whole first label, as in *.example.com.')
   }
   if (/[/?#@\\\s]/.test(host) || !URL.canParse(`http://${host}`)) throw notAHost()
   if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) throw notAHost()
@@ -198,9 +190,6 @@ function toAllowedHosts (entry: string, source: string): string[] {
     if (isIp) throw fail('puts a wildcard in front of an IP address, which never matches. Name a domain.')
     if (!hostname.includes('.')) {
       throw fail(`matches too many hosts: it covers every host under .${hostname}. Name a domain under it, as in *.example.${hostname}.`)
-    }
-    if (SHARED_DOMAINS.has(hostname) || COUNTRY_REGISTRY.test(hostname)) {
-      throw fail(`matches too many hosts: subdomains of ${hostname} belong to different owners. Name a domain you own.`)
     }
   }
 

@@ -247,7 +247,7 @@ PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS=pgboss.example.com npx pg-boss-dashboard
 
 Each entry is compared with the host in the browser's `Origin` header, so leave out the scheme and path. A wildcard goes only in the first label, as in `*.example.com` or `**.example.com`. Entries with a default port, such as `pgboss.example.com:443`, also allow the host without it.
 
-The dashboard stops at startup on an entry that never matches, or on a wildcard that covers other people's hosts. That includes `*`, `**`, `*.com`, country registries such as `*.co.uk`, and a short list of hosting domains such as `*.github.io`. That list is not complete, so list only domains you own.
+The dashboard stops at startup on an unsupported entry, and on `*`, `**` or a wildcard over one label such as `*.com`. A wildcard allows every subdomain, so use one only for a domain you own.
 
 ### Serving under a sub-path
 

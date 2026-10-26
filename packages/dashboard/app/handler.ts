@@ -42,11 +42,11 @@ export interface CreateDashboardHandlerOptions {
    * a scheme, such as `https://ops.example.com`, throws. Wildcards are matched
    * per label, and `*` or `**` is accepted only as the whole first label.
    *
-   * The handler throws on an entry that never matches, and on a wildcard that
-   * covers hosts you do not own: `**`, `*.com`, `*.co.uk` or `*.github.io`.
-   * The shared-domain check is a short built-in list, so list only domains you
-   * own. Entries are lowercased and converted to the form browsers send, and
-   * `host:443` also allows `host`.
+   * The handler throws on a value that is not an array of host strings, on an
+   * unsupported entry, and on `*`, `**` or a wildcard over one label like
+   * `*.com`. A wildcard allows every subdomain, so use one only for a domain
+   * you own. Entries are lowercased and converted to the form browsers send,
+   * and `host:443` also allows `host`.
    *
    * React Router reads this list from `react-router.config.ts`, which a host
    * cannot edit on a prebuilt package, so the handler adds it to the build.

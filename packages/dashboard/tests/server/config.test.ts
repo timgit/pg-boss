@@ -99,6 +99,13 @@ describe('normalizeAllowedActionOrigins', () => {
     expect(() => normalize('**')).toThrow('allowedActionOrigins entry "**" matches too many hosts')
   })
 
+  it('rejects a value that is not an array of strings', () => {
+    for (const value of [null, false, 'admin.example.com', [1]]) {
+      expect(() => normalizeAllowedActionOrigins(value, 'allowedActionOrigins'))
+        .toThrow('allowedActionOrigins must be an array of host strings')
+    }
+  })
+
   it('stores the host form browsers send in Origin', () => {
     expect(normalizeAllowedActionOrigins(['bücher.example', '*.Bücher.example', '[0:0::1]:8080', '127.1'], 'x'))
       .toEqual(['xn--bcher-kva.example', '*.xn--bcher-kva.example', '[::1]:8080', '127.0.0.1'])
@@ -110,9 +117,9 @@ describe('normalizeAllowedActionOrigins', () => {
     expect(normalizeAllowedActionOrigins(hosts, 'x')).toEqual(hosts)
   })
 
-  it('rejects a wildcard anywhere but the whole first label, which never matches as intended', () => {
+  it('rejects a wildcard anywhere but the whole first label as unsupported', () => {
     for (const entry of ['admin.**.example.com', 'example.com.*', '*.*.example.com', 'api-*.example.com']) {
-      expect(() => normalize(entry)).toThrow('only as the whole first label')
+      expect(() => normalize(entry)).toThrow('is not supported. Use * or ** only as the whole first label')
     }
   })
 
@@ -124,12 +131,6 @@ describe('normalizeAllowedActionOrigins', () => {
 
   it('rejects a wildcard over a top-level domain, and names it', () => {
     expect(() => normalize('*.localhost')).toThrow('covers every host under .localhost')
-  })
-
-  it('rejects a wildcard over a domain whose subdomains belong to different owners', () => {
-    for (const entry of ['*.co.uk', '**.co.uk', '*.com.au', '*.github.io', '**.vercel.app']) {
-      expect(() => normalize(entry)).toThrow('belong to different owners')
-    }
   })
 
   it('accepts a wildcard under a domain someone owns there', () => {

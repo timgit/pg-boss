@@ -67,7 +67,7 @@ export interface CreateHonoAppOptions {
   /**
    * Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin.
    * Added to any list the build already has. Defaults to PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS.
-   * The embedded handler passes its own option instead. Throws on an entry that never matches or is too broad.
+   * The embedded handler passes its own option instead. Throws on an unsupported entry, in this list or the build's.
    */
   allowedActionOrigins?: string[];
   /**
@@ -100,15 +100,18 @@ export function createHonoApp ({
   const allowed = allowedActionOrigins === undefined
     ? parseAllowedActionOrigins() ?? []
     : normalizeAllowedActionOrigins(allowedActionOrigins, 'allowedActionOrigins')
-  const withAllowed = (b: ServerBuild): ServerBuild => ({
-    ...b,
-    allowedActionOrigins: [...(b.allowedActionOrigins || []), ...allowed],
-  })
-  const build = !allowed.length
-    ? rehomed
-    : typeof rehomed === 'function'
-      ? async () => withAllowed(await rehomed())
-      : withAllowed(rehomed)
+  // The build's own list gets the same check, so a build with `['**']` cannot turn off the cross-site check.
+  const withAllowed = (b: ServerBuild): ServerBuild => {
+    const merged = [...new Set([
+      ...normalizeAllowedActionOrigins(b.allowedActionOrigins ?? [], 'The build\'s allowedActionOrigins'),
+      ...allowed,
+    ])]
+
+    return merged.length ? { ...b, allowedActionOrigins: merged } : b
+  }
+  const build = typeof rehomed === 'function'
+    ? async () => withAllowed(await rehomed())
+    : withAllowed(rehomed)
   const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
 
   if (mountPath) {

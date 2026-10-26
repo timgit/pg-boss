@@ -18,8 +18,8 @@ const build = {
 } as unknown as ServerBuild
 
 // The embedded handler imports the production build from here; `npm run build` writes it.
-// A mocked module throws on a missing export, so name the optional one React Router reads.
-vi.mock('~/server/index.js', () => ({ ...build, unstable_getCriticalCss: undefined }))
+// A mocked module throws on a missing export, so name the optional ones the server reads.
+vi.mock('~/server/index.js', () => ({ ...build, allowedActionOrigins: undefined, unstable_getCriticalCss: undefined }))
 
 // What a TLS proxy forwards: the server sees plain HTTP, the browser sent its public origin.
 const proxiedPost = (app: ReturnType<typeof createHonoApp>, origin = 'https://pgboss.example.com') => app.request('http://pgboss.example.com/', {
@@ -102,6 +102,11 @@ describe('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', () => {
     expect((await proxiedPost(app)).status).toBe(200)
   })
 
+  it('stops startup on a build whose own list would turn off the check', () => {
+    expect(() => createHonoApp({ build: { ...build, allowedActionOrigins: ['**'] }, mode: 'production', overlay: null }))
+      .toThrow('The build\'s allowedActionOrigins entry "**" matches too many hosts')
+  })
+
   it('checks and normalizes a list passed as the option, like the variable', async () => {
     expect(() => createHonoApp({ build, mode: 'production', allowedActionOrigins: ['**'], overlay: null }))
       .toThrow('allowedActionOrigins entry "**" matches too many hosts')
@@ -120,7 +125,7 @@ describe('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', () => {
   })
 })
 
-describe('createDashboardHandler with PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS set', () => {
+describe('createDashboardHandler allowedActionOrigins', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.restoreAllMocks()
@@ -131,6 +136,13 @@ describe('createDashboardHandler with PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS se
     headers: { Origin: 'https://pgboss.example.com', 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'intent=retry',
   }))
+
+  it('runs an action from a host the option lists', async () => {
+    const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: ['pgboss.example.com'] })
+
+    expect((await post(handler)).status).toBe(200)
+    await handler.close()
+  })
 
   it('ignores a valid value: the host app passes its own list', async () => {
     vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', 'pgboss.example.com')

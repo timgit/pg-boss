@@ -48,9 +48,11 @@ describe('createDashboardHandler', () => {
     expect(log).not.toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ignored/))
   })
 
-  it('rejects a bad allowedActionOrigins entry up front, not on the first request', () => {
-    expect(() => createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: ['*.github.io'] }))
-      .toThrow('allowedActionOrigins entry "*.github.io" matches too many hosts')
+  it('rejects a bad allowedActionOrigins value up front, not on the first request', () => {
+    expect(() => createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: ['*.com'] }))
+      .toThrow('allowedActionOrigins entry "*.com" matches too many hosts')
+    expect(() => createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: null as never }))
+      .toThrow('allowedActionOrigins must be an array of host strings')
   })
 
   it('does not load anything until a request arrives', () => {
