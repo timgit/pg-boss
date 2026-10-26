@@ -80,6 +80,19 @@ describe('QueueList', () => {
     expect(screen.getByRole('button', { name: 'Hive' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('says what an overlay\'s view gives when no queue matches, and no queues found without one', () => {
+    const d = { ...data('cards', []), views: ['cards', 'table', 'hive'], view: 'hive' }
+    const hive = { value: 'hive', label: 'Hive', render: () => <p>drawn</p> }
+    const { unmount } = renderList(d, { views: [{ ...hive, empty: 'Every queue is keeping up.' }] })
+
+    expect(screen.getByText('Every queue is keeping up.')).toBeInTheDocument()
+    expect(screen.queryByText('drawn')).not.toBeInTheDocument()
+    unmount()
+
+    renderList(d, { views: [hive] })
+    expect(screen.getByText('No queues found')).toBeInTheDocument()
+  })
+
   it('offers no cards and no view toggle on its own', () => {
     renderList(data('table'))
 

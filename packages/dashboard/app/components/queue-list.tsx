@@ -84,6 +84,8 @@ export interface QueueViewOption {
   label: string
   icon?: ReactNode
   render: (queues: QueueResult[]) => ReactNode
+  /** In place of "No queues found" when no queue matches. */
+  empty?: ReactNode
 }
 
 export interface QueueListExtensions {
@@ -473,7 +475,8 @@ export function QueueListHeader ({ data, extensions }: { data: QueueListData, ex
 export function QueueListSections ({ data, extensions }: { data: QueueListData, extensions?: QueueListExtensions }) {
   const { queues, view, page, nextCursor, prevCursor, totalPages, hasNextPage, hasPrevPage, totalCount, pageSize } = data
   // Anything but the table is laid out the same way: the overlay's own view, or the cards.
-  const drawn = extensions?.views?.find((v) => v.value === view)?.render ??
+  const option = extensions?.views?.find((v) => v.value === view)
+  const drawn = option?.render ??
     (view === 'cards' ? (list: QueueResult[]) => <QueueCards queues={list} extensions={extensions} /> : null)
   const pagination = (
     <TablePagination
@@ -496,7 +499,7 @@ export function QueueListSections ({ data, extensions }: { data: QueueListData, 
           <section aria-label="Queues" className="space-y-3">
             {queues.length > 0
               ? drawn(queues)
-              : <Card><CardContent className="py-8 text-center text-[var(--text-tertiary)]">No queues found</CardContent></Card>}
+              : <Card><CardContent className="py-8 text-center text-[var(--text-tertiary)]">{option?.empty ?? 'No queues found'}</CardContent></Card>}
             {totalPages != null && totalPages > 1 && <Card>{pagination}</Card>}
           </section>
           )
