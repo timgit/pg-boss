@@ -101,9 +101,11 @@ export function createHonoApp ({
     ? parseAllowedActionOrigins() ?? []
     : normalizeAllowedActionOrigins(allowedActionOrigins, 'allowedActionOrigins')
   // The build's own list gets the same check, so a build with `['**']` cannot turn off the cross-site check.
+  // A build with no list exports `false`, which React Router treats as empty.
   const withAllowed = (b: ServerBuild): ServerBuild => {
+    const own = Array.isArray(b.allowedActionOrigins) ? b.allowedActionOrigins : []
     const merged = [...new Set([
-      ...normalizeAllowedActionOrigins(b.allowedActionOrigins ?? [], 'The build\'s allowedActionOrigins'),
+      ...normalizeAllowedActionOrigins(own, 'The build\'s allowedActionOrigins'),
       ...allowed,
     ])]
 
