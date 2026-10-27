@@ -55,7 +55,8 @@ export default defineConfig({
         {
           text: 'Pro Console',
           items: [
-            { text: 'Overview and queues', link: '/pro/queues' },
+            { text: 'Overview', link: '/pro/overview' },
+            { text: 'Queues', link: '/pro/queues' },
             { text: 'Status', link: '/pro/status' },
             { text: 'Instances', link: '/pro/instances' },
             { text: 'Jobs and queues', link: '/pro/changes' },
