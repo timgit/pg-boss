@@ -1,7 +1,7 @@
 # License
 
 The license is separate from the registry token, and its job is small. It puts
-the company's name on the Pro page, so anyone looking at the dashboard can see whose
+the company's name on the Pro page, so every user of the dashboard can see whose
 license it runs under. **It doesn't turn any feature on or off.**
 
 ![The license page](../images/pro/license.webp){.light-only}

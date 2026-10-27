@@ -68,7 +68,7 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | Registered pg-boss instances | ✓ | ✓ |
 | Background migration status | ✓ | ✓ |
 | [Multiple connected databases or schemas](./databases.md), such as Production and Staging, each with a name and a color | ✓ | ✓ |
-| Sign-in | One username and password shared by everyone, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
+| Sign-in | One username and password shared by every user, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
 | Mounting in an existing Node server, or under a sub-path | ✓ | ✓ |
 | [Send, retry, cancel, resume and delete jobs](./changes.md) | | ✓ |
 | [Create and delete queues and schedules](./changes.md) | | ✓ |
@@ -77,7 +77,7 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
 | A [status page](./status.md) of each queue's health day by day, with the incidents on each day | | ✓ |
 | [Instance CPU, memory, connection pool and event loop](./instances.md) | | ✓ |
-| [Alert rules](./alert-rules.md) for a queue stalled or falling behind, nobody working a queue, thresholds on a queue's counts, rates and waits, pg-boss warnings, and failed operations | | ✓ |
+| [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, and failed operations | | ✓ |
 | Each rule's own thresholds, queues and the time a condition must hold, with [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
 | Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |
 | [Groups](./accounts.md), with [roles](./roles.md) per database | | ✓ |
@@ -100,4 +100,4 @@ Pro connects only to the places its configuration names. See [network activity](
 
 1. [Install and run](./install.md) it.
 2. Open `/setup` and create the first administrator.
-3. Give the default alert rules a [destination](./destinations.md), so their alerts reach somebody.
+3. Give the default alert rules a [destination](./destinations.md), so their alerts send notifications.

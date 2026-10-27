@@ -47,7 +47,7 @@ The [audit log](./audit-log.md) records each change with the method, the queue, 
 Beside pg-boss's methods, the API serves Pro's own alerts:
 
 - `GET /pro/api/v1/alerts`: the open alerts on every database the service account can see, or on one with `?database=<id>`. Each has its id, database, severity, title, why, when it opened, and who acknowledged it.
-- `POST /pro/api/v1/alerts/<id>/acknowledge`: takes the alert off everybody's list, as an operator does in the Console. Send `{ "minutes": 60 }`, `240` or `1440` to acknowledge it for that long, or nothing for as long as it stays open. Needs the operator or admin role on the alert's database.
+- `POST /pro/api/v1/alerts/<id>/acknowledge`: takes the alert off the needs-attention list for every user, as an operator does in the Console. Send `{ "minutes": 60 }`, `240` or `1440` to acknowledge it for that long, or nothing for as long as it stays open. Needs the operator or admin role on the alert's database.
 
 ## Scaling
 

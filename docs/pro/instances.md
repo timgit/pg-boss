@@ -11,7 +11,7 @@ What needs attention is what the instance [alert rules](./alert-rules.md#default
 - an instance restarting in a loop
 - an instance gone quiet
 - more than one pg-boss version live
-- instances disagreeing on shared options
+- instances with different shared options
 - a pool out of connections
 - a blocked event loop
 - a process at its CPU limit or near its memory limit

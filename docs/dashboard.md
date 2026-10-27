@@ -343,7 +343,7 @@ app.use(['/admin/queues', '/admin/queues.data'], requireAdmin, (req, res) => {
 
 When you mount the handler:
 
-- **Authentication is yours.** The handler adds none of its own. Mounted without a guard, it lets anyone read job payloads. Place it behind whatever already protects your admin routes.
+- **Authentication is yours.** The handler adds none of its own. Mounted without a guard, any visitor can read job payloads. Place it behind whatever already protects your admin routes.
 - **It's lazy.** The handler imports nothing and opens no database connection until the first request arrives. Its connection pool drains again when the dashboard is idle.
 - **It doesn't depend on the working directory.** It resolves static assets relative to the installed package.
 - **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, which sits beside the mount path instead of under it. A `/admin/queues/*` pattern alone misses it, and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.

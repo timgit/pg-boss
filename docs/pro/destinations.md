@@ -10,7 +10,7 @@ far end said.
 ![The destinations page](../images/pro/destinations-dark.webp){.dark-only}
 
 Pro sends every alert to its destinations when it fires and again when it
-closes, whichever way it closes: the condition ended, somebody resolved or acknowledged an event, an event
+closes, whichever way it closes: the condition ended, a user resolved or acknowledged an event, an event
 expired, or its rule changed, was turned off or was deleted. A resolve goes only
 where the fire went, once.
 

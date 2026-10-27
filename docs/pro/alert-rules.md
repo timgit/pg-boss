@@ -6,14 +6,14 @@ Every database starts with one rule for each check Pro can run. Five are on:
 
 - **Queue stalled or falling behind**: the queue's health verdict, read from its
   throughput.
-- **Nobody working a queue**: jobs are ready and nothing has taken one for two
+- **Queue with no workers**: jobs are ready and nothing has taken one for two
   monitor passes.
 - **No live instance supervising**: nothing is running pg-boss's maintenance.
 - **An operation failed**: an operation that failed, or a redrive that left
   collisions.
 - **pg-boss warnings**: every warning type pg-boss records.
 
-**Nobody working a queue** judges by what leaves the queue, whoever takes it, so
+**Queue with no workers** judges by what leaves the queue, whoever takes it, so
 a queue drained with `fetch()` and `complete()` counts as worked. A job active at
 the last monitor pass is activity. So is a job completed or failed in the last two
 passes, from the throughput pg-boss counts with `persistQueueStats`. Without that
@@ -25,11 +25,11 @@ written the counts in three passes, the check judges nothing. The alert names an
 live instance with a `work()` on the queue, or the last one that had one.
 
 The instance checks start off: an instance restarting in a loop, an instance gone
-quiet, more than one pg-boss version live, instances disagreeing on shared
+quiet, more than one pg-boss version live, instances with different shared
 options, an instance out of pool connections, blocking its event loop, hitting its
 CPU limit, or near its memory limit.
 
-None of them notifies anybody until it has a destination, so on a new install
+None of them sends a notification until it has a destination, so on a new install
 the alerts show up only in the bell. A default rule can be edited and turned off,
 but never deleted. **Reset to default** puts back its original definition.
 A database added to `DATABASE_URL` later gets its default rules on the
@@ -72,8 +72,8 @@ same way, the rule's page names the other one. Each rule raises its own alert.
 
 The rule's page also sets where the rule sends, and how often at most it notifies
 about the same thing (60 minutes by default). Its **Silence 1h** button
-is for a deploy or a maintenance window. A silenced rule still raises alerts but
-tells nobody, and the silence ends by itself.
+is for a deploy or a maintenance window. A silenced rule still opens alerts but
+sends no notifications, and the silence ends by itself.
 
 ## JSON definitions
 
@@ -111,8 +111,8 @@ can come back sorted.
 
 ## Versions
 
-Pro keeps every change to what a rule decides as a version, and nobody can change
-a version afterward. Only the definition is versioned. Changing the name,
+Pro keeps every change to what a rule decides as a version, and a version can't
+be changed afterward. Only the definition is versioned. Changing the name,
 destination, notification interval, on or off state, or silence adds no version.
 Saving the same definition again adds nothing. Going back to an earlier
 one adds a new version, which the rule's history marks as the same as the earlier
@@ -122,10 +122,10 @@ it and the current one.
 ![A rule version against the current one](../images/pro/alert-rule-version.webp){.light-only}
 ![A rule version against the current one](../images/pro/alert-rule-version-dark.webp){.dark-only}
 
-Each alert keeps the version that raised it, and its page links there. When a
+Each alert keeps the version that opened it, and its page links there. When a
 rule changes while it has open alerts, they keep their version, and from the next
 pass the evaluator judges them by the new definition. An alert that no longer matches closes as "the
-rule changed", so nobody reads it as the problem fixing itself. Turning a rule off
+rule changed", so it isn't read as the problem fixing itself. Turning a rule off
 closes its alerts as "the rule was turned off", and deleting one closes them as
 "the rule was deleted". A deleted rule's versions stay readable from the alerts
 that point at them.

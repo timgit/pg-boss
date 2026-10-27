@@ -5,17 +5,17 @@ telemetry, analytics, phone-home, version check or network license check, at boo
 or at any time after. It verifies the license offline, against a public key
 compiled into this package.
 
-Each connection below starts from a setting or a command someone ran. With none
+Each connection below starts from a setting or a command a user ran. With none
 of them set up, the dashboard talks only to its Postgres database.
 
 | What | When | Where |
 |---|---|---|
 | `npm install` | at install or upgrade | `npm.pgboss.io`, the configured registry |
-| `npx pg-boss-pro-license` | when someone runs it | `npm.pgboss.io/license` |
-| A webhook alert | only once a webhook destination exists, when a rule sending to it fires or its alert closes, or someone sends a test | the URL on that destination |
+| `npx pg-boss-pro-license` | when a user runs it | `npm.pgboss.io/license` |
+| A webhook alert | only once a webhook destination exists, when a rule sending to it fires or its alert closes, or a user sends a test | the URL on that destination |
 | A PagerDuty alert | only once a PagerDuty destination exists, at the same moments | `events.pagerduty.com` |
 | An email alert | only once an email destination exists, at the same moments | the configured SMTP server, or `api.resend.com` |
-| Single sign-on | when somebody signs in or presses Test | the provider's issuer, token and key endpoints |
+| Single sign-on | when a user signs in or presses Test | the provider's issuer, token and key endpoints |
 
 The license command sends the token and receives a signed license. It sends
 nothing about the database, its jobs, the deployment, or the machine it runs on.

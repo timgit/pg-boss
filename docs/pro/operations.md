@@ -13,7 +13,7 @@ queue picker accepts typing, and each suggestion shows how many matches it adds.
 ![Operations, previewing a retry](../images/pro/operations.webp){.light-only}
 ![Operations, previewing a retry](../images/pro/operations-dark.webp){.dark-only}
 
-Nothing runs until someone presses **Review**, which freezes the number, and
+Nothing runs until a user presses **Review**, which freezes the number, and
 then presses the button that names it. The confirmation covers exactly that
 number of jobs. If more jobs land in the set while the confirmation is open, the
 page refuses, shows the new count and asks again. Deleting 1,000 jobs or more

@@ -18,7 +18,7 @@ A queue with too little counted in the hour has no verdict. Health needs `persis
 
 ## Queues
 
-The queue list shows each queue's rates, health, time to drain and workers, with the figures across every queue above them. The range runs from an hour to thirty days, as far back as pg-boss keeps stats. **Table**, **Cards** and **Hex** are three views of the same list. **Needs attention** sorts the queues that need somebody first. The list refreshes every 15 seconds while the tab is visible.
+The queue list shows each queue's rates, health, time to drain and workers, with the figures across every queue above them. The range runs from an hour to thirty days, as far back as pg-boss keeps stats. **Table**, **Cards** and **Hex** are three views of the same list. **Needs attention** sorts the queues that need attention first. The list refreshes every 15 seconds while the tab is visible.
 
 ### Table view
 

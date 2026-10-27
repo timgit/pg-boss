@@ -2,7 +2,7 @@
 
 Pro's overview is the free dashboard's [overview](../dashboard.md#overview) with more in each of its sections and a column of cards beside them.
 
-A row at the top counts the open alerts nobody has acknowledged, split into critical and watch, and how many more are acknowledged. It links to the [Alerts](./alerts.md) list, and it appears only while an alert is unacknowledged. The free overview's list of recent warnings is left out, because Pro turns pg-boss warnings into alerts through an [alert rule](./alert-rules.md).
+A row at the top counts the open alerts that aren't acknowledged, split into critical and watch, and how many more are acknowledged. It links to the [Alerts](./alerts.md) list, and it appears only while an alert is unacknowledged. The free overview's list of recent warnings is left out, because Pro turns pg-boss warnings into alerts through an [alert rule](./alert-rules.md).
 
 The four figures across all queues are the free ones, with a line added under three of them. **Ready** adds the p95 wait over the last hour and the oldest wait among the jobs ready in the last 5 minutes. **Active** adds how many instances are live, and **Failed** adds how many jobs failed in the last hour. The wait and failure lines read the stats pg-boss records with `persistQueueStats`, and the instance count reads the [instance registry](./instances.md).
 

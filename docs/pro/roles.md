@@ -1,6 +1,6 @@
 # Roles and access
 
-Each grant gives a role on one database or on all of them, to a person, a [group](./accounts.md#groups) or a [service account](./api-tokens.md). The same person can be an operator on one database and a viewer on another. Where several grants apply to a database, someone may do everything any of them allows.
+Each grant gives a role on one database or on all of them, to a person, a [group](./accounts.md#groups) or a [service account](./api-tokens.md). The same person can be an operator on one database and a viewer on another. Where several grants apply to a database, the user may do everything any of them allows.
 
 | Role | May |
 | - | - |
@@ -18,4 +18,4 @@ Grants read as the role, then where it applies: `Operator › All databases`, or
 ![Who can act on a database](../images/pro/access.webp){.light-only}
 ![Who can act on a database](../images/pro/access-dark.webp){.dark-only}
 
-Pro always refuses two changes, and says so. It won't remove the last administrator over every database, by demotion, disabling or deletion, because nobody would be left to undo it. It also won't let an account disable or delete itself.
+Pro always refuses two changes, and says so. It won't remove the last administrator over every database, by demotion, disabling or deletion, because no administrator would be left to undo it. It also won't let an account disable or delete itself.

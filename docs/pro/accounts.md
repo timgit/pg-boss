@@ -47,7 +47,7 @@ account acts only through API tokens.
 Pro always refuses two changes, and says so:
 
 - removing the last administrator who covers every database, by demotion,
-  disabling or deletion, because nobody would be left who could undo it
+  disabling or deletion, because no administrator would be left to undo it
 - an administrator disabling or deleting their own account (another administrator can do that)
 
 Pro sends no invitation email, because it runs inside the organization's network and may have
@@ -62,7 +62,7 @@ every other session and keeps the current one.
 
 An account can hold a role directly, or through a group that holds one. Groups
 live at `/pro/groups`. Give a group a role over a database (or over every
-database) and add users to it by pasting their addresses, and everyone in it has
+database) and add users to it by pasting their addresses, and every member has
 that role. Where two roles apply to the same database, the person may do everything
 either allows, as [Roles](./roles.md) explains. A group's page lists its
 members with each one's direct roles, says whether [SSO](./sso.md) maps a provider group
