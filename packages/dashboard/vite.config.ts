@@ -75,32 +75,17 @@ export default defineConfig(({ command }) => {
     ssr: command === 'build'
       ? { noExternal: true, external: SERVER_RUNTIME_PACKAGES }
       : undefined,
-    // Dev only. Vite's dependency scanner crawls the client module graph before
-    // React Router's `.server` transform runs, so it follows every route module
-    // into `db.server.ts` and `schedule.server.ts` and decides the browser needs `pg`,
-    // `pg-boss`, and everything `pg-boss` imports. Nothing server-side actually
-    // reaches the client bundle — the production build is clean — but the scanner
-    // does not know that, and the cost is paid on the first page view: it finds
-    // these packages late, pre-bundles them, and then tells the browser to reload
-    // ("optimized dependencies changed"), throwing away whatever the first visitor
-    // had already clicked.
+    // Dev only. A browser package the dev server finds after start is pre-bundled
+    // mid-request, and Vite then reloads the page ("optimized dependencies changed"),
+    // so the click that reached it lands back where it started. React Router's
+    // `future.unstable_optimizeDeps` gives the scan every route module as an entry,
+    // so every browser package is found at start instead, with no list to keep here.
     //
-    // `include` settles the real client dependencies at server start instead of
-    // mid-request, and `exclude` keeps the server-only packages out of the browser's
-    // optimizer entirely. `uplot` is listed even though the scanner misses it: it is
-    // reached only from the metrics route, so discovering it on navigation would
-    // trigger the same reload later.
+    // The scan crawls before React Router's `.server` transform runs, so it follows
+    // routes into `db.server.ts` and decides the browser needs `pg-boss` and what it
+    // imports. `exclude` keeps those out. Server-only packages it does pre-bundle are
+    // never requested by the browser, so they cost start time and no reload.
     optimizeDeps: {
-      include: [
-        '@base-ui/react',
-        '@base-ui/react/dialog',
-        '@base-ui/react/menu',
-        'class-variance-authority',
-        'clsx',
-        'lucide-react',
-        'tailwind-merge',
-        'uplot',
-      ],
       exclude: SERVER_ONLY_PACKAGES,
     },
     resolve: {
