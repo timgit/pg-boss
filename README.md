@@ -73,13 +73,9 @@ An HTTP proxy in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/p
 
 See the [proxy documentation](https://pgboss.io/proxy) for details.
 
-## Pro
+## Pro 🚀
 
-[pg-boss Pro](https://pgboss.io/pro/) is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Console, users send, retry and delete jobs, create queues and schedules, and run batch operations across queues, as their role allows. Every change is recorded in the audit log. Through the API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service, along with single sign-on and Prometheus metrics. It's a subscription.
-
-## Requirements
-* Node 22.12 or higher, or Bun
-* PostgreSQL 13 or higher
+[pg-boss Pro](https://pgboss.io/pro/) is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Console, users send, retry and delete jobs, create queues and schedules, and run batch operations across queues, as their role allows. Every change is recorded in the audit log. Through the API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service, along with single sign-on and Prometheus metrics. Pro is built and supported by the author of pg-boss, and it's sold as a yearly or monthly subscription. Subscriptions, along with sponsorship, pay for the maintenance of pg-boss.
 
 ## Sponsors
 
@@ -98,6 +94,10 @@ pg-boss is MIT licensed and always will be. One person maintains it, and sponsor
 
 ## Documentation
 * [Docs](https://pgboss.io/)
+
+## Requirements
+* Node 22.12 or higher, or Bun
+* PostgreSQL 13 or higher
 
 ## Contributing
 To set up a development environment for this library:
