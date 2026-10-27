@@ -3,7 +3,7 @@ import type { Hono } from 'hono'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
 import { serverOverlay } from '~pro-server'
-import { normalizeAllowedActionOrigins, splitEnvList, toDatabaseConfig, type DatabaseInput } from './lib/config.server'
+import { normalizeAllowedActionOrigins, toDatabaseConfig, toSiteOrigin, type DatabaseInput } from './lib/config.server'
 import { withBasePath } from './lib/runtime-base-path'
 
 export type { DatabaseInput }
@@ -50,10 +50,18 @@ export interface CreateDashboardHandlerOptions {
    *
    * React Router reads this list from `react-router.config.ts`, which a host
    * cannot edit on a prebuilt package, so the handler adds it to the build.
-   * Passing a `Request` carrying the public URL also works and needs no
-   * configuration.
+   * `siteUrl`, or passing a `Request` carrying the public URL, fixes the
+   * same 400 for a dashboard reached at one host.
    */
   allowedActionOrigins?: string[];
+  /**
+   * The public URL the dashboard is served at, as `https://host[:port]`, for a host behind a
+   * proxy that ends HTTPS. Each request takes this scheme and host before any route reads it,
+   * so actions and redirects match the browser. Throws on a value with a path, a query or
+   * credentials: the path is `basePath`. Not set by default.
+   * @see https://pgboss.io/dashboard#reverse-proxy
+   */
+  siteUrl?: string;
 }
 
 export interface DashboardHandler {
@@ -82,7 +90,7 @@ const STOP_INSTANCES_KEY = Symbol.for('pgboss.dashboard.stopAllInstances')
  * standalone server does.
  */
 export function createDashboardHandler (
-  { databases, basePath, allowedActionOrigins, auth = false }: CreateDashboardHandlerOptions
+  { databases, basePath, allowedActionOrigins, siteUrl, auth = false }: CreateDashboardHandlerOptions
 ): DashboardHandler {
   if (databases.length === 0) {
     throw new Error('createDashboardHandler() needs at least one database')
@@ -118,11 +126,12 @@ export function createDashboardHandler (
     ? undefined
     : normalizeAllowedActionOrigins(allowedActionOrigins, 'allowedActionOrigins')
 
-  if (allowed === undefined && splitEnvList(process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ?? '', ',').length) {
+  const siteOrigin = siteUrl === undefined ? undefined : toSiteOrigin(siteUrl, 'siteUrl')
+
+  if (siteOrigin === undefined && process.env.PGBOSS_DASHBOARD_SITE_URL?.trim()) {
     console.log(
-      'PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ignored: this dashboard is mounted ' +
-      'inside a host application. Pass allowedActionOrigins to ' +
-      'createDashboardHandler() to allow form submissions from those hosts.'
+      'PGBOSS_DASHBOARD_SITE_URL ignored: this dashboard is mounted inside a host ' +
+      'application. Pass siteUrl to createDashboardHandler() instead.'
     )
   }
 
@@ -154,9 +163,10 @@ export function createDashboardHandler (
       // stdout when a credential was configured, rather than dropping it in
       // silence.
       auth,
-      // An explicit list, so `createHonoApp` does not fall back to the environment.
-      // It adds the list to a copy of the build, leaving the shared module untouched.
-      allowedActionOrigins: allowed ?? [],
+      // Added to a copy of the build, leaving the shared module untouched.
+      allowedActionOrigins: allowed,
+      // `null` rather than undefined, so PGBOSS_DASHBOARD_SITE_URL does not apply.
+      siteUrl: siteOrigin ?? null,
       // The same overlay the standalone server loads, through the same alias.
       // `~pro-server` is the empty stub in every build but a Pro one, so this
       // adds nothing to a free build — and in a Pro build it is the difference

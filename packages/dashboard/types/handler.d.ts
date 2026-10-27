@@ -48,10 +48,18 @@ export interface CreateDashboardHandlerOptions {
    *
    * React Router reads this list from `react-router.config.ts`, which a host
    * cannot edit on a prebuilt package, so the handler adds it to the build.
-   * Passing a `Request` carrying the public URL also works and needs no
-   * configuration.
+   * `siteUrl`, or passing a `Request` carrying the public URL, fixes the
+   * same 400 for a dashboard reached at one host.
    */
   allowedActionOrigins?: string[];
+  /**
+   * The public URL the dashboard is served at, as `https://host[:port]`, for a host behind a
+   * proxy that ends HTTPS. Each request takes this scheme and host before any route reads it,
+   * so actions and redirects match the browser. Throws on a value with a path, a query or
+   * credentials: the path is `basePath`. Not set by default.
+   * @see https://pgboss.io/dashboard#reverse-proxy
+   */
+  siteUrl?: string;
 }
 
 export interface DashboardHandler {

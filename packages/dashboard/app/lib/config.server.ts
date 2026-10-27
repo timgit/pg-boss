@@ -131,20 +131,35 @@ export function resetConfigCache (): void {
   cachedConfig = null
 }
 
-const ALLOWED_ACTION_ORIGINS_ENV = 'PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS'
+const SITE_URL_ENV = 'PGBOSS_DASHBOARD_SITE_URL'
 
 /**
- * Parse PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS, a comma-separated host list for
- * `allowedActionOrigins`. Returns `undefined` when unset or blank.
- * Throws on an entry `normalizeAllowedActionOrigins` rejects.
+ * Parse PGBOSS_DASHBOARD_SITE_URL, the public origin a proxy serves the dashboard at.
+ * Returns `undefined` when unset or blank.
  */
-export function parseAllowedActionOrigins (): string[] | undefined {
-  const hosts = normalizeAllowedActionOrigins(
-    splitEnvList(process.env[ALLOWED_ACTION_ORIGINS_ENV] ?? '', ','),
-    ALLOWED_ACTION_ORIGINS_ENV
+export function parseSiteUrl (): string | undefined {
+  const value = process.env[SITE_URL_ENV]?.trim()
+
+  return value ? toSiteOrigin(value, SITE_URL_ENV) : undefined
+}
+
+/**
+ * Check a site URL and return its origin. Throws on anything but `http(s)://host[:port]`:
+ * the path comes from the base path instead. `source` names the setting in the error.
+ */
+export function toSiteOrigin (value: string, source: string): string {
+  const fail = () => new Error(
+    `${source} "${value}" is not a site URL. Use https://host[:port], without a path. ` +
+    'The base path sets the path.'
   )
 
-  return hosts.length ? hosts : undefined
+  if (!URL.canParse(value)) throw fail()
+  const url = new URL(value)
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw fail()
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw fail()
+
+  return url.origin
 }
 
 /**

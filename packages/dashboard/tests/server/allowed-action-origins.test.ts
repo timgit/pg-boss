@@ -29,75 +29,65 @@ const proxiedPost = (app: ReturnType<typeof createHonoApp>, origin = 'https://pg
   body: 'intent=retry',
 })
 
-describe('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', () => {
+describe('allowedActionOrigins', () => {
   const originalEnv = { ...process.env }
 
   beforeEach(() => {
     delete process.env.PGBOSS_DASHBOARD_AUTH_USERNAME
     delete process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD
     delete process.env.PGBOSS_DASHBOARD_READ_ONLY
-    delete process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS
+    delete process.env.PGBOSS_DASHBOARD_SITE_URL
   })
 
   afterEach(() => {
     process.env = { ...originalEnv }
   })
 
+  const appWith = (allowedActionOrigins?: string[]) => createHonoApp({ build, mode: 'production', allowedActionOrigins, overlay: null })
+
   it('rejects a proxied action when unset', async () => {
-    const res = await proxiedPost(createHonoApp({ build, mode: 'production', overlay: null }))
+    const res = await proxiedPost(appWith())
 
     expect(res.status).toBe(400)
   })
 
   it('runs a proxied action from a listed host', async () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'PgBoss.Example.com:443'
-
-    const res = await proxiedPost(createHonoApp({ build, mode: 'production', overlay: null }))
+    const res = await proxiedPost(appWith(['PgBoss.Example.com:443']))
 
     expect(res.status).toBe(200)
   })
 
   it('still rejects an action from another host', async () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'pgboss.example.com'
-
-    const res = await proxiedPost(createHonoApp({ build, mode: 'production', overlay: null }), 'https://evil.example.net')
+    const res = await proxiedPost(appWith(['pgboss.example.com']), 'https://evil.example.net')
 
     expect(res.status).toBe(400)
   })
 
   it('applies to a build loaded per request, as the dev server passes it', async () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'pgboss.example.com'
-
-    const res = await proxiedPost(createHonoApp({ build: () => build, mode: 'development', overlay: null }))
+    const res = await proxiedPost(createHonoApp({ build: () => build, mode: 'development', allowedActionOrigins: ['pgboss.example.com'], overlay: null }))
 
     expect(res.status).toBe(200)
   })
 
   it('stops startup on an entry that would turn off the check', () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = '**'
-
-    expect(() => createHonoApp({ build, mode: 'production', overlay: null })).toThrow('matches too many hosts')
+    expect(() => appWith(['**'])).toThrow('allowedActionOrigins entry "**" matches too many hosts')
   })
 
   it('matches a wildcard entry per label', async () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = '*.example.com'
-    const app = createHonoApp({ build, mode: 'production', overlay: null })
+    const app = appWith(['*.example.com'])
 
     expect((await proxiedPost(app)).status).toBe(200)
     expect((await proxiedPost(app, 'https://pgboss.example.com.evil.net')).status).toBe(400)
   })
 
   it('keeps a non-default port: http on 443 sends it in Origin', async () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'pgboss.example.com:443'
-
-    const res = await proxiedPost(createHonoApp({ build, mode: 'production', overlay: null }), 'http://pgboss.example.com:443')
+    const res = await proxiedPost(appWith(['pgboss.example.com:443']), 'http://pgboss.example.com:443')
 
     expect(res.status).toBe(200)
   })
 
   it('adds to the list the build already has instead of replacing it', async () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'pgboss.example.com'
-    const app = createHonoApp({ build: { ...build, allowedActionOrigins: ['admin.example.org'] }, mode: 'production', overlay: null })
+    const app = createHonoApp({ build: { ...build, allowedActionOrigins: ['admin.example.org'] }, mode: 'production', allowedActionOrigins: ['pgboss.example.com'], overlay: null })
 
     expect((await proxiedPost(app, 'https://admin.example.org')).status).toBe(200)
     expect((await proxiedPost(app)).status).toBe(200)
@@ -107,22 +97,77 @@ describe('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', () => {
     expect(() => createHonoApp({ build: { ...build, allowedActionOrigins: ['**'] }, mode: 'production', overlay: null }))
       .toThrow('The build\'s allowedActionOrigins entry "**" matches too many hosts')
   })
+})
 
-  it('checks and normalizes a list passed as the option, like the variable', async () => {
-    expect(() => createHonoApp({ build, mode: 'production', allowedActionOrigins: ['**'], overlay: null }))
-      .toThrow('allowedActionOrigins entry "**" matches too many hosts')
+describe('PGBOSS_DASHBOARD_SITE_URL', () => {
+  beforeEach(() => {
+    vi.stubEnv('PGBOSS_DASHBOARD_AUTH_USERNAME', '')
+    vi.stubEnv('PGBOSS_DASHBOARD_AUTH_PASSWORD', '')
+    vi.stubEnv('PGBOSS_DASHBOARD_READ_ONLY', '')
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', '')
+  })
 
-    const res = await proxiedPost(createHonoApp({ build, mode: 'production', allowedActionOrigins: ['PgBoss.Example.com:443'], overlay: null }))
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  const app = () => createHonoApp({ build, mode: 'production', overlay: null })
+
+  it('runs a proxied action from the site origin', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://PgBoss.Example.com/')
+
+    const res = await proxiedPost(app())
 
     expect(res.status).toBe(200)
   })
 
-  it('is ignored when the caller passes its own list', async () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'pgboss.example.com'
-
-    const res = await proxiedPost(createHonoApp({ build, mode: 'production', allowedActionOrigins: [], overlay: null }))
+  it('rejects the same action when unset', async () => {
+    const res = await proxiedPost(app())
 
     expect(res.status).toBe(400)
+  })
+
+  it('still rejects an action from another site', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
+
+    const res = await proxiedPost(app(), 'https://evil.example.net')
+
+    expect(res.status).toBe(400)
+  })
+
+  it('keeps the site host for a path that starts with two slashes', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
+
+    const res = await app().request('http://127.0.0.1:3000//evil.example.net/', {
+      method: 'POST',
+      headers: { Origin: 'https://evil.example.net', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'intent=retry',
+    })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('applies to a build loaded per request, as the dev server passes it', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
+
+    const res = await proxiedPost(createHonoApp({ build: () => build, mode: 'development', overlay: null }))
+
+    expect(res.status).toBe(200)
+  })
+
+  it('stops startup on a value that is not an origin', () => {
+    for (const value of ['pgboss.example.com', 'https://pgboss.example.com/pgboss', 'ftp://pgboss.example.com', 'https://user@pgboss.example.com']) {
+      vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', value)
+
+      expect(() => app()).toThrow(`PGBOSS_DASHBOARD_SITE_URL "${value}" is not a site URL`)
+    }
+  })
+
+  it('gives way to the option, and null turns it off', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
+
+    expect((await proxiedPost(createHonoApp({ build, mode: 'production', siteUrl: null, overlay: null }))).status).toBe(400)
+    expect((await proxiedPost(createHonoApp({ build, mode: 'production', siteUrl: 'https://admin.example.org', overlay: null }), 'https://admin.example.org')).status).toBe(200)
   })
 })
 
@@ -145,17 +190,15 @@ describe('createDashboardHandler allowedActionOrigins', () => {
     await handler.close()
   })
 
-  it('ignores a valid value: the host app passes its own list', async () => {
-    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', 'pgboss.example.com')
-    vi.spyOn(console, 'log').mockImplementation(() => {})
-    const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
+  it('runs an action from the site origin the option names', async () => {
+    const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], siteUrl: 'https://pgboss.example.com' })
 
-    expect((await post(handler)).status).toBe(400)
+    expect((await post(handler)).status).toBe(200)
     await handler.close()
   })
 
-  it('ignores an invalid value instead of failing every request', async () => {
-    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', '**')
+  it('ignores PGBOSS_DASHBOARD_SITE_URL: only the option applies', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
 

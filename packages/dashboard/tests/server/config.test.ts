@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { normalizeAllowedActionOrigins, parseAllowedActionOrigins, parseDatabaseConfig, toDatabaseConfig } from '~/lib/config.server'
+import { normalizeAllowedActionOrigins, parseDatabaseConfig, parseSiteUrl, toDatabaseConfig } from '~/lib/config.server'
 
 describe('toDatabaseConfig', () => {
   it('names the database after the connection string and defaults the schema', () => {
@@ -48,7 +48,7 @@ describe('parseDatabaseConfig', () => {
   })
 })
 
-describe('parseAllowedActionOrigins', () => {
+describe('parseSiteUrl', () => {
   const originalEnv = { ...process.env }
 
   afterEach(() => {
@@ -56,44 +56,49 @@ describe('parseAllowedActionOrigins', () => {
   })
 
   it('is undefined when unset or blank', () => {
-    delete process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS
-    expect(parseAllowedActionOrigins()).toBeUndefined()
+    delete process.env.PGBOSS_DASHBOARD_SITE_URL
+    expect(parseSiteUrl()).toBeUndefined()
 
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = ' , '
-    expect(parseAllowedActionOrigins()).toBeUndefined()
+    process.env.PGBOSS_DASHBOARD_SITE_URL = ' '
+    expect(parseSiteUrl()).toBeUndefined()
   })
 
-  it('splits a comma-separated host list', () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'admin.example.com, *.internal.example.com,**.example.org,localhost:8443'
+  it('returns the origin', () => {
+    process.env.PGBOSS_DASHBOARD_SITE_URL = ' https://PgBoss.Example.com:443/ '
+    expect(parseSiteUrl()).toBe('https://pgboss.example.com')
 
-    expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', '*.internal.example.com', '**.example.org', 'localhost:8443'])
+    process.env.PGBOSS_DASHBOARD_SITE_URL = 'http://localhost:8080'
+    expect(parseSiteUrl()).toBe('http://localhost:8080')
   })
 
-  it('lowercases entries, and allows a default port with and without it', () => {
-    process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = 'Admin.Example.com:443,admin.example.com:80,admin.example.com:8443'
+  it('rejects anything but http(s)://host[:port]', () => {
+    for (const value of ['pgboss.example.com', 'localhost:3000', 'https://pgboss.example.com/pgboss', 'https://pgboss.example.com/?a=1', 'https://pgboss.example.com/#top', 'https://user:pw@pgboss.example.com', 'ws://pgboss.example.com']) {
+      process.env.PGBOSS_DASHBOARD_SITE_URL = value
 
-    expect(parseAllowedActionOrigins()).toEqual(['admin.example.com', 'admin.example.com:443', 'admin.example.com:80', 'admin.example.com:8443'])
-  })
-
-  it('rejects an entry that is not a bare host, which would never match', () => {
-    for (const entry of ['https://admin.example.com', 'admin.example.com/pgboss', 'admin example.com', 'user@admin.example.com']) {
-      process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = entry
-
-      expect(() => parseAllowedActionOrigins()).toThrow(`"${entry}" is not a host`)
-    }
-  })
-
-  it('rejects a wildcard that would allow any host', () => {
-    for (const entry of ['*', '**', '*.com', '**.*', '*:8443']) {
-      process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS = entry
-
-      expect(() => parseAllowedActionOrigins()).toThrow(`"${entry}" matches too many hosts`)
+      expect(() => parseSiteUrl()).toThrow(`PGBOSS_DASHBOARD_SITE_URL "${value}" is not a site URL`)
     }
   })
 })
 
 describe('normalizeAllowedActionOrigins', () => {
   const normalize = (entry: string) => normalizeAllowedActionOrigins([entry], 'allowedActionOrigins')
+
+  it('lowercases entries, and allows a default port with and without it', () => {
+    expect(normalizeAllowedActionOrigins(['Admin.Example.com:443', 'admin.example.com:80', 'admin.example.com:8443'], 'x'))
+      .toEqual(['admin.example.com', 'admin.example.com:443', 'admin.example.com:80', 'admin.example.com:8443'])
+  })
+
+  it('rejects an entry that is not a bare host, which would never match', () => {
+    for (const entry of ['https://admin.example.com', 'admin.example.com/pgboss', 'admin example.com', 'user@admin.example.com']) {
+      expect(() => normalize(entry)).toThrow(`"${entry}" is not a host`)
+    }
+  })
+
+  it('rejects a wildcard that would allow any host', () => {
+    for (const entry of ['*', '**', '*.com', '**.*', '*:8443']) {
+      expect(() => normalize(entry)).toThrow(`"${entry}" matches too many hosts`)
+    }
+  })
 
   it('names the setting in the error', () => {
     expect(() => normalize('**')).toThrow('allowedActionOrigins entry "**" matches too many hosts')
