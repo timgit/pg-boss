@@ -4,7 +4,7 @@ import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'r
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
-import { getDatabaseConfigs, findDatabaseById, normalizeAllowedActionOrigins, parseAllowedActionOrigins, type DatabaseConfig } from './lib/config.server'
+import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
@@ -65,10 +65,12 @@ export interface CreateHonoAppOptions {
   /** Apply PGBOSS_DASHBOARD_AUTH_*. Off when embedded: the host authenticates. */
   auth?: boolean;
   /**
-   * Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin.
-   * Added to any list the build already has. Defaults to PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS.
-   * The embedded handler passes its own option instead. Throws on an unsupported entry, in this list or the build's.
+   * The public origin (`https://host[:port]`) a proxy serves the dashboard at. Each request URL
+   * takes its scheme and host before any route reads it. Defaults to PGBOSS_DASHBOARD_SITE_URL,
+   * and `null` turns it off, as the embedded handler does without its own `siteUrl`.
    */
+  siteUrl?: string | null;
+  /** Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin. */
   allowedActionOrigins?: string[];
   /**
    * The Pro overlay's server half, from `loadProServer()`, or `null` for a free
@@ -92,28 +94,16 @@ export function createHonoApp ({
   databases,
   basePath,
   auth = true,
+  siteUrl,
   allowedActionOrigins,
   overlay,
 }: CreateHonoAppOptions): Hono {
   const app = new Hono()
+  const siteOrigin = siteUrl === undefined ? parseSiteUrl() : siteUrl === null ? undefined : toSiteOrigin(siteUrl, 'siteUrl')
   const rehomed = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
-  const allowed = allowedActionOrigins === undefined
-    ? parseAllowedActionOrigins() ?? []
-    : normalizeAllowedActionOrigins(allowedActionOrigins, 'allowedActionOrigins')
-  // The build's own list gets the same check, so a build with `['**']` cannot turn off the cross-site check.
-  // A build with no list exports `false`, which React Router treats as empty.
-  const withAllowed = (b: ServerBuild): ServerBuild => {
-    const own = Array.isArray(b.allowedActionOrigins) ? b.allowedActionOrigins : []
-    const merged = [...new Set([
-      ...normalizeAllowedActionOrigins(own, 'The build\'s allowedActionOrigins'),
-      ...allowed,
-    ])]
-
-    return merged.length ? { ...b, allowedActionOrigins: merged } : b
-  }
-  const build = typeof rehomed === 'function'
-    ? async () => withAllowed(await rehomed())
-    : withAllowed(rehomed)
+  const build = typeof rehomed === 'function' || !allowedActionOrigins
+    ? rehomed
+    : { ...rehomed, allowedActionOrigins }
   const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
 
   if (mountPath) {
@@ -256,5 +246,22 @@ export function createHonoApp ({
     return response
   })
 
-  return app
+  if (!siteOrigin) return app
+
+  // An outer app, so auth, the overlay and React Router's origin check all read the public URL.
+  const site = new Hono()
+  site.all('*', (c) => app.fetch(atSiteOrigin(c.req.raw, siteOrigin), c.env))
+
+  return site
+}
+
+// Set the path on the site URL rather than resolving it, so a request for `//other.host/`
+// keeps the site's host.
+function atSiteOrigin (request: Request, origin: string): Request {
+  const { pathname, search } = new URL(request.url)
+  const url = new URL(origin)
+  url.pathname = pathname
+  url.search = search
+
+  return new Request(url, request)
 }
