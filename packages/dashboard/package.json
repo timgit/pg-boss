@@ -1,6 +1,6 @@
 {
   "name": "@pg-boss/dashboard",
-  "version": "1.13.0",
+  "version": "2.0.0",
   "description": "Web dashboard for monitoring pg-boss job queues",
   "keywords": [
     "pg-boss",
@@ -65,17 +65,17 @@
   "dependencies": {
     "@hono/node-server": "^2.1.5",
     "@react-router/node": "^8.3.1",
-    "hono": "^4.13.13",
+    "hono": "^4.13.14",
     "isbot": "^5.2.2",
     "pg": "^8.23.1",
     "pg-boss": "^12.38.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "react-router": "^8.4.0"
   },
   "devDependencies": {
     "@base-ui/react": "^1.9.0",
-    "@react-router/dev": "^8.4.0",
+    "@react-router/dev": "^8.5.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
@@ -92,13 +92,13 @@
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.2",
     "jsdom": "^29.1.1",
-    "lucide-react": "^1.57.0",
+    "lucide-react": "^1.62.0",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.1.18",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "uplot": "^1.6.32",
-    "vite": "^8.3.4",
+    "vite": "^8.3.5",
     "vitest": "^4.1.2"
   },
   "repository": {
