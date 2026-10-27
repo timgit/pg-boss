@@ -112,7 +112,7 @@ See the [proxy documentation](/proxy) for details.
 
 ## Pro
 
-[pg-boss Pro](/pro/) is the dashboard for teams. From the Pro Console, you can send, retry and delete jobs and run operations over many at once, as your role allows. Pro sends alerts to email, webhooks and PagerDuty, and it has accounts with single sign-on, an audit log, the Pro API and Prometheus metrics. It's a subscription.
+[pg-boss Pro](/pro/) is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Console, users send, retry and delete jobs, create queues and schedules, and run batch operations across queues, as their role allows. Every change is recorded in the audit log. Through the API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service, along with single sign-on and Prometheus metrics. It's a subscription.
 
 ## Requirements
 * Node 22.12 or higher, or Bun
