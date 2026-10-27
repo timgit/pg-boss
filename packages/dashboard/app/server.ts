@@ -3,7 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'react-router'
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
-import { getDatabaseConfigs, findDatabaseById, type DatabaseConfig } from './lib/config.server'
+import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
@@ -63,8 +63,12 @@ export interface CreateHonoAppOptions {
   basePath?: string;
   /** Apply PGBOSS_DASHBOARD_AUTH_*. Off when embedded: the host authenticates. */
   auth?: boolean;
-  /** Hosts (`host[:port]`, `*.example.com`) a form may be submitted from when a proxy hides the public origin. */
-  allowedActionOrigins?: string[];
+  /**
+   * The public origin (`https://host[:port]`) a proxy serves the dashboard at. Each request URL
+   * takes its scheme and host before any route reads it. Defaults to PGBOSS_DASHBOARD_SITE_URL,
+   * and `null` turns it off, as the embedded handler does without its own `siteUrl`.
+   */
+  siteUrl?: string | null;
   /**
    * The Pro overlay's server half, from `loadProServer()`, or `null` for a free
    * build — which is the only shape this package is ever tested against on its
@@ -87,14 +91,12 @@ export function createHonoApp ({
   databases,
   basePath,
   auth = true,
-  allowedActionOrigins,
+  siteUrl,
   overlay,
 }: CreateHonoAppOptions): Hono {
   const app = new Hono()
-  const rehomed = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
-  const build = typeof rehomed === 'function' || !allowedActionOrigins
-    ? rehomed
-    : { ...rehomed, allowedActionOrigins }
+  const siteOrigin = siteUrl === undefined ? parseSiteUrl() : siteUrl === null ? undefined : toSiteOrigin(siteUrl, 'siteUrl')
+  const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
   const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
 
   if (mountPath) {
@@ -180,7 +182,7 @@ export function createHonoApp ({
       : undefined
 
     // The static manifest file still carries the baked asset URLs: answer with the re-homed one.
-    if (typeof build !== 'function' && rehomed !== givenBuild) {
+    if (typeof build !== 'function' && build !== givenBuild) {
       const manifestSource = renderManifestSource(build)
 
       app.get(build.assets.url, (c) => c.body(manifestSource, 200, {
@@ -232,5 +234,22 @@ export function createHonoApp ({
     return response
   })
 
-  return app
+  if (!siteOrigin) return app
+
+  // An outer app, so auth, the overlay and React Router's origin check all read the public URL.
+  const site = new Hono()
+  site.all('*', (c) => app.fetch(atSiteOrigin(c.req.raw, siteOrigin), c.env))
+
+  return site
+}
+
+// Set the path on the site URL rather than resolving it, so a request for `//other.host/`
+// keeps the site's host.
+function atSiteOrigin (request: Request, origin: string): Request {
+  const { pathname, search } = new URL(request.url)
+  const url = new URL(origin)
+  url.pathname = pathname
+  url.search = search
+
+  return new Request(url, request)
 }

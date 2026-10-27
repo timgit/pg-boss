@@ -159,6 +159,7 @@ Configure the dashboard with environment variables:
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
+| `PGBOSS_DASHBOARD_SITE_URL` | The public URL the dashboard is served at, as `https://host[:port]`. Needed behind a proxy that ends HTTPS (see [Reverse proxy](#reverse-proxy)) | - |
 
 ### Basic authentication
 
@@ -251,8 +252,10 @@ For production, place a reverse proxy in front of any of the above options. Exam
 
 ```nginx
 server {
-    listen 80;
+    listen 443 ssl;
     server_name pgboss.example.com;
+    ssl_certificate /etc/ssl/certs/pgboss.example.com.pem;
+    ssl_certificate_key /etc/ssl/private/pgboss.example.com.key;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -264,6 +267,16 @@ server {
     }
 }
 ```
+
+Behind this proxy, pages load but every action fails with a 400 until you set the site URL. The browser sends `Origin: https://pgboss.example.com`. The proxy forwards plain HTTP, so the dashboard sees a request for `http://pgboss.example.com`, and React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch. Set `PGBOSS_DASHBOARD_SITE_URL` to the URL your browser uses:
+
+```bash
+PGBOSS_DASHBOARD_SITE_URL=https://pgboss.example.com npx pg-boss-dashboard
+```
+
+Every request then takes this scheme and host, so actions and redirects match what the browser sees. Give the origin only. A sub-path goes in `PGBOSS_DASHBOARD_BASE_PATH`. The dashboard stops at startup on a value with a path, a query or credentials. It doesn't read `X-Forwarded-Proto` or `X-Forwarded-Host`.
+
+While it's set, actions work only from that site. Unset it to use the dashboard directly, for example at `http://localhost:3000`.
 
 ### Serving under a sub-path
 
@@ -331,7 +344,7 @@ app.use(['/admin/queues', '/admin/queues.data'], requireAdmin, (req, res) => {
 |--------|-------------|
 | `databases` | One or more `{ url, name?, schema? }` entries. The first is selected by default. Give each a distinct `name` when two connection strings end in the same database name. |
 | `basePath` | The path you mount the handler under. Requests must reach the handler with this prefix still in the URL. Defaults to `/`. |
-| `allowedActionOrigins` | Hosts a form may be submitted from, as `host[:port]` or `*.example.com`. Needed behind a proxy (see below). |
+| `siteUrl` | The public URL the dashboard is served at, as `https://host[:port]`. Needed behind a proxy (see below). |
 | `auth` | Puts the `PGBOSS_DASHBOARD_AUTH_*` Basic credential in front of the mounted dashboard. Defaults to `false`, because the host app normally handles authentication. |
 
 When you mount the handler:
@@ -341,8 +354,8 @@ When you mount the handler:
 - **It doesn't depend on the working directory.** It resolves static assets relative to the installed package.
 - **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, which sits beside the mount path instead of under it. A `/admin/queues/*` pattern alone misses it, and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
 - **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`. The handler leaves signals to you, and `await dashboard.close()` ends its database pools. A closed handler answers 503.
-- **Behind a reverse proxy, list your public host.** React Router rejects a form submission whose `Origin` does not match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `allowedActionOrigins: ['admin.example.com']`.
-- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` applies. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST` and `PGBOSS_DASHBOARD_BASE_PATH` don't, because the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`. If it's set while `auth` is off, the dashboard says so when you construct the handler.
+- **Behind a reverse proxy, pass the public URL.** React Router rejects a form submission whose `Origin` doesn't match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `siteUrl: 'https://admin.example.com'`, which works like [`PGBOSS_DASHBOARD_SITE_URL`](#reverse-proxy), or pass the handler a `Request` with the public URL.
+- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` applies. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_SITE_URL` don't, because the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`. If it or `PGBOSS_DASHBOARD_SITE_URL` is set while its option is off, the dashboard says so when you construct the handler.
 
 ## Enabling warning persistence
 

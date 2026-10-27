@@ -16,12 +16,12 @@ const build = {
 } as unknown as ServerBuild
 
 describe('createHonoApp options', () => {
-  it('hands allowedActionOrigins to React Router, and keeps pages out of caches', async () => {
-    const app = createHonoApp({ build, mode: 'production', basePath: '/admin/queues', allowedActionOrigins: ['admin.example.com'] })
+  it('hands the re-homed build to React Router, and keeps pages out of caches', async () => {
+    const app = createHonoApp({ build, mode: 'production', basePath: '/admin/queues' })
 
     const res = await app.request('/admin/queues')
 
-    expect(createRequestHandler).toHaveBeenCalledWith(expect.objectContaining({ allowedActionOrigins: ['admin.example.com'] }), 'production')
+    expect(createRequestHandler).toHaveBeenCalledWith(expect.objectContaining({ basename: '/admin/queues' }), 'production')
     expect(res.headers.get('cache-control')).toBe('no-store')
   })
 })

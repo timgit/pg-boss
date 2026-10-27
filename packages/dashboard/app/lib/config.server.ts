@@ -28,6 +28,11 @@ export function toPublicDatabase ({ id, name, schema, color }: DatabaseConfig): 
 const SEPARATOR = '|'
 const DEFAULT_SCHEMA = 'pgboss'
 
+/** Split an environment list on `separator`, trimming entries and dropping empty ones. */
+export function splitEnvList (value: string, separator: string): string[] {
+  return value.split(separator).map(s => s.trim()).filter(Boolean)
+}
+
 /**
  * Parse DATABASE_URL and PGBOSS_SCHEMA environment variables
  * into a list of database configurations.
@@ -36,8 +41,8 @@ export function parseDatabaseConfig (): DatabaseConfig[] {
   const dbUrlEnv = process.env.DATABASE_URL || 'postgres://localhost/pgboss'
   const schemaEnv = process.env.PGBOSS_SCHEMA || DEFAULT_SCHEMA
 
-  const urlParts = dbUrlEnv.split(SEPARATOR).map(s => s.trim()).filter(Boolean)
-  const schemaParts = schemaEnv.split(SEPARATOR).map(s => s.trim()).filter(Boolean)
+  const urlParts = splitEnvList(dbUrlEnv, SEPARATOR)
+  const schemaParts = splitEnvList(schemaEnv, SEPARATOR)
 
   return urlParts.map((part, index) => {
     // Check for "name=url" format
@@ -126,4 +131,35 @@ export function getDatabaseConfigs (): DatabaseConfig[] {
 // For testing - reset cache
 export function resetConfigCache (): void {
   cachedConfig = null
+}
+
+const SITE_URL_ENV = 'PGBOSS_DASHBOARD_SITE_URL'
+
+/**
+ * Parse PGBOSS_DASHBOARD_SITE_URL, the public origin a proxy serves the dashboard at.
+ * Returns `undefined` when unset or blank.
+ */
+export function parseSiteUrl (): string | undefined {
+  const value = process.env[SITE_URL_ENV]?.trim()
+
+  return value ? toSiteOrigin(value, SITE_URL_ENV) : undefined
+}
+
+/**
+ * Check a site URL and return its origin. Throws on anything but `http(s)://host[:port]`:
+ * the path comes from the base path instead. `source` names the setting in the error.
+ */
+export function toSiteOrigin (value: string, source: string): string {
+  const fail = () => new Error(
+    `${source} "${value}" is not a site URL. Use https://host[:port], without a path. ` +
+    'The base path sets the path.'
+  )
+
+  if (!URL.canParse(value)) throw fail()
+  const url = new URL(value)
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw fail()
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw fail()
+
+  return url.origin
 }

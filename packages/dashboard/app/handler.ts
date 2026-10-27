@@ -3,7 +3,7 @@ import type { Hono } from 'hono'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
 import { serverOverlay } from '~pro-server'
-import { toDatabaseConfig, type DatabaseInput } from './lib/config.server'
+import { toDatabaseConfig, toSiteOrigin, type DatabaseInput } from './lib/config.server'
 import { withBasePath } from './lib/runtime-base-path'
 
 export type { DatabaseInput }
@@ -28,31 +28,13 @@ export interface CreateDashboardHandlerOptions {
    */
   auth?: boolean;
   /**
-   * Hosts a form submission may come from, e.g. `ops.example.com`,
-   * `ops.example.com:8443` or `*.example.com`.
-   *
-   * React Router refuses an action whose `Origin` header does not match the
-   * request URL. Behind a proxy the host often sees `http://127.0.0.1:3000`
-   * while the browser sent the public origin, so every action returns 400 while
-   * every page renders — a failure that looks like a dashboard bug and is not.
-   *
-   * **Hosts, not origins.** `throwIfPotentialCSRFAttack` compares
-   * `new URL(originHeader).host` against this list (react-router
-   * `lib/actions.js:19,27`), so a scheme never matches: `https://ops.example.com`
-   * is refused, `ops.example.com` is allowed. Wildcards are matched per label.
-   *
-   * `['**']` matches every host and so turns the check off completely. It is a
-   * wildcard like any other — `matchWildcardDomain` returns true for any
-   * non-empty domain once the pattern is down to `**` — and it is the wrong
-   * answer to "actions return 400 behind my proxy": name the host. React Router
-   * coerces a non-array value to `[]`, so passing `false` disables nothing.
-   *
-   * The usual place to set it is `react-router.config.ts`, which a host cannot
-   * edit on a prebuilt package, leaving the handler as the only component that
-   * can. Passing a `Request` carrying the public URL also works and needs no
-   * configuration.
+   * The public URL the dashboard is served at, as `https://host[:port]`, for a host behind a
+   * proxy that ends HTTPS. Each request takes this scheme and host before any route reads it,
+   * so actions and redirects match the browser. Throws on a value with a path, a query or
+   * credentials: the path is `basePath`. Not set by default.
+   * @see https://pgboss.io/dashboard#reverse-proxy
    */
-  allowedActionOrigins?: string[];
+  siteUrl?: string;
 }
 
 export interface DashboardHandler {
@@ -78,7 +60,7 @@ const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
  * standalone server does.
  */
 export function createDashboardHandler (
-  { databases, basePath, allowedActionOrigins, auth = false }: CreateDashboardHandlerOptions
+  { databases, basePath, siteUrl, auth = false }: CreateDashboardHandlerOptions
 ): DashboardHandler {
   if (databases.length === 0) {
     throw new Error('createDashboardHandler() needs at least one database')
@@ -109,6 +91,16 @@ export function createDashboardHandler (
     )
   }
 
+  // Fail on a bad site URL now too.
+  const siteOrigin = siteUrl === undefined ? undefined : toSiteOrigin(siteUrl, 'siteUrl')
+
+  if (siteOrigin === undefined && process.env.PGBOSS_DASHBOARD_SITE_URL?.trim()) {
+    console.log(
+      'PGBOSS_DASHBOARD_SITE_URL ignored: this dashboard is mounted inside a host ' +
+      'application. Pass siteUrl to createDashboardHandler() instead.'
+    )
+  }
+
   let app: Promise<Hono> | undefined
   let closed = false
 
@@ -123,14 +115,7 @@ export function createDashboardHandler (
 
     // Non-literal so esbuild and tsc leave it as a runtime import, as in server.node.ts.
     const buildModulePath = './server/index.js'
-    const loaded = (await import(buildModulePath)) as unknown as ServerBuild
-
-    // Spread onto a copy rather than mutating the imported module, which is
-    // shared: two handlers with different settings would otherwise fight over
-    // one object. `withBasePath` already returns a copy the same way.
-    const build = allowedActionOrigins === undefined
-      ? loaded
-      : { ...loaded, allowedActionOrigins }
+    const build = (await import(buildModulePath)) as unknown as ServerBuild
 
     return createHonoApp({
       build,
@@ -143,7 +128,8 @@ export function createDashboardHandler (
       // stdout when a credential was configured, rather than dropping it in
       // silence.
       auth,
-      allowedActionOrigins,
+      // `null` rather than undefined, so PGBOSS_DASHBOARD_SITE_URL does not apply.
+      siteUrl: siteOrigin ?? null,
       // The same overlay the standalone server loads, through the same alias.
       // `~pro-server` is the empty stub in every build but a Pro one, so this
       // adds nothing to a free build — and in a Pro build it is the difference
