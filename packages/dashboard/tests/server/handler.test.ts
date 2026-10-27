@@ -28,31 +28,29 @@ describe('createDashboardHandler', () => {
       .toThrow('Invalid base path')
   })
 
-  it('says when PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS is set, since only the option applies', () => {
-    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', 'admin.example.com')
+  it('says when PGBOSS_DASHBOARD_SITE_URL is set, since only the option applies', () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://admin.example.com')
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
 
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ignored/))
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_SITE_URL ignored/))
   })
 
-  it('stays quiet about the variable when the option is passed or the value lists nothing', () => {
+  it('stays quiet about the variable when the option is passed or the value is blank', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
 
-    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', 'admin.example.com')
-    createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: ['admin.example.com'] })
-    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', ' , ')
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://admin.example.com')
+    createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], siteUrl: 'https://admin.example.com' })
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', ' ')
     createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
 
-    expect(log).not.toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS ignored/))
+    expect(log).not.toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_SITE_URL ignored/))
   })
 
-  it('rejects a bad allowedActionOrigins value up front, not on the first request', () => {
-    expect(() => createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: ['*.com'] }))
-      .toThrow('allowedActionOrigins entry "*.com" matches too many hosts')
-    expect(() => createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], allowedActionOrigins: null as never }))
-      .toThrow('allowedActionOrigins must be an array of host strings')
+  it('rejects a bad siteUrl up front, not on the first request', () => {
+    expect(() => createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], siteUrl: 'https://admin.example.com/queues' }))
+      .toThrow('siteUrl "https://admin.example.com/queues" is not a site URL')
   })
 
   it('does not load anything until a request arrives', () => {

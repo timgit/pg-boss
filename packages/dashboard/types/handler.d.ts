@@ -26,30 +26,17 @@ export interface CreateDashboardHandlerOptions {
    */
   auth?: boolean;
   /**
-   * Hosts a form submission may come from, e.g. `ops.example.com`,
-   * `ops.example.com:8443` or `*.example.com`.
-   *
-   * React Router refuses an action whose `Origin` header does not match the
-   * request URL. Behind a proxy the host often sees `http://127.0.0.1:3000`
-   * while the browser sent the public origin, so every action returns 400 while
-   * every page renders — a failure that looks like a dashboard bug and is not.
-   *
-   * **Hosts, not origins.** `throwIfPotentialCSRFAttack` compares
-   * `new URL(originHeader).host` against this list (react-router
-   * `lib/actions.js:19,27`), so `ops.example.com` is allowed and an entry with
-   * a scheme, such as `https://ops.example.com`, throws. Wildcards are matched
-   * per label, and `*` or `**` is accepted only as the whole first label.
-   *
-   * The handler throws on a value that is not an array of host strings, on an
-   * unsupported entry, and on `*`, `**` or a wildcard over one label like
-   * `*.com`. A wildcard allows every subdomain, so use one only for a domain
-   * you own. Entries are lowercased and converted to the form browsers send,
-   * and `host:443` also allows `host`.
-   *
-   * React Router reads this list from `react-router.config.ts`, which a host
-   * cannot edit on a prebuilt package, so the handler adds it to the build.
-   * Passing a `Request` carrying the public URL also works and needs no
-   * configuration.
+   * The public URL the dashboard is served at, as `https://host[:port]`, for a host behind a
+   * proxy that ends HTTPS. Each request takes this scheme and host before any route reads it,
+   * so actions and redirects match the browser. Throws on a value with a path, a query or
+   * credentials: the path is `basePath`. Not set by default.
+   * @see https://pgboss.io/dashboard#reverse-proxy
+   */
+  siteUrl?: string;
+  /**
+   * Hosts a form may be submitted from when a proxy hides the public origin, as
+   * `host[:port]` or `*.example.com`.
+   * @deprecated Use `siteUrl`. Dashboard 2.0 removes this option.
    */
   allowedActionOrigins?: string[];
 }
