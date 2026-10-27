@@ -261,9 +261,6 @@ server {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
@@ -274,7 +271,7 @@ Behind this proxy, pages load but every action fails with a 400 until you set th
 PGBOSS_DASHBOARD_SITE_URL=https://pgboss.example.com npx pg-boss-dashboard
 ```
 
-Every request then takes this scheme and host, so actions and redirects match what the browser sees. Give the origin only. A sub-path goes in `PGBOSS_DASHBOARD_BASE_PATH`. The dashboard stops at startup on a value with a path, a query or credentials. It doesn't read `X-Forwarded-Proto` or `X-Forwarded-Host`.
+Every request then takes this scheme and host, so actions and redirects match what the browser sees. Give the origin only. A sub-path goes in `PGBOSS_DASHBOARD_BASE_PATH`. The dashboard stops at startup on a value with a path, a query or credentials.
 
 While it's set, actions work only from that site. Unset it to use the dashboard directly, for example at `http://localhost:3000`.
 
@@ -293,9 +290,6 @@ location /pgboss {
     proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
 
