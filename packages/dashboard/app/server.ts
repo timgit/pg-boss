@@ -6,6 +6,7 @@ import { configureAuth } from './lib/auth.server'
 import { configureReadOnly } from './lib/read-only.server'
 import { getDatabaseConfigs, findDatabaseById, normalizeAllowedActionOrigins, parseAllowedActionOrigins, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
+import { forwardedRequest, isTrustProxy } from './lib/trust-proxy.server'
 import type { ProServerOverlay } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 import { stripBasePrefix } from './lib/base-path'
@@ -71,6 +72,11 @@ export interface CreateHonoAppOptions {
    */
   allowedActionOrigins?: string[];
   /**
+   * Rebuild each request's URL from `X-Forwarded-Proto` and `X-Forwarded-Host` before anything reads it.
+   * Defaults to PGBOSS_DASHBOARD_TRUST_PROXY. The embedded handler passes `false`: the host builds the request.
+   */
+  trustProxy?: boolean;
+  /**
    * The Pro overlay's server half, from `loadProServer()`, or `null` for a free
    * build — which is the only shape this package is ever tested against on its
    * own.
@@ -93,6 +99,7 @@ export function createHonoApp ({
   basePath,
   auth = true,
   allowedActionOrigins,
+  trustProxy = isTrustProxy(),
   overlay,
 }: CreateHonoAppOptions): Hono {
   const app = new Hono()
@@ -256,5 +263,13 @@ export function createHonoApp ({
     return response
   })
 
-  return app
+  if (!trustProxy) {
+    return app
+  }
+
+  // In front of every route, so auth, the overlay and React Router all see the public URL.
+  const proxied = new Hono()
+  proxied.all('*', (c) => app.fetch(forwardedRequest(c.req.raw), c.env))
+
+  return proxied
 }

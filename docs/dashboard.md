@@ -113,7 +113,8 @@ The dashboard is configured via environment variables:
 | `PGBOSS_DASHBOARD_READ_ONLY` | Set to `1` to disable every mutating action (see [Read-only mode](#read-only-mode)) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
-| `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` | Comma-separated hosts a form may be submitted from, as `host[:port]` or `*.example.com`. Needed behind a proxy that ends HTTPS (see [Reverse Proxy](#reverse-proxy)) | - |
+| `PGBOSS_DASHBOARD_TRUST_PROXY` | Set to `1` to read the public URL from `X-Forwarded-Proto` and `X-Forwarded-Host`. Only behind a proxy (see [Reverse Proxy](#reverse-proxy)) | - |
+| `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` | Comma-separated hosts a form may be submitted from, as `host[:port]` or `*.example.com`. For a proxy that can't send forwarded headers (see [Reverse Proxy](#reverse-proxy)) | - |
 
 ### Basic Authentication
 
@@ -239,7 +240,17 @@ server {
 }
 ```
 
-Behind this proxy, pages load but every action fails with a 400 until you list your public host. The browser sends `Origin: https://pgboss.example.com`. The proxy forwards plain HTTP, so the dashboard sees a request for `http://pgboss.example.com`, and React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch. The dashboard does not read `X-Forwarded-Proto` or `X-Forwarded-Host`, so list the hosts your browser uses:
+Behind this proxy, pages load but every action fails with a 400 until you tell the dashboard its public URL. The browser sends `Origin: https://pgboss.example.com`. The proxy forwards plain HTTP, so the dashboard sees a request for `http://pgboss.example.com`, and React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch.
+
+Set `PGBOSS_DASHBOARD_TRUST_PROXY=1` to rebuild each request's URL from the `X-Forwarded-Proto` and `X-Forwarded-Host` headers the proxy sends:
+
+```bash
+PGBOSS_DASHBOARD_TRUST_PROXY=1 npx pg-boss-dashboard
+```
+
+Each header falls back to the request's own value when missing or malformed, and a comma-separated header uses its first entry. Set it only when a proxy sits in front of every request, because anyone can send these headers. The Nginx `$host` variable drops the port, so a proxy on a non-default port forwards `$http_host` instead.
+
+If your proxy can't send these headers, list the hosts your browser uses instead:
 
 ```bash
 PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS=pgboss.example.com npx pg-boss-dashboard
@@ -327,7 +338,7 @@ A few things worth knowing:
 - **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, a sibling of the mount path rather than a child, so a `/admin/queues/*` pattern alone misses it and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
 - **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`; the handler leaves signals to you. A write action starts a pg-boss instance whose timers keep the process alive until `await dashboard.close()`. A closed handler answers 503.
 - **Behind a reverse proxy, list your public host.** React Router rejects a form submission whose `Origin` does not match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `allowedActionOrigins: ['admin.example.com']`. The handler checks the list with the same rules as the [environment variable](#reverse-proxy) and throws on a bad entry.
-- **Environment variables.** `PGBOSS_DASHBOARD_READ_ONLY` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` do not: the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`, and if it is set while `auth` is off the dashboard says so when you construct the handler rather than ignoring it quietly. It does the same when `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` is set.
+- **Environment variables.** `PGBOSS_DASHBOARD_READ_ONLY` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` do not: the options replace them. `PGBOSS_DASHBOARD_TRUST_PROXY` does not apply either: pass a `Request` carrying the public URL. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`, and if it is set while `auth` is off the dashboard says so when you construct the handler rather than ignoring it quietly. It does the same when `PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS` or `PGBOSS_DASHBOARD_TRUST_PROXY` is set.
 
 ## Enabling Warning Persistence
 

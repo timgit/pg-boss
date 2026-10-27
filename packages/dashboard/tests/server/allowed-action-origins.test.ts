@@ -37,6 +37,7 @@ describe('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', () => {
     delete process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD
     delete process.env.PGBOSS_DASHBOARD_READ_ONLY
     delete process.env.PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS
+    delete process.env.PGBOSS_DASHBOARD_TRUST_PROXY
   })
 
   afterEach(() => {
@@ -160,6 +161,98 @@ describe('createDashboardHandler allowedActionOrigins', () => {
     const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
 
     expect((await post(handler)).status).toBe(400)
+    await handler.close()
+  })
+})
+
+describe('PGBOSS_DASHBOARD_TRUST_PROXY', () => {
+  // An allowlist would hide whether the forwarded origin was used.
+  beforeEach(() => {
+    vi.stubEnv('PGBOSS_DASHBOARD_ALLOWED_ACTION_ORIGINS', '')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  // What a proxy that keeps its own Host sends: the server sees its internal address.
+  const forwardedPost = (app: ReturnType<typeof createHonoApp>, headers: Record<string, string>, origin = 'https://pgboss.example.com') =>
+    app.request('http://127.0.0.1:3000/', {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
+      body: 'intent=retry',
+    })
+  const forwarded = { 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'pgboss.example.com' }
+
+  it('ignores the forwarded headers when unset', async () => {
+    const res = await forwardedPost(createHonoApp({ build, mode: 'production', overlay: null }), forwarded)
+
+    expect(res.status).toBe(400)
+  })
+
+  it('runs a proxied action from the forwarded origin', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_TRUST_PROXY', '1')
+    let intent: FormDataEntryValue | null = null
+    const reading = { ...build, routes: { root: { ...build.routes.root, module: { ...build.routes.root!.module, action: async ({ request }: { request: Request }) => { intent = (await request.formData()).get('intent'); return null } } } } } as unknown as ServerBuild
+
+    const res = await forwardedPost(createHonoApp({ build: reading, mode: 'production', overlay: null }), forwarded)
+
+    expect(res.status).toBe(200)
+    expect(intent).toBe('retry')
+  })
+
+  it('still rejects an action from another host', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_TRUST_PROXY', '1')
+
+    const res = await forwardedPost(createHonoApp({ build, mode: 'production', overlay: null }), forwarded, 'https://evil.example.net')
+
+    expect(res.status).toBe(400)
+  })
+
+  it('keeps the forwarded host when the path starts with two slashes', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_TRUST_PROXY', '1')
+    const app = createHonoApp({ build, mode: 'production', overlay: null })
+
+    const res = await app.request('http://127.0.0.1:3000//evil.example.net/', {
+      method: 'POST',
+      headers: { Origin: 'https://evil.example.net', 'Content-Type': 'application/x-www-form-urlencoded', ...forwarded },
+      body: 'intent=retry',
+    })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('reads the first entry when proxies append to the headers', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_TRUST_PROXY', '1')
+    const app = createHonoApp({ build, mode: 'production', overlay: null })
+
+    const res = await forwardedPost(app, { 'X-Forwarded-Proto': 'https, http', 'X-Forwarded-Host': 'pgboss.example.com, 127.0.0.1:3000' })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('keeps the request host when the forwarded one is malformed', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_TRUST_PROXY', '1')
+    const app = createHonoApp({ build, mode: 'production', overlay: null })
+
+    expect((await forwardedPost(app, { ...forwarded, 'X-Forwarded-Host': 'pgboss.example.com/admin' })).status).toBe(400)
+    expect((await forwardedPost(app, { ...forwarded, 'X-Forwarded-Host': 'pgboss.example.com:70000' })).status).toBe(400)
+  })
+
+  it('is ignored by the embedded handler, which says so', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_TRUST_PROXY', '1')
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
+
+    const res = await handler(new Request('http://127.0.0.1:3000/', {
+      method: 'POST',
+      headers: { Origin: 'https://pgboss.example.com', 'Content-Type': 'application/x-www-form-urlencoded', ...forwarded },
+      body: 'intent=retry',
+    }))
+
+    expect(res.status).toBe(400)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('PGBOSS_DASHBOARD_TRUST_PROXY ignored'))
     await handler.close()
   })
 })

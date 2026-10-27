@@ -126,6 +126,14 @@ export function createDashboardHandler (
     )
   }
 
+  if (process.env.PGBOSS_DASHBOARD_TRUST_PROXY) {
+    console.log(
+      'PGBOSS_DASHBOARD_TRUST_PROXY ignored: this dashboard is mounted inside a ' +
+      'host application, which builds the request URL. Pass a Request carrying ' +
+      'the public URL instead.'
+    )
+  }
+
   let app: Promise<Hono> | undefined
   let closed = false
 
@@ -157,6 +165,8 @@ export function createDashboardHandler (
       // An explicit list, so `createHonoApp` does not fall back to the environment.
       // It adds the list to a copy of the build, leaving the shared module untouched.
       allowedActionOrigins: allowed ?? [],
+      // The host turns its own request into the one passed here, proxy headers included.
+      trustProxy: false,
       // The same overlay the standalone server loads, through the same alias.
       // `~pro-server` is the empty stub in every build but a Pro one, so this
       // adds nothing to a free build — and in a Pro build it is the difference
