@@ -37,7 +37,7 @@ Pro is built and supported by the author of pg-boss, and upgrading from the [fre
   <figure>
     <img class="light-only" src="../images/pro/tile-hex.webp" :data-zoom-src="queuesHex" alt="Every queue as a hexagon colored by its health">
     <img class="dark-only" src="../images/pro/tile-hex-dark.webp" :data-zoom-src="queuesHexDark" alt="Every queue as a hexagon colored by its health">
-    <figcaption><a href="/pro/queues#queues">Hex</a>Each queue as a hexagon colored by its health, up to 500 to a page.</figcaption>
+    <figcaption><a href="/pro/queues#hex-view">Hex view</a>Condensed queue health view, up to 500 at once.</figcaption>
   </figure>
   <figure>
     <img class="light-only" src="../images/pro/tile-alert-rule.webp" :data-zoom-src="alertRule" alt="An alert rule">

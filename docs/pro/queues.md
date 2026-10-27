@@ -25,10 +25,31 @@ A queue with too little counted in the hour has no verdict. Health needs `persis
 
 ## Queues
 
-The queue list shows each queue's rates, health, time to drain and workers, with the figures across every queue above them. The range runs from an hour to thirty days, as far back as pg-boss keeps stats. **Cards**, **Table** and **Hex** are three views of the same list. Cards and the table show ten queues a page. The Hex view shows up to 500, each a hexagon colored by its health, and its hexagons get smaller as a page holds more. The smallest show the first letter of each part of the name, so `payments-final` reads `pf`. Hover over one for the queue's name, health and counts. Over a range longer than an hour, a hexagon shows the lower of the queue's health now and the lowest health it held for 5 minutes or more in the range. So a longer range never shows a queue as healthier than a shorter one, and the hover says how long the low point lasted. **Size** above the hexagons keeps them larger: **Fit** shrinks them to fit about a screen, **Names** keeps every queue's name, and **Details** adds its ready count. The choice is remembered. **Show** in the toolbar keeps the Hex view to the queues **Not keeping up**, which hides every hexagon colored Keeping up or Not judged. The filter covers every queue, including those past the first 500. **Needs attention** sorts the queues that need somebody first. The list refreshes every 15 seconds while the tab is visible. In the Hex view, a refresh or a change of range recolors each queue where it is. The order changes only when the sort, filter or page does, and a new queue goes at the end.
+The queue list shows each queue's rates, health, time to drain and workers, with the figures across every queue above them. The range runs from an hour to thirty days, as far back as pg-boss keeps stats. **Table**, **Cards** and **Hex** are three views of the same list. **Needs attention** sorts the queues that need somebody first. The list refreshes every 15 seconds while the tab is visible.
 
-![The queues page](../images/pro/queues.webp){.light-only}
-![The queues page](../images/pro/queues-dark.webp){.dark-only}
+### Table view
+
+The table is the free dashboard's [queue list](../dashboard.md#queues), ten queues to a page. Pro adds each queue's health, arrival and finishing rates, time to drain and busy slots to it.
+
+![The Table view](../images/pro/queues-table.webp){.light-only}
+![The Table view](../images/pro/queues-table-dark.webp){.dark-only}
+
+### Cards view
+
+Each queue gets a card, ten to a page.
+
+![The Cards view](../images/pro/queues.webp){.light-only}
+![The Cards view](../images/pro/queues-dark.webp){.dark-only}
+
+### Hex view
+
+Each queue is a hexagon colored by its health, up to 500 to a page. The hexagons get smaller as a page holds more. The smallest show the first letter of each part of the name, so `payments-final` reads `pf`. Hover over one for the queue's name, health and counts.
+
+Over a range longer than an hour, a hexagon shows the lower of the queue's health now and the lowest health it held for 5 minutes or more in the range. So a longer range never shows a queue as healthier than a shorter one, and the hover says how long the low point lasted.
+
+**Size** above the hexagons keeps them larger: **Fit** shrinks them to fit about a screen, **Names** keeps every queue's name, and **Details** adds its ready count. The choice is remembered. **Show** in the toolbar keeps the Hex view to the queues **Not keeping up**, which hides every hexagon colored Keeping up or Not judged. The filter covers every queue, including those past the first 500.
+
+A refresh or a change of range recolors each queue where it is. The order changes only when the sort, filter or page does, and a new queue goes at the end.
 
 ![The Hex view, each queue a hexagon colored by its health](../images/pro/queues-hex.webp){.light-only}
 ![The Hex view, each queue a hexagon colored by its health](../images/pro/queues-hex-dark.webp){.dark-only}
