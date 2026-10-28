@@ -73,9 +73,9 @@ export function matchesInstance (instance: Instance, needle: string): boolean {
     instance.workers.some((w) => w.queue.toLowerCase().includes(n))
 }
 
-/** The roles an instance took on, in the order the options are documented. */
-export function instanceRoles (instance: Instance): string[] {
-  return [instance.supervise && 'supervisor', instance.schedule && 'scheduler', instance.migrate && 'migrator'].filter((r): r is string => Boolean(r))
+/** Which of `supervise` and `schedule` an instance has on, by the options' own names, in the order they are documented. */
+export function passOptions (instance: Instance): string[] {
+  return [instance.supervise && 'supervise', instance.schedule && 'schedule'].filter((r): r is string => Boolean(r))
 }
 
 /** A span in the largest unit that reads well: "40s", "12m", "3h 5m", "2d". */

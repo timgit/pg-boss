@@ -7,7 +7,7 @@ import {
   formatAgo,
   formatSpan,
   instanceName,
-  instanceRoles,
+  passOptions,
   listInstances,
   matchesInstance,
   type InstanceBucket,
@@ -63,10 +63,10 @@ export function statusLine (instance: Instance, status: InstanceStatus, checkedO
   return `stopped ${formatAgo(instance.stoppedOn!, checkedOn)}`
 }
 
-/** The queues an instance works, the first two linked, or "sends only". */
+/** The queues an instance works, the first two linked, or that it made no `work()` calls. */
 export function WorksCell ({ instance }: { instance: Instance }) {
   const queues = [...new Set(instance.workers.map((w) => w.queue))]
-  if (queues.length === 0) return <span className="text-[var(--text-tertiary)]">sends only</span>
+  if (queues.length === 0) return <span className="text-[var(--text-tertiary)]">no work() calls</span>
   return (
     <span title={queues.join(', ')}>
       {queues.slice(0, 2).map((q, k) => (
@@ -212,7 +212,7 @@ export function InstancesTable ({ instances, checkedOn }: InstancesTableProps) {
               <TableHead>Instance</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Version</TableHead>
-              <TableHead>Roles</TableHead>
+              <TableHead>Options</TableHead>
               <TableHead>Works</TableHead>
             </tr>
           </TableHeader>
@@ -225,7 +225,7 @@ export function InstancesTable ({ instances, checkedOn }: InstancesTableProps) {
               </tr>
             )}
             {shown.map(({ instance: i, status }) => {
-              const roles = instanceRoles(i)
+              const options = passOptions(i)
               return (
                 <TableRow key={i.id} to={instancePath(i.id)}>
                   <TableCell className="align-top"><InstanceName instance={i} /></TableCell>
@@ -236,9 +236,9 @@ export function InstancesTable ({ instances, checkedOn }: InstancesTableProps) {
                   <TableCell className="pgb-num align-top">{i.version}</TableCell>
                   <TableCell className="align-top">
                     <div className="flex flex-wrap gap-1">
-                      {roles.length
-                        ? roles.map((r) => <Badge key={r} size="sm">{r}</Badge>)
-                        : <span className="text-[var(--text-tertiary)]">{i.workers.length ? 'worker' : 'none'}</span>}
+                      {options.length
+                        ? options.map((o) => <Badge key={o} size="sm" className="font-mono">{o}</Badge>)
+                        : <span className="text-[var(--text-tertiary)]">—</span>}
                     </div>
                   </TableCell>
                   <TableCell className="max-w-[26ch] whitespace-normal align-top"><WorksCell instance={i} /></TableCell>

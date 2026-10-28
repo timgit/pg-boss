@@ -7,7 +7,7 @@ import {
   formatConfig,
   formatSpan,
   instanceName,
-  instanceRoles,
+  passOptions,
   isChangedOption,
   OPTION_DEFAULTS,
   instanceStatus,
@@ -65,7 +65,7 @@ const ago = (then: string | Date | null, now: Date) => (then ? formatAgo(then, n
 /** The name, its short id and status, and the facts that identify the process. */
 export function InstancePageHeader ({ instance: i, checkedOn }: { instance: Instance, checkedOn: Date }) {
   const status = instanceStatus(i)
-  const roles = instanceRoles(i)
+  const options = passOptions(i)
   const ran = formatSpan((i.stoppedOn ? new Date(i.stoppedOn) : i.live ? checkedOn : new Date(i.heartbeatOn)).getTime() - new Date(i.startedOn).getTime())
 
   return (
@@ -88,9 +88,9 @@ export function InstancePageHeader ({ instance: i, checkedOn }: { instance: Inst
           </span>
         }
       />
-      {roles.length > 0 && (
-        <div className="-mt-4 mb-2 flex flex-wrap gap-1.5">
-          {roles.map((r) => <Badge key={r} size="sm">{r}</Badge>)}
+      {options.length > 0 && (
+        <div className="-mt-4 mb-2 flex flex-wrap gap-1.5" aria-label="Options on">
+          {options.map((o) => <Badge key={o} size="sm" className="font-mono">{o}</Badge>)}
         </div>
       )}
     </div>
@@ -121,7 +121,7 @@ export function WorkersCard ({ instance: i, checkedOn, columns = [] }: { instanc
       aside={calls > 0 ? `${calls} ${calls === 1 ? 'worker' : 'workers'} on ${groups.length} ${groups.length === 1 ? 'queue' : 'queues'} · ${busy} of ${slots} slots busy` : undefined}
     >
       {calls === 0
-        ? <p className="text-[13px] text-[var(--text-tertiary)]">No work() calls. This instance only sends jobs{i.supervise ? ' and supervises' : ''}.</p>
+        ? <p className="text-[13px] text-[var(--text-tertiary)]">No work() calls.</p>
         : (
           <div className="-mx-2 overflow-x-auto">
             <table className="min-w-full text-[13px]">

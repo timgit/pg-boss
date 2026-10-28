@@ -108,8 +108,8 @@ describe('InstancesTable', () => {
     expect(screen.getByRole('button', { name: 'Live 2' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Quiet 1' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Stopped 1' })).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByText('supervisor')).toBeInTheDocument()
-    expect(screen.getByText('scheduler')).toBeInTheDocument()
+    expect(screen.getByText('supervise')).toBeInTheDocument()
+    expect(screen.getByText('schedule')).toBeInTheDocument()
     expect(screen.getByText('last beat 2m ago')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Stopped 1' }))
@@ -145,7 +145,7 @@ describe('InstancesTable', () => {
 
     expect(screen.getByRole('link', { name: 'a' })).toHaveAttribute('href', '/queues/a')
     expect(screen.getByText('+1')).toBeInTheDocument()
-    expect(screen.getByText('sends only')).toBeInTheDocument()
+    expect(screen.getByText('no work() calls')).toBeInTheDocument()
   })
 
   it('filters by name, host or queue', () => {
@@ -164,7 +164,7 @@ describe('InstancesTable', () => {
   it('has no health, grouping or resource columns of its own', () => {
     renderTable([instance()])
 
-    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Instance', 'Status', 'Version', 'Roles', 'Works'])
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Instance', 'Status', 'Version', 'Options', 'Works'])
   })
 
   it('says when nothing has registered', () => {
@@ -189,7 +189,7 @@ describe('InstancePage', () => {
 
     expect(screen.getByText(i.id.slice(0, 8))).toHaveAttribute('title', i.id)
     expect(screen.getByText('Live')).toBeInTheDocument()
-    expect(screen.getByText('supervisor')).toBeInTheDocument()
+    expect(screen.getByText('supervise')).toBeInTheDocument()
     expect(screen.getByText(/heartbeat 10s ago, every 30s/)).toBeInTheDocument()
   })
 
@@ -210,10 +210,10 @@ describe('InstancePage', () => {
     expect(screen.getByRole('link', { name: 'Queue page for emails' })).toHaveAttribute('href', '/queues/emails')
   })
 
-  it('says when an instance only sends', () => {
+  it('says when an instance made no work() calls', () => {
     renderPage(instance())
 
-    expect(screen.getByText('No work() calls. This instance only sends jobs.')).toBeInTheDocument()
+    expect(screen.getByText('No work() calls.')).toBeInTheDocument()
   })
 
   it('puts the options changed from the default first, with the default beside each', () => {
