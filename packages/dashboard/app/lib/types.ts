@@ -125,7 +125,7 @@ export interface QueueThroughputSeries {
   points: QueueThroughputPoint[];
 }
 
-// Background async migration (BAM) status. Mirrors src/types.ts in the pg-boss core.
+// Boss async migration (BAM) status. Mirrors src/types.ts in the pg-boss core.
 export type BamStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
 
 export interface BamEntryResult {

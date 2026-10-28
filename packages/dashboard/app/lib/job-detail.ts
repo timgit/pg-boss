@@ -108,7 +108,7 @@ export function retention (job: JobTimes): { label: string, at: Date | null, det
   return keepUntil ? { label: 'Deleted if never run', at: keepUntil, detail: null } : null
 }
 
-// When an active job's time limit runs out: started_on + expireInSeconds.
+// When an active job expires: started_on + expireInSeconds.
 export function expiresAt (job: JobTimes): Date | null {
   const startedOn = toDate(job.startedOn)
   if (job.state !== 'active' || !startedOn || !job.expireInSeconds) return null

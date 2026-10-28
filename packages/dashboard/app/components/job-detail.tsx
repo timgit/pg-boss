@@ -272,7 +272,7 @@ export function RunningPanel ({ job, now, heartbeatOn, heartbeatSeconds }: {
           : (
             <>
               <span className="text-lg font-medium text-[var(--text-primary)]">Off</span>
-              <span className="text-[13px] text-[var(--text-secondary)]">Only the time limit applies</span>
+              <span className="text-[13px] text-[var(--text-secondary)]">Only expiration applies</span>
             </>
             )}
       </div>
@@ -283,21 +283,21 @@ export function RunningPanel ({ job, now, heartbeatOn, heartbeatSeconds }: {
               <Eyebrow>Expires in</Eyebrow>
               <span className="font-mono text-[22px] font-medium leading-tight tabular-nums text-[var(--text-primary)]">{formatDuration(remaining, { live: true })}</span>
               <span className="text-[13px] text-[var(--text-secondary)]">
-                At {formatDateWithSeconds(expiry)} if not finished, a {formatSeconds(job.expireInSeconds ?? 0)} limit
+                At {formatDateWithSeconds(expiry)} if not finished, {formatSeconds(job.expireInSeconds ?? 0)} after it started
               </span>
             </>
             )
           : expiry
             ? (
               <>
-                <Eyebrow className="text-[var(--state-retry-fg)]">Past its time limit</Eyebrow>
+                <Eyebrow className="text-[var(--state-retry-fg)]">Past its expiration</Eyebrow>
                 <span className="font-mono text-[22px] font-medium leading-tight tabular-nums text-[var(--text-primary)]">{formatDuration(-(remaining ?? 0), { live: true })} over</span>
                 <span className="text-[13px] text-[var(--text-secondary)]">Maintenance fails it on its next pass</span>
               </>
               )
             : (
               <>
-                <Eyebrow>Time limit</Eyebrow>
+                <Eyebrow>Expiration</Eyebrow>
                 <span className="text-lg font-medium text-[var(--text-primary)]">None</span>
               </>
               )}

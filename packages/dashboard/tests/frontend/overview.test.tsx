@@ -49,7 +49,7 @@ describe('OverviewSections', () => {
     expect(screen.getByText('emails has 900 queued')).toBeInTheDocument()
   })
 
-  it('reads Waiting for a queue with ready jobs and none active, and Idle for an empty one', () => {
+  it('reads Ready for a queue with ready jobs and none active, and Idle for an empty one', () => {
     renderSections(undefined, {
       topQueues: [
         { ...queue('emails', 140), activeCount: 0 },
@@ -59,7 +59,7 @@ describe('OverviewSections', () => {
     })
 
     const status = (name: string) => within(screen.getByText(name).closest('tr')!).getAllByRole('cell').at(-1)!.textContent
-    expect(status('emails')).toBe('Waiting')
+    expect(status('emails')).toBe('Ready')
     expect(status('reports')).toBe('Idle')
     expect(status('exports')).toBe('Processing')
   })

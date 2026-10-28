@@ -23,21 +23,21 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 
 ### Overview
 
-The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the top queues by backlog with a ready-count trend sparkline and status badge, and the most recent warnings.
+The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the top queues by backlog, each with a ready-count trend sparkline and a status badge, and the most recent warnings. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise.
 
 ![Overview page](./images/dashboard-overview.webp){.light-only}
 ![Overview page](./images/dashboard-overview-dark.webp){.dark-only}
 
 ### Jobs
 
-Recently created jobs across all queues. Filter by job ID, queue, state (pending, created, retry, active, completed, canceled or failed) and minimum retry count. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, canceled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`), and **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
+Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The state filter starts on unfinished (created, retry and active), and also offers all states or any single one. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, canceled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`), and **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
 
 ![Jobs page](./images/dashboard-jobs.webp){.light-only}
 ![Jobs page](./images/dashboard-jobs-dark.webp){.dark-only}
 
 ### Job detail
 
-One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on. A running job shows how long it has been running, its heartbeat, and a countdown to its time limit, and the page picks up a new state without a reload. A completed job opens on its output.
+One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on. A running job shows how long it has been running, its heartbeat, and a countdown to its expiration, and the page picks up a new state without a reload. A completed job opens on its output.
 
 ![A failed job's page](./images/dashboard-job.webp){.light-only}
 ![A failed job's page](./images/dashboard-job-dark.webp){.dark-only}
@@ -48,7 +48,7 @@ A job copied into a dead letter queue shows why it's there, from the original jo
 
 ### Queues
 
-Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline, storage mode (shared or partitioned) and a status badge (idle, processing or backlogged). pg-boss's own queues, such as `__pgboss__send-it` for cron, are left out. You can sort any column and search the list by name. Clicking a queue opens its detail page. It shows the queue's counts in one card, as on the overview, with the ready count and a sparkline above the rest of what's queued. Its jobs come next, with its settings beside them. The page marks a queue that other queues send failed jobs to as a dead letter queue. **View metrics**, or any of the page's counts, opens the queue's [metrics page](#queue-metrics).
+Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline and storage mode (shared or partitioned). pg-boss's own queues, such as `__pgboss__send-it` for cron, are left out. You can sort any column and search the list by name. Clicking a queue opens its detail page. It shows the queue's counts in one card, as on the overview, with the ready count and a sparkline above the rest of what's queued. Its jobs come next, with its settings beside them. The page marks a queue that other queues send failed jobs to as a dead letter queue. **View metrics**, or any of the page's counts, opens the queue's [metrics page](#queue-metrics).
 
 ![Queues page](./images/dashboard-queues.webp){.light-only}
 ![Queues page](./images/dashboard-queues-dark.webp){.dark-only}
@@ -93,14 +93,14 @@ Every pg-boss instance registered in the database's [instance registry](./api/op
 
 ### Migrations
 
-Status of background async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. The page shows pending, in-progress, completed and failed counts, and each command's version, target table and status. A command opens a page with the SQL that was (or will be) executed, any error message, and when it was queued, started and ended.
+Status of boss async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. The page shows pending, in-progress, completed and failed counts, and each command's version, target table and status. A command opens a page with the SQL that was (or will be) executed, any error message, and when it was queued, started and ended.
 
 ![Migrations page](./images/dashboard-migrations.webp){.light-only}
 ![Migrations page](./images/dashboard-migrations-dark.webp){.dark-only}
 
 ### Warnings
 
-Event log of warnings emitted by pg-boss when [`persistWarnings`](#enabling-warning-persistence) is enabled, such as slow queries, queue backlogs or clock skew. Each entry shows its type, message, key details (for example the queue and its size, or the query duration) and time. You can filter the list by warning type. An entry opens a page with its full message, its queue and every detail it recorded.
+Every warning pg-boss emitted while [`persistWarnings`](#enabling-warning-persistence) was enabled, such as slow queries, queue backlogs or clock skew, newest first. Each entry shows its type, message, key details (for example the queue and its size, or the query duration) and time. You can filter the list by warning type. An entry opens a page with its full message, its queue and every detail it recorded.
 
 ![Warnings page](./images/dashboard-warnings.webp){.light-only}
 ![Warnings page](./images/dashboard-warnings-dark.webp){.dark-only}

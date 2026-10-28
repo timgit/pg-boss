@@ -255,13 +255,13 @@ function migrationsRow ({ pending, inProgress, failed }: { pending: number; inPr
   )
 }
 
-/** Waiting is a queue with ready jobs and none active, which Idle would hide. */
+/** Ready is a queue with ready jobs and none active, which Idle would hide. */
 function QueueStatusBadge ({ queue }: { queue: QueueResult }) {
   const hasBacklog =
     (queue.warningQueueSize ?? 0) > 0 && queue.queuedCount > (queue.warningQueueSize ?? 0)
   if (hasBacklog) return <Badge variant="error" size="sm" dot>Backlogged</Badge>
   if (queue.activeCount > 0) return <Badge variant="success" size="sm" dot>Processing</Badge>
-  if (queue.readyCount > 0) return <Badge variant="warning" size="sm" dot>Waiting</Badge>
+  if (queue.readyCount > 0) return <Badge variant="warning" size="sm" dot>Ready</Badge>
   return <Badge variant="gray" size="sm" dot>Idle</Badge>
 }
 

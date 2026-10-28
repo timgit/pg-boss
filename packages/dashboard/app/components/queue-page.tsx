@@ -160,9 +160,9 @@ export function QueueConfig ({ queue, subscribedEvents = 0 }: { queue: QueueResu
   }
   if (queue.warningQueueSize) rows.push({ label: 'Warning size', value: `${queue.warningQueueSize.toLocaleString()} queued` })
   if (queue.retryLimit) rows.push({ label: 'Retries', value: retries(queue) })
-  if (queue.expireInSeconds) rows.push({ label: 'Time limit', value: formatSeconds(queue.expireInSeconds) })
-  if (queue.retentionSeconds) rows.push({ label: 'Retention', value: formatSeconds(queue.retentionSeconds) })
-  if (queue.deleteAfterSeconds) rows.push({ label: 'Deletion', value: formatSeconds(queue.deleteAfterSeconds) })
+  if (queue.expireInSeconds) rows.push({ label: 'Expiration', value: formatSeconds(queue.expireInSeconds) })
+  if (queue.retentionSeconds) rows.push({ label: 'Queued jobs kept', value: formatSeconds(queue.retentionSeconds) })
+  if (queue.deleteAfterSeconds) rows.push({ label: 'Completed jobs kept', value: formatSeconds(queue.deleteAfterSeconds) })
   if (subscribedEvents > 0) {
     rows.push({
       label: 'Subscribed to',

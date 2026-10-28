@@ -111,14 +111,17 @@ export function WorkersCard ({ instance: i, checkedOn, columns = [] }: { instanc
     if (!next.delete(queue)) next.add(queue)
     return next
   })
-  const slots = groups.reduce((n, g) => n + g.workers, 0)
+  // Workers are localConcurrency added up, as core counts them. A slot holds one job, so each call
+  // has localConcurrency × batchSize of them, the most jobs it can have active at once.
+  const workers = groups.reduce((n, g) => n + g.workers, 0)
+  const slots = i.workers.reduce((n, w) => n + w.localConcurrency * w.batchSize, 0)
   const busy = groups.reduce((n, g) => n + g.active, 0)
   const calls = i.workers.length
 
   return (
     <InstanceSection
       title="Workers"
-      aside={calls > 0 ? `${calls} ${calls === 1 ? 'worker' : 'workers'} on ${groups.length} ${groups.length === 1 ? 'queue' : 'queues'} · ${busy} of ${slots} slots busy` : undefined}
+      aside={calls > 0 ? `${workers} ${workers === 1 ? 'worker' : 'workers'} on ${groups.length} ${groups.length === 1 ? 'queue' : 'queues'} · ${busy} of ${slots} slots busy` : undefined}
     >
       {calls === 0
         ? <p className="text-[13px] text-[var(--text-tertiary)]">No work() calls.</p>
@@ -219,10 +222,10 @@ function WorkCalls ({ group, checkedOn }: { group: QueueWork, checkedOn: Date })
       <table className="text-[12.5px]">
         <thead>
           <tr>
-            <th className={CALL_HEAD}>Worker</th>
+            <th className={CALL_HEAD}>Id</th>
             <th className={CALL_HEAD}>Concurrency × batch</th>
             <th className={CALL_HEAD}>Polling</th>
-            <th className={cn(CALL_HEAD, 'text-right')}>In hand</th>
+            <th className={cn(CALL_HEAD, 'text-right')}>Active</th>
             <th className={cn(CALL_HEAD, 'text-right')}>Last fetch</th>
             <th className={cn(CALL_HEAD, 'text-right')}>Last job ended</th>
             <th className={cn(CALL_HEAD, 'text-right')}>Last error</th>
@@ -273,7 +276,7 @@ export function ProcessCard ({ instance: i, checkedOn, extraRows = [] }: { insta
         rows={[
           ['Id', <span key="id" className="font-mono text-xs">{i.id}</span>],
           ['Pool', i.poolMax == null
-            ? <Muted>passed in, so not counted</Muted>
+            ? <Muted>db adapter, not counted</Muted>
             : `${i.poolTotal ?? 0} of ${i.poolMax} open, ${i.poolIdle ?? 0} idle${i.poolWaiting ? `, ${i.poolWaiting} waiting` : ''}`],
           ['application_name', <span key="app" className="font-mono text-xs">{i.applicationName ?? '—'}</span>],
           ['Started', `${new Date(i.startedOn).toLocaleString()}, ${ago(i.startedOn, checkedOn)}`],

@@ -195,10 +195,10 @@ describe('InstancePage', () => {
 
   it('opens a queue to each work() call and the options it set, with the queue page a link away', () => {
     const one = { ...worker('emails'), id: 'aaaaaaaa-1', localConcurrency: 5, options: { transactional: true } }
-    const two = { ...worker('billing'), id: 'bbbbbbbb-2' }
+    const two = { ...worker('billing'), id: 'bbbbbbbb-2', batchSize: 3 }
     renderPage(instance({ workers: [one, two] }))
 
-    expect(screen.getByText('2 workers on 2 queues · 0 of 7 slots busy')).toBeInTheDocument()
+    expect(screen.getByText('7 workers on 2 queues · 0 of 11 slots busy')).toBeInTheDocument()
     const emails = screen.getByRole('button', { name: 'emails' })
     expect(emails).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByText('transactional: on')).not.toBeVisible()

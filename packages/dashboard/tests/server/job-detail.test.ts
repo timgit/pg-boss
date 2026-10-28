@@ -99,7 +99,7 @@ describe('attempts', () => {
 })
 
 describe('expiresAt', () => {
-  it('is started_on plus the time limit for an active job', () => {
+  it('is started_on plus expireInSeconds for an active job', () => {
     expect(expiresAt(job({ state: 'active', startedOn: at(-60) }))).toEqual(at(840))
   })
 

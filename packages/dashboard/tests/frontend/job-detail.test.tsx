@@ -144,16 +144,16 @@ describe('RunningPanel', () => {
     deleteAfterSeconds: 604_800,
   }
 
-  it('counts up the run and down to the time limit', () => {
+  it('counts up the run and down to expiration', () => {
     render(<RunningPanel job={running} now={new Date(started.getTime() + 72_000)} heartbeatOn={null} heartbeatSeconds={30} />)
     expect(screen.getByRole('timer')).toHaveTextContent('1m 12s')
     expect(screen.getByText('13m 48s')).toBeInTheDocument()
     expect(screen.getByText('None received yet')).toBeInTheDocument()
   })
 
-  it('says when a job has run past its time limit', () => {
+  it('says when a job has run past its expiration', () => {
     render(<RunningPanel job={running} now={new Date(started.getTime() + 960_000)} heartbeatOn={null} heartbeatSeconds={null} />)
-    expect(screen.getByText('Past its time limit')).toBeInTheDocument()
+    expect(screen.getByText('Past its expiration')).toBeInTheDocument()
     expect(screen.getByText('1m 00s over')).toBeInTheDocument()
   })
 })

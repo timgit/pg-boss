@@ -130,7 +130,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
   else unset.push('singleton key')
   if (job.groupId) rows.push({ label: 'Group', value: job.groupTier ? `${job.groupId} (${job.groupTier})` : job.groupId, mono: true })
   else unset.push('group')
-  if (job.expireInSeconds) rows.push({ label: 'Time limit', value: formatSeconds(job.expireInSeconds) })
+  if (job.expireInSeconds) rows.push({ label: 'Expiration', value: formatSeconds(job.expireInSeconds) })
   if (job.heartbeatSeconds) rows.push({ label: 'Heartbeat', value: `Every ${formatSeconds(job.heartbeatSeconds)}` })
   else unset.push('heartbeat')
   if (job.deadLetter) {

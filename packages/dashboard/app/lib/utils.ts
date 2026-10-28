@@ -162,7 +162,7 @@ export const JOB_STATE_VARIANTS: Record<JobStateValue, BadgeVariant> = {
 // Filter options for job states (for dropdowns)
 export const JOB_STATE_OPTIONS: { value: JobStateFilter; label: string }[] = [
   { value: ALL_STATES_FILTER, label: 'All States' },
-  { value: PENDING_FILTER, label: 'Pending' },
+  { value: PENDING_FILTER, label: 'Unfinished' },
   ...JOB_STATES.map((state) => ({
     value: state,
     label: state.charAt(0).toUpperCase() + state.slice(1),

@@ -104,7 +104,7 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Event log</CardTitle>
+          <CardTitle>All warnings</CardTitle>
           <FilterSelect
             value={typeFilter}
             options={WARNING_TYPE_OPTIONS}
