@@ -119,6 +119,11 @@ one adds a new version, which the rule's history marks as the same as the earlie
 one. Each version has a page that shows its definition and what changed between
 it and the current one.
 
+A link under the rule's name, such as **Version 2 of 4**, opens the version
+history. It's on the rule's page and on each version's page, and names the
+version on screen. The history lists every version newest first, with who saved
+it, when, and how many lines it changed from the version before.
+
 ![A rule version against the current one](../images/pro/alert-rule-version.webp){.light-only}
 ![A rule version against the current one](../images/pro/alert-rule-version-dark.webp){.dark-only}
 

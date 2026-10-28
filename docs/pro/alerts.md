@@ -13,6 +13,8 @@ Alerts come only from rules, and only a rule that's turned on opens one. A rule
 belongs to one database, the one selected when the rule was created.
 Administrators manage rules from the **Rules** button on the alerts page
 (`/pro/alerts/rules`).
+A rule's page lists the 8 alerts it opened most recently. When it has opened
+more, a link there opens this list filtered to that rule.
 
 ![An alert's page](../images/pro/alert.webp){.light-only}
 ![An alert's page](../images/pro/alert-dark.webp){.dark-only}
