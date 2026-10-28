@@ -16,7 +16,7 @@ used and from where, and marks a token that expires within 14 days.
 ![Service accounts](../images/pro/service-accounts.webp){.light-only}
 ![Service accounts](../images/pro/service-accounts-dark.webp){.dark-only}
 
-**Add service account** takes a name, what it is for, and a first role. Its page then shows:
+**Add service account** takes a name, a description, and a first role. Its page then shows:
 
 - **Roles**: what its tokens may do, and on which databases. Grant and remove them here. A service
   account can't join a group.
