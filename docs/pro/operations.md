@@ -33,11 +33,23 @@ also requires typing the number.
 - The operation runs in chunks beside the live queues and commits each one, so
   a large operation never holds locks for minutes. **Stop after this chunk**
   ends it there and keeps what's already done.
-- Every operation is in the audit log with who ran it, the filter it used,
-  what it expected and what it changed.
+- The page runs the operation, posting one chunk at a time, so the run needs
+  the page open. Leaving the page or closing the tab stops it after the chunk
+  in progress, and the page asks first. The history shows a run whose page went
+  away as stopped a minute after its last chunk.
+- One operation runs at a time in a database. The page refuses a second one at
+  confirm and names the one running.
+- The audit log records each operation when it starts, with who started it,
+  the filter and the expected count, and again when it ends, with how it
+  ended, how many jobs it changed and any error. A stop request is recorded
+  too.
 - Deleted jobs are gone. There is no undo, and the page says so.
 
 The page saves a filter by name, to apply again from the top of the page.
+**Operation history** (`/pro/ops/history`, linked from the page header) lists
+every operation on the database from the last 90 days, newest first, with how
+each one ended. Filter it by action or by how the operations ended. For an
+administrator, each row links to its entries in the audit log.
 
 ## Redrive
 
@@ -68,8 +80,6 @@ with.
   history counts them and links to the queue.
 - The confirmed number is a ceiling. The run leaves out jobs dead-lettered
   after the confirmation.
-- One redrive per dead letter queue runs at a time. The page refuses a second
-  one at confirm and doesn't queue it.
 
 To open the page ready to redrive a queue, link to
 `/pro/ops?verb=redrive&queue=<dead letter queue>`.

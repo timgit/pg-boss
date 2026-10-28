@@ -6,7 +6,7 @@ Pro prunes its own store once a minute.
 
 - Pro keeps closed alerts, alert deliveries, finished operations and the status
   page's queue health history for 90 days. It keeps an operation that's still
-  queued or running however old it is.
+  running however old it is.
 - Pro keeps the audit log forever unless an administrator sets a number of days
   under **Settings → Audit log**. The shortest is 30 days. Pro deletes entries
   older than that within a minute of saving, and they can't be recovered. The
