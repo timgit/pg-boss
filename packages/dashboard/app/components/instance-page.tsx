@@ -452,7 +452,7 @@ export function ResourceTiles ({ instance: i, hot = {} }: { instance: Instance, 
 
 /** The options it runs with, folded away: nobody needs all of them at a glance. */
 export function OptionsCard ({ instance: i }: { instance: Instance }) {
-  // Changed options first, so what someone set is read before the defaults around it.
+  // Non-default options first, so they are read before the defaults around them.
   const config = Object.entries(i.config ?? {})
     .map(([key, value]) => ({ key, value, changed: isChangedOption(key, value) }))
     .sort((a, b) => Number(b.changed) - Number(a.changed) || a.key.localeCompare(b.key))
@@ -466,7 +466,7 @@ export function OptionsCard ({ instance: i }: { instance: Instance }) {
             Options{' '}
             <span className="font-normal normal-case tracking-normal text-[var(--text-tertiary)]">
               · {config.length} recorded
-              {changed > 0 && <>, <b className="font-medium text-[var(--primary-600)] dark:text-[var(--primary-400)]">{changed} changed from the default</b></>}
+              {changed > 0 && <>, <b className="font-medium text-[var(--primary-600)] dark:text-[var(--primary-400)]">{changed} non-default</b></>}
             </span>
           </span>
           <ChevronRight aria-hidden="true" className="h-4 w-4 text-[var(--text-tertiary)] transition-transform group-open:rotate-90" />
@@ -488,7 +488,7 @@ export function OptionsCard ({ instance: i }: { instance: Instance }) {
               </dl>
               )}
           <p className="text-xs text-[var(--text-tertiary)]">
-            Changed options are compared with the current defaults. Connection settings are not saved for security reasons.
+            Non-default means different from the current release's defaults. Connection settings are not saved for security reasons.
           </p>
         </div>
       </details>

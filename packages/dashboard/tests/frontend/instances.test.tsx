@@ -216,10 +216,10 @@ describe('InstancePage', () => {
     expect(screen.getByText('No work() calls.')).toBeInTheDocument()
   })
 
-  it('puts the options changed from the default first, with the default beside each', () => {
+  it('puts the non-default options first, with the default beside each', () => {
     renderPage(instance({ config: { supervise: true, monitorIntervalSeconds: 30, persistQueueStats: true } }))
 
-    expect(screen.getByText('2 changed from the default')).toBeInTheDocument()
+    expect(screen.getByText('2 non-default')).toBeInTheDocument()
     const rows = document.querySelectorAll('details dl div')
     expect([...rows].map((r) => r.querySelector('dt')!.textContent)).toEqual(['monitorIntervalSeconds', 'persistQueueStats', 'supervise'])
     expect(rows[0]).toHaveAttribute('data-changed', 'true')
