@@ -10,7 +10,7 @@ import { formatDateWithSeconds, formatTimeAgo, warningTypeLabel, warningTypeVari
 import type { TitleHandle } from '~/lib/page-title'
 
 /** The browser tab's name for this page. */
-export const handle: TitleHandle = { title: ({ params }) => (params.id ? `Warning ${params.id.slice(0, 8)}` : null) }
+export const handle: TitleHandle<Route.ComponentProps['loaderData'] | undefined> = { title: ({ data }) => (data ? `Warning: ${warningTypeLabel(data.warning.type)}` : null) }
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)

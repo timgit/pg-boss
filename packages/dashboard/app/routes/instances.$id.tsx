@@ -8,7 +8,7 @@ import type { TitleHandle } from '~/lib/page-title'
 import { instanceName } from '~/lib/instances'
 
 /** The browser tab's name for this page. */
-export const handle: TitleHandle<InstancePageData | undefined> = { title: ({ data }) => (data ? `${instanceName(data.instance.name)} ${data.instance.id.slice(0, 8)}` : null) }
+export const handle: TitleHandle<InstancePageData | undefined> = { title: ({ data }) => (data ? `Instance: ${instanceName(data.instance.name)} ${data.instance.id.slice(0, 8)}` : null) }
 
 // Typed by hand rather than from `./+types/instances.$id`: a Pro build replaces this route with its
 // own, React Router then generates no types for it, and the build still typechecks this file.

@@ -12,7 +12,7 @@ import { formatDate, formatTimeUntil } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
 
 /** The browser tab's name for this page. */
-export const handle: TitleHandle = { title: ({ params }) => (params.name ? (params.key && params.key !== '__default__' ? `${params.name} · ${params.key}` : params.name) : null) }
+export const handle: TitleHandle = { title: ({ params }) => (params.name ? `Schedule: ${params.name}${params.key && params.key !== '__default__' ? ` (${params.key})` : ''}` : null) }
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)

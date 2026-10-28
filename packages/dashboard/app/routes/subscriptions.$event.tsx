@@ -10,7 +10,7 @@ import { formatDate } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
 
 /** The browser tab's name for this page. */
-export const handle: TitleHandle = { title: ({ params }) => params.event ?? null }
+export const handle: TitleHandle = { title: ({ params }) => (params.event ? `Subscription: ${params.event}` : null) }
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
