@@ -151,6 +151,14 @@ describe('InstancesTable', () => {
     expect(screen.queryAllByRole('link', { name: 'mailer' })).toEqual([])
   })
 
+  it('says what the list means behind a question mark', async () => {
+    renderTable([instance()])
+
+    expect(screen.queryByText(/Instances register from pg-boss 12.36/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'About this list' }))
+    expect(await screen.findByText(/Instances register from pg-boss 12.36/)).toBeInTheDocument()
+  })
+
   it('narrows to the recent rows', () => {
     renderTable([
       instance({ name: 'steady', startedOn: secondsAgo(3 * 86400) }),

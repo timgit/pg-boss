@@ -3,7 +3,7 @@ import { dbContext } from '~/lib/db-context'
 import { loadInstances, type InstancesData } from '~/lib/instances.server'
 import { ErrorCard } from '~/components/error-card'
 import { PageHeader } from '~/components/ui/page-header'
-import { InstancesTable, RegistryFootnote, RegistryUnavailable, useRegistryRefresh } from '~/components/instances-table'
+import { InstancesTable, RegistryUnavailable, useRegistryRefresh } from '~/components/instances-table'
 import type { TitleHandle } from '~/lib/page-title'
 
 /** The browser tab's name for this page. */
@@ -44,12 +44,7 @@ export default function Instances ({ loaderData }: { loaderData: InstancesData }
       />
 
       {available
-        ? (
-          <>
-            <InstancesTable instances={instances} checkedOn={checkedOn} />
-            <RegistryFootnote />
-          </>
-          )
+        ? <InstancesTable instances={instances} checkedOn={checkedOn} />
         : <RegistryUnavailable />}
     </div>
   )

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRevalidator } from 'react-router'
-import { Search } from 'lucide-react'
+import { CircleHelp, Search } from 'lucide-react'
 import type { Instance } from '~/lib/types'
 import {
   byName,
@@ -19,6 +19,7 @@ import { Badge } from '~/components/ui/badge'
 import { Card } from '~/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
 import { DbLink } from '~/components/db-link'
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '~/components/ui/popover'
 import { cn } from '~/lib/utils'
 
 // Heartbeats land every 30 seconds by default, so a registry read once goes stale within a minute.
@@ -131,11 +132,13 @@ const chip = (on: boolean) => cn(
     : 'border-[var(--border-subtle)] text-[var(--text-tertiary)]'
 )
 
-export function InstanceFilterBar ({ listed, state, end }: {
+export function InstanceFilterBar ({ listed, state, end, about }: {
   listed: ListedInstance[]
   state: ReturnType<typeof useInstanceFilters>
   /** At the right of the bar, such as an overlay's sort. */
   end?: ReactNode
+  /** What the list's rows and figures mean, behind a question mark at the right of the bar. */
+  about?: ReactNode
 }) {
   const { filters, setNeedle, toggleBucket, setRecentOnly } = state
   const counts = { live: 0, quiet: 0, stopped: 0 }
@@ -177,8 +180,35 @@ export function InstanceFilterBar ({ listed, state, end }: {
           Recent <b className="pgb-num font-medium">{recent}</b>
         </button>
       </div>
-      {end}
+      {(end || about) && (
+        <div className="flex items-center gap-2">
+          {end}
+          {about && <AboutList>{about}</AboutList>}
+        </div>
+      )}
     </div>
+  )
+}
+
+/** A question mark that opens what the list's rows and figures mean. */
+function AboutList ({ children }: { children: ReactNode }) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label="About this list"
+        className={cn(
+          'inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-[var(--text-tertiary)]',
+          'hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]'
+        )}
+      >
+        <CircleHelp aria-hidden="true" className="h-4 w-4" />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-96 gap-2 text-[13px] leading-relaxed text-[var(--text-secondary)]">
+        <PopoverTitle className="text-[var(--text-primary)]">About this list</PopoverTitle>
+        {children}
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -205,7 +235,7 @@ export function InstancesTable ({ instances, checkedOn }: InstancesTableProps) {
 
   return (
     <section aria-label="Instance list" className="grid gap-3">
-      <InstanceFilterBar listed={listed} state={state} end={<span className="text-xs text-[var(--text-tertiary)]">By name</span>} />
+      <InstanceFilterBar listed={listed} state={state} end={<span className="text-xs text-[var(--text-tertiary)]">By name</span>} about={<RegistryNote />} />
 
       <Card className="overflow-hidden">
         <Table>
@@ -254,10 +284,10 @@ export function InstancesTable ({ instances, checkedOn }: InstancesTableProps) {
   )
 }
 
-/** Under the list: which instances register, and how long a row is kept. */
-export function RegistryFootnote () {
+/** Which instances register, and how long a row is kept: part of what the list's question mark says. */
+export function RegistryNote () {
   return (
-    <p className="text-xs text-[var(--text-tertiary)]">
+    <p>
       Instances register from pg-boss 12.36. Older versions, and any started
       with <code className="font-mono">registerInstance: false</code>, connect without appearing here. Every start registers
       a new row with a new id. A row goes quiet after three missed heartbeats, and is deleted a week after its last one.
