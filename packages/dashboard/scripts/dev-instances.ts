@@ -443,8 +443,9 @@ function fleet (queues: Set<string>): Run[] {
 
 const iso = (at: number | null | undefined, from: number) => (at === null || at === undefined ? null : new Date(from - at).toISOString())
 
+// The counter goes in the first group, so each seeded instance's 8-character short id differs.
 function seedId (k: number): string {
-  return `${SEED_PREFIX}0000-0000-4000-8000-${String(k + 1).padStart(12, '0')}`
+  return `${SEED_PREFIX}${String(k + 1).padStart(4, '0')}-0000-4000-8000-000000000000`
 }
 
 /** Writes the fleet, its ages counted back from the database's clock; rows already there are kept. */
@@ -464,7 +465,7 @@ export async function seedInstances (client: Client, schema: string): Promise<nu
     const config: Record<string, unknown> = { ...BASE_CONFIG, supervise, schedule, migrate, ...run.config }
     const [poolMax, poolTotal, poolIdle, poolWaiting] = run.pool ?? [10, 1, 1, 0]
     const workers = (run.workers ?? []).map((w, n) => ({
-      id: `${SEED_PREFIX}0001-0000-4000-8000-${String(k * 100 + n + 1).padStart(12, '0')}`,
+      id: `${SEED_PREFIX}${String(k * 100 + n + 1).padStart(4, '0')}-0001-4000-8000-000000000000`,
       queue: w.queue,
       localConcurrency: w.localConcurrency,
       batchSize: w.batchSize ?? 1,
