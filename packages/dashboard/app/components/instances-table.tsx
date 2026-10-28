@@ -10,6 +10,7 @@ import {
   passOptions,
   listInstances,
   matchesInstance,
+  matchesInstanceId,
   type InstanceBucket,
   type InstanceStatus,
   type ListedInstance,
@@ -116,8 +117,9 @@ export function useInstanceFilters () {
   return { filters: { needle, buckets, recentOnly }, setNeedle, toggleBucket, setRecentOnly }
 }
 
-/** Whether the filters list a row. */
+/** Whether the filters list a row. The start of its id lists it whatever its status. */
 export function passesFilters (l: ListedInstance, filters: InstanceFilters): boolean {
+  if (matchesInstanceId(l.instance, filters.needle)) return true
   return filters.buckets.has(l.bucket) && (!filters.recentOnly || l.recent) && matchesInstance(l.instance, filters.needle.trim())
 }
 

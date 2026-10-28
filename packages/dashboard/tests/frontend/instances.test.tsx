@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { formatSpan, listInstances, matchesInstance, workByQueue, workSettings } from '~/lib/instances'
+import { formatSpan, listInstances, matchesInstance, matchesInstanceId, workByQueue, workSettings } from '~/lib/instances'
 import { InstancesTable } from '~/components/instances-table'
 import { InstancePage } from '~/components/instance-page'
 import type { Connections, Instance } from '~/lib/types'
@@ -60,6 +60,13 @@ describe('matchesInstance', () => {
 
     expect(['email', 'JOBS-01', i.id.slice(0, 6), 'notifications', ''].map((n) => matchesInstance(i, n))).toEqual([true, true, true, true, true])
     expect(matchesInstance(i, 'billing')).toBe(false)
+  })
+
+  it('takes four characters or more of an id as the id, in any case', () => {
+    const i = instance({ id: '02fb53da-cbb9-40b8-9b53-233a04012540' })
+
+    expect(['02fb', ' 02FB53DA ', i.id].map((n) => matchesInstanceId(i, n))).toEqual([true, true, true])
+    expect(['02f', 'fb53', ''].map((n) => matchesInstanceId(i, n))).toEqual([false, false, false])
   })
 })
 
@@ -125,6 +132,23 @@ describe('InstancesTable', () => {
     const links = screen.getAllByRole('link', { name: 'billing' })
     expect(links.map((a) => a.getAttribute('href'))).toEqual([`/instances/${current.id}`, `/instances/${first.id}`])
     expect(screen.getByText(current.id.slice(0, 8))).toBeInTheDocument()
+  })
+
+  it('finds an instance by the start of its id whatever its status, and by a name only within the statuses shown', () => {
+    renderTable([
+      instance({ name: 'worker' }),
+      stopped(600, { name: 'mailer', id: '02fb53da-cbb9-40b8-9b53-233a04012540' }),
+    ])
+    const filter = screen.getByRole('searchbox', { name: 'Filter instances' })
+
+    fireEvent.change(filter, { target: { value: '02FB ' } })
+    expect(names()).toEqual(['mailer'])
+
+    fireEvent.change(filter, { target: { value: '02f' } })
+    expect(screen.queryAllByRole('link', { name: 'mailer' })).toEqual([])
+
+    fireEvent.change(filter, { target: { value: 'mailer' } })
+    expect(screen.queryAllByRole('link', { name: 'mailer' })).toEqual([])
   })
 
   it('narrows to the recent rows', () => {

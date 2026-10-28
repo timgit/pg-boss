@@ -63,6 +63,15 @@ export function byName (a: ListedInstance, b: ListedInstance): number {
   return a.instance.host.localeCompare(b.instance.host) || time(b.instance.startedOn) - time(a.instance.startedOn)
 }
 
+/**
+ * Whether a filter string is the start of this instance's id, four characters or more. An id names
+ * one instance, so a list shows a match on it whatever its status.
+ */
+export function matchesInstanceId (instance: Instance, needle: string): boolean {
+  const n = needle.trim().toLowerCase()
+  return n.length >= 4 && instance.id.startsWith(n)
+}
+
 /** Whether a filter string names this instance: its name, host, id or a queue it works. */
 export function matchesInstance (instance: Instance, needle: string): boolean {
   if (!needle) return true
