@@ -30,20 +30,6 @@ export interface WorkerColumn {
   Cell: (props: { work: QueueWork }) => ReactNode
 }
 
-/**
- * What an overlay that replaces an instance's page adds to the sections it composes. Every field is
- * optional, and without them the page is the free one.
- */
-export interface InstancePageExtensions {
-  /** Between the header and Workers. */
-  afterHeader?: ReactNode
-  workerColumns?: WorkerColumn[]
-  /** More facts at the end of Process. */
-  processRows?: Array<[string, ReactNode]>
-  /** Beside Process. */
-  besideProcess?: ReactNode
-}
-
 const Muted = ({ children }: { children: ReactNode }) => <span className="text-[var(--text-tertiary)]">{children}</span>
 
 /** A titled card on the instance's page. */
@@ -75,7 +61,6 @@ function Facts ({ rows }: { rows: Array<[string, ReactNode]> }) {
 }
 
 const ago = (then: string | Date | null, now: Date) => (then ? formatAgo(then, now) : '—')
-const on = (v: boolean) => (v ? 'on' : <Muted>off</Muted>)
 
 /** The name, its short id and status, and the facts that identify the process. */
 export function InstancePageHeader ({ instance: i, checkedOn }: { instance: Instance, checkedOn: Date }) {
@@ -280,7 +265,7 @@ function WorkCalls ({ group, checkedOn }: { group: QueueWork, checkedOn: Date })
   )
 }
 
-/** The process: its id, pool, connection name, times and recorded switches. */
+/** The process: its id, pool, connection name and times. */
 export function ProcessCard ({ instance: i, checkedOn, extraRows = [] }: { instance: Instance, checkedOn: Date, extraRows?: Array<[string, ReactNode]> }) {
   return (
     <InstanceSection title="Process">
@@ -293,8 +278,6 @@ export function ProcessCard ({ instance: i, checkedOn, extraRows = [] }: { insta
           ['application_name', <span key="app" className="font-mono text-xs">{i.applicationName ?? '—'}</span>],
           ['Started', `${new Date(i.startedOn).toLocaleString()}, ${ago(i.startedOn, checkedOn)}`],
           ['Heartbeat', `every ${i.heartbeatSeconds}s, last ${ago(i.heartbeatOn, checkedOn)}`],
-          ['Queue stats', on(i.persistQueueStats)],
-          ['Warnings', on(i.persistWarnings)],
           ...extraRows,
         ]}
       />
@@ -349,18 +332,14 @@ export function OptionsCard ({ instance: i }: { instance: Instance }) {
 }
 
 /** One registered instance: what it works, its process and its options. */
-export function InstancePage ({ data, extensions }: { data: InstancePageData, extensions?: InstancePageExtensions }) {
+export function InstancePage ({ data }: { data: InstancePageData }) {
   const { instance, checkedOn } = data
 
   return (
     <div className="grid gap-4">
       <InstancePageHeader instance={instance} checkedOn={checkedOn} />
-      {extensions?.afterHeader}
-      <WorkersCard instance={instance} checkedOn={checkedOn} columns={extensions?.workerColumns} />
-      <div className={cn('grid items-start gap-4', extensions?.besideProcess && 'lg:grid-cols-2')}>
-        {extensions?.besideProcess}
-        <ProcessCard instance={instance} checkedOn={checkedOn} extraRows={extensions?.processRows} />
-      </div>
+      <WorkersCard instance={instance} checkedOn={checkedOn} />
+      <ProcessCard instance={instance} checkedOn={checkedOn} />
       <OptionsCard instance={instance} />
     </div>
   )
