@@ -7,7 +7,7 @@
 | `pgboss_database_up` | `database` | 1, or 0 when the database could not be read. |
 | `pgboss_queue_jobs` | `database`, `queue`, `state` | Jobs by state: ready, active, deferred, queued, blocked, failed, total. |
 | `pgboss_queue_arrived_per_minute` | `database`, `queue` | Jobs created per minute over the last hour. |
-| `pgboss_queue_finished_per_minute` | `database`, `queue` | Jobs finished per minute over the last hour. |
+| `pgboss_queue_finished_per_minute` | `database`, `queue` | Jobs completed or failed per minute over the last hour. |
 | `pgboss_queue_wait_seconds` | `database`, `queue`, `quantile` | Time from ready to started over the last hour, at 0.5, 0.95 and 0.99. |
 | `pgboss_queue_run_seconds` | `database`, `queue`, `quantile` | Time from started to finished over the last hour. |
 | `pgboss_queue_health` | `database`, `queue`, `verdict` | 1 for the queue's verdict: ok, recovering, absorbing, behind or stalled. |

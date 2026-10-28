@@ -4,7 +4,7 @@ Pro shows the free dashboard's queue pages with its own additions beside them.
 
 ## Health
 
-Pro judges each queue over the last hour from the stats pg-boss records. It compares the queue's arrivals with what finished, and its backlog with what it usually holds:
+Pro judges each queue over the last hour from the stats pg-boss records. It compares the queue's arrivals with what finished, and its backlog with what it usually holds. Finishing, here and on every queue page, counts jobs that completed or failed:
 
 | Verdict | Means |
 | - | - |
@@ -23,6 +23,19 @@ The queue list shows each queue's rates, health, time to drain and workers, with
 ### Table view
 
 The table is the free dashboard's [queue list](../dashboard.md#queues), ten queues to a page. Pro adds each queue's health, arrival and finishing rates, time to drain and busy slots to it.
+
+A slot holds one job. Each `work()` call has `localConcurrency × batchSize` of them, which is the most jobs it can have active at once, so a queue's slots are that product added up over the live instances working it. Busy slots are the jobs those instances had active at their last heartbeats. Every slot busy means more workers would add throughput.
+
+Time to drain compares arrivals with finishing over the last 15 minutes, and the ready count with what the queue usually holds:
+
+| Value | Means |
+| - | - |
+| Not draining | Jobs are arriving and almost nothing is finishing. |
+| Growing | More is arriving than finishing, with more than 20 jobs ready above usual. It shows how fast the backlog grows and about how many more jobs running at once would keep up. |
+| Clears in | More is finishing than arriving, with more than 20 jobs ready above usual. It shows about how long until the backlog is back to usual. |
+| Keeping up | The backlog is within 20 jobs of usual, or arrivals and finishing are about even. |
+
+This **Keeping up** reads the last 15 minutes, so it can differ from the health verdict of the same name, which reads the hour.
 
 ![The Table view](../images/pro/queues-table.webp){.light-only}
 ![The Table view](../images/pro/queues-table-dark.webp){.dark-only}
@@ -49,9 +62,9 @@ A refresh or a change of range recolors each queue where it is. The order change
 
 ## Queue detail
 
-A queue's page adds its arrival and finishing rates, p95 wait and run times against the previous period, time to drain, and its health with the reasons for it. Its charts share one time axis: throughput, backlog, wait time and run time.
+A queue's page adds its arrival and finishing rates, p95 wait and run times against the previous period, time to drain, and its health with the reasons for it. Its charts share one time axis: throughput, backlog, wait time and run time. The throughput chart shades **Arrivals ahead** where more arrived than finished.
 
-The sidebar lists the live workers on the queue, with each one's busy slots, from the [instance registry](./instances.md). An instance started with `registerInstance: false`, or on a pg-boss version before 12.36, can work the queue without appearing there.
+The sidebar lists each `work()` call on the queue, with its instance and its busy slots, from the [instance registry](./instances.md). A pill beside the instance names the first of its own checks it fails (event loop, then CPU, then memory, as on the [instances page](./instances.md)), or reads **Healthy** when it passes them all. An instance started with `registerInstance: false`, or on a pg-boss version before 12.36, can work the queue without appearing there.
 
 ![The Workers card on a queue's page](../images/pro/queue-workers.webp){.light-only width=384}
 ![The Workers card on a queue's page](../images/pro/queue-workers-dark.webp){.dark-only width=384}

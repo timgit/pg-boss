@@ -47,19 +47,19 @@ evaluator's next pass.
 
 - **Threshold** compares a queue's metrics with numbers set on the rule. Conditions
   combine with *all* or *any*, with one level of grouping inside, as in "ready
-  above 1,000 and (p95 wait above 10 minutes or nothing finishing)". The metrics
+  above 1,000 and (p95 wait above 10 minutes or nothing completing)". The metrics
   are queued, ready, active, deferred, blocked and total jobs, from pg-boss's
-  cached counts. The stats pg-boss keeps add jobs arriving, finishing and failing
+  cached counts. The stats pg-boss keeps add jobs arriving, completing and failing
   per minute, the oldest ready job's wait, p95 wait and p95 run time. No rule
   counts the job table itself. A queue with no data for a metric doesn't match a
   comparison on it.
 - **Check** is one of the built-in checks above with its settings: which health
-  verdicts count and over which interval, how many ready jobs make a queue
-  uncovered, how many restarts make a loop.
+  verdicts count and over which interval, how many ready jobs a queue with no
+  workers needs before it counts, how many restarts make a loop.
 - **Warning** turns pg-boss warnings into alerts: every type or only the ones the rule names,
   on every queue or some.
 - **Operation** raises an alert for each failed operation and for each redrive
-  that left collisions.
+  that left [collisions](./operations.md#redrive), jobs the destination refused.
 
 A threshold or check raises an alert only once it has held for the number of
 minutes the rule sets. Every rule has a severity, critical or watch.
@@ -108,6 +108,22 @@ seconds), so `"value": 600` on `waitP95Seconds` is ten minutes.
 
 A save stores the definition in a normal order, so conditions ordered by hand
 can come back sorted.
+
+A check rule names its check by id:
+
+| Id | Check |
+| - | - |
+| `health` | Queue health |
+| `uncovered` | Queue with no workers |
+| `unsupervised` | No live instance supervising |
+| `restart-loop` | Restarting in a loop |
+| `quiet` | Gone quiet |
+| `versions` | More than one version |
+| `config` | Different shared options |
+| `pool` | Out of pool connections |
+| `event-loop` | Blocking its event loop |
+| `cpu` | Hitting its CPU limit |
+| `memory` | Near its memory limit |
 
 ## Versions
 

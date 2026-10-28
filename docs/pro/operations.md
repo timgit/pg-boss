@@ -2,7 +2,8 @@
 
 **Operations** (`/pro/ops`) runs one verb (retry, cancel, resume or delete)
 over every job matching a filter at once. It's the page for the morning after
-a bad deploy.
+a bad deploy. The same page also runs a [redrive](#redrive) out of a dead letter
+queue and a [purge](#purge) that empties a queue.
 
 Describe the set: queues, state, how long ago the jobs were created, how many
 times they have been retried, and fields their `data` must contain. The page
@@ -76,10 +77,39 @@ with.
 - Each job is re-created with a new id, retry count 0, and the destination's
   current retry, retention and expiry settings. Flows do not resume.
 - A job the destination refuses under its policy (`short`, `singleton`,
-  `stately`) stays failed in the dead letter queue with the reason, and the
-  history counts them and links to the queue.
+  `stately`) is a collision. It stays failed in the dead letter queue with
+  `output.reason` set to `redrive_conflict`, and the history counts the
+  collisions and links to the queue.
 - The confirmed number is a ceiling. The run leaves out jobs dead-lettered
   after the confirmation.
 
 To open the page ready to redrive a queue, link to
 `/pro/ops?verb=redrive&queue=<dead letter queue>`.
+
+## Purge
+
+**Purge** empties one queue through one of pg-boss's own calls, chosen by what
+to empty:
+
+| Choice | Deletes | pg-boss call |
+| - | - | - |
+| Everything | Every job, active ones too | `deleteAllJobs()` |
+| Queued jobs | Created and retry jobs, none started | `deleteQueuedJobs()` |
+| Finished jobs | Completed, canceled and failed jobs | `deleteStoredJobs()` |
+
+A queue's page offers **Purge** to users who can delete jobs, and the page needs
+`job:delete`, as deleting does. The count before confirming reads at most 1,000
+jobs. The call takes no filter, so the purge empties the queue as it is when it
+runs, including jobs that arrive after the count. Purging everything also
+deletes jobs being worked, and their workers find nothing to complete.
+
+The purge runs in one chunk, and the history shows how many jobs it deleted, as
+pg-boss returns the number or, when it returns none, from the queue's cached
+counts. Those counts include the deleted jobs until the next monitor pass, and
+the history says so until then.
+
+A queue that still holds jobs can't be deleted from its page. The page says to
+purge it first.
+
+To open the page ready to purge a queue, link to
+`/pro/ops?verb=purge&queue=<queue>`.
