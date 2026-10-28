@@ -644,6 +644,11 @@
   font-feature-settings: "tnum" 1, "zero" 1, "ss01" 1;
 }
 
+/* A bar whose share is of the host, not of a container limit. */
+@utility pgb-host-bar {
+  background: repeating-linear-gradient(135deg, var(--text-tertiary) 0 2px, transparent 2px 4px);
+}
+
 /* Uppercase eyebrow micro-label. */
 @utility pgb-eyebrow {
   font-size: 11px;

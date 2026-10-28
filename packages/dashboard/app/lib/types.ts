@@ -4,6 +4,27 @@ import type { WarningTypeValue } from './utils'
 import type { DatabaseColor } from './database-colors'
 export type { Instance, InstanceMetrics, InstanceWorker, JobWithMetadata, QueuePolicy, ScheduleKind }
 
+/** The connections Postgres has open under one `application_name`. */
+export interface Backends {
+  /** Every connection with the name, including those whose state this login cannot see. */
+  total: number
+  active: number
+  idle: number
+  idleInTransaction: number
+  /** How long the oldest idle-in-transaction connection has been so, in seconds. */
+  oldestIdleInTransactionSeconds: number | null
+}
+
+/** The server's connections, from `pg_stat_activity`. */
+export interface Connections {
+  /** The server's `max_connections`. */
+  max: number
+  /** Every client connection to the server, pg-boss or not. */
+  used: number
+  /** Connections by `application_name`, for the names that start `pgboss`. */
+  byApp: Record<string, Backends>
+}
+
 // SendOptions type from pg-boss (defined locally for compatibility)
 // Represents options for sending jobs
 export type SendOptions = Record<string, any>

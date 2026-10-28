@@ -1,5 +1,7 @@
 import { getInstanceRegistry } from './queries.server'
-import type { Instance } from './types'
+import { readConnections } from './connections.server'
+import { query } from './db.server'
+import type { Connections, Instance } from './types'
 
 /** What `/instances` shows: every registered instance, read at the database's `checkedOn`. */
 export type InstancesData = Awaited<ReturnType<typeof getInstanceRegistry>>
@@ -17,6 +19,8 @@ export interface InstancePageData {
   /** Every registered instance, for an overlay that reads one row against the rest. */
   instances: Instance[]
   checkedOn: Date
+  /** The server's connections now; null where `pg_stat_activity` cannot be read. */
+  connections: Connections | null
 }
 
 /**
@@ -31,5 +35,7 @@ export async function loadInstancePage (DB_URL: string, SCHEMA: string, id: stri
     throw new Response('Instance not found', { status: 404 })
   }
 
-  return { instance, instances, checkedOn }
+  const connections = await readConnections((sql) => query(DB_URL, sql)).catch(() => null)
+
+  return { instance, instances, checkedOn, connections }
 }

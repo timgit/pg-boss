@@ -78,6 +78,31 @@ export function passOptions (instance: Instance): string[] {
   return [instance.supervise && 'supervise', instance.schedule && 'schedule'].filter((r): r is string => Boolean(r))
 }
 
+/** Bytes as MiB, or GiB from one GiB up. */
+export function formatBytes (bytes: number): string {
+  const gib = bytes / 1024 ** 3
+  if (gib >= 1) return `${gib >= 10 ? Math.round(gib) : Number(gib.toFixed(1))} GiB`
+  return `${Math.round(bytes / 1024 ** 2)} MiB`
+}
+
+export function formatCores (n: number): string {
+  return n >= 10 ? String(Math.round(n)) : String(Number(n.toFixed(2)))
+}
+
+export function formatMs (ms: number): string {
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)} s`
+  if (ms < 10) return `${ms.toFixed(1)} ms`
+  return `${Math.round(ms)} ms`
+}
+
+/** The share of its limit the process's memory is at: the larger of the working set and the heap. */
+export function memoryShare (m: Instance['metrics']): number {
+  if (!m) return 0
+  const set = m.memoryUsed == null || !m.memoryLimit ? 0 : m.memoryUsed / m.memoryLimit
+  const heap = m.heapUsed == null || !m.heapLimit ? 0 : m.heapUsed / m.heapLimit
+  return Math.max(set, heap)
+}
+
 /** A span in the largest unit that reads well: "40s", "12m", "3h 5m", "2d". */
 export function formatSpan (ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000))

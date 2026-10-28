@@ -1,10 +1,13 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
-import type { Instance } from '~/lib/types'
+import type { Connections, Instance } from '~/lib/types'
 import type { InstancePageData } from '~/lib/instances.server'
 import {
   formatAgo,
+  formatBytes,
   formatConfig,
+  formatCores,
+  formatMs,
   formatSpan,
   instanceName,
   passOptions,
@@ -21,7 +24,8 @@ import { Badge } from '~/components/ui/badge'
 import { PageHeader } from '~/components/ui/page-header'
 import { DbLink } from '~/components/db-link'
 import { StatusBadge } from '~/components/instances-table'
-import { cn } from '~/lib/utils'
+import { CopyButton } from '~/components/job-detail'
+import { cn, formatDateWithSeconds } from '~/lib/utils'
 
 /** A column an overlay adds to the Workers table, after Active, read from one queue's work. */
 export interface WorkerColumn {
@@ -47,11 +51,11 @@ export function InstanceSection ({ title, aside, children, className }: { title:
   )
 }
 
-function Facts ({ rows }: { rows: Array<[string, ReactNode]> }) {
+function Facts ({ rows }: { rows: Array<[ReactNode, ReactNode]> }) {
   return (
-    <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[13px]">
-      {rows.map(([term, value]) => (
-        <div key={term} className="contents">
+    <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-[13px]">
+      {rows.map(([term, value], k) => (
+        <div key={k} className="contents">
           <dt className="text-[var(--text-tertiary)]">{term}</dt>
           <dd className="pgb-num min-w-0 break-words text-[var(--text-secondary)]">{value}</dd>
         </div>
@@ -268,23 +272,181 @@ function WorkCalls ({ group, checkedOn }: { group: QueueWork, checkedOn: Date })
   )
 }
 
-/** The process: its id, pool, connection name and times. */
-export function ProcessCard ({ instance: i, checkedOn, extraRows = [] }: { instance: Instance, checkedOn: Date, extraRows?: Array<[string, ReactNode]> }) {
+/** A date, with how long ago it was under it. */
+const When = ({ at, sub }: { at: string | Date, sub: ReactNode }) => (
+  <>
+    <span className="text-[var(--text-primary)]">{formatDateWithSeconds(new Date(at))}</span>
+    <span className="block text-xs text-[var(--text-tertiary)]">{sub}</span>
+  </>
+)
+
+/** A fact whose value is too long to sit beside its label, so it goes under it. */
+function Stacked ({ label, action, children }: { label: ReactNode, action?: ReactNode, children: ReactNode }) {
+  return (
+    <div className="grid gap-0.5">
+      <div className="flex min-h-[30px] items-center justify-between gap-2 text-xs text-[var(--text-tertiary)]">
+        <span>{label}</span>
+        {action}
+      </div>
+      <div className="min-w-0 break-all font-mono text-xs text-[var(--text-primary)]">{children}</div>
+    </div>
+  )
+}
+
+/** What Postgres has open under the instance's `application_name` now. */
+function PostgresConnections ({ instance: i, connections }: { instance: Instance, connections: Connections | null }) {
+  if (!i.applicationName) return <Muted>not named, so not traceable</Muted>
+  if (!connections) return <Muted>—</Muted>
+  const b = connections.byApp[i.applicationName]
+  if (!b) return <>none open</>
+  return (
+    <>
+      {b.total} open, {b.active} active, {b.idle} idle
+      {b.idleInTransaction > 0 && (
+        <b className="block font-medium text-[var(--state-failed-fg)]">
+          {b.idleInTransaction} idle in a transaction
+          {b.oldestIdleInTransactionSeconds != null && ` for ${formatSpan(b.oldestIdleInTransactionSeconds * 1000)}`}
+        </b>
+      )}
+    </>
+  )
+}
+
+/**
+ * The process: its id and connection name, when it started and last beat, what Postgres has open
+ * under its name now, and its crash restarts. Its pool is a tile, as pg-boss reported it.
+ */
+export function ProcessCard ({ instance: i, checkedOn, connections }: { instance: Instance, checkedOn: Date, connections: Connections | null }) {
+  const beat = ago(i.heartbeatOn, checkedOn)
+
   return (
     <InstanceSection title="Process">
-      <Facts
-        rows={[
-          ['Id', <span key="id" className="font-mono text-xs">{i.id}</span>],
-          ['Pool', i.poolMax == null
-            ? <Muted>db adapter, not counted</Muted>
-            : `${i.poolTotal ?? 0} of ${i.poolMax} open, ${i.poolIdle ?? 0} idle${i.poolWaiting ? `, ${i.poolWaiting} waiting` : ''}`],
-          ['application_name', <span key="app" className="font-mono text-xs">{i.applicationName ?? '—'}</span>],
-          ['Started', `${new Date(i.startedOn).toLocaleString()}, ${ago(i.startedOn, checkedOn)}`],
-          ['Heartbeat', `every ${i.heartbeatSeconds}s, last ${ago(i.heartbeatOn, checkedOn)}`],
-          ...extraRows,
-        ]}
-      />
+      <div className="grid gap-2.5">
+        <Stacked label="Id" action={<CopyButton value={i.id} label="Copy id" />}>{i.id}</Stacked>
+        <Stacked label={<>Connection name <code className="font-mono text-[11px]">application_name</code></>}>
+          {i.applicationName ?? <Muted>not set</Muted>}
+        </Stacked>
+        <hr className="border-[var(--border-subtle)]" />
+        <Facts
+          rows={[
+            ['Started', <When key="started" at={i.startedOn} sub={ago(i.startedOn, checkedOn)} />],
+            ['Last heartbeat', <When key="beat" at={i.heartbeatOn} sub={i.stoppedOn ? beat : `${beat}, expected every ${i.heartbeatSeconds}s`} />],
+            [<>Connections<br />in Postgres now</>, <PostgresConnections key="connections" instance={i} connections={connections} />],
+            ...(i.crashRestarts > 0
+              ? [['Crash restarts', (
+                  <span key="crashes">
+                    <span className="text-[var(--text-primary)]">
+                      {i.crashRestarts}{i.crashRestartsSince && ` since ${formatDateWithSeconds(new Date(i.crashRestartsSince))}`}
+                    </span>
+                    <span className="block text-xs text-[var(--text-tertiary)]">counted by name on this host</span>
+                  </span>
+                  )] as [ReactNode, ReactNode]]
+              : []),
+          ]}
+        />
+      </div>
     </InstanceSection>
+  )
+}
+
+/** One resource at the last heartbeat, against its limit. */
+function ResourceTile ({ label, value, of, share, hot, host, note }: {
+  label: string
+  value: ReactNode
+  of?: ReactNode
+  share?: number | null
+  hot?: boolean
+  host?: boolean
+  note?: ReactNode
+}) {
+  return (
+    <section
+      aria-label={label}
+      className="flex min-w-0 flex-col gap-1.5 rounded-[10px] border border-[var(--border-default)] px-4 py-3 shadow-sm"
+      style={{ background: 'var(--surface-card-grad)' }}
+    >
+      <span className="pgb-eyebrow">{label}</span>
+      <div className={cn('pgb-num text-[24px] font-semibold leading-tight tracking-[-0.02em]', hot ? 'text-[var(--state-retry-fg)]' : 'text-[var(--text-primary)]')}>
+        {value}
+        {of && <small className="ml-1 text-[13px] font-medium tracking-normal text-[var(--text-tertiary)]">{of}</small>}
+      </div>
+      {share != null && (
+        <span className="block h-1.5 overflow-hidden rounded bg-[var(--surface-sunken)]">
+          <span className={cn('block h-full rounded', hot ? 'bg-[var(--warning-500)]' : host ? 'pgb-host-bar' : 'bg-[var(--primary-500)]')} style={{ width: `${Math.max(2, Math.min(100, share * 100))}%` }} />
+        </span>
+      )}
+      {note && <p className="text-xs text-[var(--text-tertiary)]">{note}</p>}
+    </section>
+  )
+}
+
+/** Where the limits came from, and which the container does not set. */
+function limitsSentence (m: Instance['metrics'], cpuHost: boolean, memHost: boolean): string {
+  if (!m) return ''
+  if (!m.cgroup) return 'No container limits found, so the shares are of the host.'
+  const unset = [cpuHost && 'CPU quota', memHost && 'memory limit'].filter(Boolean)
+  if (unset.length === 0) return `Limits from the container (cgroup v${m.cgroup}).`
+  return `The container (cgroup v${m.cgroup}) sets no ${unset.join(' or ')}, so ${unset.length === 2 ? 'both are shares' : `that ${unset[0] === 'CPU quota' ? 'CPU' : 'memory'} is a share`} of the host.`
+}
+
+/** Which resources an overlay judges to be at their limit, to draw in amber. */
+export type ResourcesHot = Partial<Record<'pool' | 'cpu' | 'memory' | 'loop', boolean>>
+
+/**
+ * Pool, CPU, memory and event loop at the last heartbeat, against the limits core read. A share with
+ * no container limit is of the host, and its bar is striped.
+ */
+export function ResourceTiles ({ instance: i, hot = {} }: { instance: Instance, hot?: ResourcesHot }) {
+  const m = i.metrics
+  // Throttling is read off the quota, so a CPU figure with no throttling figure has no quota.
+  const cpuHost = m?.cpu != null && m.cpuThrottled == null
+  const memHost = m?.memoryUsed == null
+  const used = m ? m.memoryUsed ?? m.rss : null
+  const heap = m?.heapUsed != null && m.heapLimit ? m.heapUsed / m.heapLimit : null
+  const cores = (n: number) => `${formatCores(n)} ${n === 1 ? 'core' : 'cores'}`
+
+  return (
+    <div className="grid gap-1.5">
+      <div className="grid gap-3 @md:grid-cols-2 @5xl:grid-cols-4">
+        <ResourceTile
+          label="Pool"
+          value={i.poolMax == null ? <Muted>—</Muted> : i.poolTotal ?? 0}
+          of={i.poolMax == null ? 'db adapter, not counted' : `of ${i.poolMax} · ${i.poolIdle ?? 0} idle${i.poolWaiting ? ` · ${i.poolWaiting} waiting` : ''}`}
+          share={i.poolMax ? (i.poolTotal ?? 0) / i.poolMax : null}
+          hot={hot.pool}
+        />
+        <ResourceTile
+          label="CPU"
+          value={m?.cpu == null ? <Muted>—</Muted> : formatCores(m.cpu)}
+          of={m ? (cpuHost ? `no quota, host has ${cores(m.cpuLimit)}` : `of a ${formatCores(m.cpuLimit)}-core quota`) : undefined}
+          share={m?.cpu == null ? null : m.cpu / m.cpuLimit}
+          hot={hot.cpu}
+          host={cpuHost}
+          note={m?.cpuThrottled != null ? `throttled in ${Math.round(m.cpuThrottled * 100)}% of periods` : undefined}
+        />
+        <ResourceTile
+          label="Memory"
+          value={used != null ? formatBytes(used) : <Muted>—</Muted>}
+          of={m ? (memHost ? `resident, host has ${formatBytes(m.memoryLimit)}` : `of a ${formatBytes(m.memoryLimit)} limit`) : undefined}
+          share={m && used != null ? used / m.memoryLimit : null}
+          hot={hot.memory}
+          host={memHost}
+          note={m ? <>{memHost ? 'no container limit' : 'working set'}{heap != null && ` · heap ${formatBytes(m.heapUsed!)} of ${formatBytes(m.heapLimit!)}`}</> : undefined}
+        />
+        <ResourceTile
+          label="Event loop"
+          value={m?.loopDelay == null ? <Muted>—</Muted> : formatMs(m.loopDelay)}
+          of={m?.loopDelay == null ? undefined : 'p99'}
+          hot={hot.loop}
+          note={m?.loopDelay == null ? undefined : `max ${formatMs(m.loopDelayMax ?? m.loopDelay)}${m.loopUtilization == null ? '' : ` · busy ${Math.round(m.loopUtilization * 100)}%`}`}
+        />
+      </div>
+      <p className="text-xs text-[var(--text-tertiary)]">
+        {i.live ? 'From the last heartbeat.' : 'At the last heartbeat.'}{' '}
+        {limitsSentence(m, cpuHost, memHost)}{' '}
+        No history of these is kept.
+      </p>
+    </div>
   )
 }
 
@@ -334,16 +496,23 @@ export function OptionsCard ({ instance: i }: { instance: Instance }) {
   )
 }
 
-/** One registered instance: what it works, its process and its options. */
+/** One registered instance: its resources, what it works and its options, with its process beside them. */
 export function InstancePage ({ data }: { data: InstancePageData }) {
-  const { instance, checkedOn } = data
+  const { instance, checkedOn, connections } = data
 
   return (
     <div className="grid gap-4">
       <InstancePageHeader instance={instance} checkedOn={checkedOn} />
-      <WorkersCard instance={instance} checkedOn={checkedOn} />
-      <ProcessCard instance={instance} checkedOn={checkedOn} />
-      <OptionsCard instance={instance} />
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="@container grid min-w-0 gap-4">
+          <ResourceTiles instance={instance} />
+          <WorkersCard instance={instance} checkedOn={checkedOn} />
+          <OptionsCard instance={instance} />
+        </div>
+        <aside aria-label="Process" className="grid min-w-0 gap-4">
+          <ProcessCard instance={instance} checkedOn={checkedOn} connections={connections} />
+        </aside>
+      </div>
     </div>
   )
 }
