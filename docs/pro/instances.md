@@ -1,6 +1,6 @@
 # Instances
 
-The free dashboard lists every pg-boss instance registered in a database. Pro groups instances by name and host and says what needs attention across them. For each instance, it shows CPU and memory against the container's limits, and the connection pool and event loop against theirs.
+The free dashboard lists every pg-boss instance registered in a database. Pro groups instances by name and host and says what needs attention across them. On an instance's page, it marks the pool, CPU, memory or event loop in amber when the instance is at that limit.
 
 ![The instances page](../images/pro/instances.webp){.light-only}
 ![The instances page](../images/pro/instances-dark.webp){.dark-only}
