@@ -21,6 +21,9 @@ Each day on the strip across every queue takes the color of the least healthy qu
 
 A day colored stalled, falling behind or absorbing a spike opens to its 24 hours as a band and the same day as a timeline. Each row of the timeline is a stretch of one state, with the UTC time it started and, unless the queue was keeping up, how long it lasted. A stretch shorter than 5 minutes is folded into the row next to it, which counts the stretches it includes, while the band shows every stretch. Stretches in the state that colored the day are never folded, so three 2-minute stalls on a day colored stalled are three rows. A gap of 5 minutes or more with nothing recorded is a row of its own, and short stretches just before such a gap show only on the band.
 
+![A day's details on the status page](../images/pro/status-day.webp){.light-only}
+![A day's details on the status page](../images/pro/status-day-dark.webp){.dark-only}
+
 Each change to an [alert](./alerts.md) on the queue that day is a row at the time it happened, linked to the alert: when it opened, who acknowledged it, and when and why it closed. Alert rows are never folded. An alert opened on an earlier day and still open at 00:00 has a row at 00:00 with the day it opened. Every alert on the queue appears except a failed operation's. Alerts don't change a day's color or a queue's uptime, which come only from the recorded states, so a green day opens nothing even when an alert changed that day.
 
 ## Uptime
