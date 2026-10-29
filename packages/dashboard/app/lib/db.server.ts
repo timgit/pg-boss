@@ -85,9 +85,10 @@ export async function closeAllPools (): Promise<void> {
   }
 }
 
-// Standalone, the dashboard owns the process: close the pools and exit on a signal. Embedded,
-// the host does, so `createDashboardHandler()` sets this flag and calls `closeAllPools` itself,
-// through globalThis because it lives in another bundle (as db-context.ts does for its token).
+// Standalone, the dashboard owns the process: run the `onClose` steps, close the pools and exit on
+// a signal. Embedded, the host does, so `createDashboardHandler()` sets this flag and runs the same
+// close itself, through globalThis because it lives in another bundle (as db-context.ts does for
+// its token).
 const EMBEDDED_KEY = Symbol.for('pgboss.dashboard.embedded')
 const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
 const globalStore = globalThis as typeof globalThis & {
@@ -95,7 +96,28 @@ const globalStore = globalThis as typeof globalThis & {
   [CLOSE_POOLS_KEY]?: () => Promise<void>
 }
 
-globalStore[CLOSE_POOLS_KEY] = closeAllPools
+const closers = new Set<() => Promise<void>>()
+
+/**
+ * Run `close` before the pools end, when a signal stops the standalone server or a host calls
+ * the handler's `close()`. For work that has to finish first, such as a job the Pro overlay's
+ * evaluator is running. A rejection is logged and does not hold up the rest.
+ */
+export function onClose (close: () => Promise<void>): void {
+  closers.add(close)
+}
+
+async function closeAll (): Promise<void> {
+  const results = await Promise.allSettled([...closers].map((close) => close()))
+
+  for (const result of results) {
+    if (result.status === 'rejected') console.error('Shutdown step failed:', result.reason)
+  }
+
+  await closeAllPools()
+}
+
+globalStore[CLOSE_POOLS_KEY] = closeAll
 
 if (typeof process !== 'undefined' && !globalStore[EMBEDDED_KEY]) {
   let cleanupInProgress: Promise<void> | null = null
@@ -105,7 +127,7 @@ if (typeof process !== 'undefined' && !globalStore[EMBEDDED_KEY]) {
       await cleanupInProgress
       return
     }
-    cleanupInProgress = closeAllPools()
+    cleanupInProgress = closeAll()
     await cleanupInProgress
   }
 

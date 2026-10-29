@@ -221,13 +221,30 @@ describe('db.server', () => {
       await closeAllPools()
     })
 
-    it('leaves the signals to the host when embedded, and hands it closeAllPools', async () => {
+    it('leaves the signals to the host when embedded, and hands it the close', async () => {
       store[embeddedKey] = true
       const before = countHandlers()
-      const { closeAllPools } = await import('~/lib/db.server')
+      await import('~/lib/db.server')
 
       expect(countHandlers()).toBe(before)
-      expect(store[Symbol.for('pgboss.dashboard.closeAllPools')]).toBe(closeAllPools)
+      expect(store[Symbol.for('pgboss.dashboard.closeAllPools')]).toBeTypeOf('function')
+    })
+
+    it('runs each onClose step before the pools end, and closes them when a step fails', async () => {
+      store[embeddedKey] = true
+      const { getPool, onClose } = await import('~/lib/db.server')
+      const pool = getPool(ctx.connectionString)
+      const seen: boolean[] = []
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      onClose(async () => { seen.push(pool.ended) })
+      onClose(async () => { throw new Error('step failed') })
+      await (store[Symbol.for('pgboss.dashboard.closeAllPools')] as () => Promise<void>)()
+
+      expect(seen).toEqual([false])
+      expect(pool.ended).toBe(true)
+      expect(consoleSpy).toHaveBeenCalledWith('Shutdown step failed:', expect.any(Error))
+      consoleSpy.mockRestore()
     })
   })
 })
