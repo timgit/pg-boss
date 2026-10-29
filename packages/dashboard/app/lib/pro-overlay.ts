@@ -23,9 +23,9 @@ import type { RouteConfigEntry } from '@react-router/dev/routes'
  * - **Runtime** — `proAlias()` gives Vite and Vitest the target for `~pro`,
  *   which resolves to the no-op `pro-stub.ts` in every ordinary build.
  * - **Server** — `proServerAlias()` does the same for `~pro-server`, which
- *   esbuild resolves when it bundles `app/server.node.ts`. A second alias rather
- *   than a second export of the first, because the two are bundled by different
- *   tools into different files and the Node bundle must never pull in React.
+ *   `app/entry.server.tsx` re-exports so the servers can read it from the React
+ *   Router build. A second alias rather than a second export of the first,
+ *   because `~pro` reaches React and the client bundle and this half must not.
  */
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -68,7 +68,7 @@ export function proAlias (dir: string = overlayDir): string {
 /**
  * Target for the `~pro-server` alias: the overlay's Hono half, or the stub.
  *
- * Resolved at build time like everything else, which is the point — esbuild and
+ * Resolved at build time like everything else, which is the point — Vite and
  * tsc both see the real module, so an overlay whose server half does not match
  * `ProServerOverlay` fails the Pro build rather than the customer's boot. See
  * `proAlias` on `dir`.

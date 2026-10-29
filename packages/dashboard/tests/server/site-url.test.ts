@@ -13,7 +13,7 @@ const build = {
   future: {},
   routeDiscovery: { mode: 'initial' },
   assets: { url: '/assets/manifest-1.js', version: '1', entry: { module: '/assets/entry.client-1.js', imports: [], css: [] }, routes: {} },
-  entry: { module: { default: async (_request: Request, status: number) => new Response('rendered', { status }) } },
+  entry: { module: { default: async (_request: Request, status: number) => new Response('rendered', { status }), serverOverlay: {} } },
   routes: { root: { id: 'root', path: '', module: { default: () => null, action: () => ({ ok: true }) } } },
 } as unknown as ServerBuild
 

@@ -2,9 +2,9 @@ import { fileURLToPath } from 'node:url'
 import type { Hono } from 'hono'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
-import { serverOverlay } from '~pro-server'
 import { toDatabaseConfig, toSiteOrigin, type DatabaseInput } from './lib/config.server'
 import { withBasePath } from './lib/runtime-base-path'
+import { serverOverlayOf } from './lib/server-overlay'
 
 export type { DatabaseInput }
 
@@ -130,15 +130,13 @@ export function createDashboardHandler (
       auth,
       // `null` rather than undefined, so PGBOSS_DASHBOARD_SITE_URL does not apply.
       siteUrl: siteOrigin ?? null,
-      // The same overlay the standalone server loads, through the same alias.
-      // `~pro-server` is the empty stub in every build but a Pro one, so this
-      // adds nothing to a free build — and in a Pro build it is the difference
-      // between a mounted dashboard that authenticates and one that does not.
+      // The same overlay the standalone server loads, read from the build.
+      // It is the empty stub in every build but a Pro one, so this adds nothing
+      // to a free build — and in a Pro build it is the difference between a
+      // mounted dashboard that authenticates and one that does not.
       // A Pro overlay owns authentication, so `auth: false` above costs it
       // nothing: `createHonoApp` takes the overlay branch either way.
-      // It resolves because `scripts/build-server.ts` bundles this entry point
-      // with the alias; a bare esbuild invocation could not.
-      overlay: serverOverlay,
+      overlay: serverOverlayOf(build),
     })
   }
 

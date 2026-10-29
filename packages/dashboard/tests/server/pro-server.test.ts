@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Hono } from 'hono'
 import { createHonoApp, getLoadContext } from '~/server'
 import { serverOverlay as stub } from '~/lib/pro-server-stub'
+import { serverOverlayOf } from '~/lib/server-overlay'
+import * as entry from '~/entry.server'
+import { serverOverlay as aliased } from '~pro-server'
 import { dbContext } from '~/lib/db-context'
 import { getDatabaseConfigs } from '~/lib/config.server'
 import type { ProServerOverlay } from '~/lib/pro-contract'
@@ -42,6 +45,22 @@ const answersProbe: ProServerOverlay = {
 describe('the stub every free build resolves to', () => {
   it('has no hooks on it, so nothing in createHonoApp changes', () => {
     expect(stub).toEqual({})
+  })
+})
+
+describe('the overlay a server reads from the build', () => {
+  it('is what the entry module exports through the alias', () => {
+    expect(entry.serverOverlay).toBe(aliased)
+  })
+
+  it('is read from the build entry module', () => {
+    const build = { entry: { module: { serverOverlay: answersProbe } } }
+    expect(serverOverlayOf(build as never)).toBe(answersProbe)
+  })
+
+  it('refuses a build whose entry does not export one', () => {
+    const build = { entry: { module: { default: () => new Response() } } }
+    expect(() => serverOverlayOf(build as never)).toThrow(/no serverOverlay export/)
   })
 })
 

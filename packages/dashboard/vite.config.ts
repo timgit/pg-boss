@@ -92,9 +92,8 @@ export default defineConfig(({ command }) => {
       alias: {
         '~': '/app',
         '~pro': proAlias(),
-        // The dev server imports this through the SSR runner to build the same
-        // Hono app production does; without the alias here it resolves to nothing
-        // and the overlay's server half is silently absent from `npm run dev`.
+        // `app/entry.server.tsx` exports this, and every server reads the overlay's
+        // Hono half from there. Without the alias the build cannot resolve it.
         '~pro-server': proServerAlias(),
         // `pg-boss` is the installed package, unless PGBOSS_CORE=src points it at
         // this repository's source for dev; see scripts/core-alias.ts.

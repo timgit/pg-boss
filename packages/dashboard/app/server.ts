@@ -70,7 +70,7 @@ export interface CreateHonoAppOptions {
    */
   siteUrl?: string | null;
   /**
-   * The Pro overlay's server half, from `loadProServer()`, or `null` for a free
+   * The Pro overlay's server half, from `serverOverlayOf(build)`, or `null` for a free
    * build — which is the only shape this package is ever tested against on its
    * own.
    *

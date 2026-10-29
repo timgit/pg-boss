@@ -1,24 +1,16 @@
 import { build } from 'esbuild'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { proServerAlias } from '../app/lib/pro-overlay.ts'
 
 /**
  * Bundles the two Hono entry points: `build/server.js`, which the standalone
  * server runs, and `build/handler.js`, which a host application mounts.
  *
- * A script rather than lines in `package.json` because of one flag:
- * `~pro-server` resolves to the Pro overlay's Hono half in a Pro build and to the
- * stub in every other, and only `proServerAlias()` knows which. esbuild has to be
- * told, the same way `vite.config.ts` tells Vite about `~pro`.
- *
- * **Both entry points go through here, and that is not tidiness.** Either one
- * built by a bare esbuild invocation would have no `~pro-server` alias, so it
- * could not resolve the overlay even where one exists — and the failure is
- * silent, because the stub is a valid module. An entry point that reaches
- * `createHonoApp` without an overlay serves a Pro build with none of Pro's
- * authentication. Adding a third entry point means adding it to this list, not
- * adding another line to `package.json`.
+ * Neither bundles the Pro overlay. Both read its server half from the React
+ * Router build at runtime (`serverOverlayOf()`), where `app/entry.server.tsx`
+ * exports it, so the overlay's hook shares one module graph with the routes.
+ * Anything imported from here is a second copy with its own module state, which
+ * is why `dbContext` pins its token on globalThis.
  *
  * `react-router build` emits the route modules; this emits the servers that serve
  * them. Both halves of `npm run build`.
@@ -43,7 +35,6 @@ for (const { entry, outfile } of ENTRY_POINTS) {
     packages: 'external',
     alias: {
       '~': resolve(root, 'app'),
-      '~pro-server': proServerAlias(),
     },
   })
 }

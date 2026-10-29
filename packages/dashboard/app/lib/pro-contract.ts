@@ -17,9 +17,10 @@ import type { TitleMatch } from '~/lib/page-title'
  *   relative path in `pro-routes.ts`.
  * - **Runtime** (`app/pro/index.tsx`) — the React half below, resolved through
  *   the `~pro` alias like any other module.
- * - **Server** (`ProServerOverlay`) — the Hono half, loaded from a file the Pro
- *   build emits next to the server bundle. See `pro-server.ts` for why it
- *   cannot travel through the `~pro` alias with the rest.
+ * - **Server** (`ProServerOverlay`) — the Hono half, resolved through the
+ *   `~pro-server` alias and exported from `app/entry.server.tsx`, so the servers
+ *   read it from the React Router build. A separate alias because `~pro` reaches
+ *   React and the client bundle, and this half must reach neither.
  */
 
 export interface ProNavItem {
