@@ -20,7 +20,7 @@ const build = {
 // The embedded handler imports the production build from here; `npm run build` writes it.
 // A mocked module throws on a missing export, so name the optional ones the server reads.
 // React Router's build exports `allowedActionOrigins = false` when the config sets none.
-vi.mock('~/server/index.js', () => ({ ...build, allowedActionOrigins: false, unstable_getCriticalCss: undefined }))
+vi.mock('~/server/index.js', () => ({ ...build, allowedActionOrigins: false, unstable_getCriticalCss: undefined, unstable_apiOnly: undefined, unstable_apiServerOrigin: undefined }))
 
 // What a TLS proxy forwards: the server sees plain HTTP, the browser sent its public origin.
 const proxiedPost = (app: ReturnType<typeof createHonoApp>, origin = 'https://pgboss.example.com') => app.request('http://pgboss.example.com/', {
