@@ -201,8 +201,7 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Jobs are assigned to groups using the `group` option in `send()`. Jobs without a group are not limited by groupConcurrency.
 
-  > [!WARNING]
-  > The `groupConcurrency` limit is enforced globally across all nodes by tracking active jobs in the database. However, due to the optimistic locking nature of job fetching, there may be brief moments where the limit is slightly exceeded during race conditions when multiple workers fetch jobs simultaneously.
+  Concurrent fetches can briefly claim past the limit. Each fetch counts its groups again after claiming and gives the extra jobs back before any handler runs. The exception is `fetch()` with `db` inside your own transaction: other fetches cannot see its claim until that transaction commits, so the group can exceed the limit.
 
   ```js
   // Limit each tenant to 2 concurrent jobs globally across all nodes
