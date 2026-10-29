@@ -6,6 +6,11 @@ in the top bar counts the open ones, colored by the most severe. An alert's page
 says what matched, which rule opened it and at which version, and where its
 notifications were sent.
 
+The page header says when the evaluator last finished a pass, which it does once
+a minute. When no pass has finished for 3 minutes, every Console page shows a
+banner, because no alert opens or closes until the evaluator runs again.
+[Requirements](./alert-rules.md#requirements) covers how the evaluator runs.
+
 ![The alerts list](../images/pro/alerts.webp){.light-only}
 ![The alerts list](../images/pro/alerts-dark.webp){.dark-only}
 

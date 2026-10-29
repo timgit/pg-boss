@@ -71,6 +71,6 @@ to it, and shows its recent changes. Service accounts can't join a group.
 ![A group's page](../images/pro/group.webp){.light-only}
 ![A group's page](../images/pro/group-dark.webp){.dark-only}
 
-`/pro/access` answers the question people ask in an incident, which is who can
+`/pro/access` answers the question people ask during an outage, which is who can
 act on this database and why. It shows the role each person ends up with beside
 every grant that produced it.

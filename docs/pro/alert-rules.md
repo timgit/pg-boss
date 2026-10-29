@@ -161,3 +161,6 @@ that point at them.
 - The evaluator runs once a minute as a pg-boss job in a `<schema>_queue` schema
   of its own. The job has a singleton key, so two Pro replicas run one
   evaluation between them and send everything once.
+- Pro starts the evaluator when its server starts, whether or not anyone opens
+  the Console, and tries again each minute until it runs. Mounted in a host
+  application, it starts on the first request the handler serves.

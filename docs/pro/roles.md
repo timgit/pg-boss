@@ -13,7 +13,7 @@ Grants read as the role, then where it applies: `Operator › All databases`, or
 
 ## Access page
 
-`/pro/access` answers the question people ask in an incident, which is who can act on this database and why. Choose a database, and the page lists each person or service account with a role there. Beside each one it shows the role they end up with and every grant that produced it, direct or through a group. A role granted for every database appears for each one.
+`/pro/access` answers the question people ask during an outage, which is who can act on this database and why. Choose a database, and the page lists each person or service account with a role there. Beside each one it shows the role they end up with and every grant that produced it, direct or through a group. A role granted for every database appears for each one.
 
 ![Who can act on a database](../images/pro/access.webp){.light-only}
 ![Who can act on a database](../images/pro/access-dark.webp){.dark-only}

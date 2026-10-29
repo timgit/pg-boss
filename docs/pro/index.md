@@ -32,7 +32,7 @@ Pro is built and supported by the author of pg-boss, and upgrading from the [fre
   <figure>
     <img class="light-only" src="../images/pro/tile-status.webp" :data-zoom-src="status" alt="The status page">
     <img class="dark-only" src="../images/pro/tile-status-dark.webp" :data-zoom-src="statusDark" alt="The status page">
-    <figcaption><a href="/pro/status">Status page</a>Each queue's health day by day, with the incidents on each day.</figcaption>
+    <figcaption><a href="/pro/status">Status page</a>Each queue's health day by day, with each day's states and alerts in time order.</figcaption>
   </figure>
   <figure>
     <img class="light-only" src="../images/pro/tile-hex.webp" :data-zoom-src="queuesHex" alt="Every queue as a hexagon colored by its health">
@@ -75,7 +75,7 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | [Batch operations](./operations.md) across multiple queues, including [dead letter redrive](./operations.md#redrive) | | ✓ |
 | [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
 | Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
-| A [status page](./status.md) of each queue's health day by day, with the incidents on each day | | ✓ |
+| A [status page](./status.md) of each queue's health day by day, with each day's states and alerts in time order | | ✓ |
 | [Instance CPU, memory, connection pool and event loop](./instances.md) | | ✓ |
 | [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, and failed operations | | ✓ |
 | Each rule's own thresholds, queues and the time a condition must hold, with [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
