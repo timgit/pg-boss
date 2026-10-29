@@ -1,4 +1,5 @@
 import { expect } from 'vitest'
+import pg from 'pg'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
@@ -358,6 +359,41 @@ describe('groupConcurrency', function () {
 
     const completedJob = await spy.waitForJobWithId(groupBJobId, 'completed')
     expect(completedJob.state).toBe('completed')
+  })
+
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should give back a job claimed past groupConcurrency by a concurrent fetch', async function () {
+    const boss = ctx.boss = await helper.start(ctx.bossConfig)
+    const group = { id: 'tenant-123' }
+    const job1 = await boss.send(ctx.schema, {}, { group })
+    const job2 = await boss.send(ctx.schema, {}, { group })
+    assertTruthy(job1)
+    assertTruthy(job2)
+
+    const client = new pg.Client({ connectionString: helper.getConnectionString() })
+    await client.connect()
+    try {
+      await client.query('BEGIN')
+      const [first] = await boss.fetch(ctx.schema, { groupConcurrency: 1, db: { executeSql: (text, values) => client.query(text, values) } })
+      expect(first?.id).toBe(job1)
+
+      let committed = false
+      const second = await boss.fetch(ctx.schema, {
+        groupConcurrency: 1,
+        db: {
+          executeSql: async (text, values) => {
+            const result = await boss.getDb().executeSql(text, values)
+            if (!committed) { committed = true; await client.query('COMMIT') }
+            return result
+          }
+        }
+      })
+
+      expect(second).toHaveLength(0)
+      expect((await boss.getJobById(ctx.schema, job1))?.state).toBe('active')
+      expect((await boss.getJobById(ctx.schema, job2))?.state).toBe('created')
+    } finally {
+      await client.end()
+    }
   })
 
   it('should validate groupConcurrency option in work', async function () {

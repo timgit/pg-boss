@@ -2277,7 +2277,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.#telemetry.receive(name, () => this.#fetch<T>(name, options), job => this.#traceContexts.get(job))
   }
 
-  async #fetch<T> (name: string, options: types.FetchOptions): Promise<types.Job<T>[]> {
+  async #fetch<T> (name: string, options: types.FetchOptions, attempt = 1): Promise<types.Job<T>[]> {
     this.#warnDeprecatedFetchOptions(options)
 
     const db = this.assertDb(options)
@@ -2309,7 +2309,41 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (err?.code !== '23505') throw err
     }
 
-    const rows = result?.rows || []
+    let rows = result?.rows || []
+
+    // The fetch statement cannot see a concurrent claim until it commits. This count runs after
+    // ours committed, so of two racing fetches at least the later count sees both and gives back,
+    // before any handler runs.
+    if (options.groupConcurrency != null && rows.some(row => row.groupId)) {
+      const config: types.GroupConcurrencyConfig = typeof options.groupConcurrency === 'number' ? { default: options.groupConcurrency } : options.groupConcurrency
+      const { rows: counts } = await db.executeSql(plans.getActiveGroupCounts(this.config.schema, table), [name, rows.map(row => row.groupId).filter(Boolean)])
+      const active = new Map(counts.map(row => [row.group_id, Number(row.count)]))
+      const excessIds: string[] = []
+
+      for (const row of rows) {
+        const count = active.get(row.groupId) ?? 0
+        if (count > (config.tiers?.[row.groupTier] ?? config.default)) {
+          excessIds.push(row.id)
+          active.set(row.groupId, count - 1)
+        }
+      }
+
+      if (excessIds.length > 0) {
+        try {
+          await this.restore(name, excessIds, { db })
+          rows = rows.filter(row => !excessIds.includes(row.id))
+        } catch (err: any) {
+          // A policy index can refuse the job back to created. Run it rather than leave it active.
+          if (err?.code !== '23505') throw err
+        }
+
+        // Fetches that raced can all give back. A random pause before trying again lets one win.
+        if (rows.length === 0 && attempt < 3) {
+          await delay(Math.random() * 50)
+          return this.#fetch(name, options, attempt + 1)
+        }
+      }
+    }
 
     for (const row of rows) {
       // A db adapter may hand jsonb back unparsed.

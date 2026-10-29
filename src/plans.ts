@@ -3046,6 +3046,17 @@ export function restoreJobs (schema: string, table: string) {
   `
 }
 
+export function getActiveGroupCounts (schema: string, table: string) {
+  return `
+    SELECT group_id, COUNT(*)::int AS count
+    FROM ${schema}.${table}
+    WHERE name = $1
+      AND state = '${JOB_STATES.active}'
+      AND group_id = ANY($2::text[])
+    GROUP BY group_id
+  `
+}
+
 // A `startAfter` string is either an absolute date time or a delay expressed as a Postgres
 // interval. A trailing 'Z' has always marked a date time; a leading ISO 8601 calendar date
 // (YYYY-MM-DD) marks one as well, which is what lets the other 8601 zone designators through
