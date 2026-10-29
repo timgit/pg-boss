@@ -20,17 +20,28 @@ passes, from the throughput pg-boss counts with `persistQueueStats`. Without tha
 option, or when its counts don't cover those passes (as just after a supervisor
 starts), Pro reads the queue's ready count at each pass, and a fall between two
 passes is activity. That count is net, so canceling or deleting ready jobs also
-lowers it, and a consumer slower than arrivals never does. When the monitor hasn't
-written the counts in three passes, the check judges nothing. The alert names any
-live instance with a `work()` on the queue, or the last one that had one.
+lowers it, and a consumer slower than arrivals never does. If pg-boss's monitor
+hasn't refreshed the queue's counts in its last three passes, the check skips the
+queue until it does.
 
-The instance checks start off: an instance restarting in a loop, an instance gone
-quiet, more than one pg-boss version live, instances with different shared
-options, an instance out of pool connections, blocking its event loop, hitting its
-CPU limit, or near its memory limit.
+The alert says which pg-boss instances have a `work()` on the queue. When no
+live instance has one, it names the last instance that did and how long that
+instance has been quiet.
 
-None of them sends a notification until it has a destination, so on a new install
-the alerts show up only in the bell. A default rule can be edited and turned off,
+The [instance](./instances.md) checks start off:
+
+- **An instance restarting in a loop**
+- **An instance gone quiet**
+- **More than one pg-boss version live**
+- **Instances with different shared options**
+- **An instance out of pool connections**
+- **An instance blocking its event loop**
+- **An instance hitting its CPU limit**
+- **An instance near its memory limit**
+
+None of them sends a notification until it has a [destination](./destinations.md).
+Their alerts still open and appear on the [Alerts](./alerts.md) page. A default
+rule can be edited and turned off,
 but never deleted. **Reset to default** puts back its original definition.
 A database added to `DATABASE_URL` later gets its default rules on the
 evaluator's next pass.
@@ -164,3 +175,8 @@ that point at them.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
   the Console, and tries again each minute until it runs. Mounted in a host
   application, it starts on the first request the handler serves.
+- On SIGTERM or SIGINT, or when a host application calls the handler's
+  `close()`, a pass in progress gets up to 20 seconds to finish before the
+  database connections close. A replica that dies during a pass holds the next
+  one back for about two minutes, until pg-boss sees that pass's heartbeat stop
+  and runs it again.

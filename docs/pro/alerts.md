@@ -2,7 +2,9 @@
 
 `/pro/alerts` lists the alerts on the current database, open ones
 first, with filters for those that need attention, open, closed and all. The bell
-in the top bar counts the open ones, colored by the most severe. An alert's page
+in the top bar counts the alerts that need attention, the open ones nobody has
+acknowledged, in red when one of them is critical. Its menu lists the latest
+alerts and links to this page. An alert's page
 says what matched, which rule opened it and at which version, and where its
 notifications were sent.
 
