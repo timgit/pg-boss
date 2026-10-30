@@ -3,15 +3,20 @@ import { readConnections } from './connections.server'
 import { query } from './db.server'
 import type { Connections, Instance } from './types'
 
-/** What `/instances` shows: every registered instance, read at the database's `checkedOn`. */
-export type InstancesData = Awaited<ReturnType<typeof getInstanceRegistry>>
+/** What `/instances` shows: every registered instance, read at the database's `checkedOn`, and the server's connections. */
+export type InstancesData = Awaited<ReturnType<typeof getInstanceRegistry>> & {
+  /** Null where `pg_stat_activity` cannot be read, or the schema predates the registry. */
+  connections: Connections | null
+}
 
 /**
- * The registry for `/instances`. Apart from the route so an overlay that replaces the page can load
- * it too.
+ * The registry and the server's connections for `/instances`. Apart from the route so an overlay that
+ * replaces the page can load it too.
  */
 export async function loadInstances (DB_URL: string, SCHEMA: string): Promise<InstancesData> {
-  return getInstanceRegistry(DB_URL, SCHEMA)
+  const registry = await getInstanceRegistry(DB_URL, SCHEMA)
+  const connections = registry.available ? await readConnections((sql) => query(DB_URL, sql)).catch(() => null) : null
+  return { ...registry, connections }
 }
 
 export interface InstancePageData {

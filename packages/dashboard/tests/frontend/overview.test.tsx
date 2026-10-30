@@ -64,6 +64,23 @@ describe('OverviewSections', () => {
     expect(status('exports')).toBe('Processing')
   })
 
+  it('shows the instances beside the queues: live and quiet, the connections, and the hosts and versions', () => {
+    renderSections(undefined, {
+      instances: { summary: { live: 3, quiet: 1, hosts: 2, versions: ['12.38.0', '12.36.1'], connections: { max: 100, boss: 6, other: 14 } } },
+    })
+
+    const card = screen.getByRole('region', { name: 'Instances' })
+    expect(card).toHaveTextContent('3live 1quiet')
+    expect(card).toHaveTextContent('pg-boss 6 · other apps 14 · free 80 of 100')
+    expect(card).toHaveTextContent('On 2 hosts, 12.38.0, 12.36.1.')
+  })
+
+  it('says when instances do not register, for a schema before the registry', () => {
+    renderSections(undefined, { instances: { summary: null } })
+
+    expect(screen.getByRole('region', { name: 'Instances' })).toHaveTextContent('Instances register from pg-boss 12.36.')
+  })
+
   it('leaves the warnings card out when loaded without warnings', () => {
     renderSections(undefined, { warnings: null })
 

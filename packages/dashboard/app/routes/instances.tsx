@@ -4,6 +4,7 @@ import { loadInstances, type InstancesData } from '~/lib/instances.server'
 import { ErrorCard } from '~/components/error-card'
 import { PageHeader } from '~/components/ui/page-header'
 import { InstancesTable, RegistryUnavailable, useRegistryRefresh } from '~/components/instances-table'
+import { InstanceSummaryTiles } from '~/components/instances-summary'
 import type { TitleHandle } from '~/lib/page-title'
 
 /** The browser tab's name for this page. */
@@ -28,7 +29,7 @@ export function ErrorBoundary ({ error }: { error: unknown }) {
 }
 
 export default function Instances ({ loaderData }: { loaderData: InstancesData }) {
-  const { available, instances, checkedOn } = loaderData
+  const { available, instances, checkedOn, connections } = loaderData
   useRegistryRefresh(available)
 
   const live = instances.filter((i) => i.live)
@@ -44,7 +45,12 @@ export default function Instances ({ loaderData }: { loaderData: InstancesData }
       />
 
       {available
-        ? <InstancesTable instances={instances} checkedOn={checkedOn} />
+        ? (
+          <>
+            <InstanceSummaryTiles instances={instances} checkedOn={checkedOn} connections={connections} />
+            <InstancesTable instances={instances} checkedOn={checkedOn} />
+          </>
+          )
         : <RegistryUnavailable />}
     </div>
   )

@@ -1,4 +1,4 @@
-import type { Instance, InstanceWorker } from './types'
+import type { Connections, Instance, InstanceWorker } from './types'
 
 /** A quiet instance stays in the default view this long after it went quiet. */
 export const QUIET_LISTED_MS = 60 * 60_000
@@ -239,4 +239,51 @@ export function isChangedOption (key: string, value: unknown): boolean {
 /** What an instance is called: its name, or "unnamed instance" for one started without `instanceName`. */
 export function instanceName (name: string | null): string {
   return name ?? 'unnamed instance'
+}
+
+/** Live versions, most common first, then newest first. */
+export function liveVersions (instances: Instance[]): Array<{ version: string, count: number }> {
+  const counts = new Map<string, number>()
+  for (const i of instances) if (i.live) counts.set(i.version, (counts.get(i.version) ?? 0) + 1)
+  return [...counts]
+    .map(([version, count]) => ({ version, count }))
+    .sort((a, b) => b.count - a.count || compareVersions(b.version, a.version))
+}
+
+function compareVersions (a: string, b: string): number {
+  const pa = a.split(/[.-]/).map((p) => Number.parseInt(p, 10))
+  const pb = b.split(/[.-]/).map((p) => Number.parseInt(p, 10))
+  for (let k = 0; k < Math.max(pa.length, pb.length); k++) {
+    const d = (Number.isNaN(pa[k]) ? 0 : pa[k] ?? 0) - (Number.isNaN(pb[k]) ? 0 : pb[k] ?? 0)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
+/** The overview's count of the instances: live and quiet, the hosts and versions, and pg-boss's share of the connections. */
+export interface InstanceSummary {
+  live: number
+  /** Quiet rows that are the newest for their name and host, so a restart that came back is not counted. */
+  quiet: number
+  hosts: number
+  versions: string[]
+  connections: { max: number, boss: number, other: number } | null
+}
+
+export function instanceSummary (instances: Instance[], connections: Connections | null): InstanceSummary {
+  const slot = (i: Instance) => `${i.name ?? ''}\u0000${i.host}`
+  const newest = new Map<string, Instance>()
+  for (const i of instances) {
+    const head = newest.get(slot(i))
+    if (!head || time(i.startedOn) > time(head.startedOn)) newest.set(slot(i), i)
+  }
+  const live = instances.filter((i) => i.live)
+  const boss = connections ? Object.values(connections.byApp).reduce((a, b) => a + b.total, 0) : 0
+  return {
+    live: live.length,
+    quiet: instances.filter((i) => instanceStatus(i) === 'quiet' && newest.get(slot(i)) === i).length,
+    hosts: new Set(live.map((i) => i.host)).size,
+    versions: liveVersions(instances).map((v) => v.version),
+    connections: connections ? { max: connections.max, boss, other: Math.max(0, connections.used - boss) } : null,
+  }
 }

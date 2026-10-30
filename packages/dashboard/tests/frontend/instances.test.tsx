@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { formatSpan, listInstances, matchesInstance, matchesInstanceId, workByQueue, workSettings } from '~/lib/instances'
 import { InstancesTable } from '~/components/instances-table'
+import { InstanceSummaryTiles } from '~/components/instances-summary'
 import { InstancePage } from '~/components/instance-page'
 import type { Connections, Instance } from '~/lib/types'
 import { NOW, instance, quiet, secondsAgo, stopped, worker } from '../fixtures/instances'
@@ -203,6 +204,54 @@ describe('InstancesTable', () => {
     renderTable([])
 
     expect(screen.getByText('No instance has registered in this database yet.')).toBeInTheDocument()
+  })
+})
+
+describe('InstanceSummaryTiles', () => {
+  const tiles = (instances: Instance[], connections: Connections | null) => render(
+    <MemoryRouter>
+      <InstanceSummaryTiles instances={instances} checkedOn={NOW} connections={connections} />
+    </MemoryRouter>
+  )
+
+  it('counts the live on their hosts, and what went quiet or stopped in the last day', () => {
+    tiles([
+      instance({ host: 'jobs-01' }),
+      instance({ host: 'jobs-02' }),
+      quiet(600, { host: 'jobs-03' }),
+      stopped(3600),
+      stopped(3 * 86400),
+    ], null)
+
+    const live = screen.getByRole('region', { name: 'Live' })
+    expect(live).toHaveTextContent('2on 2 hosts')
+    expect(live).toHaveTextContent('1 went quiet · 1 stopped cleanly in the last 24h')
+  })
+
+  it('splits the connections into pg-boss and other apps, or says it cannot read them', () => {
+    const { unmount } = tiles([instance()], { max: 100, used: 20, byApp: { pgboss: { total: 6, active: 1, idle: 5, idleInTransaction: 0, oldestIdleInTransactionSeconds: null } } })
+
+    const connections = screen.getByRole('region', { name: 'Database connections' })
+    expect(connections).toHaveTextContent('20of 100')
+    expect(connections).toHaveTextContent('pg-boss 6')
+    expect(connections).toHaveTextContent('other apps 14')
+    unmount()
+
+    tiles([instance()], null)
+    expect(screen.getByRole('region', { name: 'Database connections' })).toHaveTextContent('cannot read max_connections')
+  })
+
+  it('lists the live versions, most common first, and where supervise and schedule are on', () => {
+    tiles([
+      instance({ name: 'api', version: '12.38.0' }),
+      instance({ name: 'api', version: '12.38.0', supervise: true, schedule: true }),
+      instance({ name: 'mailer', version: '12.36.1' }),
+    ], null)
+
+    const versions = screen.getByRole('region', { name: 'Versions and options' })
+    expect(versions).toHaveTextContent('12.38.0 on 2 · 12.36.1 on 1')
+    expect(versions).toHaveTextContent('superviseon api')
+    expect(versions).toHaveTextContent('scheduleon api')
   })
 })
 

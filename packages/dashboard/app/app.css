@@ -189,6 +189,10 @@
   --stats-gap-ahead: rgba(223, 138, 5, 0.20);
   --stats-gap-behind: rgba(31, 111, 178, 0.10);
 
+  /* ---- The server's connections on /instances: pg-boss's against every other app's. ---- */
+  --conn-pgboss: #1f6fb2;
+  --conn-other: #9aa3b2;
+
   /* ---- Job lifecycle (the core product motif) ---- */
   --state-created-fg: var(--neutral-600);
   --state-created-bg: var(--neutral-100);
@@ -303,6 +307,8 @@
   --stats-previous-band: rgba(255, 255, 255, 0.035);
   --stats-gap-ahead: rgba(240, 179, 87, 0.18);
   --stats-gap-behind: rgba(88, 151, 224, 0.10);
+  --conn-pgboss: #5897e0;
+  --conn-other: #5d6676;
 
   --state-created-fg: #c2c9d4;  --state-created-bg: rgba(154, 163, 178, 0.14);  --state-created-dot: var(--neutral-400);
   --state-active-fg: #9fb6ff;   --state-active-bg: rgba(59, 102, 245, 0.18);    --state-active-dot: var(--primary-400);

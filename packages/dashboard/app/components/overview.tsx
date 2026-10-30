@@ -1,6 +1,7 @@
 import { DbLink } from '~/components/db-link'
 import { ProSlot } from '~/components/pro-slot'
 import { StatsCards } from '~/components/stats-cards'
+import { InstancesCard } from '~/components/instances-summary'
 import { Card, CardHeader, CardTitle } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
@@ -68,12 +69,13 @@ export function OverviewHeader () {
 }
 
 /**
- * The overview's body: the migrations banner when there is one, the stat row, and top queues beside recent warnings.
- * Data loaded without warnings leaves their card out and gives the queues the width.
+ * The overview's body: the migrations banner when there is one, the stat row, and top queues beside the instances and recent warnings.
+ * Data loaded without instances and warnings leaves their cards out and gives the queues the width.
  * `narrow` lays it out for a column beside something else, the two cards stacked. Exported so an overlay that replaces the page composes it rather than copying it.
  */
 export function OverviewSections ({ data, narrow = false, extensions = {} }: { data: OverviewData, narrow?: boolean, extensions?: OverviewExtensions }) {
-  const { stats, warnings, topQueues, migrations } = data
+  const { stats, warnings, instances, topQueues, migrations } = data
+  const side = Boolean(instances || warnings)
   const q = extensions.queues ?? {}
   const headOf = (c: OverviewQueueColumn) => (
     <TableHead key={c.header} className={c.align === 'right' ? 'text-right' : undefined}>{c.header}</TableHead>
@@ -83,17 +85,17 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
   )
 
   return (
-    <div>
-      {/* First, when there is either: the overlay's notice, and migrations waiting, running or
-          failed, which need somebody to look. */}
-      <Notices notice={extensions.notice} migrations={migrations} />
+    // Two columns: the figures and top queues, with the instances and recent warnings beside them from the top
+    <div className={narrow || !side ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]'}>
+      <div className="min-w-0">
+        {/* First, when there is either: the overlay's notice, and migrations waiting, running or
+            failed, which need somebody to look. */}
+        <Notices notice={extensions.notice} migrations={migrations} />
 
-      <div className="mb-4">
-        <StatsCards stats={stats} footers={extensions.statFooters} />
-      </div>
+        <div className="mb-4">
+          <StatsCards stats={stats} footers={extensions.statFooters} />
+        </div>
 
-      {/* Two column: top queues + recent warnings */}
-      <div className={narrow || !warnings ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] items-start gap-4'}>
         <Card>
           <CardHeader>
             <CardTitle>{q.title ?? 'Top Queues'}</CardTitle>
@@ -165,49 +167,55 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
             </Table>
           )}
         </Card>
-
-        {/* Recent Warnings */}
-        {warnings && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Warnings</CardTitle>
-              <DbLink
-                to="/warnings"
-                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-              >
-                View all
-              </DbLink>
-            </CardHeader>
-            <div className="flex flex-col gap-2 p-3">
-              {warnings.length === 0 ? (
-                <p className="text-sm text-[var(--text-tertiary)] p-2">No warnings recorded</p>
-              ) : (
-                warnings.map((warning: WarningResult) => (
-                  <WarningItem key={warning.id} id={warning.id}>
-                    <WarningIcon className="w-[18px] h-[18px] text-[var(--warning-500)] flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge
-                          variant={warningTypeVariant(warning.type)}
-                          size="sm"
-                        >
-                          {warningTypeLabel(warning.type)}
-                        </Badge>
-                        <span className="text-[11px] text-[var(--text-tertiary)] pgb-num">
-                          {formatTimeAgo(new Date(warning.createdOn))}
-                        </span>
-                      </div>
-                      <DbLink to={`/warnings/${warning.id}`} className="block truncate text-sm text-[var(--text-secondary)] hover:underline">
-                        {warning.message}
-                      </DbLink>
-                    </div>
-                  </WarningItem>
-                ))
-              )}
-            </div>
-          </Card>
-        )}
       </div>
+
+      {side && (
+        <aside aria-label="Instances and recent warnings" className="grid min-w-0 gap-4">
+          {instances && <InstancesCard summary={instances.summary} />}
+
+          {/* Recent Warnings */}
+          {warnings && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Warnings</CardTitle>
+                <DbLink
+                  to="/warnings"
+                  className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                >
+                  View all
+                </DbLink>
+              </CardHeader>
+              <div className="flex flex-col gap-2 p-3">
+                {warnings.length === 0 ? (
+                  <p className="text-sm text-[var(--text-tertiary)] p-2">No warnings recorded</p>
+                ) : (
+                  warnings.map((warning: WarningResult) => (
+                    <WarningItem key={warning.id} id={warning.id}>
+                      <WarningIcon className="w-[18px] h-[18px] text-[var(--warning-500)] flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge
+                            variant={warningTypeVariant(warning.type)}
+                            size="sm"
+                          >
+                            {warningTypeLabel(warning.type)}
+                          </Badge>
+                          <span className="text-[11px] text-[var(--text-tertiary)] pgb-num">
+                            {formatTimeAgo(new Date(warning.createdOn))}
+                          </span>
+                        </div>
+                        <DbLink to={`/warnings/${warning.id}`} className="block truncate text-sm text-[var(--text-secondary)] hover:underline">
+                          {warning.message}
+                        </DbLink>
+                      </div>
+                    </WarningItem>
+                  ))
+                )}
+              </div>
+            </Card>
+          )}
+        </aside>
+      )}
     </div>
   )
 }
