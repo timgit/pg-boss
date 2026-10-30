@@ -77,6 +77,19 @@ describe('PGBOSS_DASHBOARD_SITE_URL', () => {
     expect(res.status).toBe(400)
   })
 
+  it('tells the overlay the site URL with the base path, for links built without a request', () => {
+    const told = (options: { basePath?: string } = {}) => {
+      let site: unknown
+      createHonoApp({ build, mode: 'production', ...options, overlay: { server: (_app, given) => { site = given } } })
+      return site
+    }
+
+    expect(told()).toEqual({ url: null })
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
+    expect(told()).toEqual({ url: 'https://pgboss.example.com' })
+    expect(told({ basePath: '/queues' })).toEqual({ url: 'https://pgboss.example.com/queues' })
+  })
+
   it('applies to a build loaded per request, as the dev server passes it', async () => {
     vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
 

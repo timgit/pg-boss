@@ -126,6 +126,15 @@ export interface ProOverlay {
   }
 }
 
+/** Where the dashboard is served, for the overlay's code that runs with no request, such as links in alerts. */
+export interface ProSite {
+  /**
+   * The public URL with the base path, from `siteUrl` or PGBOSS_DASHBOARD_SITE_URL, without a
+   * trailing slash. Null when neither is set.
+   */
+  url: string | null
+}
+
 /**
  * The overlay's server half: middleware, and whatever the loaders need to know
  * about who is asking.
@@ -156,7 +165,7 @@ export interface ProServerOverlay {
    * who is not yet authenticated, and because middleware that establishes who
    * the actor is has to run before anything that decides what they may do.
    */
-  server?: (app: Hono) => void
+  server?: (app: Hono, site: ProSite) => void
 
   /**
    * Add to the per-request load context, after the free dashboard has seeded it.

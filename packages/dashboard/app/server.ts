@@ -5,7 +5,7 @@ import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
-import type { ProServerOverlay } from './lib/pro-contract'
+import type { ProServerOverlay, ProSite } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 import { stripBasePrefix } from './lib/base-path'
 
@@ -98,6 +98,7 @@ export function createHonoApp ({
   const siteOrigin = siteUrl === undefined ? parseSiteUrl() : siteUrl === null ? undefined : toSiteOrigin(siteUrl, 'siteUrl')
   const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
   const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
+  const publicSite: ProSite = { url: siteOrigin ? `${siteOrigin}${mountPath}` : null }
 
   if (mountPath) {
     // `${mountPath}.data` is the index route's data request: a sibling of the mount path.
@@ -148,7 +149,7 @@ export function createHonoApp ({
       console.log('PGBOSS_DASHBOARD_AUTH_* ignored: the Pro overlay provides authentication.')
     }
 
-    overlay.server(app)
+    overlay.server(app, publicSite)
   } else {
     // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs before the
     // handler so static assets and SSR responses are both gated — and before the
@@ -162,7 +163,7 @@ export function createHonoApp ({
       )
     }
 
-    overlay?.server?.(app)
+    overlay?.server?.(app, publicSite)
   }
 
   if (serveStaticAssets) {
