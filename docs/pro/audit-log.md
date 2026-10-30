@@ -10,7 +10,7 @@ Pro writes each change to the log in the same transaction as the change itself. 
 ![An audit entry](../images/pro/audit-entry.webp){.light-only}
 ![An audit entry](../images/pro/audit-entry-dark.webp){.dark-only}
 
-- Filter by database. **Console-wide only** shows the changes that belong to no single database, such as accounts, groups and settings.
+- Filter by database. **No database** shows the changes that belong to no single database, such as accounts, groups and settings.
 - **Export CSV** downloads the entries on screen, under the same filters.
 - A change made with an API token names the service account and the token.
 - Pro keeps the log forever unless an administrator sets a number of days, 30 or more, on the same page. See [retention](./administration.md#retention).
