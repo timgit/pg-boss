@@ -93,7 +93,7 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
       </div>
 
       {/* Two column: top queues + recent warnings */}
-      <div className={narrow || !warnings ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4'}>
+      <div className={narrow || !warnings ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] items-start gap-4'}>
         <Card>
           <CardHeader>
             <CardTitle>{q.title ?? 'Top Queues'}</CardTitle>
