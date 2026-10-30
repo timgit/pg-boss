@@ -623,6 +623,12 @@
    --default-font-family at --font-sans.
    ============================================================ */
 @layer base {
+  /* The scrollbar's room is kept even when a page fits, so a page growing past
+     the window does not narrow the layout and reflow everything on it. */
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
     background-color: var(--surface-app);
     color: var(--text-primary);
