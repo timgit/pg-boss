@@ -14,9 +14,10 @@ closes, whichever way it closes: the condition ended, a user resolved or acknowl
 expired, or its rule changed, was turned off or was deleted. A resolve goes only
 where the fire went, once.
 
-**Links in alerts.** Set the Pro Console's address on the same page, and emails,
-webhooks and PagerDuty link each alert to its page. Until it's set, they carry
-no link.
+**Links in alerts.** Emails, webhooks and PagerDuty link each alert to its page
+when Pro knows its public address: [`PGBOSS_DASHBOARD_SITE_URL`](../dashboard.md#reverse-proxy),
+or `siteUrl` for a [mounted handler](./mount.md), with the base path added. Without
+it, they carry no link. The page shows which address the links use.
 
 ## Email
 
