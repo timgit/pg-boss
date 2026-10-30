@@ -11,7 +11,7 @@ The free overview lists the five queues holding the most jobs. Pro lists the fir
 The column beside them has three cards:
 
 - **Uptime, 30 days** shows the [uptime](./status.md#uptime) of all queues together, and a strip of the last 30 UTC days, each colored by the most severe queue that day. A day opens the [Status](./status.md) page for that day.
-- **Instances** shows how many instances are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. More than one version gets a flag. A bar splits the database's connections between pg-boss, other applications and what is free, out of the server's limit.
+- **Instances** is the free overview's [Instances card](../dashboard.md#overview), with a flag when more than one pg-boss version is live.
 - **Activity** shows up to three [operations](./operations.md) that are running or finished in the last day, with their progress, and the five newest changes to this database from the [audit log](./audit-log.md).
 
 ![The overview](../images/pro/overview.webp){.light-only}
