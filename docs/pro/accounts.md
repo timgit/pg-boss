@@ -40,6 +40,12 @@ Edit its name here too, or disable or delete the account. Disabling, deleting or
 password ends that account's sessions immediately. An open invitation link stops working when the
 account is disabled, its password is set or changed another way, or the person signs in by SSO.
 
+Failed sign-ins lock for fifteen minutes. Five failures against an account from one client
+address in fifteen minutes lock that account from there, and five from one client address lock
+it for every account. An account is locked from everywhere only after twenty failures, so a
+stranger can't lock someone out of their own account in a few tries. The account's page shows
+that lock, and an administrator can clear it there.
+
 Machines get [service accounts](./api-tokens.md) instead, at `/pro/service-accounts`. A service
 account acts only through API tokens.
 
