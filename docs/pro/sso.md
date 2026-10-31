@@ -24,8 +24,14 @@ again by its address.
 
 If the provider sends a group claim, this page maps its group names onto Pro
 groups. Pro syncs only the mapped groups, so a group kept by hand is never
-emptied because the provider doesn't list it. A token with no group claim at
-all, as Entra ID sends past its group limit, changes no membership. Nor does a
+emptied because the provider doesn't list it. A token with no group claim is a
+person in no group, which is what Okta sends when none passes its filter, so
+Pro takes them out of every mapped group. A claim holding one name as a string
+counts as that one group. Membership changes only at sign-in, so a person
+removed at the provider leaves the mapped group at their next sign-in.
+
+Two cases change no membership. One is a token where Entra ID says it left the
+groups out past its group limit (`_claim_names` or `hasgroups`). The other is a
 sign-in that would take the last administrator out of the group that makes them
 one.
 
