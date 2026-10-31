@@ -14,8 +14,8 @@ export function QueryTimeoutBanner ({ timeoutMs }: QueryTimeoutBannerProps) {
     >
       <p className="font-medium">Query timed out</p>
       <p className="mt-1">
-        This search exceeded the {seconds}s query limit and was cancelled.
-        Try narrowing your filters — for example, select a specific queue or state — then retry.
+        This search exceeded the {seconds}s query limit and was canceled.
+        Try narrowing your filters, such as to a specific queue or state, then retry.
       </p>
     </div>
   )

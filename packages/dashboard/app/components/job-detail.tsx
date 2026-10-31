@@ -594,7 +594,7 @@ function LinkedJobPanel ({ id, role, jobId, queue, linked, stored, onClose }: {
   const completedOn = toDate(linked?.completedOn)
   const output = linked ? linked.output : stored?.output
   const retryCount = linked ? linked.retryCount : stored?.retryCount ?? null
-  const finishLabel = linked?.state === 'completed' ? 'Completed' : linked?.state === 'cancelled' ? 'Cancelled' : 'Failed'
+  const finishLabel = linked?.state === 'completed' ? 'Completed' : linked?.state === 'cancelled' ? 'Canceled' : 'Failed'
   const { headline } = summarizeOutput(output)
   const known = !!linked || !!stored
 
