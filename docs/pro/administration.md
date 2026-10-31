@@ -22,7 +22,8 @@ before it stores them, with a key from the environment:
 PGBOSS_PRO_SECRET_KEY="$(openssl rand -base64 32)"
 ```
 
-Without it, the screens that keep secrets refuse to save them and say so, which
+The key must be at least 32 characters, since a shorter one can be guessed from a copy of the
+database. Without one, the screens that keep secrets refuse to save them and say so, which
 means the key has to be set before adding a webhook or PagerDuty destination.
 Pro never writes a secret in the clear, and never sends a stored secret back to
 the browser. The fields show bullets, and saving without touching them keeps
