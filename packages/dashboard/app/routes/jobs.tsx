@@ -159,7 +159,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
-  return <ErrorCard title="Failed to load jobs" error={error} />
+  return <ErrorCard title="Error loading jobs" error={error} />
 }
 
 // Exported for tests: must round-trip through parseFiltersFromUrl.

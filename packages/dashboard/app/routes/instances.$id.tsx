@@ -21,7 +21,7 @@ export async function loader ({ params, context }: { params: { id?: string }, co
 export function ErrorBoundary ({ error }: { error: unknown }) {
   return (
     <ErrorCard
-      title="Failed to load instance"
+      title="Error loading instance"
       error={error}
       backTo={{ href: '/instances', label: 'Back to Instances' }}
     />

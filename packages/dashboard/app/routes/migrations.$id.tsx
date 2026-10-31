@@ -29,7 +29,7 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
-  return <ErrorCard title="Failed to load the migration" error={error} backTo={{ href: '/migrations', label: 'Back to migrations' }} />
+  return <ErrorCard title="Error loading the migration" error={error} backTo={{ href: '/migrations', label: 'Back to migrations' }} />
 }
 
 /** What a migration's command does, read from the SQL: "Builds the index", or a plainer fallback. */

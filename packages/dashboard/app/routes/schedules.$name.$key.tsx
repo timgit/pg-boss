@@ -31,7 +31,7 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
-      title="Failed to load schedule"
+      title="Error loading schedule"
       error={error}
       backTo={{ href: '/schedules', label: 'Back to Schedules' }}
     />

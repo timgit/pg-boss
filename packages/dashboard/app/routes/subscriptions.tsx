@@ -54,7 +54,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
-  return <ErrorCard title="Failed to load subscriptions" error={error} />
+  return <ErrorCard title="Error loading subscriptions" error={error} />
 }
 
 const queueLinkClass = 'font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300'

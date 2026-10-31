@@ -25,7 +25,7 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
-  return <ErrorCard title="Failed to load the subscription" error={error} backTo={{ href: '/subscriptions', label: 'Back to subscriptions' }} />
+  return <ErrorCard title="Error loading the subscription" error={error} backTo={{ href: '/subscriptions', label: 'Back to subscriptions' }} />
 }
 
 const linkClass = 'font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300'

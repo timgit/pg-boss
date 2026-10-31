@@ -24,7 +24,7 @@ again by its address.
 
 If the provider sends a group claim, this page maps its group names onto Pro
 groups. Pro syncs only the mapped groups, so a group kept by hand is never
-emptied because the provider hasn't heard of it. A token with no group claim at
+emptied because the provider doesn't list it. A token with no group claim at
 all, as Entra ID sends past its group limit, changes no membership. Nor does a
 sign-in that would take the last administrator out of the group that makes them
 one.

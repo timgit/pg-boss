@@ -72,7 +72,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
-  return <ErrorCard title="Failed to load schedules" error={error} />
+  return <ErrorCard title="Error loading schedules" error={error} />
 }
 
 export default function Schedules ({ loaderData }: Route.ComponentProps) {

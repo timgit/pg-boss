@@ -68,7 +68,7 @@ Choose whether each point is the highest, lowest or average of the samples in it
 ![A queue's metrics page](./images/dashboard-queue-metrics.webp){.light-only}
 ![A queue's metrics page](./images/dashboard-queue-metrics-dark.webp){.dark-only}
 
-**Requirements.** The chart needs [`persistQueueStats: true`](./api/constructor.md#persistqueuestats) on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty and the page says so. See [Queue metrics are empty](#queue-metrics-are-empty).
+**Requirements.** The chart needs [`persistQueueStats: true`](./api/constructor.md#persistqueuestats) on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty and the page says so. See [Empty queue metrics](#empty-queue-metrics).
 
 ### Schedules
 
@@ -396,22 +396,22 @@ The dashboard shows a warning type written by a newer pg-boss core under its raw
 
 ## Troubleshooting
 
-### "Failed to load dashboard"
+### "Error loading dashboard"
 
 - Check that `DATABASE_URL` is correct and the database is reachable
 - Ensure the pg-boss schema exists (run pg-boss at least once to create it)
 - Check PostgreSQL logs for connection errors
 
-### No warnings showing
+### Missing warnings
 
 - Ensure `persistWarnings: true` is set in your pg-boss configuration
 - pg-boss records warnings only after you turn this option on
 
-### Queue stats seem stale
+### Stale queue stats
 
 pg-boss's monitor caches queue statistics in the `queue` table. They update every [`monitorIntervalSeconds`](./api/constructor.md#monitorintervalseconds), which defaults to 60 seconds.
 
-### Queue metrics are empty
+### Empty queue metrics
 
 - Ensure `persistQueueStats: true` is set on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty, and the queue and metrics pages show a banner saying so.
 - History starts with the first monitor pass after the option is turned on, so a range that reaches back before then is empty for that stretch.

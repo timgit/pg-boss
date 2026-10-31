@@ -26,7 +26,7 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
-  return <ErrorCard title="Failed to load the warning" error={error} backTo={{ href: '/warnings', label: 'Back to warnings' }} />
+  return <ErrorCard title="Error loading the warning" error={error} backTo={{ href: '/warnings', label: 'Back to warnings' }} />
 }
 
 const linkClass = 'font-medium text-[var(--primary-600)] hover:underline dark:text-[var(--primary-400)]'

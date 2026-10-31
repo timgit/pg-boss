@@ -19,7 +19,7 @@ export async function loader ({ params, request, context }: { params: { name?: s
 export function ErrorBoundary ({ error }: { error: unknown }) {
   return (
     <ErrorCard
-      title="Failed to load queue"
+      title="Error loading queue"
       error={error}
       backTo={{ href: '/queues', label: 'Back to Queues' }}
     />

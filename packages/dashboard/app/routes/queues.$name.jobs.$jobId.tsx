@@ -70,7 +70,7 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
-      title="Failed to load job"
+      title="Error loading job"
       error={error}
       backTo={{ href: '/queues', label: 'Back to Queues' }}
     />

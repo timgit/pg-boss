@@ -17,7 +17,7 @@ export async function loader ({ context }: { context: Readonly<RouterContextProv
 }
 
 export function ErrorBoundary ({ error }: { error: unknown }) {
-  return <ErrorCard title="Failed to load dashboard" error={error} />
+  return <ErrorCard title="Error loading dashboard" error={error} />
 }
 
 export default function Overview ({ loaderData }: { loaderData: OverviewData }) {

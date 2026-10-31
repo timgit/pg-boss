@@ -72,7 +72,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
-      title="Failed to load warnings"
+      title="Error loading warnings"
       error={error}
       backTo={{ href: '/', label: 'Back to Dashboard' }}
     />

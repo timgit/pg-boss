@@ -19,7 +19,7 @@ export async function loader ({ request, context }: { request: Request, context:
 export function ErrorBoundary ({ error }: { error: unknown }) {
   return (
     <ErrorCard
-      title="Failed to load queues"
+      title="Error loading queues"
       error={error}
       backTo={{ href: '/', label: 'Back to Dashboard' }}
     />

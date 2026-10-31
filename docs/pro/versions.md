@@ -1,6 +1,6 @@
 # pg-boss versions
 
-Each Pro release is built with one pg-boss release, and makes changes only in a database on that release's schema version. pg-boss itself refuses to start on any other version, so Pro checks each database it serves first and says what it found:
+Each Pro release is built with one pg-boss release, and makes changes only in a database on that release's schema version. pg-boss itself refuses to start on any other version, so Pro checks the schema version of each database it serves first. Each case:
 
 - **On the schema Pro is built for,** everything works.
 - **On another schema,** every page keeps working, and a banner on each names the database's version and this Pro's. Changes are off: sending, retrying, canceling, resuming and deleting jobs, [Operations](./operations.md), creating and deleting queues and schedules, and changes through [the Pro API](./api.md). Pro hides their controls and refuses a request for one with the same reason. An operation confirmed before pg-boss was upgraded fails with that reason when it runs. Upgrade pg-boss in the application, or upgrade Pro, so the two match.

@@ -208,7 +208,7 @@ export function DeadLetterPanel ({ sourceName, sourceId, sourceRetryCount, sourc
   const tries = (sourceRetryCount ?? 0) + 1
   return (
     <ProblemPanel
-      eyebrow="Why it's here"
+      eyebrow="Dead letter reason"
       headline={headline}
       aside={sourceExists && (
         <DbLink
