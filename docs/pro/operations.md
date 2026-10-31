@@ -6,15 +6,16 @@ a bad deploy. The same page also runs a [redrive](#redrive) out of a dead letter
 queue and a [purge](#purge) that empties a queue.
 
 Describe the set: queues, state, how long ago the jobs were created, how many
-times they have been retried, and fields their `data` must contain. The page
-recounts as the filter changes and shows the exact number, a sentence saying what will
-happen, how the matches split across queues, and a few of the actual jobs. The
+times they have been retried, and fields their `data` must contain. When a user
+presses **Preview**, the page counts the set and shows the exact number, a sentence saying what will
+happen, how the matches split across queues, and a few of the actual jobs. Any
+change to the filter after that sets the count aside until the next preview. The
 queue picker accepts typing, and each suggestion shows how many matches it adds.
 
 ![Operations, previewing a retry](../images/pro/operations.webp){.light-only}
 ![Operations, previewing a retry](../images/pro/operations-dark.webp){.dark-only}
 
-Nothing runs until a user presses **Review**, which freezes the number, and
+Nothing runs until a user presses **Preview**, which fixes the number, and
 then presses the button that names it. The confirmation covers exactly that
 number of jobs. If more jobs land in the set while the confirmation is open, the
 page refuses, shows the new count and asks again. Deleting 1,000 jobs or more
@@ -33,7 +34,8 @@ also requires typing the number.
   table, narrow the filter to a queue or an age.
 - The operation runs in chunks beside the live queues and commits each one, so
   a large operation never holds locks for minutes. **Stop after this chunk**
-  ends it there and keeps what's already done.
+  ends it there and keeps what's already done. It shows to users whose role can
+  run the operation's verb on that database.
 - The page runs the operation, posting one chunk at a time, so the run needs
   the page open. Leaving the page or closing the tab stops it after the chunk
   in progress, and the page asks first. The history shows a run whose page went

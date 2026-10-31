@@ -18,7 +18,7 @@ import groupDark from '../images/pro/group-dark.webp'
 
 pg-boss Pro is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users make changes such as creating queues and jobs or modifying schedules, as their [role](./roles.md) allows, and every change is recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds enhanced health monitoring and a configurable rules engine, which can alert whoever is on call by email, webhook or a paging service, so a stalled queue is caught before it turns into an outage.
 
-Pro is built and supported by the author of pg-boss, and upgrading from the [free dashboard](../dashboard.md) is a change of package name, from `@pg-boss/dashboard` to `@pg-boss/pro`.
+Pro is built and supported by the author of pg-boss. Upgrading from the [free dashboard](../dashboard.md) is a change of package name, from `@pg-boss/dashboard` to `@pg-boss/pro`, when the database runs the pg-boss schema that Pro release is built for. On another schema, pages still open and changes are off. See [pg-boss versions](./versions.md).
 
 ![The Pro overview](../images/pro/overview.webp){.light-only}
 ![The Pro overview](../images/pro/overview-dark.webp){.dark-only}
