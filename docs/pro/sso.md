@@ -12,7 +12,12 @@ Pro matches users on their **verified** email address. A user invited here
 first who later signs in through the provider lands on the same account, with
 the roles they already had. Pro refuses an address the provider hasn't
 verified. A setting lets an unknown address become a new account, and it's off
-by default.
+by default. Turning it on needs the email domains that get an account, matched
+exactly, so `example.com` doesn't admit `mail.example.com`. Without that limit,
+a provider with public sign-up, such as Google or Auth0, would give an account
+to anyone with a mailbox there. A new account starts as viewer or operator over
+every database, or with no role until an administrator grants one. It never
+starts as admin.
 
 The first sign-in through the provider links the account to that person's id at
 the provider (the token's `sub`). After that, someone else the provider gives the
