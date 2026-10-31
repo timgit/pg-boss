@@ -16,7 +16,10 @@ by default.
 
 If the provider sends a group claim, this page maps its group names onto Pro
 groups. Pro syncs only the mapped groups, so a group kept by hand is never
-emptied because the provider hasn't heard of it.
+emptied because the provider hasn't heard of it. A token with no group claim at
+all, as Entra ID sends past its group limit, changes no membership. Nor does a
+sign-in that would take the last administrator out of the group that makes them
+one.
 
 The issuer must be `https`, except on `localhost`, `127.0.0.1` or `[::1]`, where
 Pro accepts `http`. That allows a full round trip against a provider running
