@@ -38,7 +38,13 @@ In CI, keep the token out of the file. npm substitutes the variable when it read
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-pro
 ```
 
-Open `http://localhost:3000`. On first run there are no accounts, so open `/setup` and create the first administrator. That page closes for good once the first account exists.
+On first run there are no accounts, so Pro prints a setup link to its log:
+
+```
+pg-boss Pro: no account yet. Open /setup?token=… to create the first administrator.
+```
+
+Open it, such as `http://localhost:3000/setup?token=…`, and create the first administrator. The page refuses anyone without the token, so whoever reaches a new install first can't take it. The token is new each time the process starts. With several instances behind a load balancer, set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md) so they share one, and open `/setup?token=` followed by its value. The page closes for good once the first account exists.
 
 ![Creating the first administrator](../images/pro/setup.webp){.light-only}
 ![Creating the first administrator](../images/pro/setup-dark.webp){.dark-only}

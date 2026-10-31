@@ -99,5 +99,5 @@ Pro connects only to the places its configuration names. See [network activity](
 ## Getting started
 
 1. [Install and run](./install.md) it.
-2. Open `/setup` and create the first administrator.
+2. Open the setup link Pro prints to its log, and create the first administrator.
 3. Give the default alert rules a [destination](./destinations.md), so their alerts send notifications.

@@ -1,8 +1,9 @@
 # Accounts and groups
 
 Pro authenticates each person with their own account. On first run it has no
-accounts, so open `/setup` and create the first administrator. That page closes
-for good the moment the first account exists. After that, sign in at `/login`,
+accounts, so open the setup link Pro prints to its log and create the first
+administrator (see [install](./install.md)). That page closes for good the
+moment the first account exists. After that, sign in at `/login`,
 and sign out from the account menu (the picture or initials at the top right).
 
 Accounts, sessions and role assignments live in Pro's own schema, `pgboss_pro`

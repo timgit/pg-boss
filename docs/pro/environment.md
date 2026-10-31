@@ -12,6 +12,7 @@
 | `PGBOSS_PRO_DATABASE_URL` | the first database | Where Pro keeps its own tables. |
 | `PGBOSS_PRO_SCHEMA` | `pgboss_pro` | The schema for them, 57 characters at most. Pro creates and migrates it on startup, and the alert evaluator's pg-boss creates `<schema>_queue` beside it. Pro refuses to start when either one is a configured database's pg-boss schema in the same database. |
 | `PGBOSS_PRO_SECRET_KEY` | | Encrypts stored secrets: email passwords and keys, webhook URLs, secrets and Authorization headers, PagerDuty keys, the SSO client secret. See [secrets](./administration.md#secrets). |
+| `PGBOSS_PRO_SETUP_TOKEN` | | The token `/setup` asks for on a new install. Without it, each process makes its own and prints the link to its log. Set it when several instances share a load balancer. |
 | `PGBOSS_PRO_TRUSTED_PROXIES` | loopback | The reverse proxies whose `X-Forwarded-For` Pro reads, as addresses and CIDR ranges separated by commas, such as `10.0.0.5, 10.1.0.0/16`. Pro refuses to start with an entry that is neither. See [Address](./audit-log.md#address). |
 | `PGBOSS_PRO_LICENSE` | | The license text. See [the license](./license.md). |
 | `PGBOSS_PRO_LICENSE_FILE` | | A `license.json` somewhere other than the package. |
