@@ -12,7 +12,8 @@ far end said.
 Pro sends every alert to its destinations when it fires and again when it
 closes, whichever way it closes: the condition ended, a user resolved or acknowledged an event, an event
 expired, or its rule changed, was turned off or was deleted. A resolve goes only
-where the fire went, once.
+where the fire went, once. A send that fails, fire or resolve, is tried again on
+each evaluation pass until it goes, five attempts in all.
 
 **Links in alerts.** Emails, webhooks and PagerDuty link each alert to its page
 when Pro knows its public address: [`PGBOSS_DASHBOARD_SITE_URL`](../dashboard.md#reverse-proxy),
