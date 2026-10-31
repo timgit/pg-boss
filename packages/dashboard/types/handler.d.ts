@@ -35,8 +35,18 @@ export interface CreateDashboardHandlerOptions {
   siteUrl?: string;
 }
 
+/** What the host knows about a request that the `Request` itself does not carry. */
+export interface DashboardRequestInfo {
+  /**
+   * The address the request came from, for a dashboard that records one, such as Pro's sign-in
+   * limits and audit log. Not set by default.
+   * @see https://pgboss.io/pro/mount
+   */
+  clientIp?: string | null;
+}
+
 export interface DashboardHandler {
-  (request: Request): Promise<Response>;
+  (request: Request, info?: DashboardRequestInfo): Promise<Response>;
   /**
    * Releases everything this handler holds: the database pools and the pg-boss
    * instances behind the write paths, whose timers otherwise keep the event

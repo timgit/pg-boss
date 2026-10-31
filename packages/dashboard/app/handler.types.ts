@@ -9,5 +9,6 @@ export const publishedTypesMatch: [
   Equal<typeof Declared.createDashboardHandler, typeof Implemented.createDashboardHandler>,
   Equal<Declared.CreateDashboardHandlerOptions, Implemented.CreateDashboardHandlerOptions>,
   Equal<Declared.DatabaseInput, Implemented.DatabaseInput>,
-  Equal<Declared.DashboardHandler, Implemented.DashboardHandler>
-] = [true, true, true, true]
+  Equal<Declared.DashboardHandler, Implemented.DashboardHandler>,
+  Equal<Declared.DashboardRequestInfo, Implemented.DashboardRequestInfo>
+] = [true, true, true, true, true]

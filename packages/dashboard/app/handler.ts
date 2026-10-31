@@ -37,8 +37,18 @@ export interface CreateDashboardHandlerOptions {
   siteUrl?: string;
 }
 
+/** What the host knows about a request that the `Request` itself does not carry. */
+export interface DashboardRequestInfo {
+  /**
+   * The address the request came from, for a dashboard that records one, such as Pro's sign-in
+   * limits and audit log. Not set by default.
+   * @see https://pgboss.io/pro/mount
+   */
+  clientIp?: string | null;
+}
+
 export interface DashboardHandler {
-  (request: Request): Promise<Response>;
+  (request: Request, info?: DashboardRequestInfo): Promise<Response>;
   /**
    * Releases everything this handler holds: its database pools.
    *
@@ -140,7 +150,7 @@ export function createDashboardHandler (
     })
   }
 
-  const handler = async (request: Request): Promise<Response> => {
+  const handler = async (request: Request, info: DashboardRequestInfo = {}): Promise<Response> => {
     if (closed) {
       return new Response('The dashboard handler is closed', { status: 503 })
     }
@@ -151,7 +161,9 @@ export function createDashboardHandler (
       throw error
     })
 
-    return (await app).fetch(request)
+    // As Hono's env, where an overlay reads it. `getRequestListener` passes the Node request here
+    // too, as the standalone server's adapter does, so a host using it needs no `clientIp`.
+    return (await app).fetch(request, info)
   }
 
   const close = async (): Promise<void> => {
