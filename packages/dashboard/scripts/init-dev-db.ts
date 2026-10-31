@@ -333,7 +333,11 @@ async function seedSchedules () {
   await boss.schedule('data-exports', '0 * * * *', { report: 'hourly-rollup' }, { tz: 'UTC' })
   await boss.schedule('billing', '30 2 * * 1', { run: 'weekly-invoices' }, { tz: 'America/Chicago' })
   await boss.schedule('webhook-delivery', '*/15 * * * *', { ping: true })
-  console.log('  schedules: 3')
+  // Recurrence rules, which cron cannot say: weekdays only, a day of the month, the last Friday.
+  await boss.schedule('data-exports', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=8;BYMINUTE=30', { report: 'weekday-digest' }, { tz: 'Europe/London', key: 'weekday-digest' })
+  await boss.schedule('billing', 'FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=6;BYMINUTE=0', { run: 'monthly-statements' }, { tz: 'America/Chicago', key: 'monthly-statements' })
+  await boss.schedule('webhook-delivery', 'FREQ=MONTHLY;BYDAY=-1FR;BYHOUR=17;BYMINUTE=0', { ping: 'month-end' }, { key: 'month-end' })
+  console.log('  schedules: 6')
 }
 
 /**
