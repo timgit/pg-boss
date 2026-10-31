@@ -62,8 +62,12 @@ evaluator's next pass.
   are queued, ready, active, deferred, blocked and total jobs, from pg-boss's
   cached counts. The stats pg-boss keeps add jobs arriving, completing and failing
   per minute, the oldest ready job's wait, p95 wait and p95 run time. No rule
-  counts the job table itself. A queue with no data for a metric doesn't match a
-  comparison on it.
+  counts the job table itself. A metric with no data, such as p95 wait when
+  nothing finished, neither matches nor resolves: an open alert stays open until
+  the data comes back, unless the rest of the rule decides it alone.
+- A health alert on a queue whose stats stop, because its supervisors are down
+  or its stats are off, stays open. It resolves as deleted only when the queue is
+  gone from pg-boss.
 - **Check** is one of the built-in checks above with its settings: which health
   verdicts count and over which interval, how many ready jobs a queue with no
   workers needs before it counts, how many restarts make a loop.
