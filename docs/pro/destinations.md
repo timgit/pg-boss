@@ -23,7 +23,11 @@ it, they carry no link. The page shows which address the links use.
 ## Email
 
 Email goes out through SMTP or Resend, configured on the same page. Changing the
-SMTP host, port, user or TLS setting needs the password entered again.
+SMTP host, port, user or TLS setting needs the password entered again. Pro
+requires STARTTLS unless the connection is TLS from the start or the server is
+on this machine, so the password and messages never cross the network in the
+clear. **Send without TLS when the server offers none** turns that off, for an
+internal relay without TLS.
 
 ## Webhook
 
