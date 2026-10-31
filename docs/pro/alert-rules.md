@@ -61,10 +61,11 @@ evaluator's next pass.
   above 1,000 and (p95 wait above 10 minutes or nothing completing)". The metrics
   are queued, ready, active, deferred, blocked and total jobs, from pg-boss's
   cached counts. The stats pg-boss keeps add jobs arriving, completing and failing
-  per minute, the oldest ready job's wait, p95 wait and p95 run time. No rule
-  counts the job table itself. A metric with no data, such as p95 wait when
-  nothing finished, neither matches nor resolves: an open alert stays open until
-  the data comes back, unless the rest of the rule decides it alone.
+  per minute, the oldest ready job's wait, p95 wait and p95 run time, a p95 from
+  at least 20 jobs. No rule counts the job table itself. A metric with no data,
+  such as p95 wait when fewer jobs finished, neither matches nor resolves. An
+  open alert stays open until the data comes back, unless the rest of the rule
+  decides it alone.
 - A health alert on a queue whose stats stop, because its supervisors are down
   or its stats are off, stays open. It resolves as deleted only when the queue is
   gone from pg-boss.
