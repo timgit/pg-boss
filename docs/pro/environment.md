@@ -14,6 +14,7 @@
 | `PGBOSS_PRO_SECRET_KEY` | | Encrypts stored secrets: email passwords and keys, webhook URLs, secrets and Authorization headers, PagerDuty keys, the SSO client secret. See [secrets](./administration.md#secrets). |
 | `PGBOSS_PRO_SETUP_TOKEN` | | The token `/setup` asks for on a new install. Without it, each process makes its own and prints the link to its log. Set it when several instances share a load balancer. |
 | `PGBOSS_PRO_TRUSTED_PROXIES` | loopback | The reverse proxies whose `X-Forwarded-For` Pro reads, as addresses and CIDR ranges separated by commas, such as `10.0.0.5, 10.1.0.0/16`. Pro refuses to start with an entry that is neither. See [Address](./audit-log.md#address). |
+| `PGBOSS_PRO_FRAME_ANCESTORS` | `'self'` | The pages allowed to show the Console in a frame, as a CSP `frame-ancestors` source list, such as `'self' https://admin.example.com`. By default no other origin may frame it. |
 | `PGBOSS_PRO_LICENSE` | | The license text. See [the license](./license.md). |
 | `PGBOSS_PRO_LICENSE_FILE` | | A `license.json` somewhere other than the package. |
 
