@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from '~/server'
 import { createDashboardHandler } from '~/handler'
+import type { ProSite } from '~/lib/pro-contract'
 
 // A real build with one action, so the request goes through React Router's origin check.
 const build = {
@@ -79,15 +80,33 @@ describe('PGBOSS_DASHBOARD_SITE_URL', () => {
 
   it('tells the overlay the site URL with the base path, for links built without a request', () => {
     const told = (options: { basePath?: string } = {}) => {
-      let site: unknown
+      let site: ProSite | undefined
       createHonoApp({ build, mode: 'production', ...options, overlay: { server: (_app, given) => { site = given } } })
-      return site
+      return site!.url
     }
 
-    expect(told()).toEqual({ url: null })
+    expect(told()).toBeNull()
     vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
-    expect(told()).toEqual({ url: 'https://pgboss.example.com' })
-    expect(told({ basePath: '/queues' })).toEqual({ url: 'https://pgboss.example.com/queues' })
+    expect(told()).toBe('https://pgboss.example.com')
+    expect(told({ basePath: '/queues' })).toBe('https://pgboss.example.com/queues')
+  })
+
+  it('tells the overlay the mount path and the databases the pages read, not the environment', () => {
+    vi.stubEnv('DATABASE_URL', 'postgres://localhost/host_app')
+    const orders = { id: 'orders', name: 'Orders', url: 'postgres://localhost/orders', schema: 'pgboss' }
+    let site: ProSite | undefined
+    const server = (_app: unknown, given: ProSite) => { site = given }
+
+    createHonoApp({ build, mode: 'production', basePath: '/admin/queues', databases: [orders], overlay: { server } })
+    expect(site!.basePath).toBe('/admin/queues')
+    expect(site!.databases()).toEqual([orders])
+
+    createHonoApp({ build, mode: 'production', overlay: { server } })
+    expect(site!.basePath).toBe('')
+
+    // Loaded per request, the build's basename is not known yet.
+    createHonoApp({ build: () => build, mode: 'development', overlay: { server } })
+    expect(site!.basePath).toBeNull()
   })
 
   it('applies to a build loaded per request, as the dev server passes it', async () => {

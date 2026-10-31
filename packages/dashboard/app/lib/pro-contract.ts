@@ -3,6 +3,7 @@ import type { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { RouterContextProvider } from 'react-router'
 import type { TitleMatch } from '~/lib/page-title'
+import type { DatabaseConfig } from '~/lib/config.server'
 
 /**
  * The contract between this package and an optional Pro overlay.
@@ -126,13 +127,23 @@ export interface ProOverlay {
   }
 }
 
-/** Where the dashboard is served, for the overlay's code that runs with no request, such as links in alerts. */
+/**
+ * Where the dashboard is served and what it monitors, for the overlay's code that runs with no
+ * request, such as links in alerts, and for code that would otherwise read the environment.
+ */
 export interface ProSite {
   /**
    * The public URL with the base path, from `siteUrl` or PGBOSS_DASHBOARD_SITE_URL, without a
    * trailing slash. Null when neither is set.
    */
   url: string | null
+  /**
+   * The mount prefix, such as `/admin/queues`, or `''` at the root. Null for a build loaded per
+   * request, as in development, where PGBOSS_DASHBOARD_BASE_PATH sets it.
+   */
+  basePath: string | null
+  /** The databases the pages read: a handler's own, or those DATABASE_URL describes. */
+  databases: () => DatabaseConfig[]
 }
 
 /**

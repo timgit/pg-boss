@@ -98,7 +98,11 @@ export function createHonoApp ({
   const siteOrigin = siteUrl === undefined ? parseSiteUrl() : siteUrl === null ? undefined : toSiteOrigin(siteUrl, 'siteUrl')
   const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
   const mountPath = typeof build !== 'function' && build.basename && build.basename !== '/' ? build.basename : ''
-  const publicSite: ProSite = { url: siteOrigin ? `${siteOrigin}${mountPath}` : null }
+  const publicSite: ProSite = {
+    url: siteOrigin ? `${siteOrigin}${mountPath}` : null,
+    basePath: typeof build === 'function' ? null : mountPath,
+    databases: () => databases ?? getDatabaseConfigs(),
+  }
 
   if (mountPath) {
     // `${mountPath}.data` is the index route's data request: a sibling of the mount path.
