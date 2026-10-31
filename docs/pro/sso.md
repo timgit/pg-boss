@@ -14,6 +14,14 @@ the roles they already had. Pro refuses an address the provider hasn't
 verified. A setting lets an unknown address become a new account, and it's off
 by default.
 
+The first sign-in through the provider links the account to that person's id at
+the provider (the token's `sub`). After that, someone else the provider gives the
+same address can't sign in as the account, and the person keeps it if the
+provider changes their address. When the provider replaces a person's own
+account, an administrator presses **Forget SSO link** on the account's page, and
+the next sign-in links again. Pointing Pro at a new issuer links each account
+again by its address.
+
 If the provider sends a group claim, this page maps its group names onto Pro
 groups. Pro syncs only the mapped groups, so a group kept by hand is never
 emptied because the provider hasn't heard of it. A token with no group claim at
