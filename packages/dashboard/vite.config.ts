@@ -36,6 +36,12 @@ const SERVER_RUNTIME_PACKAGES = [
   'react-router',
 ]
 
+// An overlay's own server libraries, kept external beside these when its build names them, so
+// the copy its install declares is the one that runs and a patch reaches it through npm.
+// See scripts/check-imports.mjs, which accepts the same names.
+const OVERLAY_SERVER_PACKAGES = (process.env.PGBOSS_DASHBOARD_SERVER_EXTERNAL ?? '')
+  .split(',').map((name) => name.trim()).filter(Boolean)
+
 // Packages that only ever run on the server. Listed so the dev client optimizer
 // leaves them alone; see the `optimizeDeps` note below for why it would otherwise
 // pick them up. `pg-boss` pulls in the other three transitively.
@@ -73,7 +79,7 @@ export default defineConfig(({ command }) => {
     // for ~20 icons). Build only: the dev server evaluates inlined modules as ESM, which breaks
     // on the CommonJS-only `use-sync-external-store` that @base-ui/react depends on.
     ssr: command === 'build'
-      ? { noExternal: true, external: SERVER_RUNTIME_PACKAGES }
+      ? { noExternal: true, external: [...SERVER_RUNTIME_PACKAGES, ...OVERLAY_SERVER_PACKAGES] }
       : undefined,
     // Dev only. A browser package the dev server finds after start is pre-bundled
     // mid-request, and Vite then reloads the page ("optimized dependencies changed"),

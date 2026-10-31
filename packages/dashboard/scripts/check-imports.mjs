@@ -25,7 +25,10 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-const declared = new Set(Object.keys(pkg.dependencies ?? {}))
+// An overlay's build keeps its own server libraries external (vite.config.ts) and declares them in
+// the manifest it ships, which is not this one.
+const overlayDeclared = (process.env.PGBOSS_DASHBOARD_SERVER_EXTERNAL ?? '').split(',').map((name) => name.trim()).filter(Boolean)
+const declared = new Set([...Object.keys(pkg.dependencies ?? {}), ...overlayDeclared])
 const builtins = new Set(builtinModules)
 
 /**
