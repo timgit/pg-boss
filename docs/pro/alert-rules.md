@@ -170,13 +170,16 @@ that point at them.
   `persistQueueStats` keeps (pg-boss 12.35 or later). Waits and run times need
   pg-boss 12.36, and so do the instance checks, which read its instance registry.
 - The evaluator runs once a minute as a pg-boss job in a `<schema>_queue` schema
-  of its own. The job has a singleton key, so two Pro replicas run one
-  evaluation between them and send everything once.
+  of its own. A pass holds a Postgres advisory lock on Pro's store while it
+  runs, so Pro replicas run one pass at a time between them and send everything
+  once. A minute whose job finds the lock taken skips its pass. The lock needs a
+  session of its own, so a pooler in front of the store must not be in
+  transaction mode.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
   the Console, and tries again each minute until it runs. Mounted in a host
   application, it starts on the first request the handler serves.
 - On SIGTERM or SIGINT, or when a host application calls the handler's
   `close()`, a pass in progress gets up to 20 seconds to finish before the
-  database connections close. A replica that dies during a pass holds the next
-  one back for about two minutes, until pg-boss sees that pass's heartbeat stop
-  and runs it again.
+  database connections close. A replica that dies during a pass lets the lock go
+  with its connection, so the next minute's pass runs, and pg-boss fails the
+  dead pass's job about two minutes later, once its heartbeat stops.
