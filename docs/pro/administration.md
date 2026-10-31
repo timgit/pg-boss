@@ -26,5 +26,7 @@ Without it, the screens that keep secrets refuse to save them and say so, which
 means the key has to be set before adding a webhook or PagerDuty destination.
 Pro never writes a secret in the clear, and never sends a stored secret back to
 the browser. The fields show bullets, and saving without touching them keeps
-what's there. Losing the key means re-entering those secrets, and nothing else
+what's there, unless what the secret is sent to changed: a webhook's host, the
+SMTP server or user, or the SSO issuer or client id. Pro then asks for the secret
+again, so a stored secret only ever goes where it was entered for. Losing the key means re-entering those secrets, and nothing else
 is lost.

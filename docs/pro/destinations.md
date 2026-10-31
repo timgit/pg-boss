@@ -22,14 +22,17 @@ it, they carry no link. The page shows which address the links use.
 
 ## Email
 
-Email goes out through SMTP or Resend, configured on the same page.
+Email goes out through SMTP or Resend, configured on the same page. Changing the
+SMTP host, port, user or TLS setting needs the password entered again.
 
 ## Webhook
 
 Pro stores a webhook's URL encrypted, since receivers often keep their token in
 the path or the query. The page and the audit log show only its origin, and the
 edit form leaves its URL field blank. Leave it blank to keep the URL, or enter a
-new one.
+new one. A new URL on another host needs the signing secret and Authorization
+header entered again, or removed, so a stored secret never goes to a host it
+wasn't entered for.
 
 Pro sends a POST with [Prometheus Alertmanager's webhook body](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config),
 version 4, one alert per request. An on-call tool that takes Alertmanager can
