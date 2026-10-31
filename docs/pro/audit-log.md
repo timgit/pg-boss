@@ -19,12 +19,8 @@ Only an administrator over every database can open the log.
 
 ## Address
 
-The address on an entry is the one the connection came from. When the connection comes from a private address (loopback, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10` or an IPv6 private range), Pro takes it to be a reverse proxy's. It then reads the `X-Forwarded-For` header and takes the last entry that isn't a private address, which is the one the proxy added.
+The address on an entry is the one the connection came from. When that connection is a trusted proxy's, Pro reads the `X-Forwarded-For` header from its right end, where each proxy adds the address it saw, and takes the first entry that isn't a trusted proxy. The trusted proxies are loopback unless [`PGBOSS_PRO_TRUSTED_PROXIES`](./environment.md) lists others, such as the address of a proxy in another container. From any other connection the header is ignored, so a client can't choose the address recorded.
 
-Pro can't tell a proxy from any other machine with a private address, so the address is only as reliable as the network:
+Behind a proxy that isn't listed, every entry carries the proxy's address. Pro logs this once on stdout, naming the address to add. Behind a CDN in front of a trusted proxy, the address is the CDN's.
 
-- A proxy that reaches Pro from a public address, such as a CDN in front of an origin on a public IP, is recorded as the address, and its header is ignored.
-- Anything else that can reach Pro from a private address, such as another pod or VM on the same network, can send its own header and choose the address recorded.
-- Behind a CDN in front of a private proxy, the address is the CDN's.
-
-A handler [mounted in another server](./mount.md) is passed a request without its connection, so its entries have no address. The sign-in and API token limits count failures against the same address.
+A handler [mounted in another server](./mount.md) is passed a request without its connection, so it records the address its `clientIp` option returns, and none without it. The sign-in and API token limits count failures against the same address.
