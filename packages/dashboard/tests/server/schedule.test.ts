@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { nextScheduleOccurrence } from '~/lib/schedule.server'
+import { describeSchedule, nextScheduleOccurrence } from '~/lib/schedule.server'
 
 describe('nextScheduleOccurrence', () => {
   beforeEach(() => {
@@ -50,5 +50,31 @@ describe('nextScheduleOccurrence', () => {
     expect(nextScheduleOccurrence('not a cron')).toBeNull()
     expect(nextScheduleOccurrence('99 99 99 99 99')).toBeNull()
     expect(nextScheduleOccurrence('FREQ=NONSENSE')).toBeNull()
+  })
+})
+
+describe('describeSchedule', () => {
+  it('describes a cron expression', () => {
+    expect(describeSchedule('0 2 * * *', 'cron')).toBe('At 02:00 AM')
+    expect(describeSchedule('0 4 * * 0', 'cron')).toBe('At 04:00 AM, only on Sunday')
+    expect(describeSchedule('*/15 * * * *', 'cron')).toBe('Every 15 minutes')
+    expect(describeSchedule('0 4 * * 1-5', 'cron')).toBe('At 04:00 AM, Monday through Friday')
+    // A row read off a database older than schema v41 has no kind, and is cron.
+    expect(describeSchedule('0 0 1 * *')).toBe('At 12:00 AM, on day 1 of the month')
+  })
+
+  it('describes a recurrence rule without its time zone', () => {
+    expect(describeSchedule('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=8;BYMINUTE=30', 'rrule', 'Europe/London')).toBe('Every weekday at 8:30 AM')
+    expect(describeSchedule('FREQ=MONTHLY;BYDAY=-1FR;BYHOUR=17;BYMINUTE=0', 'rrule')).toBe('Every month on last Friday at 5 PM')
+    expect(describeSchedule('FREQ=DAILY;BYHOUR=8,17', 'rrule', 'America/Chicago')).toBe('Every day at 8 AM and 5 PM')
+  })
+
+  it('reads the lines of a calendar entry', () => {
+    expect(describeSchedule('DTSTART:20240101T000000\nRRULE:FREQ=DAILY;BYHOUR=9\nEXDATE:20241225T090000', 'rrule')).toBe('Every day at 9 AM excluding 1 date')
+  })
+
+  it('answers null for an expression it cannot read', () => {
+    expect(describeSchedule('not a cron', 'cron')).toBeNull()
+    expect(describeSchedule('FREQ=SOMETIMES', 'rrule')).toBeNull()
   })
 })

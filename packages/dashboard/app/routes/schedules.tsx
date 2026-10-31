@@ -5,7 +5,7 @@ import {
   getSchedules,
   getScheduleCount,
 } from '~/lib/queries.server'
-import { nextScheduleOccurrence } from '~/lib/schedule.server'
+import { describeSchedule, nextScheduleOccurrence } from '~/lib/schedule.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
@@ -21,7 +21,6 @@ import {
 import { TablePagination } from '~/components/table-pagination'
 import { ErrorCard } from '~/components/error-card'
 import { dbContext } from '~/lib/db-context'
-import type { ScheduleKind } from '~/lib/types'
 import {
   parsePaging,
   formatDate,
@@ -51,7 +50,11 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   // parses as neither kind, or when a finite rule has nothing left to send).
   const schedulesWithNext = schedules.rows.map((schedule) => {
     const next = nextScheduleOccurrence(schedule.cron, schedule.timezone)
-    return { ...schedule, nextOccurrence: next ? next.toISOString() : null }
+    return {
+      ...schedule,
+      nextOccurrence: next ? next.toISOString() : null,
+      description: describeSchedule(schedule.cron, schedule.kind, schedule.timezone) ?? (schedule.kind === 'rrule' ? 'Recurrence rule' : 'Custom schedule'),
+    }
   })
 
   const totalPages = Math.ceil(totalCount / limit)
@@ -70,56 +73,6 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return <ErrorCard title="Failed to load schedules" error={error} />
-}
-
-function ordinal (n: number): string {
-  const v = n % 100
-  if (v >= 11 && v <= 13) return `${n}th`
-  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
-}
-
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
-// Readable description for the common cron patterns; falls back to
-// 'Custom schedule' for anything bespoke. A pattern is only described when
-// every field it ignores is a wildcard — '0 4 * * 0' is weekly on Sunday,
-// never 'Every day at 04:00'.
-export function cronHuman (cron: string): string {
-  const fields = cron.trim().split(/\s+/)
-  if (fields.length !== 5) return 'Custom schedule'
-  const [m, h, dom, mon, dow] = fields as [string, string, string, string, string]
-  const anyDom = dom === '*'
-  const anyMon = mon === '*'
-  const anyDow = dow === '*'
-
-  if (/^\*\/\d+$/.test(m) && h === '*' && anyDom && anyMon && anyDow) {
-    const step = Number(m.slice(2))
-    return step === 1 ? 'Every minute' : `Every ${step} minutes`
-  }
-  if (h === '*' && anyDom && anyMon && anyDow && /^\d+$/.test(m)) {
-    return m === '0' ? 'Every hour on the hour' : `Every hour at :${m.padStart(2, '0')}`
-  }
-
-  if (!/^\d+$/.test(m) || !/^\d+$/.test(h)) return 'Custom schedule'
-  const time = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
-  if (anyDom && anyMon && anyDow) {
-    return time === '00:00' ? 'Every day at midnight' : `Every day at ${time}`
-  }
-  if (anyDom && anyMon && /^[0-7]$/.test(dow)) {
-    return `Weekly on ${WEEKDAYS[Number(dow) % 7]} at ${time}`
-  }
-  if (anyMon && anyDow && /^\d+$/.test(dom)) {
-    return `Monthly on the ${ordinal(Number(dom))} at ${time}`
-  }
-  return 'Custom schedule'
-}
-
-// What the Frequency column says for a row. Cron expressions get a described pattern; a recurrence
-// rule is only labelled, since the parts a rule can carry (several BYHOUR values, an UNTIL, an
-// interval) turn any short phrase into an understatement of when it actually fires. The expression
-// itself is in the column beside it either way.
-export function scheduleHuman (expression: string, kind?: ScheduleKind): string {
-  return kind === 'rrule' ? 'Recurrence rule' : cronHuman(expression)
 }
 
 export default function Schedules ({ loaderData }: Route.ComponentProps) {
@@ -189,7 +142,7 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
                         </span>
                       </TableCell>
                       <TableCell className="text-[var(--text-secondary)]">
-                        {scheduleHuman(schedule.cron, schedule.kind)}
+                        {schedule.description}
                       </TableCell>
                       <TableCell className="text-[var(--text-secondary)]">
                         {schedule.nextOccurrence ? (
