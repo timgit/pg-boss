@@ -44,7 +44,7 @@ export function parseDatabaseConfig (): DatabaseConfig[] {
   const urlParts = splitEnvList(dbUrlEnv, SEPARATOR)
   const schemaParts = splitEnvList(schemaEnv, SEPARATOR)
 
-  return urlParts.map((part, index) => {
+  return distinctIds(urlParts.map((part, index) => {
     // Check for "name=url" format
     const equalsIndex = part.indexOf('=')
 
@@ -59,6 +59,28 @@ export function parseDatabaseConfig (): DatabaseConfig[] {
     }
 
     return toDatabaseConfig({ url: part, schema: schemaParts[index] }, index)
+  }))
+}
+
+/**
+ * Tell apart two entries that would share an id, as one database monitored under two schemas
+ * does when neither is named. The first keeps its id; a later one takes its schema into its id and
+ * name. Shared, an id would scope a role to both and leave the second unreachable from the switcher.
+ */
+function distinctIds (configs: DatabaseConfig[]): DatabaseConfig[] {
+  const taken = new Set<string>()
+
+  return configs.map((config, index) => {
+    if (!taken.has(config.id)) {
+      taken.add(config.id)
+      return config
+    }
+
+    let id = generateId(`${config.name}-${config.schema}`, index)
+    if (taken.has(id)) id = `${id}-${index + 1}`
+    taken.add(id)
+
+    return { ...config, id, name: `${config.name} (${config.schema})` }
   })
 }
 

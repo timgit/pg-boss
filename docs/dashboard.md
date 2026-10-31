@@ -202,6 +202,8 @@ PGBOSS_SCHEMA="pgboss|jobs" \
 npx pg-boss-dashboard
 ```
 
+Two unnamed entries for the same database, such as one database under two schemas, would share a name. The later one shows its schema, as in `app (jobs)`. Name each one to choose what shows instead.
+
 The top bar on every page starts with the name of the database being shown, and a colored dot that marks its place in the configuration. When you configure more than one database, the name opens a menu to switch between them, and switching keeps you on the same page. From a page about one item, such as a queue or a job, it opens the list that page sits under instead (Queues, for both), since the other database may not have that item. The URL's `db` query parameter holds the selected database (it's left out for the first database), so a shared link opens the same database.
 
 ## Production deployment

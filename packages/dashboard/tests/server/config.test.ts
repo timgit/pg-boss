@@ -46,6 +46,17 @@ describe('parseDatabaseConfig', () => {
       { id: 'b', name: 'b', url: 'postgres://host/b', schema: 'two' },
     ])
   })
+
+  it('tells apart one database under two schemas, keeping the first id as it was', () => {
+    process.env.DATABASE_URL = 'postgres://host/app|postgres://host/app|postgres://other/app'
+    process.env.PGBOSS_SCHEMA = 'pgboss|jobs|jobs'
+
+    expect(parseDatabaseConfig().map(({ id, name }) => ({ id, name }))).toEqual([
+      { id: 'app', name: 'app' },
+      { id: 'app-jobs', name: 'app (jobs)' },
+      { id: 'app-jobs-3', name: 'app (jobs)' },
+    ])
+  })
 })
 
 describe('parseSiteUrl', () => {
