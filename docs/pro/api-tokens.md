@@ -40,7 +40,7 @@ Send it as a bearer token:
 curl -H "Authorization: Bearer $PGBOSS_PRO_API_TOKEN" https://console.example.com/pro/api/v1/pgboss/getQueues
 ```
 
-Tokens work only on the API and [`/metrics`](./metrics.md). The Console's pages ignore them, and the API ignores a session cookie. Pro answers a missing or invalid token with `401` and `WWW-Authenticate: Bearer`. After five failures from one address in fifteen minutes, Pro refuses that address for fifteen minutes.
+Tokens work only on the API and [`/metrics`](./metrics.md). The Console's pages ignore them, and the API ignores a session cookie. Pro answers a missing or invalid token with `401` and `WWW-Authenticate: Bearer`. After five invalid tokens from one address in fifteen minutes, Pro answers that address's invalid tokens with `429` for fifteen minutes, so guessing gets no answer. A valid token from the address still works, so a client sharing an address with someone guessing isn't cut off.
 
 ## Audit
 
