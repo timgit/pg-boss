@@ -36,7 +36,7 @@ Each method needs a capability, which the service account gets from its role on 
 | `403` | The token's role doesn't include the method, or Pro refuses the method. |
 | `404` | No database by that id, or one the service account has no role on. |
 | `409` | The database's pg-boss schema isn't the one this Pro makes changes on. See [pg-boss versions](./versions.md). |
-| `429` | Too many failed tokens from this address. |
+| `429` | An invalid token, after too many from this address. A valid token is never refused this way. |
 
 ## Audit
 
