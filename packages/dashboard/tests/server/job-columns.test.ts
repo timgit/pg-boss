@@ -23,6 +23,9 @@ describe('job columns', () => {
       .toBe("data #>> ARRAY['tenantId']")
     expect(jobColumnPathToSql("data.tenant's.id"))
       .toBe("data #>> ARRAY['tenant''s','id']")
+    // A backslash is the escape in a plain literal when standard_conforming_strings is off.
+    expect(jobColumnPathToSql("data.a\\', 'x"))
+      .toBe("data #>> ARRAY[E'a\\\\'', ''x']")
     expect(buildJobColumnProjections([
       { path: 'id', name: 'ID' },
       { path: 'data.name', name: 'Job name' },

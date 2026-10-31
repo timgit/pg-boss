@@ -222,8 +222,15 @@ function quoteSqlIdentifier (identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`
 }
 
+/**
+ * A string literal for a value a viewer typed, safe whatever `standard_conforming_strings` says.
+ * With it off, a backslash in a plain literal escapes the closing quote, so a value holding one is
+ * written as an escape string, where a backslash means the same thing in every setting.
+ */
 function quoteSqlString (value: string): string {
-  return `'${value.replace(/'/g, "''")}'`
+  return value.includes('\\')
+    ? `E'${value.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`
+    : `'${value.replace(/'/g, "''")}'`
 }
 
 // Whether queue_stats has the wait and run time columns (schema v44, pg-boss 12.36), cached per
