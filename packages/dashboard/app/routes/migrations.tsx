@@ -1,10 +1,9 @@
 import { DbLink } from '~/components/db-link'
 import { useSearchParams } from 'react-router'
 import type { Route } from './+types/migrations'
-import { getBamEntries, getBamCount, getBamStatusSummary } from '~/lib/queries.server'
+import { getBamEntries, getBamCount } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
-import { StatCard } from '~/components/ui/stat-card'
 import { Badge } from '~/components/ui/badge'
 import {
   Table,
@@ -17,13 +16,12 @@ import {
 import { FilterSelect } from '~/components/ui/filter-select'
 import { TablePagination } from '~/components/table-pagination'
 import { ErrorCard } from '~/components/error-card'
-import type { BamEntryResult, BamStatus, BamStatusSummary } from '~/lib/types'
+import type { BamEntryResult } from '~/lib/types'
 import {
   parsePaging,
   resetPaging,
   isValidBamStatus,
   formatDateWithSeconds,
-  BAM_STATUSES,
   BAM_STATUS_OPTIONS,
   BAM_STATUS_VARIANTS,
   BAM_STATUS_LABELS,
@@ -35,15 +33,6 @@ import { PAGE_SIZE } from '~/lib/pagination'
 /** The browser tab's name for this page. */
 export const handle: TitleHandle = { title: 'Migrations' }
 
-
-// Accent for the four summary tiles. pending/in_progress get attention colors
-// since those are the actionable (incomplete) states.
-const STATUS_ACCENT: Record<BamStatus, 'neutral' | 'primary' | 'success' | 'warning' | 'error'> = {
-  pending: 'warning',
-  in_progress: 'primary',
-  completed: 'success',
-  failed: 'error',
-}
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
@@ -57,17 +46,15 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const sort = url.searchParams.get('sort')
   const dir = url.searchParams.get('dir')
 
-  const [entries, totalCount, summary] = await Promise.all([
+  const [entries, totalCount] = await Promise.all([
     getBamEntries(DB_URL, SCHEMA, { status: statusFilter, limit: PAGE_SIZE, cursor, sort, dir }),
     getBamCount(DB_URL, SCHEMA, statusFilter),
-    getBamStatusSummary(DB_URL, SCHEMA),
   ])
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE)
 
   return {
     entries: entries.rows,
-    summary,
     statusFilter,
     totalCount,
     page: entries.atStart ? 1 : page,
@@ -90,10 +77,8 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
 }
 
 export default function Migrations ({ loaderData }: Route.ComponentProps) {
-  const { entries, summary, statusFilter, totalCount, page, totalPages, hasNextPage, hasPrevPage } = loaderData
+  const { entries, statusFilter, totalCount, page, totalPages, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
-
-  const counts = countByStatus(summary)
 
   const handleFilterChange = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams)
@@ -113,17 +98,6 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
         title="Migrations"
         subtitle="Boss async migrations (BAM), the schema changes such as concurrent index builds that run outside the install transaction"
       />
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {BAM_STATUSES.map((status) => (
-          <StatCard
-            key={status}
-            label={BAM_STATUS_LABELS[status]}
-            value={counts[status].toLocaleString()}
-            accent={counts[status] > 0 ? STATUS_ACCENT[status] : 'neutral'}
-          />
-        ))}
-      </div>
 
       <Card>
         <CardHeader>
@@ -212,17 +186,4 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
 function formatTimestamp (value: Date | null): string {
   if (!value) return '—'
   return formatDateWithSeconds(new Date(value))
-}
-
-function countByStatus (summary: BamStatusSummary[]): Record<BamStatus, number> {
-  const counts: Record<BamStatus, number> = {
-    pending: 0,
-    in_progress: 0,
-    completed: 0,
-    failed: 0,
-  }
-  for (const row of summary) {
-    if (row.status in counts) counts[row.status] += row.count
-  }
-  return counts
 }

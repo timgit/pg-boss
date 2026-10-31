@@ -99,7 +99,7 @@ Three tiles sit above the list:
 
 ### Migrations
 
-Status of boss async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. The page shows pending, in-progress, completed and failed counts, and each command's version, target table and status. A command opens a page with the SQL that was (or will be) executed, any error message, and when it was queued, started and ended.
+Status of boss async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. The page lists each command's version, target table and status, and filters by status. A command opens a page with the SQL that was (or will be) executed, any error message, and when it was queued, started and ended.
 
 ![Migrations page](./images/dashboard-migrations.webp){.light-only}
 ![Migrations page](./images/dashboard-migrations-dark.webp){.dark-only}
