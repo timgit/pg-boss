@@ -54,8 +54,8 @@ account acts only through API tokens.
 
 Pro always refuses two changes, and says so:
 
-- removing the last administrator who covers every database, by demotion,
-  disabling or deletion, because no administrator would be left to undo it
+- removing the last administrator who covers every database and can sign in (with a password or
+  by SSO), by demotion, disabling or deletion, because no administrator would be left to undo it
 - an administrator disabling or deleting their own account (another administrator can do that)
 
 Pro sends no invitation email, because it runs inside the organization's network and may have
