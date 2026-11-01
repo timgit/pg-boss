@@ -40,6 +40,13 @@ groups out past its group limit (`_claim_names` or `hasgroups`). The other is a
 sign-in that would take the last administrator out of the group that makes them
 one.
 
-The issuer must be `https`, except on `localhost`, `127.0.0.1` or `[::1]`, where
-Pro accepts `http`. That allows a full round trip against a provider running
+A sign-in through the provider starts a Pro session that lasts 12 hours. Pro
+doesn't hear from the provider after that, so a person disabled or signed out
+there keeps their open session until it ends. To end it at once, disable the
+account in Pro, which ends its sessions immediately.
+
+The issuer must be the one the provider's discovery document names, with or
+without a trailing slash. For Entra ID, that is the issuer with your tenant's
+id, not `common`. It must be `https`, except on `localhost`, `127.0.0.1` or
+`[::1]`, where Pro accepts `http`. That allows a full round trip against a provider running
 in a local container, before Pro points at the real one.
