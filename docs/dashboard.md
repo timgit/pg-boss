@@ -1,6 +1,6 @@
 # Dashboard
 
-The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. It's read-only, and shows what pg-boss is doing without changing anything. To send, retry, cancel, resume or delete jobs, or to create queues and schedules, use the pg-boss API or the Pro Console in [pg-boss Pro](./pro/index.md). Pro adds those changes, allowed by role, to this dashboard, along with alerts, accounts and an audit log.
+The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. It shows what pg-boss is doing, and changes one thing: on a job's page, it can [retry, cancel or resume](#job-actions) that job. To send or delete jobs, change many jobs at once, or create queues and schedules, use the pg-boss API or the Pro Console in [pg-boss Pro](./pro/index.md). Pro adds those changes, allowed by role, to this dashboard, along with alerts, accounts and an audit log.
 
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting.webp){.light-only}
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting-dark.webp){.dark-only}
@@ -43,6 +43,12 @@ One job: its state, what it's waiting for or why it stopped, and its data and ou
 ![A failed job's page](./images/dashboard-job-dark.webp){.dark-only}
 
 The timeline shows the times the job's row keeps. A retry overwrites the start time and output, so earlier attempts appear only as a count. The last entry is when [retention](./api/queues.md#createqueue-name-queue) deletes the job, which is `deleteAfterSeconds` after it finished, or at `keepUntil` if it never ran.
+
+#### Job actions
+
+A failed job has **Retry job**, a canceled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. Each calls pg-boss's own [`retry()`, `cancel()` or `resume()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes, and the dashboard doesn't record who made them.
+
+pg-boss makes the change, so the dashboard's copy of `pg-boss` must be on the database's schema version. On any other version, pages still read and the page says why the change was refused. Set `PGBOSS_DASHBOARD_READ_ONLY=true` to hide the buttons and refuse every change.
 
 A job copied into a dead letter queue shows why it's there, from the original job's output, and a lineage chain from the first job to this one. The job records only the first job (the root) and the job it was copied from (the source), so any hops between them show as a gap. Select either to see its timeline, taken from its own row while it still exists, or from what was copied onto this job once it has been deleted. The dashboard looks up the root in the queue a redrive returns jobs to, so a root redriven into a different queue shows as not found.
 
@@ -164,6 +170,7 @@ Configure the dashboard with environment variables:
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
+| `PGBOSS_DASHBOARD_READ_ONLY` | `true` or `1` turns off retry, cancel and resume on a job's page (see [Job actions](#job-actions)) | - |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
 | `PGBOSS_DASHBOARD_SITE_URL` | The public URL the dashboard is served at, as `https://host[:port]`. Needed behind a proxy that ends HTTPS (see [Reverse proxy](#reverse-proxy)) | - |
 
@@ -357,7 +364,7 @@ When you mount the handler:
 - **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, which sits beside the mount path instead of under it. A `/admin/queues/*` pattern alone misses it, and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
 - **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`. The handler leaves signals to you, and `await dashboard.close()` ends its database pools. A closed handler answers 503.
 - **Behind a reverse proxy, pass the public URL.** React Router rejects a form submission whose `Origin` doesn't match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `siteUrl: 'https://admin.example.com'`, which works like [`PGBOSS_DASHBOARD_SITE_URL`](#reverse-proxy), or pass the handler a `Request` with the public URL.
-- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` applies. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_SITE_URL` don't, because the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`. If it or `PGBOSS_DASHBOARD_SITE_URL` is set while its option is off, the dashboard says so when you construct the handler.
+- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` and `PGBOSS_DASHBOARD_READ_ONLY` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_SITE_URL` don't, because the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`. If it or `PGBOSS_DASHBOARD_SITE_URL` is set while its option is off, the dashboard says so when you construct the handler.
 
 ## Enabling warning persistence
 
