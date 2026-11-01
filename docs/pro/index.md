@@ -70,7 +70,8 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | [Multiple connected databases or schemas](./databases.md), such as Production and Staging, each with a name and a color | ✓ | ✓ |
 | Sign-in | One username and password shared by every user, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
 | Mounting in an existing Node server, or under a sub-path | ✓ | ✓ |
-| [Send, retry, cancel, resume and delete jobs](./changes.md) | | ✓ |
+| [Retry, cancel and resume a job](./changes.md) | ✓ | ✓, by role and in the audit log |
+| [Send and delete jobs](./changes.md) | | ✓ |
 | [Create and delete queues and schedules](./changes.md) | | ✓ |
 | [Batch operations](./operations.md) across multiple queues, including [dead letter redrive](./operations.md#redrive) | | ✓ |
 | [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
