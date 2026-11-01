@@ -1,7 +1,7 @@
 # License
 
 The license is separate from the registry token, and its job is small. It puts
-the company's name on the Pro page, so every user of the dashboard can see whose
+the company's name on the License page, so every user of the dashboard can see whose
 license it runs under. **It doesn't turn any feature on or off.**
 
 ![The license page](../images/pro/license.webp){.light-only}
@@ -43,12 +43,10 @@ To keep `license.json` on a mounted volume instead, point
 
 ## Expiration
 
-Nothing stops working. The Pro page says the term has ended and that Pro is
-unaffected.
-
-Pro has no countdown, no banner, no grace period and no date when features
-stop. Pro is a monitoring tool, and the operator who would lose it over billing
-usually can't do anything about billing.
+Pro doesn't stop when a subscription ends. It has no countdown, no banner and
+no date when features stop, and the License page shows the term's end date. Pro
+is a monitoring tool, and the operator who would lose it over billing usually
+can't do anything about billing.
 
 A subscription controls what its holder can *download*:
 
@@ -58,8 +56,17 @@ A subscription controls what its holder can *download*:
 - Either way, a lapsed subscription can't upgrade to a newer version or fetch a
   new license.
 
-What's already running keeps running. Before twelve paid months, though, the
-license to use it ends with the subscription. See `LICENSE`.
+What's already running keeps running, until the application upgrades to a
+pg-boss release with a new schema version. Each Pro release makes changes only
+on the schema of the pg-boss it is built with (see [pg-boss
+versions](./versions.md)), and a lapsed subscription can't install the release
+built for the new one. From then on, every page still works, and changes are
+off: sending, retrying, canceling, resuming and deleting jobs, Operations, and
+changes through the Pro API. The [free dashboard](../dashboard.md#job-actions)
+follows each pg-boss release, and still retries, cancels and resumes a job.
+
+Before twelve paid months, the license to use what's running ends with the
+subscription. See `LICENSE`.
 
 Running with no license at all also works. It's the normal state after a fresh
 `npm ci` that hasn't run the license command. The page then says "Unlicensed",

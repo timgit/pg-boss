@@ -6,7 +6,7 @@ Each Pro release is built with one pg-boss release, and makes changes only in a 
 - **On another schema,** every page keeps working, and a banner on each names the database's version and this Pro's. Changes are off: sending, retrying, canceling, resuming and deleting jobs, [Operations](./operations.md), creating and deleting queues and schedules, and changes through [the Pro API](./api.md). Pro hides their controls and refuses a request for one with the same reason. An operation confirmed before pg-boss was upgraded fails with that reason when it runs. Upgrade pg-boss in the application, or upgrade Pro, so the two match.
 - **Before schema version 44,** the oldest this Pro reads, the banner asks for an upgrade of pg-boss. Pages still open, but leave out what that schema doesn't store, such as the instance registry and wait and run times.
 
-Pro installs the exact pg-boss release it is built with, whatever the application runs. A release's `package.json` holds its range, where `min` is the oldest schema it reads and `max` is the one it makes changes on.
+Each pg-boss release with a new schema version gets a Pro release built with it on the same day, so upgrade the two together. Pro installs the exact pg-boss release it is built with, whatever the application runs. A release's `package.json` holds its range, where `min` is the oldest schema it reads and `max` is the one it makes changes on.
 
 ```bash
 node -p "require('./node_modules/@pg-boss/pro/package.json').pgBoss.schema"
