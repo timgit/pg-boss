@@ -4,7 +4,11 @@ import { DeadLetterBadge } from '~/components/dead-letter-badge'
 import { PolicyBadge } from '~/components/policy-badge'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
-import { ProSlot } from '~/components/pro-slot'
+import { ProSlot, hasProSlot } from '~/components/pro-slot'
+import { JobActions } from '~/components/job-actions'
+import { isJobIntent } from '~/lib/job-actions'
+import { runJobAction } from '~/lib/job-actions.server'
+import { isReadOnly } from '~/lib/read-only.server'
 import {
   getJobById,
   getJobPageContext,
@@ -64,6 +68,25 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
     rootQueue,
     source,
     root,
+    readOnly: isReadOnly(),
+  }
+}
+
+// Retry, cancel or resume this one job. Read-only mode refuses the request before it gets here,
+// and under Pro the Console's own audited routes make these changes instead.
+export async function action ({ params, request, context }: Route.ActionArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const intent = (await request.formData()).get('intent')
+
+  if (!isJobIntent(intent)) {
+    return { success: false, message: 'Unknown action' }
+  }
+
+  try {
+    return await runJobAction(DB_URL, SCHEMA, params.name, params.jobId, intent)
+  } catch (error) {
+    console.error('pg-boss dashboard: a job action failed.', error)
+    return { success: false, message: 'The database refused the change' }
   }
 }
 
@@ -101,7 +124,7 @@ function useRefreshWhileUnfinished (unfinished: boolean) {
 }
 
 export default function JobDetail ({ loaderData }: Route.ComponentProps) {
-  const { job, queueName, isDeadLetterQueue, rootQueue, source, root } = loaderData
+  const { job, queueName, isDeadLetterQueue, rootQueue, source, root, readOnly } = loaderData
 
   const state = job.state
   const unfinished = !isFinalState(state)
@@ -192,7 +215,9 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <ProSlot name="jobActions" job={{ id: job.id, name: queueName, state }} />
+          {hasProSlot('jobActions')
+            ? <ProSlot name="jobActions" job={{ id: job.id, name: queueName, state }} />
+            : !readOnly && <JobActions id={job.id} state={state} />}
         </div>
       </div>
 

@@ -3,6 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'react-router'
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
+import { configureReadOnly, isReadOnly } from './lib/read-only.server'
 import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay, ProSite } from './lib/pro-contract'
@@ -153,6 +154,10 @@ export function createHonoApp ({
       console.log('PGBOSS_DASHBOARD_AUTH_* ignored: the Pro overlay provides authentication.')
     }
 
+    if (isReadOnly()) {
+      console.log('PGBOSS_DASHBOARD_READ_ONLY ignored: in the Pro overlay, roles decide who may change jobs.')
+    }
+
     overlay.server(app, publicSite)
   } else {
     // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs before the
@@ -168,6 +173,10 @@ export function createHonoApp ({
     }
 
     overlay?.server?.(app, publicSite)
+
+    // After auth, so a refused change still needs the credential to provoke, and before the SSR
+    // handler, so the one check covers every route action.
+    configureReadOnly(app)
   }
 
   if (serveStaticAssets) {

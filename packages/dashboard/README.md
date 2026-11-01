@@ -1,6 +1,6 @@
 # pg-boss Dashboard
 
-A read-only web dashboard for [pg-boss](https://github.com/timgit/pg-boss) job queues: browse queues, inspect jobs and schedules, and review warning history from a single UI.
+A web dashboard for [pg-boss](https://github.com/timgit/pg-boss) job queues: browse queues, inspect jobs and schedules, retry, cancel or resume a job, and review warning history from a single UI.
 
 📖 **[Read the full documentation →](https://pgboss.io/dashboard)**
 
