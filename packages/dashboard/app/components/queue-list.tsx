@@ -90,9 +90,11 @@ export interface QueueViewOption {
 
 export interface QueueListExtensions {
   subtitle?: ReactNode
-  /** After the free controls in the toolbar. */
+  /** In the header, before the page's actions: controls for the whole page rather than the list. */
+  header?: ReactNode
+  /** After the free controls in the toolbar, before the view toggle. */
   toolbar?: ReactNode
-  /** Between the toolbar and the queues. */
+  /** Between the header and the toolbar. */
   above?: ReactNode
   /** Under the queues and their pagination. */
   below?: ReactNode
@@ -220,6 +222,7 @@ function Toolbar ({ data, extensions }: { data: QueueListData, extensions?: Queu
             </ToggleGroup>
           </div>
           {extensions?.toolbar}
+          {data.views.length > 1 && <ViewToggle views={data.views} view={data.view} extensions={extensions} />}
         </div>
       </div>
 
@@ -449,19 +452,18 @@ export function QueueTable ({ queues, extensions }: { queues: QueueResult[], ext
   )
 }
 
-/** The page's title, its subtitle, the overlay's actions and the view toggle. */
+/** The page's title, its subtitle and the overlay's actions. */
 export function QueueListHeader ({ data, extensions }: { data: QueueListData, extensions?: QueueListExtensions }) {
-  const { totalCount, filter, search, view } = data
+  const { totalCount, filter, search } = data
   const filtered = filter !== 'all' || !!search
   return (
     <PageHeader
       title="Queues"
       subtitle={extensions?.subtitle ?? `${n(totalCount)} queue${totalCount !== 1 ? 's' : ''} ${filtered ? 'found' : 'configured'}`}
       action={
-        // The view toggle sits under the page's own action, so the action keeps its place whichever view is chosen.
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {extensions?.header}
           <ProSlot name="pageActions" page="queues" />
-          {data.views.length > 1 && <ViewToggle views={data.views} view={view} extensions={extensions} />}
         </div>
       }
     />
@@ -492,8 +494,9 @@ export function QueueListSections ({ data, extensions }: { data: QueueListData, 
   )
   return (
     <div className="space-y-4">
-      <Toolbar data={data} extensions={extensions} />
       {extensions?.above}
+      {/* Right above the queues, under any figures for every queue, since it narrows only the list. */}
+      <Toolbar data={data} extensions={extensions} />
       {drawn
         ? (
           <section aria-label="Queues" className="space-y-3">
