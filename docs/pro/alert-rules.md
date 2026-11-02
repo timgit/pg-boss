@@ -87,7 +87,10 @@ one, and matches the whole name. `/` isn't special, so `billing-*` matches
 same way, the rule's page names the other one. Each rule raises its own alert.
 
 The rule's page also sets where the rule sends, and how often at most it notifies
-about the same thing (60 minutes by default). Its **Silence 1h** button
+about the same thing (60 minutes by default). A threshold or check that resolved
+and then matches again notifies at once, because the resolve closed the incident
+on call. The rule's hold is what keeps a queue that keeps flipping from notifying
+on every change. The page's **Silence 1h** button
 is for a deploy or a maintenance window. A silenced rule still opens alerts but
 sends no notifications, and the silence ends by itself.
 
