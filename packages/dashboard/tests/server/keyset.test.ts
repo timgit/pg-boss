@@ -8,19 +8,19 @@ type Read<T> = (options: PageOptions) => Promise<ListPage<T>>
 
 // Read a list one small page at a time, forward to its end and back to its start, and check both
 // walks against one read of the whole list: every row once, in the same order.
-async function expectWalksMatch<T> (read: Read<T>, id: (row: T) => string) {
+async function expectWalksMatch<T> (read: Read<T>, id: (row: T) => string, size = 2) {
   const whole = (await read({ limit: 1000 })).rows.map(id)
   expect(whole.length).toBeGreaterThan(3)
 
-  const pages: ListPage<T>[] = [await read({ limit: 2 })]
+  const pages: ListPage<T>[] = [await read({ limit: size })]
   while (pages.at(-1)!.hasNextPage) {
-    pages.push(await read({ limit: 2, cursor: { after: pages.at(-1)!.nextCursor } }))
+    pages.push(await read({ limit: size, cursor: { after: pages.at(-1)!.nextCursor } }))
   }
   expect(pages.flatMap(p => p.rows.map(id))).toEqual(whole)
 
   const back: ListPage<T>[] = [pages.at(-1)!]
   while (back.at(-1)!.hasPrevPage) {
-    back.push(await read({ limit: 2, cursor: { before: back.at(-1)!.prevCursor } }))
+    back.push(await read({ limit: size, cursor: { before: back.at(-1)!.prevCursor } }))
   }
   expect(back.reverse().flatMap(p => p.rows.map(id))).toEqual(whole)
 }
@@ -28,6 +28,12 @@ async function expectWalksMatch<T> (read: Read<T>, id: (row: T) => string) {
 async function withPool (fn: (pool: pg.Pool) => Promise<void>) {
   const pool = new pg.Pool({ connectionString: ctx.connectionString })
   try { await fn(pool) } finally { await pool.end() }
+}
+
+async function withRows (sql: string): Promise<Array<{ name: string; id: string }>> {
+  let rows: Array<{ name: string; id: string }> = []
+  await withPool(async pool => { rows = (await pool.query(sql)).rows })
+  return rows
 }
 
 describe('keyset paging', () => {
@@ -45,6 +51,30 @@ describe('keyset paging', () => {
 
     const selected = (await getRecentJobs(ctx.connectionString, ctx.schema, { limit: 100, queues: ['alpha', 'gamma'] })).rows
     expect(new Set(selected.map(j => j.name))).toEqual(new Set(['alpha', 'gamma']))
+  })
+
+  it('pages live jobs the same whether a queue has more than the cap or fewer, and skips one with none', async () => {
+    await createTestQueue('busy')
+    await getBoss().insert('busy', Array.from({ length: 520 }, (_, i) => ({ data: { i } })))
+    await createTestQueue('quiet')
+    await getBoss().insert('quiet', Array.from({ length: 5 }, (_, i) => ({ data: { i } })))
+    await createTestQueue('done')
+    await getBoss().insert('done', Array.from({ length: 30 }, (_, i) => ({ data: { i } })))
+    await withPool(pool => pool.query(
+      `UPDATE ${ctx.schema}.job SET state = 'completed', completed_on = now() WHERE name = 'done'`
+    ).then(() => undefined))
+    const key = (j: { name: string; id: string }) => `${j.name}/${j.id}`
+
+    const expected = await withRows(`
+      SELECT name, id FROM ${ctx.schema}.job WHERE state IN ('created', 'retry', 'active')
+      ORDER BY created_on DESC, id DESC, name DESC`)
+    expect(expected).toHaveLength(525)
+
+    for (const state of ['pending', 'created'] as const) {
+      const rows = (await getRecentJobs(ctx.connectionString, ctx.schema, { limit: 1000, state })).rows
+      expect(rows.map(key)).toEqual(expected.map(key))
+      await expectWalksMatch((o) => getRecentJobs(ctx.connectionString, ctx.schema, { ...o, state }), key, 100)
+    }
   })
 
   it('pages finished jobs newest finished first, through completed_on ties', async () => {

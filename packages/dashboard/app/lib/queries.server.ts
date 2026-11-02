@@ -654,10 +654,22 @@ const FINISHED_JOB_PAGE_KEYS: Key[] = [
   { expr: 'j.name', type: 'text', desc: true },
 ]
 
+// The state filters job_i14's predicate covers.
+const LIVE_STATE_FILTERS = new Set(['pending', 'created', 'retry', 'active', 'failed'])
+
+// The most matching jobs a queue may hold and still be read whole through job_i14 and sorted.
+const FEW_LIVE_JOBS = 500
+
 // One page of recent jobs across queues. No index orders the job table by created_on alone, so each
-// queue reads its own next page through job_i15 (name, created_on), job_i14 for live states or
-// job_i16 for finished ones, and the pages are merged. That costs an index descent per queue, where a whole-table scan would cost a
-// read of every job on every page view.
+// queue reads its own next page through job_i15 (name, created_on), or job_i16 for finished ones,
+// and the pages are merged. That costs an index descent per queue, where a whole-table scan would
+// cost a read of every job on every page view.
+//
+// A live state filter decides per queue. The planner knows only the whole table's mix of states, so
+// left alone it walks job_i15 for a common state like created, and a queue with none reads its whole
+// history to find that out. So a capped count through job_i14 comes first: a queue under the cap is
+// read whole through job_i14 and sorted, and only a queue at it, where matches are dense, walks
+// job_i15.
 export async function getRecentJobs (
   dbUrl: string,
   schema: string,
@@ -688,17 +700,37 @@ export async function getRecentJobs (
       ? `WHERE q.name = ANY($${params.push(filters.queues)}::text[])`
       : ''
     const limitParam = `$${params.push(limit + 1)}`
+    const where = conditions.join(' AND ')
+
+    const perQueue = LIVE_STATE_FILTERS.has(filters.state ?? '')
+      ? `
+      CROSS JOIN LATERAL (
+        SELECT count(*) AS matching FROM (SELECT 1 FROM ${s}.job WHERE ${where} LIMIT ${FEW_LIVE_JOBS}) probe
+      ) c
+      CROSS JOIN LATERAL (
+        (SELECT * FROM (SELECT ${selectColumns} FROM ${s}.job WHERE ${where} LIMIT ${FEW_LIVE_JOBS}) j
+          WHERE c.matching < ${FEW_LIVE_JOBS}
+          ${keysetOrderBy(pageKeys, plan.backward)}
+          LIMIT ${limitParam})
+        UNION ALL
+        (SELECT ${selectColumns} FROM ${s}.job
+          WHERE ${where} AND c.matching >= ${FEW_LIVE_JOBS}
+          ${keysetOrderBy(keys, plan.backward)}
+          LIMIT ${limitParam})
+      ) j`
+      : `
+      CROSS JOIN LATERAL (
+        SELECT ${selectColumns}
+        FROM ${s}.job
+        WHERE ${where}
+        ${keysetOrderBy(keys, plan.backward)}
+        LIMIT ${limitParam}
+      ) j`
 
     const sql = `
       SELECT j.*, ${cursorSelect(pageKeys)}
       FROM ${s}.queue q
-      CROSS JOIN LATERAL (
-        SELECT ${selectColumns}
-        FROM ${s}.job
-        WHERE ${conditions.join(' AND ')}
-        ${keysetOrderBy(keys, plan.backward)}
-        LIMIT ${limitParam}
-      ) j
+      ${perQueue}
       ${queueFilter}
       ${keysetOrderBy(pageKeys, plan.backward)}
       LIMIT ${limitParam}
