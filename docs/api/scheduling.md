@@ -136,6 +136,10 @@ Schedules a job to be sent to the specified queue based on a cron expression or 
   back off a schedule row written before zones were validated looks like. An unrecognized zone is
   rejected by `schedule()`, so a typo cannot be stored and then fail on the cron pass.
 
+  When the clocks go back, a cron expression sends a repeated local time once, at its first
+  instant, unless it names every hour. So `30 1 * * *` sends once that night and `0 * * * *` stays
+  hourly. This is what `previewSchedule()` lists.
+
 * **key**
   
   An optional unique key if more than schedule is needed for this queue.
