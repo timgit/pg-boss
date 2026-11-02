@@ -1,12 +1,12 @@
 # Network activity
 
-**The dashboard makes no outbound connection of its own.** It has no
+**Pro makes no outbound connection of its own.** It has no
 telemetry, analytics, phone-home, version check or network license check, at boot
 or at any time after. It verifies the license offline, against a public key
 compiled into this package.
 
 Each connection below starts from a setting or a command a user ran. With none
-of them set up, the dashboard talks only to its Postgres database.
+of them set up, Pro talks only to its Postgres database.
 
 | What | When | Where |
 |---|---|---|

@@ -1,6 +1,6 @@
 # Single sign-on
 
-`/pro/sso` points the dashboard at any OpenID Connect provider, such as Okta,
+`/pro/sso` points Pro at any OpenID Connect provider, such as Okta,
 Entra, Google, Auth0 or Keycloak. Paste the issuer, the client id and the client
 secret. Copy the redirect URI the page shows into the provider. The login page
 then gets a **Sign in with…** button.

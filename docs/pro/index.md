@@ -45,9 +45,9 @@ Pro is built and supported by the author of pg-boss. Upgrading from the [free da
     <figcaption><a href="/pro/alert-rules">Alert rules</a>Stalls, backlogs and failures, sent by email, a webhook or a paging service.</figcaption>
   </figure>
   <figure>
-    <img class="light-only" src="../images/pro/tile-operations.webp" :data-zoom-src="operations" alt="A batch operation">
-    <img class="dark-only" src="../images/pro/tile-operations-dark.webp" :data-zoom-src="operationsDark" alt="A batch operation">
-    <figcaption><a href="/pro/operations">Batch operations</a>Across multiple queues, including dead letter redrive.</figcaption>
+    <img class="light-only" src="../images/pro/tile-operations.webp" :data-zoom-src="operations" alt="An operation">
+    <img class="dark-only" src="../images/pro/tile-operations-dark.webp" :data-zoom-src="operationsDark" alt="An operation">
+    <figcaption><a href="/pro/operations">Operations</a>Across multiple queues, including dead letter redrive.</figcaption>
   </figure>
   <figure>
     <img class="light-only" src="../images/pro/tile-group.webp" :data-zoom-src="group" alt="A group and its roles">
@@ -73,7 +73,7 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | [Retry, cancel and resume a job](./changes.md) | ✓ | ✓, by role and in the audit log |
 | [Send and delete jobs](./changes.md) | | ✓ |
 | [Create and delete queues and schedules](./changes.md) | | ✓ |
-| [Batch operations](./operations.md) across multiple queues, including [dead letter redrive](./operations.md#redrive) | | ✓ |
+| [Operations](./operations.md) across multiple queues, including [dead letter redrive](./operations.md#redrive) | | ✓ |
 | [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
 | Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
 | A [status page](./status.md) of each queue's health day by day, with each day's states and alerts in time order | | ✓ |
@@ -85,7 +85,7 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | [Single sign-on](./sso.md) through an existing OpenID Connect provider | | ✓ |
 | An [audit log](./audit-log.md) of every change | | ✓ |
 | The [Pro API](./api.md), so a deploy script, a CI job or a worker in another language can send, fetch, complete and retry jobs without a Node.js client | | ✓ |
-| [API tokens](./api-tokens.md), each with a role that decides which methods it may call | | ✓ |
+| [API tokens](./api-tokens.md) for service accounts, whose role decides which methods a token may call | | ✓ |
 | [Prometheus metrics](./metrics.md) at `/metrics`, for existing dashboards and alerting to scrape | | ✓ |
 | Support from the author of pg-boss | | ✓ |
 
