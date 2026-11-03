@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import Db from '../src/db.ts'
+import Db, { TRANSACTION_ROLLBACK_TIMEOUT_MS } from '../src/db.ts'
 import { PgBoss, systemClock } from '../src/index.ts'
 import * as Attorney from '../src/attorney.ts'
 import * as helper from './testHelper.ts'
@@ -74,9 +74,10 @@ describe('config', function () {
   })
 
   describe('expiration limit', function () {
-    const MAX_EXPIRE_SECONDS = Attorney.POLICY.MAX_EXPIRATION_HOURS * 60 * 60
+    const MAX_EXPIRE_SECONDS = Attorney.POLICY.MAX_JOB_EXPIRATION_DAYS * 86400
 
     it('should accept an expiration of exactly the maximum', function () {
+      expect(MAX_EXPIRE_SECONDS * 1000 + TRANSACTION_ROLLBACK_TIMEOUT_MS).toBeLessThan(2 ** 31)
       expect(() => Attorney.checkSendArgs(['queue', null, { expireInSeconds: MAX_EXPIRE_SECONDS }])).not.toThrow()
       expect(() => Attorney.validateQueueArgs({ expireInSeconds: MAX_EXPIRE_SECONDS })).not.toThrow()
     })
@@ -87,16 +88,16 @@ describe('config', function () {
       expect(() => Attorney.validateQueueArgs({ expireInSeconds: overLimit })).toThrow('cannot exceed')
     })
 
-    // The other options measured against MAX_EXPIRATION_HOURS all treat the limit as inclusive,
-    // and the default maintenance interval sits exactly on it. Expiration must agree.
-    it('should treat the limit the same way as the other options bounded by it', function () {
+    it('should keep maintenance intervals bounded to one day', function () {
       const config = { connectionString: 'postgres://localhost/db' }
+      const intervalLimit = 86400
 
-      for (const option of ['superviseIntervalSeconds', 'maintenanceIntervalSeconds', 'monitorIntervalSeconds', 'queueCacheIntervalSeconds']) {
-        expect(() => Attorney.getConfig({ ...config, [option]: MAX_EXPIRE_SECONDS })).not.toThrow()
+      for (const option of ['superviseIntervalSeconds', 'maintenanceIntervalSeconds', 'monitorIntervalSeconds', 'queueCacheIntervalSeconds', 'reindexIntervalSeconds']) {
+        expect(() => Attorney.getConfig({ ...config, [option]: intervalLimit })).not.toThrow()
+        expect(() => Attorney.getConfig({ ...config, [option]: intervalLimit + 1 })).toThrow('cannot exceed')
       }
 
-      expect(Attorney.getConfig(config).maintenanceIntervalSeconds).toBe(MAX_EXPIRE_SECONDS)
+      expect(Attorney.getConfig(config).maintenanceIntervalSeconds).toBe(intervalLimit)
     })
   })
 
