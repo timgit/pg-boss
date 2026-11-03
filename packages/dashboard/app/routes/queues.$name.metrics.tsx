@@ -278,7 +278,6 @@ export default function QueueMetrics ({ loaderData }: { loaderData: Awaited<Retu
       <PageHeader
         parent={{ to: `/queues/${encodeURIComponent(name)}`, label: name }}
         title={`${name}: counts over time`}
-        subtitle="From the counts pg-boss records each monitor pass."
       />
 
       {!statsAvailable ? (

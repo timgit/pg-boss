@@ -39,9 +39,7 @@ export default function Instances ({ loaderData }: { loaderData: InstancesData }
     <div className="space-y-4">
       <PageHeader
         title="Instances"
-        subtitle={available
-          ? `Every instance registered in this database: ${live.length} live on ${hosts === 1 ? 'one host' : `${hosts} hosts`}`
-          : 'The instances that share this database'}
+        subtitle={available ? `${live.length} live on ${hosts === 1 ? 'one host' : `${hosts} hosts`}` : undefined}
       />
 
       {available

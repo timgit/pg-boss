@@ -99,7 +99,7 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title="Warnings"
-        subtitle="Events emitted while persistWarnings is enabled, newest first"
+        subtitle="Recorded while persistWarnings is on"
       />
 
       <Card>

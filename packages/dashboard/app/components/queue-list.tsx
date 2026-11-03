@@ -459,7 +459,7 @@ export function QueueListHeader ({ data, extensions }: { data: QueueListData, ex
   return (
     <PageHeader
       title="Queues"
-      subtitle={extensions?.subtitle ?? `${n(totalCount)} queue${totalCount !== 1 ? 's' : ''} ${filtered ? 'found' : 'configured'}`}
+      subtitle={extensions?.subtitle ?? `${n(totalCount)} queue${totalCount !== 1 ? 's' : ''}${filtered ? (totalCount === 1 ? ' matches' : ' match') : ''}`}
       action={
         <div className="flex flex-wrap items-center justify-end gap-3">
           {extensions?.header}

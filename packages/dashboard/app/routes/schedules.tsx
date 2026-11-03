@@ -82,7 +82,6 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title="Schedules"
-        subtitle="Jobs queued automatically, on a cron expression or a recurrence rule"
         action={<ProSlot name="pageActions" page="schedules" />}
       />
 

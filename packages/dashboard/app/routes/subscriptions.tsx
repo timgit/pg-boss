@@ -66,7 +66,6 @@ export default function Subscriptions ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title="Subscriptions"
-        subtitle="Events sent with publish(), and the queues subscribed to each"
         action={<ProSlot name="pageActions" page="subscriptions" />}
       />
 

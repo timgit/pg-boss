@@ -38,7 +38,7 @@ export default function SubscriptionDetail ({ loaderData }: Route.ComponentProps
       <PageHeader
         parent={{ to: '/subscriptions', label: 'Subscriptions' }}
         title={`Subscription: ${event}`}
-        subtitle={`Each job published to this event is sent to ${queues.length === 1 ? 'one queue' : `all ${queues.length} queues below`}`}
+        subtitle={`Sends each published job to ${queues.length === 1 ? 'one queue' : `${queues.length} queues`}`}
       />
 
       <Card>

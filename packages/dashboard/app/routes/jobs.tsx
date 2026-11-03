@@ -262,13 +262,10 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     setQueryParams(buildParams(cleared, columnsFor(cleared)))
   }
 
-  const subtitle = `${sortColumn === 'completedOn' ? 'Recently finished' : 'Recently created'} jobs ${filters.queues.length > 0 ? 'in the selected queues' : 'across all queues'}`
-
   return (
     <div className="space-y-4">
       <PageHeader
         title="Jobs"
-        subtitle={subtitle}
         action={<ProSlot name="pageActions" page="jobs" />}
       />
 

@@ -96,7 +96,7 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title="Migrations"
-        subtitle="Boss async migrations (BAM), the schema changes such as concurrent index builds that run outside the install transaction"
+        subtitle="Schema changes run outside the install transaction, such as concurrent index builds"
       />
 
       <Card>
