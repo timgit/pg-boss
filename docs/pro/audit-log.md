@@ -10,10 +10,13 @@ Pro writes each change to the log in the same transaction as the change itself. 
 ![An audit entry](../images/pro/audit-entry.webp){.light-only}
 ![An audit entry](../images/pro/audit-entry-dark.webp){.dark-only}
 
-- Filter by database. **No database** shows the changes that belong to no single database, such as accounts, groups and settings.
+- Filter by **Who** made the change (a person or a service account), **What** kind of change it was (jobs and queues, alerts, accounts and tokens, groups, sign-ins, settings, API calls, one or several), the **Database** it was made in, and **When** (the last 24 hours, 7, 30 or 90 days). **No database** shows the changes that belong to no single database, such as accounts, groups and settings.
+- The filters in force show as chips under the filter row, each removable on its own. A link from another page can also filter by what the entries are about (**About**) or by one exact action, and those show as chips too.
+- Each row names what the change was about, such as the account, group, rule or queues, and the address it came from.
 - **Export CSV** downloads the entries on screen, under the same filters.
+- An account's page links to the entries it made (**Activity**) and to its sign-in history, and a group's page to the entries about the group (**History**).
 - A change made with an API token names the service account and the token.
-- Pro keeps the log forever unless an administrator sets a number of days, 30 or more, on the same page. See [retention](./administration.md#retention).
+- Pro keeps the log forever unless an administrator sets a number of days, 30 or more, with **Change** under the page title. See [retention](./administration.md#retention).
 
 Only an administrator over every database can open the log.
 
