@@ -232,7 +232,8 @@ function NavGroup ({
         <ChevronRight aria-hidden="true" />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <SidebarMenuSub className="mt-0.5">
+        {/* The guide line under the icon's center, and each label in line with the row's own. */}
+        <SidebarMenuSub className="mt-0.5 ml-[21px] pl-3">
           {children.map((child) => (
             <NavChild key={child.href} name={child.name} path={child.href} href={buildHref(child.href)} onNavigate={onNavigate} />
           ))}
