@@ -3,8 +3,13 @@
 Destinations live in Settings (`/pro/destinations`), and the rules of every
 database share them. A destination is an email, a webhook, or PagerDuty. **Send
 test** sends a sample alert that fires and then resolves, to show the
-receiver handling both. The page lists every attempt, tests included, with the
-receiver's response.
+receiver handling both.
+
+Each destination's row shows its last delivery: when it went, whether it was
+sent, and when it failed, the receiver's response and how many failed in a row.
+**Deliveries** opens every attempt to that destination, tests included, newest
+first, or its failures alone. An alert's own page shows the deliveries made for
+it.
 
 ![The destinations page](../images/pro/destinations.webp){.light-only}
 ![The destinations page](../images/pro/destinations-dark.webp){.dark-only}
