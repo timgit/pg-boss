@@ -23,7 +23,9 @@ scope.
 
 The list holds people and [service accounts](./api-tokens.md) together. **All**,
 **People** and **Service accounts** narrow it to one kind, and **Add** creates
-either. **Role on** picks a database, and the list then shows who can act on it
+either. The search box keeps the accounts whose email, service account name or
+person's name holds the text, and the counts on the tabs follow it. **In group** keeps one
+group's members. **Role on** picks a database, and the list then shows who can act on it
 and why. See [access by database](./roles.md#access-by-database).
 
 ![The accounts page](../images/pro/accounts.webp){.light-only}
@@ -31,15 +33,17 @@ and why. See [access by database](./roles.md#access-by-database).
 
 From there, add a person with a role. Their own page says under their name what they can do on each
 database, from their direct roles and their groups together. **Role on** in the list shows which
-grant each comes from. The page also shows:
+grant each comes from. **Activity**, after the date the account was added, opens the
+[audit log](./audit-log.md) filtered to what it did. The page also shows:
 
 - **Direct roles**: the roles granted to the account itself. Grant and remove them here. When a
   direct role adds nothing a group already gives, the page says so.
 - **Groups**: the groups it's in, with what each grants. Add it to a group or take it out here.
 - **Signing in**: set a password, or create an invitation link that lets the person choose one. It
-  also lists the browsers the account is signed in on, with where from and when. **Sign out
-  everywhere** ends every session.
-- **Recent activity**: what it did through the Pro Console, from the [audit log](./audit-log.md).
+  also says how many browsers the account is signed in on and where it was last seen. **Sessions**
+  lists each browser with where it signed in from and when, and links to the account's sign-in
+  history in the audit log: every sign-in, failed attempt and sign-out. **Sign out everywhere** ends
+  every session.
 
 Edit its name here too, or disable or delete the account. Disabling, deleting or changing a
 password ends that account's sessions immediately. An open invitation link stops working when the
@@ -74,12 +78,15 @@ every other session and keeps the current one.
 ## Groups
 
 An account can hold a role directly, or through a group that holds one. Groups
-live at `/pro/groups`. Give a group a role over a database (or over every
+live at `/pro/groups`, where the search box keeps the groups whose name or
+description holds the text. Give a group a role over a database (or over every
 database) and add users to it by pasting their addresses, and every member has
 that role. Where two roles apply to the same database, the person may do everything
 either allows, as [Roles](./roles.md) explains. A group's page lists its
-members with each one's direct roles, says whether [SSO](./sso.md) maps a provider group
-to it, and shows its recent changes. Service accounts can't join a group.
+members ten at a time, with a search and a way to remove each one. **View in Accounts** opens the
+Accounts list filtered to the group, with each member's roles and when they were last active, and
+**History** opens the audit log filtered to the group's changes. When
+[SSO](./sso.md) maps a provider group to it, the page names that group too. Service accounts can't join a group.
 
 ![A group's page](../images/pro/group.webp){.light-only}
 ![A group's page](../images/pro/group-dark.webp){.dark-only}
