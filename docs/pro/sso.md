@@ -3,16 +3,19 @@
 `/pro/sso` points Pro at any OpenID Connect provider, such as Okta,
 Entra, Google, Auth0 or Keycloak. The page runs in the order you set it up:
 
-- **Login page** names the **Sign in with…** button and turns it on. The switch
-  stays off until a provider is saved.
-- **1 Connect your provider**: copy the redirect URI into the provider, then paste
+- **Login page** names the **Sign in with…** button.
+- **1 Provider**: copy the redirect URI into the provider, then paste
   the issuer, the client id and the client secret it gives you. **Test
   connection** checks that the issuer answers.
-- **2 Who can sign in**: only people with an account here, or also anyone at the
+- **2 Accounts**: existing accounts only, or also new accounts for the
   email domains you name.
 - **3 Groups** (optional): which provider groups fill which Pro groups.
 
-**Save** at the foot saves all of it at once.
+**Save** at the foot saves the button name and all three steps. **Turn on** and
+**Turn off** at the top of the page add the button to the login page or take it
+away, at once and without a save. **Turn on** appears once a provider is saved,
+and it needs a saved issuer and client id. The status under the title shows
+whether the button is on the login page.
 
 ![The single sign-on page](../images/pro/sso.webp){.light-only}
 ![The single sign-on page](../images/pro/sso-dark.webp){.dark-only}
@@ -20,7 +23,7 @@ Entra, Google, Auth0 or Keycloak. The page runs in the order you set it up:
 Pro matches users on their **verified** email address. A user invited here
 first who later signs in through the provider lands on the same account, with
 the roles they already had. Pro refuses an address the provider hasn't
-verified. **Who can sign in** can let an unknown address become a new account,
+verified. **Accounts** can let an unknown address become a new account,
 and it doesn't by default. That choice needs the email domains that get an account, matched
 exactly, so `example.com` doesn't admit `mail.example.com`. Without that limit,
 a provider with public sign-up, such as Google or Auth0, would give an account
