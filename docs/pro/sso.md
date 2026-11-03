@@ -1,9 +1,18 @@
 # Single sign-on
 
 `/pro/sso` points Pro at any OpenID Connect provider, such as Okta,
-Entra, Google, Auth0 or Keycloak. Paste the issuer, the client id and the client
-secret. Copy the redirect URI the page shows into the provider. The login page
-then gets a **Sign in with…** button.
+Entra, Google, Auth0 or Keycloak. The page runs in the order you set it up:
+
+- **Login page** names the **Sign in with…** button and turns it on. The switch
+  stays off until a provider is saved.
+- **1 Connect your provider**: copy the redirect URI into the provider, then paste
+  the issuer, the client id and the client secret it gives you. **Test
+  connection** checks that the issuer answers.
+- **2 Who can sign in**: only people with an account here, or also anyone at the
+  email domains you name.
+- **3 Groups** (optional): which provider groups fill which Pro groups.
+
+**Save** at the foot saves all of it at once.
 
 ![The single sign-on page](../images/pro/sso.webp){.light-only}
 ![The single sign-on page](../images/pro/sso-dark.webp){.dark-only}
@@ -11,8 +20,8 @@ then gets a **Sign in with…** button.
 Pro matches users on their **verified** email address. A user invited here
 first who later signs in through the provider lands on the same account, with
 the roles they already had. Pro refuses an address the provider hasn't
-verified. A setting lets an unknown address become a new account, and it's off
-by default. Turning it on needs the email domains that get an account, matched
+verified. **Who can sign in** can let an unknown address become a new account,
+and it doesn't by default. That choice needs the email domains that get an account, matched
 exactly, so `example.com` doesn't admit `mail.example.com`. Without that limit,
 a provider with public sign-up, such as Google or Auth0, would give an account
 to anyone with a mailbox there. A new account starts as viewer or operator over
@@ -27,8 +36,8 @@ account, an administrator presses **Forget SSO link** on the account's page, and
 the next sign-in links again. Pointing Pro at a new issuer links each account
 again by its address.
 
-If the provider sends a group claim, this page maps its group names onto Pro
-groups. Pro syncs only the mapped groups, so a group kept by hand is never
+If the provider sends a group claim, **Groups** maps its group names onto Pro
+groups, a row each, and each row's Pro group is one that already exists. Pro syncs only the mapped groups, so a group kept by hand is never
 emptied because the provider doesn't list it. A token with no group claim is a
 person in no group, which is what Okta sends when none passes its filter, so
 Pro takes them out of every mapped group. A claim holding one name as a string
