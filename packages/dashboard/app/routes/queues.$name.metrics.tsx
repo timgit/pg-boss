@@ -328,14 +328,13 @@ export default function QueueMetrics ({ loaderData }: { loaderData: Awaited<Retu
                 />
               </label>
 
-              <div className="flex h-[38px] items-center">
+              <label className="flex h-[38px] cursor-pointer items-center gap-2 text-sm text-[var(--text-secondary)] select-none">
                 <Checkbox
-                  id="metrics-show-total"
-                  label="Show total stored"
                   checked={showTotal}
-                  onChange={(e) => setParam({ total: e.target.checked ? '1' : null })}
+                  onCheckedChange={(checked) => setParam({ total: checked ? '1' : null })}
                 />
-              </div>
+                Show total stored
+              </label>
             </CardContent>
           </Card>
 

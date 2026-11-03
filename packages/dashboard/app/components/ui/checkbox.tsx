@@ -1,42 +1,37 @@
-import { forwardRef, type InputHTMLAttributes } from 'react'
+import { Checkbox as CheckboxPrimitive } from '@base-ui/react/checkbox'
+import { CheckIcon, MinusIcon } from 'lucide-react'
 import { cn } from '~/lib/utils'
 
-export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
-  label?: string
+// Ported from shadcn/ui's Base UI checkbox, with the dashboard's color tokens in place of shadcn's
+// and a minus for the indeterminate state.
+
+/**
+ * A checkbox drawn the same in both themes. Renders a `<span role="checkbox">` with a hidden input
+ * beside it, so `name` posts with a form as a native checkbox does. Its target reaches past the box,
+ * and `data-no-row-nav` keeps a click on it from opening a clickable table row.
+ */
+function Checkbox ({ className, ...props }: CheckboxPrimitive.Root.Props) {
+  return (
+    <CheckboxPrimitive.Root
+      data-slot="checkbox"
+      data-no-row-nav=""
+      className={cn(
+        'group relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-card)] text-white shadow-xs outline-none transition-colors',
+        'data-checked:border-[var(--primary-600)] data-checked:bg-[var(--primary-600)] data-indeterminate:border-[var(--primary-600)] data-indeterminate:bg-[var(--primary-600)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]',
+        'data-disabled:cursor-not-allowed data-disabled:opacity-50',
+        // A larger target than the box, as shadcn draws it, so a near miss in a table ticks the box instead of opening the row.
+        'after:absolute after:-inset-x-3 after:-inset-y-2',
+        className
+      )}
+      {...props}
+    >
+      <CheckboxPrimitive.Indicator data-slot="checkbox-indicator" className="grid place-content-center text-current">
+        <CheckIcon className="size-3.5 group-data-indeterminate:hidden" strokeWidth={3} aria-hidden="true" />
+        <MinusIcon className="hidden size-3.5 group-data-indeterminate:block" strokeWidth={3} aria-hidden="true" />
+      </CheckboxPrimitive.Indicator>
+    </CheckboxPrimitive.Root>
+  )
 }
-
-const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
-  ({ className, label, id, ...props }, ref) => {
-    const checkboxId = id || `checkbox-${Math.random().toString(36).substr(2, 9)}`
-
-    return (
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id={checkboxId}
-          ref={ref}
-          className={cn(
-            'h-4 w-4 rounded border-gray-300 text-primary-600',
-            'focus:ring-2 focus:ring-primary-600 focus:ring-offset-0',
-            'dark:border-gray-700 dark:bg-gray-900',
-            'dark:checked:bg-primary-600 dark:checked:border-primary-600',
-            'cursor-pointer disabled:cursor-not-allowed disabled:opacity-50',
-            className
-          )}
-          {...props}
-        />
-        {label && (
-          <label
-            htmlFor={checkboxId}
-            className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none"
-          >
-            {label}
-          </label>
-        )}
-      </div>
-    )
-  }
-)
-Checkbox.displayName = 'Checkbox'
 
 export { Checkbox }
