@@ -1,10 +1,14 @@
-import { NavLink, useSearchParams, useMatch } from 'react-router'
+import { useEffect, useState } from 'react'
+import { NavLink, matchPath, useLocation, useMatch, useSearchParams } from 'react-router'
+import { ChevronRight } from 'lucide-react'
 import overlay from '~pro'
 import { ProSlot } from '~/components/pro-slot'
 import { proPresent } from '~/lib/pro-present'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
 import type { ProNavItem } from '~/lib/pro-contract'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '~/components/ui/hover-card'
 import markWhite from '~/assets/pg-boss-mark-white.svg?raw'
 import {
   Sidebar,
@@ -15,8 +19,12 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarTrigger,
   useSidebar,
 } from '~/components/ui/sidebar'
@@ -111,14 +119,20 @@ function MigrationsIcon ({ className }: { className?: string }) {
 function NavItem ({
   item,
   href,
+  buildHref,
   onNavigate,
 }: {
   item: ProNavItem
   href: string
+  buildHref: (path: string) => string
   onNavigate: () => void
 }) {
   const end = item.href === '/'
   const isActive = useMatch({ path: item.href, end }) !== null
+
+  if (item.children?.length) {
+    return <NavGroup item={item} href={href} buildHref={buildHref} onNavigate={onNavigate} />
+  }
 
   return (
     <SidebarMenuItem>
@@ -131,6 +145,112 @@ function NavItem ({
         <span className="whitespace-nowrap group-data-[state=collapsed]:hidden">{item.name}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
+  )
+}
+
+/*
+  A row with pages under it. The chevron opens and closes the group from any page, and the choice
+  is kept in this browser; landing on the row's page or any page under it opens the group whatever
+  was chosen. The row stays a link to its own page. On the icon rail there is no room for nested
+  rows, so hovering the icon opens a small menu of the same pages in place of the tooltip.
+*/
+function NavGroup ({
+  item,
+  href,
+  buildHref,
+  onNavigate,
+}: {
+  item: ProNavItem
+  href: string
+  buildHref: (path: string) => string
+  onNavigate: () => void
+}) {
+  const { state } = useSidebar()
+  const { pathname } = useLocation()
+  const children = item.children ?? []
+  const inside = matchPath({ path: item.href, end: false }, pathname) !== null
+  const onChild = children.some((child) => matchPath({ path: child.href, end: false }, pathname) !== null)
+  const key = `sidebar:group:${item.href}`
+  const [open, setOpen] = useState(inside)
+
+  useEffect(() => {
+    if (inside) return setOpen(true)
+    try {
+      setOpen(localStorage.getItem(key) === 'open')
+    } catch {}
+  }, [inside, key])
+
+  const choose = (next: boolean) => {
+    setOpen(next)
+    try {
+      localStorage.setItem(key, next ? 'open' : 'closed')
+    } catch {}
+  }
+
+  const icon = <item.icon className="h-5 w-5 flex-shrink-0" />
+  const menuLink = 'flex h-8 items-center rounded-md px-2 text-sm text-[var(--text-primary)] hover:bg-sidebar-accent'
+
+  if (state === 'collapsed') {
+    return (
+      <SidebarMenuItem>
+        <HoverCard>
+          <HoverCardTrigger
+            delay={100}
+            closeDelay={150}
+            render={<SidebarMenuButton isActive={inside} render={<NavLink to={href} onClick={onNavigate} />} />}
+          >
+            {icon}
+            <span className="sr-only">{item.name}</span>
+          </HoverCardTrigger>
+          <HoverCardContent side="right" align="start" sideOffset={10} alignOffset={-6} className="w-44 p-1.5">
+            <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">{item.name}</p>
+            <NavLink to={href} end onClick={onNavigate} className={menuLink}>All {item.name.toLowerCase()}</NavLink>
+            {children.map((child) => (
+              <NavLink key={child.href} to={buildHref(child.href)} onClick={onNavigate} className={menuLink}>{child.name}</NavLink>
+            ))}
+          </HoverCardContent>
+        </HoverCard>
+      </SidebarMenuItem>
+    )
+  }
+
+  return (
+    <Collapsible open={open} onOpenChange={choose} render={<SidebarMenuItem />}>
+      <SidebarMenuButton
+        isActive={inside && !onChild}
+        render={<NavLink to={href} onClick={onNavigate} />}
+        // On a page under it, the row reads as the section you are in without a second accent rail.
+        className={cn(onChild && 'font-medium text-[var(--sidebar-active-text)]')}
+      >
+        {icon}
+        <span className="whitespace-nowrap">{item.name}</span>
+      </SidebarMenuButton>
+      <CollapsibleTrigger
+        render={<SidebarMenuAction aria-label={`${open ? 'Hide' : 'Show'} the pages under ${item.name}`} />}
+        className="cursor-pointer [&>svg]:transition-transform [&[data-panel-open]>svg]:rotate-90"
+      >
+        <ChevronRight aria-hidden="true" />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <SidebarMenuSub className="mt-0.5">
+          {children.map((child) => (
+            <NavChild key={child.href} name={child.name} path={child.href} href={buildHref(child.href)} onNavigate={onNavigate} />
+          ))}
+        </SidebarMenuSub>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function NavChild ({ name, path, href, onNavigate }: { name: string, path: string, href: string, onNavigate: () => void }) {
+  const isActive = useMatch({ path, end: false }) !== null
+
+  return (
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton isActive={isActive} render={<NavLink to={href} onClick={onNavigate} />} className={cn(isActive && 'font-medium')}>
+        <span>{name}</span>
+      </SidebarMenuSubButton>
+    </SidebarMenuSubItem>
   )
 }
 
@@ -220,6 +340,7 @@ export function AppSidebar () {
                   key={item.name}
                   item={item}
                   href={buildHref(item.href)}
+                  buildHref={buildHref}
                   onNavigate={() => setOpenMobile(false)}
                 />
               ))}
@@ -241,6 +362,7 @@ export function AppSidebar () {
                     key={item.name}
                     item={item}
                     href={buildHref(item.href)}
+                    buildHref={buildHref}
                     onNavigate={() => setOpenMobile(false)}
                   />
                 ))}

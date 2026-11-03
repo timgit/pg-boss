@@ -28,6 +28,8 @@ export interface ProNavItem {
   name: string
   href: string
   icon: ComponentType<{ className?: string }>
+  /** Pages drawn under this one, in a group that opens and closes and opens by itself on any of their pages. */
+  children?: Array<{ name: string, href: string }>
 }
 
 /** What the queue page tells the slot in its header about the queue on screen. */
