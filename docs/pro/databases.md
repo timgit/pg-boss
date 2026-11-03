@@ -4,8 +4,10 @@ Pro shows one connected database at a time. Every page names it, with a colored
 dot, at the start of the top bar. When `DATABASE_URL` lists more than one database, a menu
 there switches between them.
 
-`/pro/databases` gives each one a friendly name, such as Production or
-Test, and a color. Names show in the database menu, in alert emails and webhook
+`/pro/databases` lists each one by its id, and the pencil beside it gives it a
+friendly name, such as Production or Test. A name saves when you press Enter or
+leave the field, a color when you pick it, and an empty name shows the id again.
+Names show in the database menu, in alert emails and webhook
 payloads (`databaseName`, beside `databaseId`), and in the audit log. Renaming
 here keeps every link, alert rule and history row, because they all refer to the
 database's id, which comes from its name in `DATABASE_URL`. Renaming it there
