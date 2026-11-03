@@ -11,9 +11,9 @@ Each grant gives a role on one database or on all of them, to a person, a [group
 
 Grants read as the role, then where it applies: `Operator › All databases`, or `Viewer › ● Production` with the database's color.
 
-## Access page
+## Access by database
 
-`/pro/access` answers the question people ask during an outage, which is who can act on this database and why. Choose a database, and the page lists each person or service account with a role there. Beside each one it shows the role they end up with and every grant that produced it, direct or through a group. A role granted for every database appears for each one.
+The accounts list answers the question people ask during an outage, which is who can act on this database and why. Choose the database in **Role on** at `/pro/accounts`, and the list shows each person or service account with a role there, and how many hold each role. Beside each one it shows the role they end up with, and the grant it comes from, directly or through a group, with any weaker grants under it. A role granted for every database appears for each one, and a disabled account shows that it has none.
 
 ![Who can act on a database](../images/pro/access.webp){.light-only}
 ![Who can act on a database](../images/pro/access-dark.webp){.dark-only}

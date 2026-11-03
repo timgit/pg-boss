@@ -21,12 +21,17 @@ An administrator whose role covers **every** database manages accounts at
 database doesn't get this screen, because it would let them widen their own
 scope.
 
+The list holds people and [service accounts](./api-tokens.md) together. **All**,
+**People** and **Service accounts** narrow it to one kind, and **Add** creates
+either. **Role on** picks a database, and the list then shows who can act on it
+and why. See [access by database](./roles.md#access-by-database).
+
 ![The accounts page](../images/pro/accounts.webp){.light-only}
 ![The accounts page](../images/pro/accounts-dark.webp){.dark-only}
 
-From there, add an account with a role. Its own page says under its name what it can do on each
-database, from its direct roles and its groups together. [Access](./roles.md#access-page) shows which grant
-each comes from. The page also shows:
+From there, add a person with a role. Their own page says under their name what they can do on each
+database, from their direct roles and their groups together. **Role on** in the list shows which
+grant each comes from. The page also shows:
 
 - **Direct roles**: the roles granted to the account itself. Grant and remove them here. When a
   direct role adds nothing a group already gives, the page says so.
@@ -46,8 +51,8 @@ it for every account. An account is locked from everywhere only after twenty fai
 stranger can't lock someone out of their own account in a few tries. The account's page shows
 that lock, and an administrator can clear it there.
 
-Machines get [service accounts](./api-tokens.md) instead, at `/pro/service-accounts`. A service
-account acts only through API tokens.
+Machines get [service accounts](./api-tokens.md) instead, in the same list. A service account
+acts only through API tokens.
 
 ![An account's page](../images/pro/account.webp){.light-only}
 ![An account's page](../images/pro/account-dark.webp){.dark-only}
@@ -78,7 +83,3 @@ to it, and shows its recent changes. Service accounts can't join a group.
 
 ![A group's page](../images/pro/group.webp){.light-only}
 ![A group's page](../images/pro/group-dark.webp){.dark-only}
-
-`/pro/access` answers the question people ask during an outage, which is who can
-act on this database and why. It shows the role each person ends up with beside
-every grant that produced it.

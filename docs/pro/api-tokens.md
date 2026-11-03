@@ -7,16 +7,17 @@ A script, a CI job, a Prometheus scrape or a worker in another language reaches 
 - Disabling it stops every one of its tokens at once.
 - It can have several tokens, so one can be replaced with no gap: create the new one, deploy it, revoke the old one.
 
-## Service accounts page
+## Service accounts list
 
-An administrator over every database manages them under **Settings › Service accounts**, at
-`/pro/service-accounts`. The list shows each one's purpose, roles, working tokens, when it was last
-used and from where, and marks a token that expires within 14 days.
+An administrator over every database manages them in **Settings › Accounts**, beside the people.
+**Service accounts** at the top of that list (`/pro/accounts?kind=service`) shows each one's
+purpose, roles, working tokens, when it was last used and from where, and marks a token that
+expires within 14 days.
 
 ![Service accounts](../images/pro/service-accounts.webp){.light-only}
 ![Service accounts](../images/pro/service-accounts-dark.webp){.dark-only}
 
-**Add service account** takes a name, a description, and a first role. Its page then shows:
+**Add service account**, or **Add** then **Service account** on the list of every account, takes a name, a description, and a first role. Its page then shows:
 
 - **Roles**: what its tokens may do, and on which databases. Grant and remove them here. A service
   account can't join a group.
