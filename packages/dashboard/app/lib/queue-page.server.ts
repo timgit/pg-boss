@@ -6,12 +6,12 @@ import {
   isDeadLetterQueue,
   getSubscriptionEventCount,
 } from './queries.server'
-import { parsePaging, isValidJobState, DEFAULT_STATE_FILTER } from './utils'
-import { DEFAULT_QUEUE_JOB_COLUMNS, defaultJobColumnsFor, parseJobColumns } from './job-columns'
+import { isValidJobState, DEFAULT_STATE_FILTER } from './utils'
+import { DEFAULT_QUEUE_JOB_COLUMNS, defaultJobColumnsFor } from './job-columns'
 import { PAGE_SIZE } from './pagination'
 
 /**
- * What a queue's page shows: the queue, one page of its jobs, and what its header and banners need.
+ * What a queue's page shows: the queue, its newest jobs in one state, and what its header and banners need.
  * Apart from the route so an overlay that replaces the page can load it too. Throws a 404 response
  * when there is no such queue.
  */
@@ -24,9 +24,8 @@ export async function loadQueuePage (DB_URL: string, SCHEMA: string, name: strin
   const stateFilter = stateParam !== null && isValidJobState(stateParam)
     ? stateParam
     : DEFAULT_STATE_FILTER
-  const jobColumns = parseJobColumns(url.searchParams, defaultJobColumnsFor(stateFilter, DEFAULT_QUEUE_JOB_COLUMNS))
-
-  const { page, cursor } = parsePaging(url.searchParams)
+  // A preview, not a list: the Jobs page, filtered to this queue, pages and picks columns.
+  const jobColumns = defaultJobColumnsFor(stateFilter, DEFAULT_QUEUE_JOB_COLUMNS)
 
   const queue = await getQueue(DB_URL, SCHEMA, name)
 
@@ -37,7 +36,7 @@ export async function loadQueuePage (DB_URL: string, SCHEMA: string, name: strin
   // The Ready sparkline comes from the always-on queue.ready_history column (loaded with `queue`).
   // collection drives the banner that points at the interactive metrics chart (needs persistQueueStats).
   const [jobs, collection, isDeadLetter, subscribedEvents] = await Promise.all([
-    getJobs(DB_URL, SCHEMA, name, { state: stateFilter, limit: PAGE_SIZE, cursor, jobColumns }),
+    getJobs(DB_URL, SCHEMA, name, { state: stateFilter, limit: PAGE_SIZE, jobColumns }),
     getQueueStatsCollectionStatus(DB_URL, SCHEMA),
     isDeadLetterQueue(DB_URL, SCHEMA, name),
     getSubscriptionEventCount(DB_URL, SCHEMA, name),
@@ -51,13 +50,8 @@ export async function loadQueuePage (DB_URL: string, SCHEMA: string, name: strin
     queue,
     jobs: jobs.rows,
     totalCount,
-    page: jobs.atStart ? 1 : page,
     stateFilter,
     jobColumns,
-    hasNextPage: jobs.hasNextPage,
-    hasPrevPage: jobs.hasPrevPage,
-    nextCursor: jobs.nextCursor,
-    prevCursor: jobs.prevCursor,
     statsAvailable: collection.available,
     isDeadLetter,
     subscribedEvents,

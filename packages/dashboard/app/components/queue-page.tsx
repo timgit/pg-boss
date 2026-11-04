@@ -20,19 +20,12 @@ import {
   TableHead,
   TableCell,
 } from '~/components/ui/table'
-import { TablePagination } from '~/components/table-pagination'
 import { FilterSelect } from '~/components/ui/filter-select'
-import { JobColumnsEditor } from '~/components/job-columns-editor'
 import { JobColumnCell } from '~/components/job-column-cell'
 import type { JobResult, QueueResult } from '~/lib/types'
-import { formatDate, JOB_STATE_OPTIONS, jobListSortColumn, resetPaging } from '~/lib/utils'
+import { DEFAULT_STATE_FILTER, formatDate, JOB_STATE_OPTIONS, jobListSortColumn } from '~/lib/utils'
 import { formatSeconds } from '~/lib/job-detail'
-import {
-  DEFAULT_QUEUE_JOB_COLUMNS,
-  defaultJobColumnsFor,
-  appendJobColumns,
-  type JobColumn,
-} from '~/lib/job-columns'
+import type { JobColumn } from '~/lib/job-columns'
 import type { QueuePageData } from '~/lib/queue-page.server'
 import { Count } from '~/components/ui/count'
 
@@ -196,40 +189,27 @@ export function QueueUpkeep ({ queue }: { queue: QueueResult }) {
 export function QueueJobs ({ data }: { data: QueuePageData }) {
   // Only an overlay acts on jobs; without one there is nothing to put in the column.
   const withActions = hasProSlot('jobRowActions')
-  const { queue, jobs, totalCount, page, stateFilter, jobColumns, hasNextPage, hasPrevPage, nextCursor, prevCursor } = data
+  const { queue, jobs, totalCount, stateFilter, jobColumns } = data
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const handleFilterChange = (key: string, value: string | null) => {
+  // The filter stays on the queue's page, so it keeps the reader's place.
+  const handleStateChange = (value: string | null) => {
     const params = new URLSearchParams(searchParams)
     if (value) {
-      params.set(key, value)
+      params.set('state', value)
     } else {
-      params.delete(key)
+      params.delete('state')
     }
-    resetPaging(params)
-    setSearchParams(params)
+    setSearchParams(params, { preventScrollReset: true })
   }
 
-  // Default columns are left out of the URL, so they follow the state filter's defaults.
-  const defaultColumns = defaultJobColumnsFor(stateFilter, DEFAULT_QUEUE_JOB_COLUMNS)
-
-  const handleColumnsChange = (columns: JobColumn[]) => {
-    const params = new URLSearchParams(searchParams)
-    appendJobColumns(params, columns, defaultColumns)
-    resetPaging(params)
-    setSearchParams(params)
-  }
-
-  const getShareUrl = (columns: JobColumn[]) => {
-    const params = new URLSearchParams(searchParams)
-    appendJobColumns(params, columns, defaultColumns)
-    return `${window.location.origin}${window.location.pathname}?${params.toString()}`
-  }
+  const all = new URLSearchParams({ queues: queue.name })
+  if (stateFilter !== DEFAULT_STATE_FILTER) all.set('state', stateFilter)
 
   return (
       <Card>
-        <CardHeader className="flex-col items-stretch sm:flex-row sm:items-center">
-          <div className="flex items-center justify-between gap-3">
+        <CardHeader>
+          <div className="flex items-center gap-3">
             <CardTitle>
               Jobs
               {totalCount !== null && ` (${totalCount.toLocaleString()})`}
@@ -237,15 +217,15 @@ export function QueueJobs ({ data }: { data: QueuePageData }) {
             <FilterSelect
               value={stateFilter}
               options={JOB_STATE_OPTIONS}
-              onChange={(value) => handleFilterChange('state', value)}
+              onChange={handleStateChange}
             />
           </div>
-          <JobColumnsEditor
-            columns={jobColumns}
-            defaultColumns={defaultColumns}
-            getShareUrl={getShareUrl}
-            onColumnsChange={handleColumnsChange}
-          />
+          <DbLink
+            to={`/jobs?${all.toString()}`}
+            className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+          >
+            View all
+          </DbLink>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -272,15 +252,6 @@ export function QueueJobs ({ data }: { data: QueuePageData }) {
             </TableBody>
           </Table>
         </CardContent>
-
-        <TablePagination
-          page={page}
-          nextCursor={nextCursor}
-          prevCursor={prevCursor}
-          totalPages={null}
-          hasNextPage={hasNextPage}
-          hasPrevPage={hasPrevPage}
-        />
       </Card>
   )
 }
