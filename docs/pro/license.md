@@ -4,7 +4,7 @@ An organization with a Pro subscription may install and use Pro, and download ea
 under the terms in the `LICENSE` file that ships in the package. Pro checks no license at runtime.
 The registry decides which versions the [license key](./install.md#install) may install.
 
-## Expiration
+## Cancellation
 
 A subscription renews until it's canceled. A canceled subscription lasts until the end of the period
 already paid for. From then on, the registry accepts the license key only for the versions the table

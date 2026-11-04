@@ -35,14 +35,15 @@ describe('Create Queue Form Fields', () => {
         <label htmlFor="retryDelay">Retry Delay (seconds)</label>
         <input type="number" id="retryDelay" name="retryDelay" min="0" />
 
-        <Checkbox
-          id="retryBackoff"
-          name="retryBackoff"
-          value="true"
-          checked={retryBackoff}
-          onChange={(e) => setRetryBackoff(e.target.checked)}
-          label="Enable Exponential Backoff"
-        />
+        <label>
+          <Checkbox
+            name="retryBackoff"
+            value="true"
+            checked={retryBackoff}
+            onCheckedChange={setRetryBackoff}
+          />
+          Enable Exponential Backoff
+        </label>
 
         <label htmlFor="retryDelayMax">Max Retry Delay (seconds)</label>
         <input
@@ -172,19 +173,19 @@ describe('Create Queue Form Fields', () => {
   })
 
   it('renders retry backoff checkbox', () => {
-    render(<TestForm />)
+    const { container } = render(<TestForm />)
 
-    const backoffCheckbox = screen.getByLabelText(/enable exponential backoff/i)
-    expect(backoffCheckbox).toHaveAttribute('type', 'checkbox')
-    expect(backoffCheckbox).toHaveAttribute('name', 'retryBackoff')
+    // A Base UI checkbox is a `role="checkbox"` element, and a hidden input beside it carries the name.
+    const backoffCheckbox = screen.getByRole('checkbox', { name: /enable exponential backoff/i })
     expect(backoffCheckbox).not.toBeChecked()
+    expect(container.querySelector('input[name="retryBackoff"]')).not.toBeNull()
   })
 
   it('toggles retry backoff checkbox', async () => {
     const user = userEvent.setup()
     render(<TestForm />)
 
-    const backoffCheckbox = screen.getByLabelText(/enable exponential backoff/i)
+    const backoffCheckbox = screen.getByRole('checkbox', { name: /enable exponential backoff/i })
     await user.click(backoffCheckbox)
 
     expect(backoffCheckbox).toBeChecked()
@@ -201,7 +202,7 @@ describe('Create Queue Form Fields', () => {
     const user = userEvent.setup()
     render(<TestForm />)
 
-    const backoffCheckbox = screen.getByLabelText(/enable exponential backoff/i)
+    const backoffCheckbox = screen.getByRole('checkbox', { name: /enable exponential backoff/i })
     await user.click(backoffCheckbox)
 
     const maxRetryDelayInput = screen.getByLabelText(/max retry delay \(seconds\)/i)
@@ -212,7 +213,7 @@ describe('Create Queue Form Fields', () => {
     const user = userEvent.setup()
     render(<TestForm />)
 
-    const backoffCheckbox = screen.getByLabelText(/enable exponential backoff/i)
+    const backoffCheckbox = screen.getByRole('checkbox', { name: /enable exponential backoff/i })
     await user.click(backoffCheckbox)
 
     const maxRetryDelayInput = screen.getByLabelText(/max retry delay \(seconds\)/i) as HTMLInputElement
@@ -295,7 +296,7 @@ describe('Create Queue Form Fields', () => {
     ;(form.querySelector('[name="deleteAfterSeconds"]') as HTMLInputElement).value = '604800'
 
     // Check the checkbox
-    const backoffCheckbox = screen.getByLabelText(/enable exponential backoff/i)
+    const backoffCheckbox = screen.getByRole('checkbox', { name: /enable exponential backoff/i })
     await user.click(backoffCheckbox)
 
     const formData = new FormData(form)

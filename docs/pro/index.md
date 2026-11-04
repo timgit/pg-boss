@@ -77,8 +77,8 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
 | Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
 | A [status page](./status.md) of each queue's health day by day, with each day's states and alerts in time order | | ✓ |
-| [Instance CPU, memory, connection pool and event loop](./instances.md) | | ✓ |
-| [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, and failed operations | | ✓ |
+| [Instances](./instances.md) grouped by name and host, with what needs attention across them, and each instance's pool, CPU, memory or event loop marked at its limit | | ✓ |
+| [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, instances restarting, gone quiet or at a limit, and failed operations | | ✓ |
 | Each rule's own thresholds, queues and the time a condition must hold, with [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
 | Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |
 | [Groups](./accounts.md), with [roles](./roles.md) per database | | ✓ |
@@ -91,7 +91,7 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 
 ## Pricing
 
-Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or databases. After twelve months paid in total, an organization that stops paying keeps the right to install and run every version released before the subscription ended. While it lasts, a subscription includes every newer version, and support. See [Expiration](./license.md#expiration).
+Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or databases. After twelve months paid in total, an organization that stops paying keeps the right to install and run every version released before the subscription ended. While it lasts, a subscription includes every newer version, and support. See [Cancellation](./license.md#cancellation).
 
 [Buy Pro](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc). Polar takes the payment and shows the license key on its purchases page.
 
