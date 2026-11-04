@@ -1,7 +1,7 @@
 # License
 
-The License page shows the license Pro runs under: who it's licensed to, the plan,
-and when the term ends. A [global admin](./roles.md#global-admin) can open it. **The license doesn't turn any feature on or off.**
+The License page, only visible to [global admins](./roles.md#global-admin), shows the installed
+license. **The license doesn't turn any feature on or off.**
 
 ![The license page](../images/pro/license.webp){.light-only}
 ![The license page](../images/pro/license-dark.webp){.dark-only}

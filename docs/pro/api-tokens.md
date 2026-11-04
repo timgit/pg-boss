@@ -9,7 +9,7 @@ A script, a CI job, a Prometheus scrape or a worker in another language reaches 
 
 ## Service accounts list
 
-A [global admin](./roles.md#global-admin) manages them in **Settings › Accounts**, beside the people.
+They live in **Settings › Accounts**, beside the people, only visible to [global admins](./roles.md#global-admin).
 **Service accounts** at the top of that list (`/pro/accounts?kind=service`) shows each one's
 purpose, roles, working tokens, when it was last used and from where, and marks a token that
 expires within 14 days.

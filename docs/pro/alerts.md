@@ -18,15 +18,15 @@ banner, because no alert opens or closes until the evaluator runs again.
 
 Alerts come only from rules, and only a rule that's turned on opens one. A rule
 belongs to one database, the one selected when the rule was created.
-[Global admins](./roles.md#global-admin) manage rules from the **Rules** button on the alerts page
-(`/pro/alerts/rules`).
+Rules live behind the **Rules** button on the alerts page (`/pro/alerts/rules`),
+only visible to [global admins](./roles.md#global-admin).
 A rule's page lists the 8 alerts it opened most recently. When it has opened
 more, a link there opens this list filtered to that rule.
 
 ![An alert's page](../images/pro/alert.webp){.light-only}
 ![An alert's page](../images/pro/alert-dark.webp){.dark-only}
 
-Operators and administrators can **acknowledge** an open alert, until it closes
+Operators and admins can **acknowledge** an open alert, until it closes
 or for an hour, four hours or a day. The alert then leaves the bell's count for every user, and
 Pro holds its notifications. Conditions, such as a stalled queue, close by
 themselves when they stop matching. Events, such as a pg-boss warning or a failed

@@ -30,7 +30,7 @@ still matches them.
 - A payload value is read as JSON when it parses and as text otherwise, so
   `42` matches the number and `"42"` the string.
 - Permissions are the single-job ones. Deleting needs `job:delete`, which
-  only an administrator has. The page doesn't offer it to an operator, and an
+  only the admin role has. The page doesn't offer it to an operator, and an
   operator can't post it.
 - Each recount is read-only and gives up after 10 seconds. On a large job
   table, narrow the filter to a queue or an age.
@@ -53,8 +53,8 @@ still matches them.
 The page saves a filter by name, to apply again from the top of the page.
 **Operation history** (`/pro/ops/history`, linked from the page header) lists
 every operation on the database from the last 90 days, newest first, with how
-each one ended. Filter it by action or by how the operations ended. For a
-[global admin](./roles.md#global-admin), each row links to its entries in the audit log.
+each one ended. Filter it by action or by how the operations ended. Each row links
+to its entries in the audit log, for [global admins](./roles.md#global-admin).
 
 ## Redrive
 

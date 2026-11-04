@@ -16,8 +16,8 @@ touches the job tables.
 
 ## Managing accounts
 
-A [global admin](./roles.md#global-admin) manages accounts at
-`/pro/accounts`, under **Settings** in the sidebar. An admin on a single
+Accounts live at `/pro/accounts`, under **Settings** in the sidebar, only visible
+to [global admins](./roles.md#global-admin). An admin on a single
 database doesn't get this screen, because it would let them widen their own
 grant.
 
