@@ -79,7 +79,9 @@ function MainContent ({ children }: { children: React.ReactNode }) {
           <ProSlot name="topbarEnd" />
         </div>
       </div>
-      <div className="px-6 py-6 lg:px-8 lg:py-8">
+      {/* The top is the side padding less the 6.5px a page title's line box leaves above its
+          capitals, so the title's letters sit as far below the bar as they do from the sidebar. */}
+      <div className="px-6 pt-4.5 pb-6 lg:px-8 lg:pt-6.5 lg:pb-8">
         {children}
       </div>
     </main>
