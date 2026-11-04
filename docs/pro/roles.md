@@ -7,7 +7,7 @@ Access comes from grants. A grant gives a person, a [group](./accounts.md#groups
 | Viewer | Viewer users are limited to read-only access. |
 | Operator | Operator users can retry, cancel, resume and send jobs, and acknowledge alerts. |
 | Admin | Admin users can delete jobs, and create and delete queues and schedules. An admin on all databases is a [global admin](#global-admin). |
-| Worker | For a service account a worker uses, over the API only: fetch, complete and fail jobs, and send them. Users can't hold it. |
+| Worker | Only a service account can hold it, for a worker using the API to fetch, complete, fail and send jobs. |
 
 Grants read as the role, followed by its scope. For example, `Operator › All databases`, or `Viewer › Production`, where "Production" is the configured database name.
 

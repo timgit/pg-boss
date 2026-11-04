@@ -37,11 +37,11 @@ Each method needs a capability, which the service account gets from its role on 
 | `403` | The token's role doesn't include the method, or Pro refuses the method. |
 | `404` | No database by that id, or one the service account has no role on. |
 | `409` | The database's pg-boss schema isn't the one this Pro makes changes on (see [pg-boss versions](./versions.md)), or an acknowledged alert is closed or already acknowledged. |
-| `429` | An invalid token, after too many from this address. A valid token is never refused this way. |
+| `429` | Only an invalid token, after too many from this address. |
 
 ## Audit
 
-The [audit log](./audit-log.md) records each change with the method, the queue, the token and the answer. Sending, fetching, completing and failing jobs are recorded only when the service account is set to record them. Reads never are.
+The [audit log](./audit-log.md) records each change, never a read, with the method, the queue, the token and the answer. Sending, fetching, completing and failing jobs are recorded only when the service account is set to record them.
 
 ## Alerts
 

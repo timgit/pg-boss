@@ -1,6 +1,6 @@
 # Metrics
 
-`/metrics` serves Prometheus metrics for the databases an [API token](./api-tokens.md)'s service account can see. The metrics come from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. It never counts the job table. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
+`/metrics` serves Prometheus metrics for the databases an [API token](./api-tokens.md)'s service account can see. The metrics come only from what pg-boss already records, without counting the job table: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
 
 | Metric | Labels | What |
 | - | - | - |

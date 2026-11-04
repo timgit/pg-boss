@@ -20,9 +20,9 @@ set up, Pro talks only to its Postgres database.
 The license command sends the token and receives a signed license. It sends
 nothing about the database, its jobs, the deployment, or the machine it runs on.
 
-Alert deliveries carry what the alert is about: the rule name, the warning type
-and message, the queue and database it names, and the time. They don't include
-job payloads.
+Alert deliveries carry no job payloads, only what the alert is about: the rule
+name, the warning type and message, the queue and database it names, and the
+time.
 
 ## Private addresses
 

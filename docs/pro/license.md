@@ -45,9 +45,9 @@ To keep `license.json` on a mounted volume instead, point
 A subscription renews until it's canceled. A canceled subscription lasts until the end of the period
 already paid for. After that, the License page shows **Term ended** while Pro keeps running.
 
-How many months an organization paid for decides what it may still install and use:
+What an organization may still install and use depends on its plan and how long it paid:
 
-| After the subscription ends | Paid 12 months or more | Paid less than 12 months |
+| After the subscription ends | Annual, or monthly for 12 months or more | Monthly for less than 12 months |
 | - | - | - |
 | Use the versions already installed | Yes, permanently | No |
 | Install a version released before it ended | Yes | No |
@@ -55,10 +55,11 @@ How many months an organization paid for decides what it may still install and u
 | Fetch a new license | No | No |
 | Support | No | No |
 
-Every paid month counts toward the 12, on an annual or a monthly subscription, even when the months
-aren't consecutive. A refunded period doesn't count. Under 12 months, Pro keeps running only so that a lapse never takes a
-dashboard away without warning. Running past the end gives no right to keep using it. See section 2
-of `LICENSE`.
+An annual subscription that wasn't refunded has paid for 12 months by the time it ends. A monthly
+subscription reaches 12 months after 12 monthly payments that weren't refunded, even when the months
+aren't consecutive. On a monthly subscription under 12 months, Pro keeps running only so that a lapse
+never takes a dashboard away without warning. Running past the end gives no right to keep using it.
+See section 2 of `LICENSE`.
 
 ### Upgrading pg-boss after the subscription ends
 

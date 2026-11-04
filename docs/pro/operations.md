@@ -17,9 +17,9 @@ jobs lead its list, most matches first, each with its count.
 ![Operations, previewing a retry](../images/pro/operations-dark.webp){.dark-only}
 
 Nothing runs until a user presses **Preview**, types the action's name (`retry`,
-`delete` and so on) and presses the button that names it. What's confirmed is the
-filter, not the number. Jobs keep moving, so the count is a snapshot, and the run acts
-on whatever matches when it reaches each job, which can be more or fewer than shown.
+`delete` and so on) and presses the button that names it. A user confirms the
+filter. The count shown is a snapshot, because jobs keep moving. The run acts on
+whatever matches when it reaches each job, which can be more or fewer than shown.
 Selecting jobs in the sample limits the run to those jobs, and only while the filter
 still matches them.
 
@@ -79,7 +79,8 @@ with.
 - A job with no source queue recorded (sent straight to the dead letter queue)
   stays put unless the redrive names a destination, and the page says how many.
 - Each job is re-created with a new id, retry count 0, and the destination's
-  current retry, retention and expiry settings. Flows do not resume.
+  current retry, retention and expiry settings, so a job from a flow runs on
+  its own without resuming the flow.
 - A job the destination refuses under its policy (`short`, `singleton`,
   `stately`) is a collision. It stays failed in the dead letter queue with
   `output.reason` set to `redrive_conflict`, and the history counts the
