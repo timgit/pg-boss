@@ -16,7 +16,5 @@
 | `PGBOSS_PRO_TRUSTED_PROXIES` | loopback | The reverse proxies whose `X-Forwarded-For` Pro reads, as addresses and CIDR ranges separated by commas, such as `10.0.0.5, 10.1.0.0/16`. Pro refuses to start with an entry that is neither. See [Address](./audit-log.md#address). |
 | `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES` | `false` | `true` keeps webhook and SMTP destinations to public addresses. See [Private addresses](./network.md#private-addresses). |
 | `PGBOSS_PRO_FRAME_ANCESTORS` | `'self'` | The pages allowed to show the Console in a frame, as a CSP `frame-ancestors` source list, such as `'self' https://admin.example.com`. By default no other origin may frame it. |
-| `PGBOSS_PRO_LICENSE` | | The license text. See [the license](./license.md). |
-| `PGBOSS_PRO_LICENSE_FILE` | | A `license.json` somewhere other than the package. |
 
 `PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` do nothing in Pro, which has its own accounts. `PGBOSS_DASHBOARD_READ_ONLY` does nothing either, since roles decide who may change jobs. When any of the three is set, Pro logs that on startup.
