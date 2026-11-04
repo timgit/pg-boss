@@ -3339,6 +3339,10 @@ function settledCountAndIds () {
 //
 // The dead letter copy takes the failed job's output as source_output, not as its own output. The
 // copy is a new job that has not run yet, so its output starts empty like any other.
+//
+// A retry moves keep_until by the same amount as start_after, as updateJob does, so the deletion
+// sweep never removes a job that is waiting for its retry. The new start_after is computed once in
+// the lateral join because the backoff calls random().
 function failJobsBody (schema: string, table: string, where: string, output: string, forceTerminal = false) {
   const state = forceTerminal
     ? `'${JOB_STATES.failed}'::${schema}.job_state`
@@ -3405,16 +3409,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         retry_delay,
         retry_backoff,
         retry_delay_max,
-        CASE WHEN retry_count = retry_limit THEN start_after
-             WHEN NOT retry_backoff THEN ${schema}.job_now() + retry_delay * interval '1'
-             ELSE ${schema}.job_now() + LEAST(
-               retry_delay_max,
-               GREATEST(retry_delay, 1) * (
-                2 ^ LEAST(16, retry_count + 1) / 2 +
-                2 ^ LEAST(16, retry_count + 1) / 2 * random()
-               )
-             ) * interval '1s'
-        END as start_after,
+        r.next_start_after as start_after,
         started_on,
         singleton_key,
         singleton_on,
@@ -3424,7 +3419,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         deletion_seconds,
         created_on,
         ${completedOn} as completed_on,
-        keep_until,
+        r.next_start_after + (keep_until - start_after) as keep_until,
         policy,
         ${output},
         dead_letter,
@@ -3440,7 +3435,18 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         source_output,
         source_root_id,
         trace_context
-      FROM deleted_jobs
+      FROM deleted_jobs, LATERAL (
+        SELECT CASE WHEN retry_count = retry_limit THEN start_after
+             WHEN NOT retry_backoff THEN ${schema}.job_now() + retry_delay * interval '1'
+             ELSE ${schema}.job_now() + LEAST(
+               retry_delay_max,
+               GREATEST(retry_delay, 1) * (
+                2 ^ LEAST(16, retry_count + 1) / 2 +
+                2 ^ LEAST(16, retry_count + 1) / 2 * random()
+               )
+             ) * interval '1s'
+        END as next_start_after
+      ) r
       ON CONFLICT DO NOTHING
       RETURNING *
     ),
@@ -3766,6 +3772,8 @@ export function clearBlocking (schema: string): string {
   `
 }
 
+// $37 is the start_after the job had before the failure. keep_until moves by the same amount as
+// start_after, as in failJobsBody, so a job waiting for its retry is not deleted.
 export function insertRetryJob (schema: string, table: string): string {
   return `
     INSERT INTO ${schema}.${table} (
@@ -3776,7 +3784,8 @@ export function insertRetryJob (schema: string, table: string): string {
       heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies,
       source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id, trace_context
     ) VALUES (
-      $1, $2, $3, $4::text::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
+      $1, $2, $3, $4::text::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+      $11::timestamptz + ($21::timestamptz - $37::timestamptz), $22,
       $23::text::jsonb, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34::text::jsonb, $35, $36::text::jsonb
     ) ON CONFLICT DO NOTHING
     RETURNING id

@@ -546,13 +546,15 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
       await ctx.boss.fail(queue, job.id)
 
-      // The retry insert re-binds created_on and keep_until, so they survive the delete and
-      // re-insert only if the text rendering was what went back in.
+      // The retry insert re-binds created_on, so it survives the delete and re-insert only if the
+      // text rendering was what went back in. keep_until moves with start_after, keeping the window.
       const retried = await ctx.boss.getJobById(queue, job.id)
       helper.assertTruthy(retried)
       expect(retried.state).toBe('retry')
       expect((retried.createdOn as any).raw).toBe((before.createdOn as any).raw)
-      expect((retried.keepUntil as any).raw).toBe((before.keepUntil as any).raw)
+
+      const { rows: [row] } = await helper.findJobs(ctx.schema, 'id = $1', [job.id])
+      expect(row.keep_until.getTime() - row.start_after.getTime()).toBe(14 * 24 * 60 * 60 * 1000)
     })
 
     it('expires a timed-out job during maintenance', async function () {
