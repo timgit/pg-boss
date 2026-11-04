@@ -476,6 +476,50 @@ describe('groupConcurrency', function () {
     return Promise.all(ids.map(async id => (await ctx.boss!.getJobById(ctx.schema, id))?.state))
   }
 
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should give back only the jobs past a limit above 1 from a batch', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const group = { id: 'tenant-123' }
+    const ids = [
+      await ctx.boss.send(ctx.schema, {}, { group }),
+      await ctx.boss.send(ctx.schema, {}, { group }),
+      await ctx.boss.send(ctx.schema, {}, { group })
+    ]
+    const [job1, job2, job3] = ids
+    assertTruthy(job1)
+    assertTruthy(job2)
+    assertTruthy(job3)
+
+    const { first, second } = await raceFetch({ groupConcurrency: 2, batchSize: 2 }, { groupConcurrency: 2 })
+
+    expect(first.map(job => job.id)).toEqual([job1])
+    // The batch claimed job2 and job3 against a snapshot with no active job. With job1 committed
+    // the group holds 3 against a limit of 2, so one of the two goes back.
+    expect(second).toHaveLength(1)
+    expect((await states([job2, job3])).sort()).toEqual(['active', 'created'])
+    expect(await states([job1, second[0].id])).toEqual(['active', 'active'])
+  })
+
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should judge a give-back by the group tier limit', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const group = { id: 'tenant-123', tier: 'gold' }
+    const groupConcurrency = { default: 1, tiers: { gold: 2 } }
+    const ids = [
+      await ctx.boss.send(ctx.schema, {}, { group }),
+      await ctx.boss.send(ctx.schema, {}, { group }),
+      await ctx.boss.send(ctx.schema, {}, { group })
+    ]
+    const [job1, job2, job3] = ids
+    assertTruthy(job1)
+    assertTruthy(job2)
+    assertTruthy(job3)
+
+    const { second } = await raceFetch({ groupConcurrency, batchSize: 2 }, { groupConcurrency })
+
+    // Judged by the default of 1, both would go back. The gold limit of 2 keeps one.
+    expect(second).toHaveLength(1)
+    expect((await states([job2, job3])).sort()).toEqual(['active', 'created'])
+  })
+
   it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should still give back the rest of a batch when the queue policy refuses one job', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     await ctx.boss.createQueue(ctx.schema, { policy: 'stately' })
