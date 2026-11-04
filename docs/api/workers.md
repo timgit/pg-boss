@@ -109,15 +109,15 @@ By default, a worker fetches 1 job every 2 seconds.
 
   Same as in [`fetch()`](./jobs#fetch-name-options)
 
-* **pollingIntervalSeconds**, int, *(default=2)*
+* **pollingIntervalSeconds**, number, *(default=2)*
 
   Base interval to check for new jobs, in seconds. Must be >=0.5 (500ms). Used when no faster or slower mode applies: queues without `notify`, or notify-enabled queues when the LISTEN/NOTIFY listener is unavailable.
 
   > **Note**: When [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for a queue, workers are woken the instant a job is created and polling automatically falls back to the slower `notifyPollingIntervalSeconds` backstop, so you don't need to raise `pollingIntervalSeconds` yourself.
 
-* **notifyPollingIntervalSeconds**, int, *(default=30)*
+* **notifyPollingIntervalSeconds**, number, *(default=30, or `pollingIntervalSeconds` when that's larger)*
 
-  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms).
+  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms) and at least `pollingIntervalSeconds`.
 
 * **burstWhenReadyExceeds**, int
 
@@ -167,7 +167,7 @@ By default, a worker fetches 1 job every 2 seconds.
 
 * **heartbeatRefreshSeconds**, number
 
-  Custom interval in seconds at which the worker sends heartbeats for active jobs. Defaults to `heartbeatSeconds / 2` (derived from the job's heartbeat configuration). Must be strictly less than `heartbeatSeconds`. This is a worker-level setting only. It is not available on queue or job configuration.
+  Custom interval in seconds at which the worker sends heartbeats for active jobs. Defaults to `heartbeatSeconds / 2` (derived from the job's heartbeat configuration). Keep it below `heartbeatSeconds`, or a job can miss its heartbeat between refreshes. This is a worker-level setting only. It is not available on queue or job configuration.
 
   The distinction between `heartbeatSeconds` and `heartbeatRefreshSeconds`:
   - `heartbeatSeconds` (queue/job level) defines the **contract**: how long before a missing heartbeat is considered a failure
@@ -399,9 +399,9 @@ Removes a worker by name or id and stops polling.
 
 **Options**
 
-* **wait**, boolean, *(default=true)*
+* **wait**, boolean, *(default=true when no options are passed)*
 
-  Whether the promise waits for current jobs to finish. It doesn't wait for a handler that outran its timeout, which keeps running on its own (see [`work(name, handler)`](#work-name-handler)).
+  Whether the promise waits for current jobs to finish. It doesn't wait for a handler that outran its timeout, which keeps running on its own (see [`work(name, handler)`](#work-name-handler)). Passing options without `wait`, such as `{ id }`, doesn't wait, so pass `wait: true` with them to wait.
 
 * **id**, string
 

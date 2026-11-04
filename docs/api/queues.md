@@ -90,7 +90,7 @@ Allowed policy values:
 
 * **retryBackoff**, bool
 
-  Default: false. Uses exponential backoff based on `retryDelay` instead of a fixed delay, and sets `retryDelay` to 1 when it isn't set. Roughly, the delay between runs is `retryDelay * 2 ^ retryCount` with some jitter. The exact backoff delay is `Math.min(retryDelayMax, retryDelay * (2 ** Math.Min(16, retryCount) / 2 + 2 ** Math.Min(16, retryCount) / 2 * Math.random()))`
+  Default: false. Uses exponential backoff based on `retryDelay` instead of a fixed delay, and sets `retryDelay` to 1 when it isn't set. Roughly, the delay between runs is `retryDelay * 2 ^ retryCount` with some jitter. The exact backoff delay is `Math.min(retryDelayMax, retryDelay * (2 ** Math.min(16, retryCount + 1) / 2 + 2 ** Math.min(16, retryCount + 1) / 2 * Math.random()))`, where `retryCount` is the count before this retry, 0 on the first failure
 
 * **retryDelayMax**, int
 

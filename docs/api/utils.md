@@ -102,6 +102,7 @@ Returns the time in seconds below which that fraction of the histogram's jobs fa
 ```js
 import { percentile } from 'pg-boss'
 
+// waitBins is recorded only with persistQueueStats on, and null without it
 const [stats] = await boss.getQueueStats('email-send')
 const p95 = percentile(stats.waitBins, 95)
 ```

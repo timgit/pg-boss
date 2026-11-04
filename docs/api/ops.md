@@ -51,6 +51,7 @@ A job that a worker is still claiming when you call `stop()` gets its handler if
     Default: `true`. If `true`, the PgBoss instance waits for any workers processing jobs to finish, up to the timeout. During that time, workers stop fetching, and active jobs and any still being claimed can finish.
 
   * `close`, bool
+
     Default: `true`. If pg-boss manages the database connection, it closes the connection pool. Use `false` to keep running operations such as `send()` and `fetch()`. Calling `stop()` again later closes the pool, and from then on those operations reject with `Database not opened`.
 
     That later close happens once. If it rejects, the pool stays as the driver leaves it, and a further `stop()` has nothing to retry. So treat a `stop()` that throws as terminal for that instance, and don't call it again.
@@ -99,7 +100,7 @@ Gets the database schema version.
 
 ```js
 const version = await boss.schemaVersion()
-// 36
+// 46
 ```
 
 ### `supervise(name, options)`
@@ -127,7 +128,7 @@ await boss.supervise('email-queue')
 | --- | --- | --- | --- |
 | `reindex` | bool \| object | the instance's [`reindex`](./constructor.md#reindex) setting | Overrides index rebuilding for this pass only |
 
-The `reindex` object accepts the same `minPages`, `maxEntriesPerPage` and `maxIndexBytes` thresholds as the constructor option, plus `force`:
+The `reindex` object accepts the same `minPages`, `maxEntriesPerPage`, `maxIndexBytes` and `minSizeRatio` thresholds as the constructor option, plus `force`:
 
 ```js
 // skip the bloat check and the shared interval, and rebuild every job index now
@@ -349,7 +350,9 @@ const report = await boss.detectSchemaDrift()
 //       expectedPredicate: "blocking AND (state = 'completed')",
 //       actualPredicate: "blocking AND (state = 'active')",
 //       expectedKeys: 'name, id',
-//       actualKeys: 'name, id'
+//       actualKeys: 'name, id',
+//       expectedInclude: '',
+//       actualInclude: ''
 //     }
 //   ],
 //   missingFunctions: [],
@@ -387,7 +390,7 @@ An object with the following properties:
 | `constraintDrift` | array | Fixed tables whose constraint set differs (each has `table`, `missingConstraints`, `unexpectedConstraints`); only tables that differ are listed |
 | `enumDrift` | object \| null | Set when the `job_state` value set or order differs; `null` when it matches |
 
-Each index entry carries at least `name`, `table`, the readable `keys` and `predicate` it was matched against, and `definition`. `invalid` entries add a `building` flag; `mismatched` entries add `actualDefinition`, `expectedKeys`/`actualKeys`, `expectedPredicate`/`actualPredicate`, and `differs` (`['keys']`, `['predicate']`, or both).
+Each index entry carries at least `name`, `table`, the readable `keys` and `predicate` it was matched against, and `definition`. `invalid` entries add a `building` flag; `mismatched` entries add `actualDefinition`, `expectedKeys`/`actualKeys`, `expectedInclude`/`actualInclude`, `expectedPredicate`/`actualPredicate`, and `differs` (any of `'keys'`, `'include'` and `'predicate'`).
 
 The [`doctor`](../cli#doctor) CLI command runs this same check without writing any application code.
 

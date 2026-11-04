@@ -114,6 +114,7 @@ import { PgBoss, TestClock } from 'pg-boss'
 const clock = new TestClock('2026-01-01T00:00:00Z')
 const boss = new PgBoss({ connectionString, clock, __test__enableSpies: true })
 await boss.start()
+await boss.createQueue('q')
 
 await boss.work('q', async () => {})
 const id = await boss.send('q', {}, { startAfter: 60 })
@@ -171,8 +172,8 @@ The graceful `stop()` deadline stays on real time. It bounds shutdown I/O rather
 ## Example test
 
 ```js
-const PgBoss = require('pg-boss')
-const assert = require('assert')
+import assert from 'node:assert'
+import { PgBoss } from 'pg-boss'
 
 describe('email notifications', () => {
   let boss
@@ -183,6 +184,7 @@ describe('email notifications', () => {
       __test__enableSpies: true
     })
     await boss.start()
+    await boss.createQueue('email-welcome')
   })
 
   after(async () => {
@@ -221,7 +223,8 @@ describe('email notifications', () => {
       throw new Error('SMTP connection failed')
     })
 
-    const jobId = await boss.send('email-welcome', { email: 'test@example.com' })
+    // No retries, so the first failure is the last one
+    const jobId = await boss.send('email-welcome', { email: 'test@example.com' }, { retryLimit: 0 })
 
     const job = await spy.waitForJobWithId(jobId, 'failed')
 
@@ -235,6 +238,7 @@ describe('email notifications', () => {
 The spy handles race conditions. You can call `waitForJob()` or `waitForJobWithId()` before or after the job reaches the state you want:
 
 ```js
+await boss.createQueue('my-queue')
 const spy = boss.getSpy('my-queue')
 
 // This works even if job completes before waitForJob is called
@@ -253,4 +257,4 @@ const job = await waitPromise // Resolves correctly
 | `created` | Job inserted via `send()` or `insert()` |
 | `active` | Job fetched by a worker and handler started |
 | `completed` | Handler finished successfully |
-| `failed` | Handler threw an error or job expired |
+| `failed` | The job failed for good, with no retries left |

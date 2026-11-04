@@ -159,7 +159,7 @@ await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicag
 
 ### `unschedule(name)`
 
-Removes all schedules for the queue.
+Removes the queue's schedule that has no key. A keyed schedule stays, so pass its `key` to remove it.
 
 ```js
 await boss.unschedule('notification-abc')

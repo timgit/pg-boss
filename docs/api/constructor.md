@@ -22,7 +22,7 @@ How this instance connects to PostgreSQL and where its storage lives.
 
 ### `host`
 
-String, defaults to "127.0.0.1"
+String, defaults to `pg`'s default, `localhost`
 
 ### `port`
 
@@ -42,13 +42,19 @@ String, *required*
 
 ### `password`
 
-String
+String, or a function that returns one or a promise of one, called for each new connection
 
 ### `connectionString`
 
 String
 
 A PostgreSQL connection string. pg-boss parses it and uses it instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
+
+### `options`
+
+String
+
+Command-line options sent to the server on connect, such as `-c statement_timeout=5000`. Applied to every connection in the pool and passed through to `pg`.
 
 ### `max`
 
@@ -200,6 +206,30 @@ How often pg-boss checks each queue for backlogs and expired jobs, and calculate
 
 pg-boss fails jobs past their expiration or heartbeat in batches too, so a fleet that stopped with many jobs active recovers in short transactions.
 
+### `bamIntervalSeconds`
+
+Int, default 60 seconds, at least 10
+
+How often pg-boss checks for [async migration commands](./ops.md#getbamstatus) to run. Once a check finds one, it runs the pending ones back to back.
+
+### `cronMonitorIntervalSeconds`
+
+Int, default 30 seconds, between 1 and 45
+
+How often pg-boss checks [schedules](./scheduling.md) for occurrences that are due.
+
+### `cronWorkerIntervalSeconds`
+
+Int, default 5 seconds, between 1 and 45
+
+How often the worker that sends scheduled jobs polls for them.
+
+### `clockMonitorIntervalSeconds`
+
+Int, default 600 seconds, between 1 and 600
+
+How often pg-boss compares the instance's clock with the database's, for scheduling.
+
 ### `queueCacheIntervalSeconds`
 
 Int, default 60 seconds
@@ -234,7 +264,7 @@ const boss = new PgBoss({
 })
 ```
 
-Only [`supervise()`](./ops.md#supervise-name-options) accepts `force`. This option doesn't, because a timer that rebuilt every job index on every interval is never what you want.
+Only [`supervise()`](./ops.md#supervise-name-options) and [`getReindexCommands()`](./ops.md#getreindexcommands-options) accept `force`. This option doesn't, because a timer that rebuilt every job index on every interval is never what you want.
 
 ### `reindexIntervalSeconds`
 

@@ -4,7 +4,7 @@ When you enable `persistWarnings` in the constructor options, pg-boss stores its
 
 ```sql
 CREATE TABLE pgboss.warning (
-  id serial PRIMARY KEY,
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   type text NOT NULL,
   message text NOT NULL,
   data jsonb,
@@ -14,7 +14,7 @@ CREATE TABLE pgboss.warning (
 
 | Column | Description |
 |--------|-------------|
-| `id` | Auto-incrementing primary key |
+| `id` | Primary key, a random uuid |
 | `type` | Warning type, as listed with the [`warning` event](../api/events.md#warning) |
 | `message` | Human-readable warning message |
 | `data` | JSON object with warning-specific details |

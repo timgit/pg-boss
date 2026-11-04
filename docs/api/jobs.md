@@ -28,6 +28,10 @@ Creates a new job and returns the job id.
 
   Optional id. If you don't set one, pg-boss creates a uuid.
 
+* **deadLetter**, string
+
+  Optional. The queue this job is copied to when it fails for the last time, in place of the queue's own dead letter queue.
+
 **Retry options**
 
 * **retryLimit**, int
@@ -40,7 +44,7 @@ Creates a new job and returns the job id.
 
 * **retryBackoff**, bool
 
-  Default: false. Retries with exponential backoff based on retryDelay, instead of a fixed delay. If retryDelay isn't set, it starts at 1. Roughly, the delay between runs is `retryDelay * 2 ^ retryCount` with some jitter. The full function for the backoff delay is `Math.min(retryDelayMax, retryDelay * (2 ** Math.Min(16, retryCount) / 2 + 2 ** Math.Min(16, retryCount) / 2 * Math.random()))`
+  Default: false. Retries with exponential backoff based on retryDelay, instead of a fixed delay. If retryDelay isn't set, it starts at 1. Roughly, the delay between runs is `retryDelay * 2 ^ retryCount` with some jitter. The full function for the backoff delay is `Math.min(retryDelayMax, retryDelay * (2 ** Math.min(16, retryCount + 1) / 2 + 2 ** Math.min(16, retryCount + 1) / 2 * Math.random()))`, where `retryCount` is the count before this retry, 0 on the first failure
 
 * **retryDelayMax**, int
 
@@ -221,7 +225,7 @@ await boss.sendAfter('email-reminder', { userId: 123 }, null, '2027-01-01T13:30:
 
 ### `sendThrottled(name, data, options, seconds, key)`
 
-Allows only one job to be sent to the same queue within a number of seconds. The first job in the interval is accepted, and every other job in the same interval is rejected.
+Allows only one job to be sent to the same queue within a number of seconds. The first job in the interval is accepted. Every other job in the same interval isn't created, and the call resolves `null`.
 
 It's a shorthand for `send()` with the `singletonSeconds` and `singletonKey` options set. The `key` argument is optional.
 
@@ -366,7 +370,7 @@ interface JobInsert<T = object> {
 
 Each field works like the `send()` option of the same name, and a `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
 
-Returns a `Promise<string[] | null>`. Without `returnId: true` it always resolves to `null`. With `returnId: true` it resolves to the ids of the jobs that were inserted, or to `null` when no jobs were inserted, including when the array passed in is empty. It never resolves to an empty array. Add `?? []`, as in the example below, to always get an array back.
+Returns a `Promise<string[] | null>`. Without `returnId: true`, and with spies off, it resolves to `null`. With `returnId: true` it resolves to the ids of the jobs that were inserted, or to `null` when no jobs were inserted, including when the array passed in is empty. It never resolves to an empty array. Add `?? []`, as in the example below, to always get an array back.
 
 Behind the scenes, `insert()` is a single `INSERT` statement. An error on any job, such as a value of the wrong type, rolls back the whole batch. A job that conflicts with an existing one is skipped, and the rest of the batch is still inserted. Conflicts are a duplicate `id`, a second job in the same `singletonSeconds` throttle slot, or a second queued job for the same `singletonKey` on a queue whose [policy](./queues#createqueue-name-queue) allows only one (`short`, `stately` or `exclusive`). The returned ids can then be fewer than the jobs passed in, and they aren't guaranteed to line up with the input by position. To match input jobs to output ids, set each job's `id` in the input array. Use [`flow()`](#flow-jobs-options) when the batch must be all or nothing, since it rolls back if any job is skipped. With a custom `db`, the insert commits or rolls back with your transaction.
 
@@ -451,7 +455,7 @@ Returns an array of jobs from a queue.
 
   * `priority`, bool, **deprecated, ignored since 12.30.0**
 
-    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput. The fetch index is ordered to match the fetch, so there is no sort to skip. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. It emits a Node `DeprecationWarning` (code `PGBOSS_DEP_FETCH_SORT`) once per option per instance, and the next major will reject it. Run with `--trace-deprecation` to find the call site.
+    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput. The fetch index is ordered to match the fetch, so there is no sort to skip. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. Setting it to `false` emits a Node `DeprecationWarning` (code `PGBOSS_DEP_FETCH_SORT`) once per option per instance, and the next major will reject it. Run with `--trace-deprecation` to find the call site.
 
   * `orderByCreatedOn`, bool, **deprecated, ignored since 12.30.0**
 
@@ -484,6 +488,7 @@ Returns an array of jobs from a queue.
       retryCount: number;
       retryDelay: number;
       retryBackoff: boolean;
+      retryDelayMax?: number;
       startAfter: Date;
       startedOn: Date;
       singletonKey: string | null;
@@ -499,6 +504,7 @@ Returns an array of jobs from a queue.
       keepUntil: Date;
       blocked: boolean,
       blocking: boolean,
+      pendingDependencies: number,
       deadLetter: string,
       policy: string,
       output: object,
@@ -797,7 +803,7 @@ await boss.complete('report-generation', job, { reportUrl: report.url })
 
 * **includeQueued**, bool
 
-  Default: false. When false, only jobs in the `active` state can be completed. When true, jobs in the `created`, `retry`, or `active` states can be completed. Use it to complete jobs that haven't been fetched yet, or to mark failed jobs as complete without retrying them.
+  Default: false. When false, only jobs in the `active` state can be completed. When true, jobs in the `created`, `retry`, or `active` states can be completed. Use it to complete jobs that haven't been fetched yet, or to complete a job waiting in `retry` without running it again.
 
   ```js
   // Complete a job without fetching it first
@@ -808,7 +814,7 @@ await boss.complete('report-generation', job, { reportUrl: report.url })
 
 The promise resolves with `{ jobs, requested, affected }`. `affected` is `1` when the job was completed, and `0` when it couldn't be, for example because it isn't active.
 
-### `complete(name, [ids], options)`
+### `complete(name, [ids], data, options)`
 
 Completes a set of active jobs (or queued jobs with `includeQueued: true`).
 
@@ -835,7 +841,7 @@ try {
 }
 ```
 
-### `fail(name, [ids], options)`
+### `fail(name, [ids], data, options)`
 
 Fails a set of active jobs.
 

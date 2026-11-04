@@ -55,8 +55,8 @@ pg-boss writes these warnings to the `warning` table when [`persistWarnings`](#w
 
 | Type | Description | Data Properties |
 |------|-------------|-----------------|
-| `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds) |
-| `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueued` |
+| `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds), `sql`, `values` |
+| `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueueSize`, `pinSeconds` |
 | `clock_skew` | The database clock is out of sync with the application server | `seconds`, `direction` |
 | `listen_notify_unavailable` | `useListenNotify` is enabled and the `LISTEN/NOTIFY` listener failed to start, for example behind PgBouncer transaction pooling or after a dropped connection. pg-boss continues with polling only. Emitted once per `start()` | `type`, `instance`, `error` |
 | `index_bloat` | A job index holds far more pages than its live entries need, and pg-boss didn't rebuild it. Either rebuilds are disabled, the connected role doesn't own the index, the index exceeds `maxIndexBytes`, or `REINDEX CONCURRENTLY` failed, and the message names which. Emitted once per index, and again if the condition clears and comes back | `name`, `table`, `pages`, `entries`, `bytes`, `owned` |
@@ -74,7 +74,7 @@ These warnings describe how this instance is set up. Each fires when the instanc
 
 | Type | Description | Data Properties |
 |------|-------------|-----------------|
-| `listen_notify_unavailable` | `useListenNotify` is enabled on a backend without `LISTEN/NOTIFY`, such as CockroachDB, or with a `db` adapter that has no `listen`. pg-boss continues with polling only. Emitted once per `start()` | `type`, `backend` |
+| `listen_notify_unavailable` | `useListenNotify` is enabled on a backend without `LISTEN/NOTIFY`, such as CockroachDB, or with a `db` adapter that has no `listen`. pg-boss continues with polling only. Emitted once per `start()` | `type`, and `backend` when the backend has no `LISTEN` |
 | `transactional_pool_headroom` | A [`transactional`](./workers.md#work-name-options-handler) worker was registered on a pool with no connections to spare. Each handler in flight holds a connection until it finishes, so at this pool size, fetches, failures and maintenance have no connection left and wait out `connectionTimeoutMillis`. Emitted from `work()`, once per call | `type`, `max`, `transactionalWorkers` |
 | `transaction_timeout_probe` | pg-boss asked the server which transaction timeout it recognizes, or did a trial run of the `pg_settings` read it needs to apply one, and the statement failed. Transactional handlers then run with no database-side bound (see [`transactionTimeoutSeconds`](./workers.md#work-name-options-handler)). Every other bound still applies: the handler's own timeout, the rollback deadline and `expireInSeconds`. pg-boss retries the probe a minute later and emits the warning once per process | `type` |
 | `start_retry` | [`start({ attempts })`](./ops.md#start-options) failed its first try and will try again. Emitted once per call, not per try | `type`, `attempts`, `error` |
