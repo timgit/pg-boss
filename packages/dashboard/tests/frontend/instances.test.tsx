@@ -155,9 +155,9 @@ describe('InstancesTable', () => {
   it('says what the list means behind a question mark', async () => {
     renderTable([instance()])
 
-    expect(screen.queryByText(/Instances register from pg-boss 12.36/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Instances register on pg-boss 12.36 or later/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'About this list' }))
-    expect(await screen.findByText(/Instances register from pg-boss 12.36/)).toBeInTheDocument()
+    expect(await screen.findByText(/Instances register on pg-boss 12.36 or later/)).toBeInTheDocument()
   })
 
   it('narrows to the recent rows', () => {

@@ -78,7 +78,7 @@ describe('OverviewSections', () => {
   it('says when instances do not register, for a schema before the registry', () => {
     renderSections(undefined, { instances: { summary: null } })
 
-    expect(screen.getByRole('region', { name: 'Instances' })).toHaveTextContent('Instances register from pg-boss 12.36.')
+    expect(screen.getByRole('region', { name: 'Instances' })).toHaveTextContent('Instances register on pg-boss 12.36 or later.')
   })
 
   it('leaves the warnings card out when loaded without warnings', () => {

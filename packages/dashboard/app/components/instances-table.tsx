@@ -288,7 +288,7 @@ export function InstancesTable ({ instances, checkedOn }: InstancesTableProps) {
 export function RegistryNote () {
   return (
     <p>
-      Instances register from pg-boss 12.36. Older versions, and any started
+      Instances register on pg-boss 12.36 or later. Older versions, and any started
       with <code className="font-mono">registerInstance: false</code>, connect without appearing here. Every start registers
       a new row with a new id. A row goes quiet after three missed heartbeats, and is deleted a week after its last one.
     </p>

@@ -178,7 +178,7 @@ export function InstancesCard ({ summary, aside }: { summary: InstanceSummary | 
   if (!summary) {
     return (
       <Panel label="Instances" title="Instances" link={{ to: '/instances', text: 'Open' }}>
-        <p className="text-sm text-[var(--text-tertiary)]">Instances register from pg-boss 12.36.</p>
+        <p className="text-sm text-[var(--text-tertiary)]">Instances register on pg-boss 12.36 or later.</p>
       </Panel>
     )
   }
