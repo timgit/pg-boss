@@ -314,7 +314,7 @@ location /pgboss {
 
 > Setting `PGBOSS_DASHBOARD_BASE_PATH` at build time also works and bakes the prefix into the build. A value set at runtime takes precedence.
 
-> The dev server (`npm run dev`) always serves from the root path.
+> The dev server (`npm run dev`) serves its pages under `PGBOSS_DASHBOARD_BASE_PATH` too, but its assets stay at the root path. Test a reverse proxy against the built dashboard.
 
 ### Mounting inside an existing application
 
