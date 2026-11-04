@@ -1,4 +1,4 @@
-import { CronExpressionParser } from 'cron-parser'
+import { CronDate, type CronExpression, CronExpressionParser } from 'cron-parser'
 import assert from 'node:assert'
 import EventEmitter from 'node:events'
 
@@ -114,6 +114,44 @@ function throttleSlot (instant: Date): string {
   const width = OCCURRENCE_WINDOW_SECONDS * 1000
 
   return new Date(Math.floor(instant.getTime() / width) * width).toISOString().replace('T', ' ').slice(0, 19)
+}
+
+/**
+ * The occurrence before an interval's cursor, passing over the second instant of a local time the
+ * clocks went back over.
+ *
+ * Walking forwards, cron-parser runs a repeated hour once unless the expression names every hour,
+ * so `30 1 * * *` in America/New_York sends at the first 01:30 on the night the clocks go back and
+ * `0 * * * *` stays hourly. Walking backwards it answers with both instants, an hour apart and so
+ * in throttle slots of their own, and a pass reading backwards would send the daily job twice. This
+ * reads backwards the way the forward walk, and previewSchedule() with it, reads forwards. A rule
+ * gets the same answer from rrule-temporal, which resolves a repeated local time to its first
+ * instant.
+ */
+function previousOccurrence (interval: CronExpression, tz: string): Date {
+  const everyHour = interval.fields.hour.values.length === 24
+
+  for (;;) {
+    const occurrence = interval.prev().toDate()
+
+    if (everyHour || !repeatsLocalTime(occurrence, tz)) {
+      return occurrence
+    }
+  }
+}
+
+/**
+ * Whether the local time an instant shows in `tz` was already shown once, earlier, before the
+ * clocks went back. The offset three hours before is the one in force before any change the instant
+ * could be repeating, since no zone goes back by more than two.
+ */
+function repeatsLocalTime (instant: Date, tz: string): boolean {
+  const offset = (time: number) => new CronDate(time, tz).getUTCOffset()
+
+  const time = instant.getTime()
+  const shift = offset(time - 3 * 60 * 60 * 1000) - offset(time)
+
+  return shift > 0 && offset(time - shift * 60 * 1000) - offset(time) === shift
 }
 
 /**
@@ -759,7 +797,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     // other, never both.
     const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(until.getTime() + 1) })
 
-    const occurrence = interval.prev().toDate()
+    const occurrence = previousOccurrence(interval, tz)
 
     return occurrence.getTime() > after.getTime() ? occurrence : null
   }
@@ -796,7 +834,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     // whole minute is rare (`databaseTime % 60000 === 0`) and entirely real.
     const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(databaseTime + 1) })
 
-    const previous = interval.prev().toDate()
+    const previous = previousOccurrence(interval, tz)
 
     return previous.getTime() > window.getTime() ? [previous] : []
   }

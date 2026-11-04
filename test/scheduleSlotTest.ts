@@ -284,4 +284,30 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await passAt(clock, ctx.boss, T0 + 180 * SECOND)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:01', '12:02'])
   })
+
+  it('sends a daily occurrence once on the night the clocks go back', async function () {
+    // 01:29:45 EDT on 2026-11-01. At 02:00 EDT New York goes back to 01:00 EST, so 01:30 comes
+    // round twice, at 05:30 and at 06:30 UTC.
+    const start = Date.parse('2026-11-01T05:29:45Z')
+    const clock = new TestClock(start)
+    ctx.boss = await startScheduling(clock)
+
+    await until(async () => await lastPass(ctx.boss!) === start)
+
+    await ctx.boss.schedule(ctx.schema, '30 1 * * *', null, { tz: 'America/New_York' })
+
+    // 01:30:15 EDT, the first 01:30.
+    await passAt(clock, ctx.boss, start + 30 * SECOND)
+    expect(await slotsFiled(ctx.boss)).toEqual(['05:30'])
+
+    // On to 01:29:45 EST, then through the second 01:30, which cron runs once and so does the same
+    // schedule written as a rule.
+    await passAt(clock, ctx.boss, start + 3600 * SECOND, false)
+    await passAt(clock, ctx.boss, start + 3630 * SECOND, false)
+    await passAt(clock, ctx.boss, start + 3660 * SECOND, false)
+
+    const counts = passes.get(ctx.boss)!
+    await until(async () => counts.insertDone === counts.inserts - 1)
+    expect(await slotsFiled(ctx.boss)).toEqual(['05:30'])
+  })
 })
