@@ -1,6 +1,6 @@
 # Roles and access
 
-Each grant gives a role on one database or on all of them, to a person, a [group](./accounts.md#groups) or a [service account](./api-tokens.md). The same person can be an operator on one database and a viewer on another. Where several grants apply to a database, the user may do everything any of them allows.
+Access comes from grants. A grant gives a person, a [group](./accounts.md#groups) or a [service account](./api-tokens.md) a role on one database or on all databases. The same person can be an operator on one database and a viewer on another. Where several grants apply to a database, the user may do everything any of those grants allows.
 
 | Role | May |
 | - | - |
@@ -9,7 +9,7 @@ Each grant gives a role on one database or on all of them, to a person, a [group
 | Admin | Admin users can delete jobs, and create and delete queues and schedules. An admin on all databases is a [global admin](#global-admin). |
 | Worker | For a service account a worker uses, over the API only: fetch, complete and fail jobs, and send them. Users can't hold it. |
 
-Grants read as the role, then where it applies: `Operator › All databases`, or `Viewer › ● Production` with the database's color.
+Grants read as the role, followed by its scope. For example, `Operator › All databases`, or `Viewer › Production`, where "Production" is the configured database name.
 
 ## Global admin
 
