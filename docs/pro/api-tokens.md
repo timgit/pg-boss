@@ -9,7 +9,7 @@ A script, a CI job, a Prometheus scrape or a worker in another language reaches 
 
 ## Service accounts list
 
-An administrator over every database manages them in **Settings › Accounts**, beside the people.
+A [global admin](./roles.md#global-admin) manages them in **Settings › Accounts**, beside the people.
 **Service accounts** at the top of that list (`/pro/accounts?kind=service`) shows each one's
 purpose, roles, working tokens, when it was last used and from where, and marks a token that
 expires within 14 days.

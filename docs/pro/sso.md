@@ -28,14 +28,14 @@ and it doesn't by default. That choice needs the email domains that get an accou
 exactly, so `example.com` doesn't admit `mail.example.com`. Without that limit,
 a provider with public sign-up, such as Google or Auth0, would give an account
 to anyone with a mailbox there. A new account starts as viewer or operator over
-every database, or with no role until an administrator grants one. It never
+every database, or with no role until a global admin grants one. It never
 starts as admin.
 
 The first sign-in through the provider links the account to that person's id at
 the provider (the token's `sub`). After that, someone else the provider gives the
 same address can't sign in as the account, and the person keeps it if the
 provider changes their address. When the provider replaces a person's own
-account, an administrator presses **Forget SSO link** on the account's page, and
+account, a global admin presses **Forget SSO link** on the account's page, and
 the next sign-in links again. Pointing Pro at a new issuer links each account
 again by its address.
 
@@ -49,7 +49,7 @@ removed at the provider leaves the mapped group at their next sign-in.
 
 Two cases change no membership. One is a token where Entra ID says it left the
 groups out past its group limit (`_claim_names` or `hasgroups`). The other is a
-sign-in that would take the last administrator out of the group that makes them
+sign-in that would take the last global admin out of the group that makes them
 one.
 
 A sign-in through the provider starts a Pro session that lasts 12 hours. Pro

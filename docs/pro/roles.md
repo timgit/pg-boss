@@ -4,12 +4,16 @@ Each grant gives a role on one database or on all of them, to a person, a [group
 
 | Role | May |
 | - | - |
-| Viewer | Read. A viewer can't even send a job. |
-| Operator | Read, and retry, cancel, resume and send jobs, and acknowledge alerts. |
-| Admin | Everything an operator may, and delete jobs, and create and delete queues and schedules. An admin over every database also manages alert rules, accounts, groups, SSO, destinations and settings. |
+| Viewer | Viewer users are limited to read-only access. |
+| Operator | Operator users can retry, cancel, resume and send jobs, and acknowledge alerts. |
+| Admin | Admin users can delete jobs, and create and delete queues and schedules. An admin on all databases is a [global admin](#global-admin). |
 | Worker | For a service account a worker uses, over the API only: fetch, complete and fail jobs, and send them. Users can't hold it. |
 
 Grants read as the role, then where it applies: `Operator › All databases`, or `Viewer › ● Production` with the database's color.
+
+## Global admin
+
+An account with the admin role on all databases is a global admin, whether the grant is its own or comes through a group. Only a global admin manages alert rules, accounts, groups, SSO, destinations and settings, and opens the [audit log](./audit-log.md). An admin on one database can't, because managing accounts would let them widen their own grant. The accounts list and an account's page show a **Global admin** label beside the name. The first account, made at [setup](./install.md), is one.
 
 ## Access by database
 
@@ -18,4 +22,4 @@ The accounts list answers the question people ask during an outage, which is who
 ![Who can act on a database](../images/pro/access.webp){.light-only}
 ![Who can act on a database](../images/pro/access-dark.webp){.dark-only}
 
-Pro always refuses two changes, and says so. It won't remove the last administrator over every database, by demotion, disabling or deletion, because no administrator would be left to undo it. It also won't let an account disable or delete itself.
+Pro always refuses two changes, and says so. It won't remove the last global admin, by demotion, disabling or deletion, because nobody would be left to undo it. It also won't let an account disable or delete itself.

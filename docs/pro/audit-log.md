@@ -16,9 +16,9 @@ Pro writes each change to the log in the same transaction as the change itself. 
 - **Export CSV** downloads the entries on screen, under the same filters.
 - An account's page links to the entries it made (**Activity**) and to its sign-in history, and a group's page to the entries about the group (**History**).
 - A change made with an API token names the service account and the token.
-- Pro keeps the log forever unless an administrator sets a number of days, 30 or more, with **Change** under the page title. See [retention](./administration.md#retention).
+- Pro keeps the log forever unless a global admin sets a number of days, 30 or more, with **Change** under the page title. See [retention](./administration.md#retention).
 
-Only an administrator over every database can open the log.
+Only a [global admin](./roles.md#global-admin) can open the log.
 
 ## Address
 

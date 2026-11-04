@@ -16,10 +16,10 @@ touches the job tables.
 
 ## Managing accounts
 
-An administrator whose role covers **every** database manages accounts at
-`/pro/accounts`, under **Settings** in the sidebar. An admin scoped to a single
+A [global admin](./roles.md#global-admin) manages accounts at
+`/pro/accounts`, under **Settings** in the sidebar. An admin on a single
 database doesn't get this screen, because it would let them widen their own
-scope.
+grant.
 
 The list holds people and [service accounts](./api-tokens.md) together. **All**,
 **People** and **Service accounts** narrow it to one kind, and **Add** creates
@@ -53,7 +53,7 @@ Failed sign-ins lock for fifteen minutes. Five failures against an account from 
 address in fifteen minutes lock that account from there, and five from one client address lock
 it for every account. An account is locked from everywhere only after twenty failures, so a
 stranger can't lock someone out of their own account in a few tries. The account's page shows
-that lock, and an administrator can clear it there.
+that lock, and a global admin can clear it there.
 
 Machines get [service accounts](./api-tokens.md) instead, in the same list. A service account
 acts only through API tokens.
@@ -63,12 +63,12 @@ acts only through API tokens.
 
 Pro always refuses two changes, and says so:
 
-- removing the last administrator who covers every database and can sign in (with a password or
-  by SSO), by demotion, disabling or deletion, because no administrator would be left to undo it
-- an administrator disabling or deleting their own account (another administrator can do that)
+- removing the last global admin who can sign in (with a password or by SSO), by demotion,
+  disabling or deletion, because nobody would be left to undo it
+- a global admin disabling or deleting their own account (another global admin can do that)
 
 Pro sends no invitation email, because it runs inside the organization's network and may have
-no mail credentials. An administrator sends the invitation link, or sets the
+no mail credentials. A global admin sends the invitation link, or sets the
 first password and hands it over. The person then changes it at `/pro/profile`,
 from **Profile** in the account menu at the top right. That page needs no role.
 It shows who is signed in and what that account may do, and takes the current
