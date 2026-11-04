@@ -1,7 +1,7 @@
 import { expect } from 'vitest'
 import Worker from '../src/worker.ts'
 import { systemClock } from '../src/clock.ts'
-import type { Job } from '../src/types.ts'
+import type { Clock, ClockTimer, Job } from '../src/types.ts'
 
 // Direct unit coverage for Worker's self-contained guards. The manager suites drive Worker through
 // work()/offWork(), which cannot deterministically land inside the windows these guards exist for.
@@ -153,5 +153,53 @@ describe('worker', function () {
     expect(errors[0].message).toBe('fetch exploded (Queue: queue, Worker: worker-id)')
     expect(worker.lastError).toBe(errors[0])
     expect(worker.state).toBe('stopped')
+  })
+
+  it('a clock that jumps backwards does not stretch the next poll delay', async function () {
+    // Pre-fix, the round was timed with clock.now(): a backwards jump made the duration negative,
+    // so the next wait became the whole jump plus the poll interval.
+    let offset = 0
+    const clock = {
+      now: () => Date.now() + offset,
+      setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+      clearTimeout: (handle: ClockTimer) => clearTimeout(handle as NodeJS.Timeout),
+      setInterval: (fn: () => void, ms: number) => setInterval(fn, ms),
+      clearInterval: (handle: ClockTimer) => clearInterval(handle as NodeJS.Timeout)
+    } as Clock
+
+    const fetching = latch()
+    let fetches = 0
+
+    const worker = new Worker<unknown>({
+      id: 'worker-id',
+      workId: 'work-id',
+      name: 'queue',
+      options: {},
+      resolveInterval: () => 60_000,
+      fetch: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          offset = -86_400_000
+          fetching.open()
+        }
+        return []
+      },
+      onFetch: async () => {},
+      onError: () => {},
+      clock
+    })
+
+    worker.start()
+
+    await fetching.opened
+
+    while (worker.lastJobDuration === null) {
+      await new Promise(resolve => setImmediate(resolve))
+    }
+
+    expect(worker.lastJobDuration).toBeGreaterThanOrEqual(0)
+    expect(worker.lastJobDuration).toBeLessThan(60_000)
+
+    await worker.stop()
   })
 })

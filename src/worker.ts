@@ -81,7 +81,10 @@ class Worker<T = unknown> {
     this.state = WORKER_STATES.active
 
     while (!this.stopping) {
-      const started = this.clock.now()
+      // Round timing is wall-clock, not this.clock: a test clock can jump backwards mid-round, and
+      // the negative duration would then stretch the poll delay by the same amount. Job timestamps
+      // below still read this.clock.
+      const started = Date.now()
 
       // Number of jobs the last fetch returned; stays 0 on error so a failed fetch backs
       // off to normal polling instead of hot-looping in burst mode.
@@ -114,7 +117,7 @@ class Worker<T = unknown> {
         this.onError(err)
       }
 
-      const duration = this.clock.now() - started
+      const duration = Date.now() - started
 
       this.lastJobDuration = duration
 
