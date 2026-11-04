@@ -47,17 +47,21 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   }
 
   async open () {
-    this.pool = new pg.Pool(this.config)
-    this.pool.on('error', error => this.emit('error', error))
-
-    // Queued on the client before any checkout query, so a connection cannot run a pg-boss
-    // statement before its session setup. Reads the field on each connect rather than closing over
-    // it, so a set that arrives between connections still applies to the ones that follow.
-    this.pool.on('connect', client => {
-      for (const statement of this.sessionStatements) {
-        client.query(statement).catch(error => this.emit('error', error))
+    this.pool = new pg.Pool({
+      ...this.config,
+      // pg-pool awaits onConnect before it hands a new connection out, so a connection cannot run a
+      // pg-boss statement before its session setup, and the checkout query is not queued behind the
+      // setup on the same client (pg 8 warns about that queue and pg 9 removes it). A statement that
+      // fails fails the checkout instead of handing out a connection without its setup. Reads the
+      // field on each connect rather than closing over it, so a set that arrives between connections
+      // still applies to the ones that follow.
+      onConnect: async client => {
+        for (const statement of this.sessionStatements) {
+          await client.query(statement)
+        }
       }
     })
+    this.pool.on('error', error => this.emit('error', error))
 
     this.opened = true
   }

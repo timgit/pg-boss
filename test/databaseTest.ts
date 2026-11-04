@@ -222,6 +222,33 @@ describe('database', function () {
     }
   })
 
+  helper.itPglite('runs session statements before a new connection is checked out', async function () {
+    const db = await helper.getDb()
+
+    try {
+      await db.setSessionStatements(["SET application_name = 'pgboss_session_statements_test'"])
+
+      // @ts-ignore reaching the pool, the way the pool-lifecycle tests do
+      const client = await db.pool.connect()
+
+      try {
+        // The setup has finished by the time the connection is handed out, so a query on it is not
+        // queued behind a statement that is still running (pg 8 warns "Calling client.query() when
+        // the client is already executing a query", and pg 9 removes that queue).
+        const internals = client as unknown as { activeQuery?: unknown, queryQueue: unknown[] }
+        expect(internals.activeQuery ?? null).toBe(null)
+        expect(internals.queryQueue).toHaveLength(0)
+
+        const { rows } = await client.query('SHOW application_name')
+        expect(rows[0].application_name).toBe('pgboss_session_statements_test')
+      } finally {
+        client.release()
+      }
+    } finally {
+      await db.close()
+    }
+  })
+
   it('can be swapped out via BYODB', async function () {
     const query = 'SELECT something FROM somewhere'
 
