@@ -12,7 +12,7 @@ The free dashboard can retry, cancel or resume one job, and records nothing abou
 | Delete a job | a job's page, and the job lists | admin |
 | Create a queue | **Create Queue** on the queues page | admin |
 | Delete a queue | a queue's page | admin |
-| Add or remove a schedule | **New Schedule**, a schedule's page | admin |
+| Add or remove a schedule | **Schedule Job** on the schedules page, a schedule's page | admin |
 
 For many jobs at once, use [Operations](./operations.md).
 

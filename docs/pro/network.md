@@ -15,7 +15,7 @@ set up, Pro talks only to its Postgres database.
 | A webhook alert | only once a webhook destination exists, when a rule sending to it fires or its alert closes, or a user sends a test | the URL on that destination |
 | A PagerDuty alert | only once a PagerDuty destination exists, at the same moments | `events.pagerduty.com` |
 | An email alert | only once an email destination exists, at the same moments | the configured SMTP server, or `api.resend.com` |
-| Single sign-on | when a user signs in or presses Test | the provider's issuer, token and key endpoints |
+| Single sign-on | when a user signs in or presses **Test connection** | the provider's issuer, token and key endpoints |
 
 The license command sends the token and receives a signed license. It sends
 nothing about the database, its jobs, the deployment, or the machine it runs on.

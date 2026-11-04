@@ -1,8 +1,7 @@
 # License
 
-The license is separate from the registry token, and its job is small. It puts
-the company's name on the License page, so every user of the Console can see whose
-license it runs under. **It doesn't turn any feature on or off.**
+The License page shows the license Pro runs under: who it's licensed to, the plan,
+and when the term ends. A [global admin](./roles.md#global-admin) can open it. **The license doesn't turn any feature on or off.**
 
 ![The license page](../images/pro/license.webp){.light-only}
 ![The license page](../images/pro/license-dark.webp){.dark-only}
@@ -61,8 +60,9 @@ pg-boss release with a new schema version. Each Pro release makes changes only
 on the schema of the pg-boss it is built with (see [pg-boss
 versions](./versions.md)), and a lapsed subscription can't install the release
 built for the new one. From then on, every page still works, and changes are
-off: sending, retrying, canceling, resuming and deleting jobs, Operations, and
-changes through the Pro API. The [free dashboard](../dashboard.md#job-actions)
+off: sending, retrying, canceling, resuming and deleting jobs, Operations,
+creating and deleting queues and schedules, and every call to the Pro API, which
+answers 409. The [free dashboard](../dashboard.md#job-actions)
 follows each pg-boss release, and still retries, cancels and resumes a job.
 
 Before twelve paid months, the license to use what's running ends with the

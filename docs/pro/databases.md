@@ -1,6 +1,6 @@
 # Databases
 
-Pro shows one connected database at a time. Every page names it, with a colored
+Pro shows one connected database at a time. Every page about a database names it, with a colored
 dot, at the start of the top bar. When `DATABASE_URL` lists more than one database, a menu
 there switches between them.
 
@@ -12,7 +12,7 @@ payloads (`databaseName`, beside `databaseId`), and in the audit log. Renaming
 here keeps every link, alert rule and history row, because they all refer to the
 database's id, which comes from its name in `DATABASE_URL`. Renaming it there
 changes the id, so rename it here instead. Adding or removing a database still happens in
-`DATABASE_URL`. Only administrators can change these.
+`DATABASE_URL`. Only a [global admin](./roles.md#global-admin) can change these.
 
 ![The databases page](../images/pro/databases.webp){.light-only}
 ![The databases page](../images/pro/databases-dark.webp){.dark-only}

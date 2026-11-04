@@ -27,8 +27,8 @@ verified. **Accounts** can let an unknown address become a new account,
 and it doesn't by default. That choice needs the email domains that get an account, matched
 exactly, so `example.com` doesn't admit `mail.example.com`. Without that limit,
 a provider with public sign-up, such as Google or Auth0, would give an account
-to anyone with a mailbox there. A new account starts as viewer or operator over
-every database, or with no role until a global admin grants one. It never
+to anyone with a mailbox there. A new account starts as viewer or operator on
+all databases, or with no role until a global admin grants one. It never
 starts as admin.
 
 The first sign-in through the provider links the account to that person's id at

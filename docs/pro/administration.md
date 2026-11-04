@@ -8,8 +8,9 @@ Pro prunes its own store once a minute.
   page's queue health history for 90 days. It keeps an operation that's still
   running however old it is.
 - Pro keeps the audit log forever unless a global admin sets a number of days
-  under **Settings → Audit log**. The shortest is 30 days. Pro deletes entries
-  older than that within a minute of saving, and they can't be recovered. The
+  under **Settings → Audit log**. The shortest is 30 days. Pro starts deleting
+  older entries within a minute of saving, at most 50,000 a minute, and they
+  can't be recovered. The
   audit log records the change to this setting too.
 
 ## Secrets

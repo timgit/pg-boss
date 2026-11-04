@@ -7,19 +7,21 @@ queue and a [purge](#purge) that empties a queue.
 
 Describe the set: queues, state, how long ago the jobs were created, how many
 times they have been retried, and fields their `data` must contain. When a user
-presses **Preview**, the page counts the set and shows the exact number, a sentence saying what will
-happen, how the matches split across queues, and a few of the actual jobs. Any
-change to the filter after that sets the count aside until the next preview. The
-queue picker accepts typing, and each suggestion shows how many matches it adds.
+presses **Preview**, the page counts the set, up to 1,000 (more shows as 1,000+), and shows
+a sentence saying what will happen, how the matches split across queues, and a few of the
+actual jobs. Any change to the filter after that sets the count aside until the next preview.
+The queue picker searches queue names as you type. After a preview, the queues with matching
+jobs lead its list, most matches first, each with its count.
 
 ![Operations, previewing a retry](../images/pro/operations.webp){.light-only}
 ![Operations, previewing a retry](../images/pro/operations-dark.webp){.dark-only}
 
-Nothing runs until a user presses **Preview**, which fixes the number, and
-then presses the button that names it. The confirmation covers exactly that
-number of jobs. If more jobs land in the set while the confirmation is open, the
-page refuses, shows the new count and asks again. Deleting 1,000 jobs or more
-also requires typing the number.
+Nothing runs until a user presses **Preview**, types the action's name (`retry`,
+`delete` and so on) and presses the button that names it. What's confirmed is the
+filter, not the number. Jobs keep moving, so the count is a snapshot, and the run acts
+on whatever matches when it reaches each job, which can be more or fewer than shown.
+Selecting jobs in the sample limits the run to those jobs, and only while the filter
+still matches them.
 
 - Each verb only touches what it could touch on its own: retry acts on
   failures, resume on cancellations, cancel on anything unfinished, delete on
@@ -51,8 +53,8 @@ also requires typing the number.
 The page saves a filter by name, to apply again from the top of the page.
 **Operation history** (`/pro/ops/history`, linked from the page header) lists
 every operation on the database from the last 90 days, newest first, with how
-each one ended. Filter it by action or by how the operations ended. For an
-administrator, each row links to its entries in the audit log.
+each one ended. Filter it by action or by how the operations ended. For a
+[global admin](./roles.md#global-admin), each row links to its entries in the audit log.
 
 ## Redrive
 

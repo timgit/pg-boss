@@ -88,7 +88,7 @@ receive Pro's alerts with no relay:
   `pgboss.closedReason` says why.
 - `summary` is the title the alert opened with. It stays the same when the
   alert's title changes with what it finds, say from falling behind to stalled,
-  and the description then starts with the current title. Receivers that match a
+  and the description then starts with `Now:` and the current title. Receivers that match a
   resolve to its alert by the summary, such as GoAlert, close what they opened.
 - `severity` is `critical`, or `warning` for a rule whose severity is watch.
 - Labels hold strings only. `pgboss` holds what each kind of alert adds, typed,

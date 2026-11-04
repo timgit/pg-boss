@@ -66,9 +66,6 @@ evaluator's next pass.
   such as p95 wait when fewer jobs finished, neither matches nor resolves. An
   open alert stays open until the data comes back, unless the rest of the rule
   decides it alone.
-- A health alert on a queue whose stats stop, because its supervisors are down
-  or its stats are off, stays open. It resolves as deleted only when the queue is
-  gone from pg-boss.
 - **Check** is one of the built-in checks above with its settings: which health
   verdicts count and over which interval, how many ready jobs a queue with no
   workers needs before it counts, how many restarts make a loop.
@@ -76,6 +73,10 @@ evaluator's next pass.
   on every queue or some.
 - **Operation** raises an alert for each failed operation and for each redrive
   that left [collisions](./operations.md#redrive), jobs the destination refused.
+
+A health alert on a queue whose stats stop, because its supervisors are down
+or its stats are off, stays open. It resolves as deleted only when the queue is
+gone from pg-boss.
 
 A threshold or check raises an alert only once it has held for the number of
 minutes the rule sets. Every rule has a severity, critical or watch.

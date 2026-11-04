@@ -79,9 +79,9 @@ every other session and keeps the current one.
 
 An account can hold a role directly, or through a group that holds one. Groups
 live at `/pro/groups`, where the search box keeps the groups whose name or
-description holds the text. Give a group a role over a database (or over every
-database) and add users to it by pasting their addresses, and every member has
-that role. Where two roles apply to the same database, the person may do everything
+description holds the text. Give a group a role on a database (or on all
+databases) and add people with **Add people**, by searching for a name or address
+or by pasting a list of addresses, and every member has that role. Where two roles apply to the same database, the person may do everything
 either allows, as [Roles](./roles.md) explains. A group's page lists its
 members ten at a time, with a search and a way to remove each one. **View in Accounts** opens the
 Accounts list filtered to the group, with each member's roles and when they were last active, and

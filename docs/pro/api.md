@@ -1,6 +1,6 @@
 # Pro API
 
-The Pro API serves pg-boss's own methods over HTTP with [`@pg-boss/proxy`](../proxy.md), at `/pro/api/v1/<database>` for each database, and every call needs an [API token](./api-tokens.md). `<database>` is the database's id: its name in `DATABASE_URL`, or `pgboss` for a single unnamed one. Under a base path, the API is under it too: `/pgboss/pro/api/v1/…`.
+The Pro API serves pg-boss's own methods over HTTP with [`@pg-boss/proxy`](../proxy.md), at `/pro/api/v1/<database>` for each database, and every call needs an [API token](./api-tokens.md). `<database>` is the database's id: its name in `DATABASE_URL`, or for an unnamed one the database name in its connection string, lowercased (`pgboss` for `postgres://…/pgboss`). Under a base path, the API is under it too: `/pgboss/pro/api/v1/…`.
 
 ```bash
 curl -X POST https://console.example.com/pro/api/v1/pgboss/send \
@@ -32,10 +32,11 @@ Each method needs a capability, which the service account gets from its role on 
 
 | Status | When |
 | - | - |
+| `400` | A request the method can't take, such as a `minutes` value the acknowledge call doesn't offer. |
 | `401` | No token, or one that is unknown, expired, revoked, or whose service account is disabled. |
 | `403` | The token's role doesn't include the method, or Pro refuses the method. |
 | `404` | No database by that id, or one the service account has no role on. |
-| `409` | The database's pg-boss schema isn't the one this Pro makes changes on. See [pg-boss versions](./versions.md). |
+| `409` | The database's pg-boss schema isn't the one this Pro makes changes on (see [pg-boss versions](./versions.md)), or an acknowledged alert is closed or already acknowledged. |
 | `429` | An invalid token, after too many from this address. A valid token is never refused this way. |
 
 ## Audit
