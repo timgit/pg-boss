@@ -21,7 +21,7 @@ Pro leaves out any figure pg-boss hasn't recorded, so it never shows up as 0. Ra
 
 ## Prometheus
 
-Prometheus needs only a viewer's token to scrape `/metrics`:
+Prometheus needs a token from a [service account](./api-tokens.md) with only the viewer role:
 
 ```yaml
 scrape_configs:
