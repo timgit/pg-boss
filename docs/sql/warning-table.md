@@ -47,7 +47,7 @@ const boss = new PgBoss({
 
 Maintenance prunes them on its regular cycle, which `maintenanceIntervalSeconds` sets.
 
-For manual cleanup:
+To delete warnings older than 30 days by hand, run:
 
 ```sql
 DELETE FROM pgboss.warning WHERE created_on < now() - interval '30 days';

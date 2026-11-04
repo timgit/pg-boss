@@ -153,7 +153,7 @@ npm install @pg-boss/dashboard
 
 ## Quick start
 
-For a quick local test:
+To try the dashboard against a local database, run it with npx:
 
 ```bash
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard

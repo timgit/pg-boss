@@ -17,7 +17,7 @@ Put both lines in the `.npmrc` of the project that installs Pro:
 @pg-boss:registry=https://npm.pgboss.io
 ```
 
-Then install it:
+With the `.npmrc` in place, install Pro:
 
 ```bash
 npm install @pg-boss/pro

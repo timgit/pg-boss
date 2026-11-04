@@ -26,7 +26,7 @@ Then visit:
 - `http://localhost:3000/docs`: interactive Swagger documentation
 - `http://localhost:3000/openapi.json`: OpenAPI spec
 
-Or embed it in your own Node app:
+To run the proxy inside an existing Node app, start it from code:
 
 ```ts
 import { createProxyServerNode } from '@pg-boss/proxy/node'
@@ -424,7 +424,7 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-Or deny specific methods:
+To expose every method except the ones listed, use `deny`:
 
 ```ts
 const { app, boss } = await createProxyService({

@@ -11,7 +11,7 @@ npm install -g pg-boss
 pg-boss --help
 ```
 
-Or run it with npx:
+To run the CLI without a global install, use npx:
 
 ```bash
 npx pg-boss --help

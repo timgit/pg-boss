@@ -6,7 +6,7 @@ license. **The license doesn't turn any feature on or off.**
 ![The license page](../images/pro/license.webp){.light-only}
 ![The license page](../images/pro/license-dark.webp){.dark-only}
 
-Fetch it with the license key:
+To install the license, run the license command with the license key:
 
 ```bash
 PGBOSS_PRO_TOKEN=<your license key> npx pg-boss-pro-license

@@ -35,7 +35,7 @@ expires within 14 days.
 
 A token is `pgbp_` followed by 43 characters, and Pro shows it once, at creation. Pro keeps only its hash and its first characters, to tell tokens apart. Each token expires after 30, 90 or 365 days or never, and any token can be revoked. Pro records when and where a token was last used, at most once a minute.
 
-Send it as a bearer token:
+A client sends the token in an `Authorization: Bearer` header:
 
 ```bash
 curl -H "Authorization: Bearer $PGBOSS_PRO_API_TOKEN" https://console.example.com/pro/api/v1/pgboss/getQueues
