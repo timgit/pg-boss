@@ -2,6 +2,9 @@
 
 `/metrics` serves Prometheus metrics for the databases an [API token](./api-tokens.md)'s service account can see. The metrics come only from what pg-boss already records, without counting the job table: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
 
+Pro's queue health, Status page and alerts don't need `/metrics`. It's for a team that already
+collects metrics with Prometheus, or with another tool that reads the Prometheus format.
+
 | Metric | Labels | What |
 | - | - | - |
 | `pgboss_database_up` | `database` | 1, or 0 when the database could not be read. |
