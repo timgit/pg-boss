@@ -1,6 +1,6 @@
 # Warning table
 
-When you enable `persistWarnings` in the constructor options, pg-boss stores its warnings in this table. That keeps a history you can query, and the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard) shows it.
+When you enable `persistWarnings` in the constructor options, pg-boss stores its warnings in this table. The table keeps a history you can query, which the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard) shows.
 
 ```sql
 CREATE TABLE pgboss.warning (

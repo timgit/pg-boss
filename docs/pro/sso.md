@@ -60,5 +60,5 @@ account in Pro, which ends its sessions immediately.
 The issuer must be the one the provider's discovery document names, with or
 without a trailing slash. For Entra ID, that is the issuer with your tenant's
 id, not `common`. It must be `https`, except on `localhost`, `127.0.0.1` or
-`[::1]`, where Pro accepts `http`. That allows a full round trip against a provider running
-in a local container, before Pro points at the real one.
+`[::1]`, where Pro accepts `http`. Accepting `http` there allows a full round trip against a provider running
+in a local container, before Pro points at the real provider.

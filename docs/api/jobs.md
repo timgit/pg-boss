@@ -317,7 +317,7 @@ Updates one or more **not-yet-active** jobs (state `created` or `retry`), or ins
 
 Returns a `Promise<UpsertResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the updated job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 
-Concurrent `upsert()` calls with the same `singletonKey` agree on one job. At most one of them inserts, and the others update that job, waiting for the first one's transaction to finish if they have to. This holds on every queue policy and inside a transaction passed as `db`. It applies between upserts only. A `send()` or `insert()` with the same key still adds a job of its own wherever the queue policy allows several queued jobs per key (`standard`, `singleton` and `key_strict_fifo`). A job brought back with `resume()` also queues beside a newer upserted one and doesn't replace it.
+Concurrent `upsert()` calls with the same `singletonKey` agree on one job. At most one of them inserts, and the others update that job, waiting for the first one's transaction to finish if they have to. The guarantee holds on every queue policy and inside a transaction passed as `db`, but only between upserts. A `send()` or `insert()` with the same key still adds a job of its own wherever the queue policy allows several queued jobs per key (`standard`, `singleton` and `key_strict_fifo`). A job brought back with `resume()` also queues beside a newer upserted one and doesn't replace it.
 
 On CockroachDB the later upsert fails with a serialization error (`40001`) instead of waiting. pg-boss runs it again, up to 3 attempts in all, when the transaction is its own. Inside a `db` you pass, the error reaches you to retry.
 

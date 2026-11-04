@@ -135,8 +135,8 @@ pg-boss replaces only `SKIP LOCKED` in the fetch path. Other operations still us
 
 pg-boss handles a third CockroachDB quirk separately. CockroachDB returns integer columns (`INT8`)
 as text, so pg-boss `Number()`-coerces the numeric job and queue fields on read **whenever `backend ===
-'cockroachdb'`**. This is a wire-format property of the database, so pg-boss keys it on the backend
-identity instead of a compatibility flag. (Stock Postgres returns these as `int4` numbers, so no
+'cockroachdb'`**. Integers as text are a wire-format property of the database, so pg-boss keys the
+coercion on the backend identity instead of a compatibility flag. (Stock Postgres returns these as `int4` numbers, so no
 coercion is needed there.)
 
 ### Transaction isolation
@@ -237,17 +237,17 @@ plain PostgreSQL, so the project exercises them two ways:
 - **`npm run test:distributed`** runs the **entire** test suite on Postgres with
   `DISTRIBUTED=true`, which makes `test/testHelper.ts`'s `getConfig()` set the internal
   `__test__distributed` hook for every test. The hook forces `noSkipLocked` + `noMultiMutationCte`
-  on top of the plain-Postgres schema, since the flags are not publicly configurable. This is the
+  on top of the plain-Postgres schema, since the flags are not publicly configurable. This mode is the
   primary safety net, because every new test runs against the distributed code paths, quickly and
   reliably, without paying CockroachDB's slow per-test DDL. It runs as its own CI job.
 - **`npm run test:cockroachdb`** runs `test/distributedDatabaseTest.ts` against a real CockroachDB
   cluster (`DB_TYPE=cockroachdb`, which also enables the compatibility flags above). It's a focused
   smoke test of real CockroachDB compatibility and runs on every push/PR.
 - **`npm run test:cockroachdb:full`** runs the **entire** suite against a real CockroachDB cluster
-  (`--no-file-parallelism`). This is the compatibility-matrix / regression signal. It isn't part of
+  (`--no-file-parallelism`). The full run is the compatibility-matrix / regression signal. It isn't part of
   CI, so run it before a release or after touching SQL. A fresh schema installs in well under a
   second, because every table's indexes are declared inside its `CREATE TABLE` (see
-  `inlineTableIndexes`). What remains is CockroachDB's latency on the test bodies themselves. The
+  `inlineTableIndexes`). The remaining time is CockroachDB's latency on the test bodies themselves. The
   per-test timeout goes up automatically under CockroachDB (see `vitest.config.ts`).
 - **`npm run test:cockroachdb:single`** starts a single-node, in-memory CockroachDB
   (`docker-compose.cockroach-single.yaml`) and runs the same full suite against it, about twice as
@@ -339,14 +339,14 @@ await boss.stop()
 await pglite.close()
 ```
 
-This works like the [ORM transaction adapters](api/adapters.md), where pg-boss only calls
-`executeSql` on the object you provide.
+As with the [ORM transaction adapters](api/adapters.md), pg-boss only calls `executeSql` on the
+object you provide.
 
 #### Single-connection considerations
 
 PGlite serializes everything through one connection. pg-boss's background loops (maintenance,
 scheduling, monitoring) and your workers all share that single connection, so PGlite processes
-queries one at a time. That works, since PGlite queues requests internally, but keep concurrency
+queries one at a time. One connection is enough, since PGlite queues requests internally, but keep concurrency
 modest:
 
 - A large `batchSize` or many concurrent workers gain nothing, because they can't run in parallel.
@@ -570,7 +570,7 @@ await boss.work('my-queue', {
 ### Hash-based distribution
 
 For CockroachDB specifically, consider [hash-sharded indexes](https://www.cockroachlabs.com/docs/stable/hash-sharded-indexes)
-to distribute write load across ranges. This helps avoid hotspots when inserting time-ordered jobs.
+to distribute write load across ranges. Hash-sharded indexes help avoid hotspots when inserting time-ordered jobs.
 
 ### Alternative systems
 
@@ -609,7 +609,7 @@ With `noSkipLocked`, when multiple workers fetch concurrently:
 3. One succeeds, the others fail the `state < 'active'` recheck
 4. Failed workers receive empty results
 
-This is the documented trade-off. For job queues where processing time >> fetch time, it's
+These empty results are the documented trade-off. For job queues where processing time >> fetch time, it's
 acceptable, since workers poll again.
 
 ### Compatibility notes

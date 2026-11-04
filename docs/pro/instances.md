@@ -5,7 +5,7 @@ The free dashboard lists every pg-boss instance registered in a database. Pro gr
 ![The instances page](../images/pro/instances.webp){.light-only}
 ![The instances page](../images/pro/instances-dark.webp){.dark-only}
 
-What needs attention is what the instance [alert rules](./alert-rules.md#default-rules) check:
+The instance [alert rules](./alert-rules.md#default-rules) decide what needs attention:
 
 - a queue with ready jobs that nothing is taking
 - an instance restarting in a loop

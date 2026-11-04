@@ -2,7 +2,7 @@
 
 Outside Node.js, from other clients or from triggers inside PostgreSQL itself, you can do most things by working directly against the internal tables. For example, to load many jobs at once without calling `send()` or `insert()`, use SQL `INSERT` or `COPY` commands.
 
-This is the definition of the primary job table. To create a job by hand, you only need to set `name`, because every other column is nullable or has a default.
+Below is the definition of the primary job table. To create a job by hand, you only need to set `name`, because every other column is nullable or has a default.
 
 ```sql
 CREATE TABLE pgboss.job (

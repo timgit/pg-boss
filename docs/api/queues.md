@@ -51,7 +51,7 @@ Allowed policy values:
 > - **retry**: waiting to be retried after a failure
 > - **failed**: permanently failed (exhausted all retries)
 >
-> Blocking is scoped to the individual key, so jobs with other keys remain fetchable. Priority can order work across keys but can't reorder jobs within a key. When pg-boss picks a key's FIFO head, it skips any job that can't be fetched yet, so a later job can run ahead of it. That covers jobs deferred by `startAfter` and jobs held by an unmet flow dependency. If that later job fails into `retry`, it keeps the key's head position until it completes or permanently fails, even once the earlier job becomes eligible. A job that has started must finish before any sibling runs. pg-boss applies fetch filters such as `minPriority` and `maxPriority` after it selects the head, so they can't skip it.
+> Blocking is scoped to the individual key, so jobs with other keys remain fetchable. Priority can order work across keys but can't reorder jobs within a key. When pg-boss picks a key's FIFO head, it skips any job that can't be fetched yet, so a later job can run ahead of it. A job can't be fetched yet when `startAfter` defers it or an unmet flow dependency holds it. If that later job fails into `retry`, it keeps the key's head position until it completes or permanently fails, even once the earlier job becomes eligible. A job that has started must finish before any sibling runs. pg-boss applies fetch filters such as `minPriority` and `maxPriority` after it selects the head, so they can't skip it.
 >
 > **Fetch cost.** Each fetch selects one head per key across the whole queue before it applies priority and the batch limit. Its cost grows with the number of *distinct keys that have queued jobs*, whatever the `batchSize` or the total number of queued jobs. A few keys each holding a long backlog is the cheap case: 200 keys holding 1,000 jobs each means only 200 heads to rank. Many keys holding one job each is the expensive case, because every job is its own head. At 200,000 distinct keys with a single job each, a fetch takes roughly 1s, against 0.1s for a `standard` queue over the same rows. If your keys are that numerous and never build up a backlog, their jobs never wait on each other, and `standard` might be a better policy.
 >
@@ -347,7 +347,7 @@ The result depends on whether stats are persisted:
 
 * **force**, boolean, default false
 
-  With `persistQueueStats` disabled, counts directly from the job table and updates the values in the queue table instead of reading the cache. This is still limited to once a minute, so repeated calls with `force` don't always count again.
+  With `persistQueueStats` disabled, counts directly from the job table and updates the values in the queue table instead of reading the cache. The count still runs at most once a minute, so repeated calls with `force` don't always count again.
 
 **Downsampling options**
 

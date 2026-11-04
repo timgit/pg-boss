@@ -40,7 +40,7 @@ Stops all background processing, such as maintenance and scheduling, as well as 
 
 By default, `stop()` with no arguments waits for all workers to finish their active jobs before it resolves. It emits a `stopped` event if needed.
 
-A job that a worker is still claiming when you call `stop()` gets its handler if it's ready to start within the timeout, like any active job. For a [`transactional`](./workers.md#work-name-options-handler) worker, ready includes opening its transaction. A job that isn't ready when the timeout runs out is failed without starting its handler. That spends an attempt like any failure (with retries left it goes to `retry`). `stop()` waits for that failure to settle, which can extend shutdown past the timeout. With `graceful: false`, such a job is failed at once.
+A job that a worker is still claiming when you call `stop()` gets its handler if it's ready to start within the timeout, like any active job. For a [`transactional`](./workers.md#work-name-options-handler) worker, ready includes opening its transaction. A job that isn't ready when the timeout runs out is failed without starting its handler. Failing it spends an attempt like any failure (with retries left it goes to `retry`). `stop()` waits for that failure to settle, which can extend shutdown past the timeout. With `graceful: false`, such a job is failed at once.
 
 **Arguments**
 

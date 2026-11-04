@@ -68,7 +68,7 @@ By default, a worker fetches 1 job every 2 seconds.
 
   Everything written through `tx` commits with the job's completion, so the handler can't leave its side effects committed and the job unfinished, or the reverse. On a throw, the writes and the completion roll back together, and pg-boss fails the job on a pooled connection, so retries and dead lettering work as they do for any other worker. Nothing else about the job changes. pg-boss claims it before the transaction opens, so `expireInSeconds` bounds it and heartbeats refresh it while the handler runs.
 
-  A commit needs the claim the handler started with. If anything takes the job away meanwhile, the transaction rolls back, because the job is about to run again. That covers the job expiring, a heartbeat the database stopped seeing, an operator's `cancel()` or `fail()`, another instance's supervisor, and a shutdown that abandons the handler. Settling the job yourself is fine, as long as it goes through `complete()`, `fail()`, `cancel()` or `deleteJob()` with `{ db: tx }`. A raw `UPDATE` of the job table looks the same as a lost claim, so it rolls back.
+  A commit needs the claim the handler started with. If anything takes the job away meanwhile, the transaction rolls back, because the job is about to run again. The job can be taken away by its expiration, a heartbeat the database stopped seeing, an operator's `cancel()` or `fail()`, another instance's supervisor, or a shutdown that abandons the handler. Settling the job yourself is fine, as long as it goes through `complete()`, `fail()`, `cancel()` or `deleteJob()` with `{ db: tx }`. A raw `UPDATE` of the job table looks the same as a lost claim, so it rolls back.
 
   **Requirements and limits**
 
@@ -167,7 +167,7 @@ By default, a worker fetches 1 job every 2 seconds.
 
 * **heartbeatRefreshSeconds**, number
 
-  Custom interval in seconds at which the worker sends heartbeats for active jobs. Defaults to `heartbeatSeconds / 2` (derived from the job's heartbeat configuration). Keep it below `heartbeatSeconds`, or a job can miss its heartbeat between refreshes. This is a worker-level setting only. It is not available on queue or job configuration.
+  Custom interval in seconds at which the worker sends heartbeats for active jobs. Defaults to `heartbeatSeconds / 2` (derived from the job's heartbeat configuration). Keep it below `heartbeatSeconds`, or a job can miss its heartbeat between refreshes. `heartbeatRefreshSeconds` is set on the worker only, never on a queue or a job.
 
   The distinction between `heartbeatSeconds` and `heartbeatRefreshSeconds`:
   - `heartbeatSeconds` (queue/job level) defines the **contract**: how long before a missing heartbeat is considered a failure
@@ -290,7 +290,7 @@ By default, workers fetch new jobs by polling every `pollingIntervalSeconds`, so
 
 **Enabling it requires two opt-ins:**
 
-1. Start the instance with [`useListenNotify: true`](./constructor.md#uselistennotify). This runs a listener on one dedicated database connection.
+1. Start the instance with [`useListenNotify: true`](./constructor.md#uselistennotify). The instance then runs a listener on one dedicated database connection.
 2. Mark each queue that should emit notifications with the [`notify: true`](./queues.md#createqueue-name-queue) option on `createQueue()` (or `updateQueue()`).
 
 ```js
@@ -343,7 +343,7 @@ await boss.work('process-video', async ([ job ]) => {
 })
 ```
 
-Each job has its own signal. On a queue with `heartbeatSeconds`, a heartbeat that finds a job no longer active under this worker's claim aborts that job's signal. That happens when the job failed after its heartbeat went stale or it expired (it may already be running elsewhere), or when something completed, failed, canceled or deleted it, the handler included. The rest of the batch keeps running. pg-boss discards whatever the handler returns for a job it no longer holds, so stopping early only saves the work. A heartbeat that fails to reach the database aborts nothing.
+Each job has its own signal. On a queue with `heartbeatSeconds`, a heartbeat that finds a job no longer active under this worker's claim aborts that job's signal. A job stops being active under the claim when it failed after its heartbeat went stale or it expired (it may already be running elsewhere), or when something completed, failed, canceled or deleted it, the handler included. The rest of the batch keeps running. pg-boss discards whatever the handler returns for a job it no longer holds, so stopping early only saves the work. A heartbeat that fails to reach the database aborts nothing.
 
 When a handler runs past `expireInSeconds`, pg-boss fails its batch and aborts every signal in it. Aborting can't stop a handler that ignores its signal, so the worker waits for the handler to return before it fetches again, and emits a [`handler_overrun`](./events.md#warning) warning while it waits. Until that handler actually stops, it counts against `localConcurrency` and `localGroupConcurrency`, and its worker doesn't pick up the job's retry.
 
@@ -351,7 +351,7 @@ A handler that never returns holds its worker until [`offWork()`](#offwork-name-
 
 ### `getWipData(options)`
 
-Returns a snapshot of all workers in this instance of pg-boss with state `created`, `active`, or `stopping`. This is the same data payload emitted by the `wip` event, but available on-demand without waiting for a job transition.
+Returns a snapshot of all workers in this instance of pg-boss with state `created`, `active`, or `stopping`. The snapshot holds the same data as the `wip` event's payload. `getWipData()` returns it without waiting for a job transition.
 
 Use this for continuous monitoring of worker utilization, for example driving metrics or autoscaling signals when jobs are long-running and the `wip` event may not fire frequently enough.
 

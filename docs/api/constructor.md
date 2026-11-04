@@ -64,7 +64,7 @@ Maximum number of connections, shared by every operation on this instance.
 
 ### `application_name`
 
-String, defaults to `pgboss:` followed by the first 8 characters of the instance's id. That lets you tell each instance's connections apart in `pg_stat_activity` and join them to [`getInstances()`](./ops.md#getinstances-options). With `registerInstance: false` the default is `"pgboss"`.
+String, defaults to `pgboss:` followed by the first 8 characters of the instance's id. With the default, you can tell each instance's connections apart in `pg_stat_activity` and join them to [`getInstances()`](./ops.md#getinstances-options). With `registerInstance: false` the default is `"pgboss"`.
 
 ### `connectionTimeoutMillis`
 
@@ -170,19 +170,19 @@ TCP keepalive initial delay for the dedicated LISTEN/NOTIFY connection.
 
 Bool, default true
 
-Set to false to skip flows, maintenance and monitoring on this instance. This is for advanced use, and you'd leave it on under normal circumstances.
+Set to false to skip flows, maintenance and monitoring on this instance. Leave it on except in advanced setups.
 
 ### `schedule`
 
 Bool, default true
 
-Set to false to stop this instance from monitoring or creating scheduled jobs. This is for advanced use, such as testing, or a server whose clock is skewed when you want to turn off the skew warnings.
+Set to false to stop this instance from monitoring or creating scheduled jobs. Turn it off only for advanced cases, such as testing, or to silence the clock skew warnings on a server whose clock is off.
 
 ### `migrate`
 
 Bool, default true
 
-Set to false to skip schema migrations during `start()`. If schema migrations exist, `start()` throws an error and blocks usage. This is for advanced use, when the configured user account doesn't have privileges to change the schema.
+Set to false to skip schema migrations during `start()`. If schema migrations exist, `start()` throws an error and blocks usage. Turn it off only when the configured user account doesn't have privileges to change the schema.
 
 ### `superviseIntervalSeconds`
 
@@ -319,7 +319,7 @@ The default number of jobs in the created or retry state a queue can hold before
 
 Bool, default false
 
-Set to true to store warnings in the `warning` table as well as emitting them as events. That covers warnings from monitoring and maintenance (slow queries, queue backlogs, clock skew) and from workers (handlers that outran their timeout). The stored rows give you a history of warnings for debugging and monitoring. See [Events](./events.md#warning) for the warning types.
+Set to true to store warnings in the `warning` table as well as emitting them as events. Stored warnings come from monitoring and maintenance (slow queries, queue backlogs, clock skew) and from workers (handlers that outran their timeout). The rows keep a history of warnings for debugging and monitoring. See [Events](./events.md#warning) for the warning types.
 
 ### `warningRetentionDays`
 
@@ -388,7 +388,7 @@ Enables [`getSpy()`](./testing.md#getspy-name) for deterministic tests. It adds 
 
 ## Custom type parsers
 
-pg-boss doesn't re-parse the values it reads back, so whatever a global [`pg-types`](https://github.com/brianc/node-pg-types) parser returns reaches pg-boss, and the public API, unchanged. This applies whether you pass your own [`db`](#db) or let pg-boss build the pool, because `pg.types.setTypeParser()` is global to the `pg` module either way.
+pg-boss doesn't re-parse the values it reads back, so whatever a global [`pg-types`](https://github.com/brianc/node-pg-types) parser returns reaches pg-boss, and the public API, unchanged. A global parser reaches pg-boss whether you pass your own [`db`](#db) or let pg-boss build the pool, because `pg.types.setTypeParser()` is global to the `pg` module either way.
 
 The common case is a `timestamptz` parser that returns something other than a `Date`, `Temporal.Instant` and Luxon's `DateTime` in particular. pg-boss does its own timestamp arithmetic in SQL rather than in JavaScript, so it supports such a parser, with two consequences:
 

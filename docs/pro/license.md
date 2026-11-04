@@ -45,7 +45,7 @@ To keep `license.json` on a mounted volume instead, point
 A subscription renews until it's canceled. A canceled subscription lasts until the end of the period
 already paid for. After that, the License page shows **Term ended** while Pro keeps running.
 
-What changes is what the organization may install and use. That depends on how long it paid:
+How many months an organization paid for decides what it may still install and use:
 
 | After the subscription ends | Paid 12 months or more | Paid less than 12 months |
 | - | - | - |
@@ -55,8 +55,8 @@ What changes is what the organization may install and use. That depends on how l
 | Fetch a new license | No | No |
 | Support | No | No |
 
-The 12 months count in total, as one annual payment or as monthly payments, in a row or not. A
-refunded period doesn't count. Under 12 months, Pro keeps running only so that a lapse never takes a
+Every paid month counts toward the 12, on an annual or a monthly subscription, even when the months
+aren't consecutive. A refunded period doesn't count. Under 12 months, Pro keeps running only so that a lapse never takes a
 dashboard away without warning. Running past the end gives no right to keep using it. See section 2
 of `LICENSE`.
 

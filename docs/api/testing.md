@@ -149,7 +149,7 @@ Jumps to `t`, forwards or backwards, without firing anything. A forward jump cou
 
 ### Database clock
 
-While a `TestClock` is attached, `${schema}.job_now()`, the function every pg-boss statement reads the clock through, returns the fake time. That covers job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It doesn't change `pg_catalog.now()` or your own SQL, and it leaves the `created_on` of rows your application inserts directly unaffected.
+While a `TestClock` is attached, `${schema}.job_now()`, the function every pg-boss statement reads the clock through, returns the fake time. The fake time reaches job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It doesn't change `pg_catalog.now()` or your own SQL, and it leaves the `created_on` of rows your application inserts directly unaffected.
 
 Only sessions that set `pgboss.test_clock = 'on'` see the fake time. An instance without a `TestClock` on the same schema keeps real time, and so does anything started after a killed run left the override behind.
 
