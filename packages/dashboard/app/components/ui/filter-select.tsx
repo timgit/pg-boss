@@ -1,4 +1,4 @@
-import { cn } from '~/lib/utils'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 
 interface FilterOption<T extends string | null> {
   value: T
@@ -9,33 +9,37 @@ interface FilterSelectProps<T extends string | null> {
   value: T
   options: FilterOption<T>[]
   onChange: (value: T) => void
+  /** Matches the fields beside it: `default` for 38px filter bars, `sm` for 34px rows, `xs` for chart controls. */
+  size?: 'default' | 'sm' | 'xs'
   className?: string
+  'aria-label'?: string
 }
 
+/** One choice from a short list of filter values, where a null value means no filter. */
 export function FilterSelect<T extends string | null> ({
   value,
   options,
   onChange,
+  size = 'default',
   className,
+  'aria-label': ariaLabel,
 }: FilterSelectProps<T>) {
   return (
-    <select
-      value={value ?? ''}
-      onChange={(e) => onChange((e.target.value || null) as T)}
-      className={cn(
-        'px-3 py-2 text-sm rounded-lg shadow-sm',
-        'bg-white border border-gray-300 text-gray-900',
-        'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100',
-        'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2',
-        'dark:focus:ring-offset-gray-900',
-        className
-      )}
+    <Select<T>
+      value={value}
+      items={options}
+      onValueChange={(next) => onChange(next as T)}
     >
-      {options.map((option) => (
-        <option key={option.label} value={option.value ?? ''}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger size={size} className={className} aria-label={ariaLabel}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.label} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }

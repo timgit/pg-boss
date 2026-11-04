@@ -1,111 +1,126 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react'
-import { ChevronDown } from 'lucide-react'
+import type { ComponentProps } from 'react'
+import { Select as SelectPrimitive } from '@base-ui/react/select'
+import { CheckIcon, ChevronDownIcon } from 'lucide-react'
 import { cn } from '~/lib/utils'
 
-interface SelectProps {
-  value: string
-  onValueChange: (value: string) => void
-  children: ReactNode
-  className?: string
-}
+// Ported from shadcn/ui's Base UI select, with the dashboard's color tokens in place of shadcn's.
+// The popup and its items match the dashboard's menus and comboboxes: below the trigger, the check
+// on the left.
 
-interface SelectItemProps {
-  value: string
-  children: ReactNode
-}
+/** A single choice from a list, drawn the same in both themes. `name` posts the value with a form. */
+const Select = SelectPrimitive.Root
 
-export function Select({ value, onValueChange, children, className }: SelectProps) {
-  const [isOpen, setIsOpen] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
+const SelectGroup = SelectPrimitive.Group
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [isOpen])
-
-  // Extract items from children
-  const items: { value: string; label: ReactNode }[] = []
-
-  const extractItems = (children: ReactNode) => {
-    if (Array.isArray(children)) {
-      children.forEach(extractItems)
-    } else if (children && typeof children === 'object' && 'props' in children) {
-      const child = children as any
-      if (child.type === SelectItem) {
-        items.push({ value: child.props.value, label: child.props.children })
-      } else if (child.props?.children) {
-        extractItems(child.props.children)
-      }
-    }
-  }
-
-  extractItems(children)
-
-  const selectedItem = items.find(item => item.value === value)
-
+function SelectValue ({ className, ...props }: SelectPrimitive.Value.Props) {
   return (
-    <div ref={containerRef} className={cn('relative', className)}>
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          'flex items-center justify-between w-full px-3 py-2 text-sm rounded-lg shadow-sm',
-          'bg-white border border-gray-300 text-gray-900',
-          'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100',
-          'hover:bg-gray-50 dark:hover:bg-gray-800',
-          'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent',
-          'cursor-pointer'
-        )}
-      >
-        <span className="truncate text-left">{selectedItem?.label || 'Select...'}</span>
-        <ChevronDown className="h-4 w-4 opacity-50 ml-2 shrink-0" />
-      </button>
-
-      {isOpen && items.length > 0 && (
-        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-          {items.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => {
-                onValueChange(item.value)
-                setIsOpen(false)
-              }}
-              className={cn(
-                'w-full text-left px-3 py-2 text-sm',
-                'hover:bg-gray-100 dark:hover:bg-gray-800',
-                'text-gray-900 dark:text-gray-100',
-                'cursor-pointer',
-                item.value === value && 'bg-gray-50 dark:bg-gray-800'
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <SelectPrimitive.Value
+      data-slot="select-value"
+      className={cn('truncate data-placeholder:text-[var(--text-tertiary)]', className)}
+      {...props}
+    />
   )
 }
 
-export function SelectItem({ value, children }: SelectItemProps) {
-  return null // This is just a marker component for the Select to extract items from
+const TRIGGER_SIZE = {
+  default: 'h-[38px] px-3 text-sm',
+  sm: 'h-[34px] px-2.5 text-sm',
+  xs: 'h-7 px-2 text-xs',
 }
 
-export const SelectTrigger = ({ children }: { children?: ReactNode }) => null
-export const SelectValue = ({ children }: { children?: ReactNode } = {}) => null
-export const SelectContent = ({ children }: { children: ReactNode }) => <>{children}</>
-export const SelectGroup = ({ children }: { children: ReactNode }) => <>{children}</>
-export const SelectLabel = ({ children }: { children?: ReactNode } = {}) => null
-export const SelectSeparator = () => null
+const TRIGGER_VARIANT = {
+  // Beside the filter bars' search fields.
+  filter: 'rounded-lg border-[var(--border-strong)] shadow-sm',
+  // Among a form's text fields.
+  field: 'w-full rounded-md border-[var(--border-default)]',
+}
+
+/** The closed select. `variant` matches the fields beside it, a filter bar's or a form's, and defaults to `filter`. */
+function SelectTrigger ({
+  className,
+  size = 'default',
+  variant = 'filter',
+  children,
+  ...props
+}: SelectPrimitive.Trigger.Props & { size?: keyof typeof TRIGGER_SIZE, variant?: keyof typeof TRIGGER_VARIANT }) {
+  return (
+    <SelectPrimitive.Trigger
+      data-slot="select-trigger"
+      className={cn(
+        'inline-flex min-w-0 cursor-pointer items-center justify-between gap-2 border bg-[var(--surface-card)] text-left whitespace-nowrap text-[var(--text-primary)] outline-none transition-colors',
+        'focus-visible:border-[var(--border-focus)] focus-visible:shadow-[var(--shadow-focus)] data-popup-open:border-[var(--border-focus)]',
+        'data-disabled:cursor-not-allowed data-disabled:opacity-50',
+        TRIGGER_SIZE[size],
+        TRIGGER_VARIANT[variant],
+        className
+      )}
+      {...props}
+    >
+      {children}
+      <SelectPrimitive.Icon render={<ChevronDownIcon className="size-4 shrink-0 text-[var(--text-tertiary)]" aria-hidden="true" />} />
+    </SelectPrimitive.Trigger>
+  )
+}
+
+/** The open list, below the trigger and at least as wide. */
+function SelectContent ({
+  className,
+  children,
+  side = 'bottom',
+  sideOffset = 6,
+  align = 'start',
+  ...props
+}: SelectPrimitive.Popup.Props & Pick<SelectPrimitive.Positioner.Props, 'side' | 'sideOffset' | 'align'>) {
+  return (
+    <SelectPrimitive.Portal>
+      <SelectPrimitive.Positioner side={side} sideOffset={sideOffset} align={align} alignItemWithTrigger={false} className="z-50 outline-none">
+        <SelectPrimitive.Popup
+          data-slot="select-content"
+          className={cn(
+            'max-h-[min(var(--available-height),20rem)] min-w-[var(--anchor-width)] overflow-y-auto rounded-lg border border-[var(--border-strong)] bg-[var(--surface-card)] p-1 text-[var(--text-primary)] shadow-lg outline-none',
+            'origin-[var(--transform-origin)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+            className
+          )}
+          {...props}
+        >
+          <SelectPrimitive.List>{children}</SelectPrimitive.List>
+        </SelectPrimitive.Popup>
+      </SelectPrimitive.Positioner>
+    </SelectPrimitive.Portal>
+  )
+}
+
+function SelectLabel ({ className, ...props }: SelectPrimitive.GroupLabel.Props) {
+  return (
+    <SelectPrimitive.GroupLabel
+      data-slot="select-label"
+      className={cn('px-2.5 py-1.5 text-xs font-medium text-[var(--text-tertiary)]', className)}
+      {...props}
+    />
+  )
+}
+
+function SelectItem ({ className, children, ...props }: SelectPrimitive.Item.Props) {
+  return (
+    <SelectPrimitive.Item
+      data-slot="select-item"
+      className={cn(
+        'grid cursor-pointer grid-cols-[1rem_1fr] items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none select-none',
+        'data-highlighted:bg-[var(--surface-hover)] data-disabled:cursor-not-allowed data-disabled:opacity-50',
+        className
+      )}
+      {...props}
+    >
+      <SelectPrimitive.ItemIndicator className="col-start-1 text-[var(--primary-600)] dark:text-[var(--primary-400)]">
+        <CheckIcon className="size-4" aria-hidden="true" />
+      </SelectPrimitive.ItemIndicator>
+      <SelectPrimitive.ItemText className="col-start-2 truncate">{children}</SelectPrimitive.ItemText>
+    </SelectPrimitive.Item>
+  )
+}
+
+function SelectSeparator ({ className, ...props }: ComponentProps<'div'>) {
+  return <div role="separator" data-slot="select-separator" className={cn('-mx-1 my-1 h-px bg-[var(--border-subtle)]', className)} {...props} />
+}
+
+export { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue }

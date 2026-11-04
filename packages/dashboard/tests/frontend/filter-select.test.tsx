@@ -10,62 +10,40 @@ describe("FilterSelect", () => {
     { value: "completed", label: "Completed" },
   ];
 
-  it("renders all options", () => {
-    render(
-      <FilterSelect
-        value={null}
-        options={options}
-        onChange={vi.fn()}
-      />
-    );
+  it("names the chosen option, and the null option when there is no filter", () => {
+    const { rerender } = render(<FilterSelect value={null} options={options} onChange={vi.fn()} />);
+    expect(screen.getByRole("combobox")).toHaveTextContent("All");
 
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
-    expect(screen.getByText("All")).toBeInTheDocument();
-    expect(screen.getByText("Active")).toBeInTheDocument();
-    expect(screen.getByText("Completed")).toBeInTheDocument();
+    rerender(<FilterSelect value="active" options={options} onChange={vi.fn()} />);
+    expect(screen.getByRole("combobox")).toHaveTextContent("Active");
   });
 
-  it("shows current value as selected", () => {
-    render(
-      <FilterSelect
-        value="active"
-        options={options}
-        onChange={vi.fn()}
-      />
-    );
+  it("lists every option when opened", async () => {
+    const user = userEvent.setup();
+    render(<FilterSelect value={null} options={options} onChange={vi.fn()} />);
 
-    expect(screen.getByRole("combobox")).toHaveValue("active");
+    await user.click(screen.getByRole("combobox"));
+    expect(await screen.findByRole("option", { name: "Completed" })).toBeInTheDocument();
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["All", "Active", "Completed"]);
   });
 
-  it("calls onChange when selection changes", async () => {
+  it("calls onChange with the option picked", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
+    render(<FilterSelect value={null} options={options} onChange={onChange} />);
 
-    render(
-      <FilterSelect
-        value={null}
-        options={options}
-        onChange={onChange}
-      />
-    );
-
-    await user.selectOptions(screen.getByRole("combobox"), "completed");
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "Completed" }));
     expect(onChange).toHaveBeenCalledWith("completed");
   });
 
-  it("calls onChange with null when selecting empty value", async () => {
+  it("calls onChange with null for the option that clears the filter", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
+    render(<FilterSelect value="active" options={options} onChange={onChange} />);
 
-    render(
-      <FilterSelect
-        value="active"
-        options={options}
-        onChange={onChange}
-      />
-    );
-
-    await user.selectOptions(screen.getByRole("combobox"), "");
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "All" }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
 });
