@@ -11,7 +11,6 @@ describe('QueueMultiSelect', () => {
   it('shows the placeholder when no value is selected', () => {
     render(
       <QueueMultiSelect
-        options={['alpha', 'beta']}
         value={[]}
         onChange={vi.fn()}
       />
@@ -22,7 +21,6 @@ describe('QueueMultiSelect', () => {
   it('shows the queue name when a single value is selected', () => {
     render(
       <QueueMultiSelect
-        options={['alpha', 'beta']}
         value={['alpha']}
         onChange={vi.fn()}
       />
@@ -33,7 +31,6 @@ describe('QueueMultiSelect', () => {
   it('summarises with a count when multiple values are selected', () => {
     render(
       <QueueMultiSelect
-        options={['alpha', 'beta', 'gamma']}
         value={['alpha', 'beta']}
         onChange={vi.fn()}
       />
@@ -44,7 +41,6 @@ describe('QueueMultiSelect', () => {
   it('honours a custom placeholder', () => {
     render(
       <QueueMultiSelect
-        options={[]}
         value={[]}
         onChange={vi.fn()}
         placeholder="Pick one"

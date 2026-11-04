@@ -3,7 +3,6 @@ import { ProSlot } from '~/components/pro-slot'
 import type { Route } from './+types/jobs'
 import {
   getRecentJobs,
-  getQueueNames,
   type RecentJobsFilterOptions,
 } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
@@ -113,31 +112,27 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const { page, cursor } = parsePaging(url.searchParams)
   const limit = PAGE_SIZE
 
-  const [recentJobsResult, queueNames] = await Promise.all([
-    getRecentJobs(DB_URL, SCHEMA, {
-      ...parsed.serverFilters,
-      limit,
-      cursor,
-      jobColumns,
-    }).then(
-      (jobs) => ({ jobs, timedOut: false }),
-      (err) => {
-        // A cancelled list query (statement_timeout) is an expected outcome on
-        // large tables with broad filters — render an inline banner instead of
-        // the ErrorBoundary so the user can remove the expensive filter.
-        if (isQueryTimeoutError(err)) return { jobs: null, timedOut: true }
-        throw err
-      }
-    ),
-    getQueueNames(DB_URL, SCHEMA),
-  ])
+  const recentJobsResult = await getRecentJobs(DB_URL, SCHEMA, {
+    ...parsed.serverFilters,
+    limit,
+    cursor,
+    jobColumns,
+  }).then(
+    (jobs) => ({ jobs, timedOut: false }),
+    (err) => {
+      // A cancelled list query (statement_timeout) is an expected outcome on
+      // large tables with broad filters — render an inline banner instead of
+      // the ErrorBoundary so the user can remove the expensive filter.
+      if (isQueryTimeoutError(err)) return { jobs: null, timedOut: true }
+      throw err
+    }
+  )
 
   const { jobs } = recentJobsResult
   const recentJobs: JobResult[] = jobs?.rows ?? []
 
   return {
     recentJobs,
-    queueNames,
     page: jobs?.atStart ? 1 : page,
     timedOut: recentJobsResult.timedOut,
     queryTimeoutMs: getQueryTimeoutMs(),
@@ -210,7 +205,6 @@ export function buildParams (
 export default function Jobs ({ loaderData }: Route.ComponentProps) {
   const {
     recentJobs,
-    queueNames,
     page,
     filters,
     hasActiveFilters,
@@ -271,7 +265,6 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
 
       <JobsFilterBar
         filters={filters}
-        queueOptions={queueNames}
         onChange={handleFiltersChange}
       />
 

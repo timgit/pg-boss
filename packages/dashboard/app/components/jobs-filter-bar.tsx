@@ -22,14 +22,13 @@ export interface JobsFilters {
 
 interface JobsFilterBarProps {
   filters: JobsFilters
-  queueOptions: string[]
   onChange: (next: JobsFilters) => void
 }
 
 // Filter controls for the global Jobs page. Pure presentation: keeps the id /
 // minRetries inputs in local state so typing is responsive, then commits via
 // onChange on Enter or blur. The route owns the URL-synced state.
-export function JobsFilterBar ({ filters, queueOptions, onChange }: JobsFilterBarProps) {
+export function JobsFilterBar ({ filters, onChange }: JobsFilterBarProps) {
   const [idInput, setIdInput] = useState(filters.id)
   const [minRetriesInput, setMinRetriesInput] = useState(filters.minRetries)
   // Local pair lists so half-typed rows ({ key: '', value: '' }) can render
@@ -141,7 +140,6 @@ export function JobsFilterBar ({ filters, queueOptions, onChange }: JobsFilterBa
           </div>
         </div>
         <QueueMultiSelect
-          options={queueOptions}
           value={filters.queues}
           onChange={(next) => onChange({ ...filters, queues: next })}
         />

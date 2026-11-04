@@ -739,7 +739,7 @@ export async function getRecentJobs (
   })
 }
 
-// Every queue name, for the queue pickers on the Jobs filter and the send, schedule and create forms.
+// Every queue name, for the queue pickers on Pro's send, schedule and create forms.
 export async function getQueueNames (
   dbUrl: string,
   schema: string
@@ -748,6 +748,25 @@ export async function getQueueNames (
   const sql = `SELECT name FROM ${s}.queue ORDER BY name`
   const rows = await query<{ name: string }>(dbUrl, sql)
   return rows.map(r => r.name)
+}
+
+/** How many names a queue picker shows before it asks the reader to type more. */
+export const QUEUE_SEARCH_LIMIT = 20
+
+// The first names containing `search` in name order, for a picker that searches as the reader types.
+// One row more than the limit says whether there are more. The leading wildcard scans the queue
+// table, which holds one row per queue.
+export async function searchQueueNames (
+  dbUrl: string,
+  schema: string,
+  search: string,
+  limit = QUEUE_SEARCH_LIMIT
+): Promise<{ names: string[], more: boolean }> {
+  const s = validateIdentifier(schema)
+  const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`
+  const sql = `SELECT name FROM ${s}.queue WHERE name ILIKE $1 ORDER BY name LIMIT $2`
+  const rows = await query<{ name: string }>(dbUrl, sql, [pattern, limit + 1])
+  return { names: rows.slice(0, limit).map(r => r.name), more: rows.length > limit }
 }
 
 // One page of a queue's jobs, newest first, through job_i15 (name, created_on), or newest finished

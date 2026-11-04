@@ -21,6 +21,7 @@ import {
   getTopQueues,
   getRecentJobs,
   getQueueNames,
+  searchQueueNames,
   getJobs,
   getJobCountFromQueue,
   getJobById,
@@ -592,6 +593,36 @@ describe('Job Queries', () => {
 
       const names = await getQueueNames(ctx.connectionString, ctx.schema)
       expect(names).toEqual(['alpha', 'bravo', 'charlie'])
+    })
+  })
+
+  describe('searchQueueNames', () => {
+    it('returns the first names in name order, and whether there are more', async () => {
+      await createTestQueue('charlie')
+      await createTestQueue('alpha')
+      await createTestQueue('bravo')
+
+      expect(await searchQueueNames(ctx.connectionString, ctx.schema, '', 2))
+        .toEqual({ names: ['alpha', 'bravo'], more: true })
+      expect(await searchQueueNames(ctx.connectionString, ctx.schema, '', 3))
+        .toEqual({ names: ['alpha', 'bravo', 'charlie'], more: false })
+    })
+
+    it('matches anywhere in the name, ignoring case', async () => {
+      await createTestQueue('payments')
+      await createTestQueue('auto-pay')
+      await createTestQueue('emails')
+
+      expect(await searchQueueNames(ctx.connectionString, ctx.schema, 'PAY'))
+        .toEqual({ names: ['auto-pay', 'payments'], more: false })
+    })
+
+    it('treats LIKE wildcards in the search as plain characters', async () => {
+      await createTestQueue('a_b')
+      await createTestQueue('axb')
+
+      expect((await searchQueueNames(ctx.connectionString, ctx.schema, '_')).names).toEqual(['a_b'])
+      expect((await searchQueueNames(ctx.connectionString, ctx.schema, '%')).names).toEqual([])
     })
   })
 

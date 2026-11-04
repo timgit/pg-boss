@@ -28,5 +28,6 @@ vi.mock('react-router', async () => {
     })),
     useSearchParams: vi.fn(() => [new URLSearchParams(), vi.fn()]),
     useNavigate: vi.fn(() => vi.fn()),
+    useFetcher: vi.fn(() => ({ data: undefined, state: 'idle', load: vi.fn(), submit: vi.fn() })),
   }
 })

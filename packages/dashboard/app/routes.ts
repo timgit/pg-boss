@@ -9,6 +9,7 @@ import { proRoutes } from './lib/pro-overlay'
 const freeRoutes = [
   index('routes/_index.tsx'),
   route('jobs', 'routes/jobs.tsx'),
+  route('queue-names', 'routes/queue-names.ts'),
   route('queues', 'routes/queues._index.tsx'),
   route('queues/:name', 'routes/queues.$name.tsx'),
   route('queues/:name/metrics', 'routes/queues.$name.metrics.tsx'),

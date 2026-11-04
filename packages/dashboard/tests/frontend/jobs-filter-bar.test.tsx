@@ -21,7 +21,6 @@ describe('JobsFilterBar', () => {
     render(
       <JobsFilterBar
         filters={baseFilters}
-        queueOptions={['transcription', 'audio-processing']}
         onChange={vi.fn()}
       />
     )
@@ -35,7 +34,7 @@ describe('JobsFilterBar', () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     render(
-      <JobsFilterBar filters={baseFilters} queueOptions={[]} onChange={onChange} />
+      <JobsFilterBar filters={baseFilters} onChange={onChange} />
     )
 
     const input = screen.getByPlaceholderText(/Filter by job ID/i)
@@ -53,7 +52,6 @@ describe('JobsFilterBar', () => {
     render(
       <JobsFilterBar
         filters={{ ...baseFilters, id: VALID_UUID }}
-        queueOptions={[]}
         onChange={onChange}
       />
     )
@@ -66,7 +64,7 @@ describe('JobsFilterBar', () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     render(
-      <JobsFilterBar filters={baseFilters} queueOptions={[]} onChange={onChange} />
+      <JobsFilterBar filters={baseFilters} onChange={onChange} />
     )
 
     const minRetries = screen.getByLabelText(/Minimum retries/i)
@@ -82,7 +80,7 @@ describe('JobsFilterBar', () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     render(
-      <JobsFilterBar filters={baseFilters} queueOptions={[]} onChange={onChange} />
+      <JobsFilterBar filters={baseFilters} onChange={onChange} />
     )
 
     // retry_count >= 0 matches every job, so 0 must commit as '' (no filter)
@@ -98,7 +96,7 @@ describe('JobsFilterBar', () => {
   it('shows advanced filters when toggled', async () => {
     const user = userEvent.setup()
     render(
-      <JobsFilterBar filters={baseFilters} queueOptions={[]} onChange={vi.fn()} />
+      <JobsFilterBar filters={baseFilters} onChange={vi.fn()} />
     )
 
     expect(screen.queryByText(/Add data filter/i)).not.toBeInTheDocument()
@@ -111,7 +109,6 @@ describe('JobsFilterBar', () => {
     render(
       <JobsFilterBar
         filters={{ ...baseFilters, data: [{ key: 'sessionId', value: 'abc' }] }}
-        queueOptions={[]}
         onChange={vi.fn()}
       />
     )
@@ -127,7 +124,6 @@ describe('JobsFilterBar', () => {
     render(
       <JobsFilterBar
         filters={{ ...baseFilters, data: [{ key: 'sessionId', value: 'abc' }] }}
-        queueOptions={[]}
         onChange={onChange}
       />
     )
@@ -146,7 +142,6 @@ describe('JobsFilterBar', () => {
     render(
       <JobsFilterBar
         filters={{ ...baseFilters, data: [{ key: 'sessionId', value: 'abc' }] }}
-        queueOptions={[]}
         onChange={onChange}
       />
     )
@@ -165,7 +160,7 @@ describe('JobsFilterBar', () => {
         data: [{ key: 'sessionId', value: 'abc' }],
       })
       return (
-        <JobsFilterBar filters={filters} queueOptions={[]} onChange={setFilters} />
+        <JobsFilterBar filters={filters} onChange={setFilters} />
       )
     }
 
@@ -188,7 +183,7 @@ describe('JobsFilterBar', () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     render(
-      <JobsFilterBar filters={baseFilters} queueOptions={[]} onChange={onChange} />
+      <JobsFilterBar filters={baseFilters} onChange={onChange} />
     )
 
     await user.click(screen.getByText(/Show advanced filters/i))
