@@ -740,7 +740,7 @@ export async function getRecentJobs (
   })
 }
 
-// Every queue name, for the queue pickers on Pro's send, schedule and create forms.
+// Every queue name, for Pro's Status page. A picker searches with searchQueueNames instead.
 export async function getQueueNames (
   dbUrl: string,
   schema: string
