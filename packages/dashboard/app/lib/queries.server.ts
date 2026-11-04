@@ -669,7 +669,8 @@ const FEW_LIVE_JOBS = 500
 // left alone it walks job_i15 for a common state like created, and a queue with none reads its whole
 // history to find that out. So a capped count through job_i14 comes first: a queue under the cap is
 // read whole through job_i14 and sorted, and only a queue at it, where matches are dense, walks
-// job_i15.
+// job_i15. That read is ordered by job_i14's own columns: with only a LIMIT, the planner can guess
+// the cap is reached sooner by scanning the whole table, which costs a full read per queue.
 export async function getRecentJobs (
   dbUrl: string,
   schema: string,
@@ -708,7 +709,7 @@ export async function getRecentJobs (
         SELECT count(*) AS matching FROM (SELECT 1 FROM ${s}.job WHERE ${where} LIMIT ${FEW_LIVE_JOBS}) probe
       ) c
       CROSS JOIN LATERAL (
-        (SELECT * FROM (SELECT ${selectColumns} FROM ${s}.job WHERE ${where} LIMIT ${FEW_LIVE_JOBS}) j
+        (SELECT * FROM (SELECT ${selectColumns} FROM ${s}.job WHERE ${where} ORDER BY state, blocked, start_after LIMIT ${FEW_LIVE_JOBS}) j
           WHERE c.matching < ${FEW_LIVE_JOBS}
           ${keysetOrderBy(pageKeys, plan.backward)}
           LIMIT ${limitParam})
