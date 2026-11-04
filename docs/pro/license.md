@@ -53,15 +53,14 @@ What an organization may still install and use depends on its plan and how long 
 | After the subscription ends | Annual, or monthly for 12 months or more | Monthly for less than 12 months |
 | - | - | - |
 | Use the versions already installed | Yes, permanently | No |
-| Install a version released before it ended | Yes | No |
-| Install a version released after it ended | No | No |
+| Install a version released before the subscription ended | Yes | No |
+| Install a version released after the subscription ended | No | No |
 | Fetch a new license | No | No |
 | Support | No | No |
 
-An annual subscription has paid for 12 months by the time it ends. A monthly subscription reaches 12
-months after 12 monthly payments. On a monthly subscription under 12 months, Pro keeps running only
-so that a lapse never takes a dashboard away without warning. Running past the end gives no right to
-keep using it. See section 2 of `LICENSE`.
+On a monthly subscription under 12 months, Pro keeps running only so that a lapse never takes a
+dashboard away without warning. Running past the end gives no right to keep using it. See section 2
+of `LICENSE`.
 
 ### Upgrading pg-boss after the subscription ends
 
