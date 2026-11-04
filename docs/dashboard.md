@@ -7,11 +7,13 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 
 ## Features
 
-- **Overview**: Aggregate statistics, problem queues, instances and recent warnings
+- **Overview**: Aggregate statistics, top queues, instances and recent warnings
 - **Queues**: View all queues with cached statistics
 - **Queue Metrics**: Chart a queue's counts over time from its recorded history
+- **Schedules**: Each schedule with its queue, expression and next occurrence
 - **Subscriptions**: Each event and the queues subscribed to it
 - **Instances**: The pg-boss instances registered in the database, with their workers and options
+- **Migrations**: The async migration commands, such as index builds, and their status
 - **Job List**: View jobs with state and queue filtering
 - **Job Details**: View full job payloads, output data, and metadata
 - **Warning History**: Browse the warnings pg-boss emitted earlier, when `persistWarnings` is enabled
@@ -23,21 +25,21 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 
 ### Overview
 
-The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the top queues by backlog, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the database's connections between pg-boss, other applications and what is free, out of the server's limit. The most recent warnings are under it.
+The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the database's connections between pg-boss, other applications and what is free, out of the server's limit. The most recent warnings are under it.
 
 ![Overview page](./images/dashboard-overview.webp){.light-only}
 ![Overview page](./images/dashboard-overview-dark.webp){.dark-only}
 
 ### Jobs
 
-Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The state filter starts on unfinished (created, retry and active), and also offers all states or any single one. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, canceled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`), and **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
+Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The queue filter searches queue names as you type and lists the first 20 matches, with a line saying when more match. The state filter starts on unfinished (created, retry and active), and also offers all states or any single one. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, canceled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`), and **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
 
 ![Jobs page](./images/dashboard-jobs.webp){.light-only}
 ![Jobs page](./images/dashboard-jobs-dark.webp){.dark-only}
 
 ### Job detail
 
-One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on. A running job shows how long it has been running, its heartbeat, and a countdown to its expiration, and the page picks up a new state without a reload. A completed job opens on its output.
+One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on, beside a sidebar with its timeline, retries and configuration. A running job shows how long it has been running, its heartbeat, and a countdown to its expiration, and the page picks up a new state without a reload. A completed job opens on its output.
 
 ![A failed job's page](./images/dashboard-job.webp){.light-only}
 ![A failed job's page](./images/dashboard-job-dark.webp){.dark-only}
@@ -54,7 +56,7 @@ A job copied into a dead letter queue shows why it's there, from the original jo
 
 ### Queues
 
-Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline and storage mode (shared or partitioned). pg-boss's own queues, such as `__pgboss__send-it` for cron, are left out. You can sort any column and search the list by name. Clicking a queue opens its detail page. It shows the queue's counts in one card, as on the overview, with the ready count and a sparkline above the rest of what's queued. Its newest 10 jobs in the chosen state come next, with its settings beside them. **View all** opens the [Jobs](#jobs) page filtered to the queue and that state. The page marks a queue that other queues send failed jobs to as a dead letter queue. **View metrics**, or any of the page's counts, opens the queue's [metrics page](#queue-metrics).
+Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline and storage mode (shared or partitioned). pg-boss's own queues, such as `__pgboss__send-it` for cron, are left out. Sort by any column but the trend, search by name, or show only the queues needing attention or the partitioned ones. Clicking a queue opens its detail page. It shows the queue's counts in one card, as on the overview, with the ready count and a sparkline above the rest of what's queued. Its newest 10 jobs in the chosen state come next, with its settings beside them. **View all** opens the [Jobs](#jobs) page filtered to the queue and that state. The page marks a queue that other queues send failed jobs to as a dead letter queue. **View metrics**, or any of the page's counts, opens the queue's [metrics page](#queue-metrics).
 
 ![Queues page](./images/dashboard-queues.webp){.light-only}
 ![Queues page](./images/dashboard-queues-dark.webp){.dark-only}
@@ -133,6 +135,7 @@ Releases before 2.0 were each built for one schema version and only work against
 
 | Dashboard | pg-boss | Schema version |
 | - | - | - |
+| 1.13.x | 12.38.x | 46 |
 | 1.12.x | 12.38.x | 46 |
 | 1.11.x | 12.37.x | 45 |
 | 1.10.x | 12.35.x | 43 |
@@ -167,6 +170,7 @@ Configure the dashboard with environment variables:
 | `DATABASE_URL` | PostgreSQL connection string(s) | `postgres://localhost/pgboss` |
 | `PGBOSS_SCHEMA` | pg-boss schema name(s) | `pgboss` |
 | `PORT` | Server port | `3000` |
+| `HOST` | Interface to listen on | `0.0.0.0` |
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
@@ -211,7 +215,7 @@ npx pg-boss-dashboard
 
 Two unnamed entries for the same database, such as one database under two schemas, would share a name. The later one shows its schema, as in `app (jobs)`. Name each one to choose what shows instead.
 
-The top bar on every page starts with the name of the database being shown, and a colored dot that marks its place in the configuration. When you configure more than one database, the name opens a menu to switch between them, and switching keeps you on the same page. From a page about one item, such as a queue or a job, it opens the list that page sits under instead (Queues, for both), since the other database may not have that item. The URL's `db` query parameter holds the selected database (it's left out for the first database), so a shared link opens the same database.
+The top bar on every page starts with the name of the database being shown, and a colored dot that marks its place in the configuration. When you configure more than one database, the name opens a menu to switch between them, and switching keeps you on the same page. From a page about one item, such as a queue or a job, it opens the list that page sits under instead (Queues, for both), since the other database may not have that item. The URL's `db` query parameter holds the selected database (a URL without it opens the first database), so a shared link opens the same database.
 
 ## Production deployment
 
@@ -323,7 +327,7 @@ import { Hono } from 'hono'
 import { createDashboardHandler } from '@pg-boss/dashboard/handler'
 
 const dashboard = createDashboardHandler({
-  databases: [{ url: process.env.DATABASE_URL, schema: 'pgboss' }],
+  databases: [{ url: process.env.DATABASE_URL!, schema: 'pgboss' }],
   basePath: '/admin/queues',
 })
 
@@ -371,7 +375,7 @@ When you mount the handler:
 To capture warnings in the dashboard, enable warning persistence in your pg-boss configuration:
 
 ```javascript
-const PgBoss = require('pg-boss');
+const { PgBoss } = require('pg-boss');
 
 const boss = new PgBoss({
   connectionString: 'postgres://localhost/mydb',
@@ -389,6 +393,7 @@ Each warning matches a [`warning`](./api/events.md#warning) event that pg-boss e
 - `xmin_horizon`: Something is pinning the MVCC horizon, so vacuum reclaims nothing
 - `autovacuum_disabled`: Nothing is vacuuming a job table at all
 - `monitor_backoff`: The queue-stats aggregate was deferred to keep autovacuum moving
+- `handler_overrun`: A `work()` handler ran past `expireInSeconds` and was still running after its batch failed
 
 The dashboard shows a warning type written by a newer pg-boss core under its raw name.
 
