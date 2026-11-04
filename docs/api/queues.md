@@ -260,7 +260,7 @@ The monitor updates the counts on each pass, every `monitorIntervalSeconds`. A q
 
 **Monitor pass fields**
 
-These fields hold what a monitor pass counted for the queue. Three deltas count the jobs created, completed and failed in the window since the previous pass, and other fields record how long the jobs that finished in that window waited and ran. pg-boss records them only when [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled on the instances that run monitoring. `getQueueStats()` returns them as `null` when it is disabled on the calling instance, and on snapshots captured before pg-boss 12.35 (the deltas) or 12.36 (the rest). `getQueues()` and `getQueue()` return the latest pass that counted, with the three deltas `0` and the rest `null` until one has.
+These fields hold what a monitor pass counted for the queue. Three deltas count the jobs created, completed and failed in the window since the previous pass, and other fields record how long the jobs that finished in that window waited and ran. pg-boss records these fields only when [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled on the instances that run monitoring. `getQueueStats()` returns these fields as `null` when it is disabled on the calling instance, and on snapshots captured before pg-boss 12.35 (the deltas) or 12.36 (the rest). `getQueues()` and `getQueue()` return the latest pass that counted, with the three deltas `0` and the rest `null` until one has.
 
 Subtracting two snapshots' counts doesn't give a delta. `failedCount`, for example, also falls as retention deletes failed jobs, so its change differs from `failedDelta`.
 

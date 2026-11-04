@@ -160,9 +160,9 @@ pg-boss's own pool applies the statements in its `connect` handler. The bundled 
 
 Releasing the clock restores the plain function body, drops the clock table, and issues `disableClockOverride()`.
 
-With `PGliteWorker`, a single leader instance serves every tab, so all of them share the session setting. A `TestClock` attached through one tab puts every tab on fake time. pg-boss reapplies the setting when leadership moves to a new tab, because the move would otherwise silently drop the schema back to real time. It can't scope the setting to one instance, though.
+With `PGliteWorker`, a single leader instance serves every tab, so every tab shares the session setting. A `TestClock` attached through one tab puts every tab on fake time. pg-boss reapplies the setting when leadership moves to a new tab, because the move would otherwise silently drop the schema back to real time. It can't scope the setting to one instance, though.
 
-`start()` attaches the clock after the schema is installed, and `stop()` releases it, which restores the real clock for that schema. Several instances can share one `TestClock`, and the schema stays on fake time until the last of them stops.
+`start()` attaches the clock after the schema is installed, and `stop()` releases it, which restores the real clock for that schema. Several instances can share one `TestClock`, and the schema stays on fake time until the last instance stops.
 
 Anything pg-boss waits on that is not a clock, such as a database round trip or a handler's own promise, still takes real time.
 

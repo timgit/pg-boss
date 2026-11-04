@@ -897,7 +897,7 @@ Retrieves a job with all metadata by name and id.
 
 ### `findJobs(name, options)`
 
-Finds jobs in a queue by id, singleton key, data, or any combination of them. Returns an array of jobs with all metadata, oldest first.
+Finds jobs in a queue by id, singleton key, data, or any combination of these. Returns an array of jobs with all metadata, oldest first.
 
 **Arguments**
 - `name`: string, *required*

@@ -356,7 +356,7 @@ modest:
 #### Persistence
 
 PGlite supports in-memory, IndexedDB (browser), and filesystem persistence. See the
-[PGlite docs](https://pglite.dev/docs/filesystems). pg-boss treats all of them identically; the job
+[PGlite docs](https://pglite.dev/docs/filesystems). pg-boss treats every storage option the same; the job
 schema and data persist wherever the PGlite instance stores its data directory.
 
 ### Bun (driver)

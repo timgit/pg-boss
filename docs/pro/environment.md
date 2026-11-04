@@ -19,4 +19,4 @@
 | `PGBOSS_PRO_LICENSE` | | The license text. See [the license](./license.md). |
 | `PGBOSS_PRO_LICENSE_FILE` | | A `license.json` somewhere other than the package. |
 
-`PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` do nothing in Pro, which has its own accounts. `PGBOSS_DASHBOARD_READ_ONLY` does nothing either, since roles decide who may change jobs. When any of them is set, Pro logs that on startup.
+`PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` do nothing in Pro, which has its own accounts. `PGBOSS_DASHBOARD_READ_ONLY` does nothing either, since roles decide who may change jobs. When any of the three is set, Pro logs that on startup.

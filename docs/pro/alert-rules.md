@@ -39,7 +39,7 @@ The [instance](./instances.md) checks start off:
 - **An instance hitting its CPU limit**
 - **An instance near its memory limit**
 
-None of them sends a notification until it has a [destination](./destinations.md).
+No rule sends a notification until it has a [destination](./destinations.md).
 Their alerts still open and appear on the [Alerts](./alerts.md) page. A default
 rule can be edited and turned off,
 but never deleted. **Reset to default** puts back its original definition.

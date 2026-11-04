@@ -6,7 +6,7 @@ or at any time after. It verifies the license offline, against a public key
 compiled into this package.
 
 Each connection below starts from a setting or a command a user ran. With none
-of them set up, Pro talks only to its Postgres database.
+set up, Pro talks only to its Postgres database.
 
 | What | When | Where |
 |---|---|---|
@@ -28,8 +28,8 @@ job payloads.
 
 By default a webhook or SMTP destination may point anywhere Pro can reach,
 because a mail relay or a chat server on the same network is the usual setup.
-Set `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES=true` to keep them on the public
-internet. Pro then refuses any destination whose host resolves to a loopback,
+Set `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES=true` to keep webhook and SMTP
+destinations on the public internet. Pro then refuses any destination whose host resolves to a loopback,
 private, link-local, shared or other non-public address, and the destination's
 deliveries say why. It checks the address it connects to, so a host name can't pass the
 check and then resolve somewhere private. PagerDuty and Resend are public

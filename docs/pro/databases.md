@@ -30,6 +30,6 @@ Profile name the area there instead.
 | Sending, retrying, canceling and deleting jobs, and queue and schedule changes | Profile |
 | The API at `/pro/api/v1/<database>` | Service accounts and their tokens |
 
-A role is granted for one database or for all of them, so the same person can be an
+A role is granted for one database or for all databases, so the same person can be an
 operator on one and a viewer on another. The Console remembers the last database
 viewed for 30 days, so a page that names none, such as Settings, leads back to it.

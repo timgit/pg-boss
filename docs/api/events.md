@@ -103,7 +103,7 @@ Emitted at most once every 2 seconds whenever at least one worker has an active 
 ]
 ```
 
-`workId` is the value `work()` returns. With `localConcurrency`, several worker entries in the array share the same `workId`, so you can match them to the `work()` call that started them.
+`workId` is the value `work()` returns. With `localConcurrency`, several worker entries in the array share the same `workId`, so you can match each entry to the `work()` call that started it.
 
 ```js
 const workId = await boss.work('my-queue', { localConcurrency: 5 }, handler)

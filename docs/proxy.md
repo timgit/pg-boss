@@ -379,7 +379,7 @@ for (const [name, connectionString] of Object.entries(databases)) {
 
 - With `prefix: ''`, a database's methods are at `/db/<name>/send` and so on. With the default prefix they're at `/db/<name>/api/send`.
 - The root page, the docs and the OpenAPI spec are served under the mount too (`/db/<name>/docs`) and link through it. The spec lists the mount as its server, so the docs' **Try it out** calls the right database.
-- `env: {}` keeps every service from reading `PGBOSS_PROXY_*` variables and `DATABASE_URL` from the process, which would otherwise apply to all of them.
+- `env: {}` keeps every service from reading `PGBOSS_PROXY_*` variables and `DATABASE_URL` from the process, which would otherwise apply to every service.
 - Each service has its own `stop()`. Call each one when the parent shuts down.
 
 ### Custom PgBoss factory
