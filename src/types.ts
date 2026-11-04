@@ -787,7 +787,7 @@ export interface QueueOptions {
    *
    * The function used to determine the backoff delay is:
    * ```js
-   * Math.min(retryDelayMax, retryDelay * (2 ** Math.Min(16, retryCount) / 2 + 2 Math.Min(16, retryCount) / 2 * Math.random()))
+   * Math.min(retryDelayMax, retryDelay * (2 ** Math.min(16, retryCount + 1) / 2 + 2 ** Math.min(16, retryCount + 1) / 2 * Math.random()))
    * ```
    * @default false
    */
@@ -1651,7 +1651,7 @@ export interface Warning { message: string, data: object }
 export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry' | 'handler_overrun'
 
 export interface PersistedWarning {
-  id: number;
+  id: string;
   type: WarningType;
   message: string;
   data: object;
