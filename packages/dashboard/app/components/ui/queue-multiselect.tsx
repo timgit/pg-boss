@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useFetcher, useSearchParams } from 'react-router'
+import { useMemo, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
-import { resolveDbHref } from '~/components/db-link'
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
+import { useQueueSearch } from '~/lib/queue-search'
 import { cn } from '~/lib/utils'
-import type { QueueNamesResult } from '~/routes/queue-names'
 
 interface QueueMultiSelectProps {
   value: string[]
@@ -26,25 +24,13 @@ export function QueueMultiSelect ({
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const selected = useMemo(() => new Set(value), [value])
-  const [searchParams] = useSearchParams()
-  const names = useFetcher<QueueNamesResult>()
-  const q = search.trim()
-  const href = open ? resolveDbHref(`/queue-names?${new URLSearchParams({ q })}`, searchParams.get('db')) : null
-
-  useEffect(() => {
-    if (!href) return
-    // At once as the menu opens, then a pause after typing, so each key is not a request.
-    const timer = setTimeout(() => names.load(href), q ? 150 : 0)
-    return () => clearTimeout(timer)
-    // `names` is a new object each render; the request depends only on the URL.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [href])
+  const found = useQueueSearch(open, search)
 
   // The chosen queues stay first, matching or not, so they can be cleared; the matches follow.
   const shown = useMemo(() => {
-    const matches = (names.data?.names ?? []).filter(name => !selected.has(name))
+    const matches = (found.names ?? []).filter(name => !selected.has(name))
     return [...value, ...matches]
-  }, [names.data, selected, value])
+  }, [found.names, selected, value])
 
   const toggle = (name: string) => {
     if (selected.has(name)) {
@@ -92,7 +78,7 @@ export function QueueMultiSelect ({
           />
         </div>
         <div className="overflow-y-auto p-1" role="listbox" aria-multiselectable="true">
-          {!names.data ? (
+          {!found.names ? (
             <div className="px-2.5 py-1.5 text-sm text-[var(--text-tertiary)]">
               Loading…
             </div>
@@ -121,7 +107,7 @@ export function QueueMultiSelect ({
             })
           )}
         </div>
-        {names.data?.more && (
+        {found.more && (
           <div className="border-t border-[var(--border-subtle)] px-3 py-2 text-xs text-[var(--text-tertiary)]">
             More queues match. Type to narrow the list.
           </div>
