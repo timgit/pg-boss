@@ -2320,7 +2320,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const active = new Map(counts.map(row => [row.group_id, Number(row.count)]))
       const excessIds: string[] = []
 
-      for (const row of rows) {
+      // From the end of the batch, so where rows come back in claim order the first-ranked are kept.
+      for (const row of [...rows].reverse()) {
         const count = active.get(row.groupId) ?? 0
         if (count > (config.tiers?.[row.groupTier] ?? config.default)) {
           excessIds.push(row.id)
@@ -2333,7 +2334,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         rows = rows.filter(row => !givenBack.has(row.id))
 
         // Fetches that raced can all give back. A random pause before trying again lets one win.
-        if (rows.length === 0 && attempt < 3) {
+        // Not inside the caller's db: the jobs just given back are its own, so it would claim them again.
+        if (rows.length === 0 && attempt < 3 && !options.db) {
           await delay(Math.random() * 50)
           return this.#fetch(name, options, attempt + 1)
         }
