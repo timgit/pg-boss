@@ -221,10 +221,11 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
 
-      {panel}
-
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        {/* The failure, dead letter or running panel leads the main column, so the details beside
+            it start level with it rather than below it. */}
         <div className="flex min-w-0 flex-col gap-6">
+          {panel}
           <PayloadCard key={`${job.id}:${state}`} data={job.data} output={job.output} state={state} />
           <LineageCard
             jobId={job.id}
