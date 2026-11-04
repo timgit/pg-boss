@@ -1,0 +1,15 @@
+{
+  // Typechecks the built declarations the way a strict consumer does. skipLibCheck is off so that
+  // every .d.ts reachable from dist/index.d.ts is checked, which catches an @internal type that
+  // stripInternal removed while an emitted signature still names it (#988).
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "strict": true,
+    "skipLibCheck": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "files": ["consumer.ts"]
+}

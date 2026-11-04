@@ -15,7 +15,8 @@
   },
   // test/bun imports `bun` and `bun:test` and reaches for Bun globals, so it needs @types/bun in
   // scope - which would then also be in scope for src and the vitest suite. It is checked by
-  // tsconfig.bun.json instead, run as the first half of `npm run test:bun`.
+  // tsconfig.bun.json instead, run as the first half of `npm run test:bun`. test/types-dist imports
+  // the built dist/ and is checked by its own config in `npm run test:types-dist`.
   "include": ["src", "test"],
-  "exclude": ["test/bun"]
+  "exclude": ["test/bun", "test/types-dist"]
 }

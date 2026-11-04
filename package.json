@@ -67,6 +67,7 @@
     "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
     "test:pglite": "cross-env DB_TYPE=pglite npm test",
     "test:bun": "tsc --noEmit -p tsconfig.bun.json && bun test test/bun",
+    "test:types-dist": "npm run build && tsc -p test/types-dist/tsconfig.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "cover": "npm test -- --coverage",

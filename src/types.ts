@@ -382,7 +382,6 @@ export interface BackendOptions {
  * Internal compatibility flags derived from {@link BackendOptions.backend}. These are
  * resolved from the backend profile and are not part of the public constructor input,
  * read them off the resolved config, never set them directly.
- * @internal
  */
 export interface CompatibilityFlags {
   /**
@@ -730,7 +729,6 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   migrations?: Migration[];
 }
 
-/** @internal */
 export interface ResolvedConstructorOptions extends ConstructorOptions, CompatibilityFlags {
   schema: string;
   clock: Clock;
