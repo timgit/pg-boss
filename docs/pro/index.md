@@ -91,7 +91,7 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 
 ## Pricing
 
-Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or databases. After twelve months paid in total, an organization that stops paying keeps the right to install and run every version released before the subscription ended. While it lasts, a subscription includes every newer version, and support. See [the license](./license.md).
+Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or databases. After twelve months paid in total, an organization that stops paying keeps the right to install and run every version released before the subscription ended. While it lasts, a subscription includes every newer version, and support. See [Expiration](./license.md#expiration).
 
 [Buy Pro](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc). Polar takes the payment and shows the license key on its purchases page.
 

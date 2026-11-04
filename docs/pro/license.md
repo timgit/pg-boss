@@ -42,32 +42,39 @@ To keep `license.json` on a mounted volume instead, point
 
 ## Expiration
 
-Pro doesn't stop when a subscription ends. It has no countdown, no banner and
-no date when features stop, and the License page shows the term's end date. Pro
-is a monitoring tool, and the operator who would lose it over billing usually
-can't do anything about billing.
+A subscription renews until it's canceled. A canceled subscription lasts until the end of the period
+already paid for. After that, the License page shows **Term ended** while Pro keeps running.
 
-A subscription controls what its holder can *download*:
+What changes is what the organization may install and use. That depends on how long it paid:
 
-- After twelve paid months in total, a lapsed subscription still installs every
-  version released before it ended, forever.
-- Before twelve paid months, a lapsed subscription can't install Pro.
-- Either way, a lapsed subscription can't upgrade to a newer version or fetch a
-  new license.
+| After the subscription ends | Paid 12 months or more | Paid less than 12 months |
+| - | - | - |
+| Use the versions already installed | Yes, permanently | No |
+| Install a version released before it ended | Yes | No |
+| Install a version released after it ended | No | No |
+| Fetch a new license | No | No |
+| Support | No | No |
 
-What's already running keeps running, until the application upgrades to a
-pg-boss release with a new schema version. Each Pro release makes changes only
-on the schema of the pg-boss it is built with (see [pg-boss
-versions](./versions.md)), and a lapsed subscription can't install the release
-built for the new one. From then on, every page still works, and changes are
-off: sending, retrying, canceling, resuming and deleting jobs, Operations,
-creating and deleting queues and schedules, and every call to the Pro API, which
-answers 409. The [free dashboard](../dashboard.md#job-actions)
-follows each pg-boss release, and still retries, cancels and resumes a job.
+The 12 months count in total, as one annual payment or as monthly payments, in a row or not. A
+refunded period doesn't count. Under 12 months, Pro keeps running only so that a lapse never takes a
+dashboard away without warning. Running past the end gives no right to keep using it. See section 2
+of `LICENSE`.
 
-Before twelve paid months, the license to use what's running ends with the
-subscription. See `LICENSE`.
+### Upgrading pg-boss after the subscription ends
 
-Running with no license at all also works. It's the normal state after a fresh
-`npm ci` that hasn't run the license command. The page then says "Unlicensed",
-and everything works.
+Each Pro release makes changes only on the schema version of the pg-boss it's built with. When the
+application upgrades to a pg-boss release with a new schema version, the installed Pro can't make
+changes on that schema. The Pro release built for that schema came out after the subscription ended,
+so the organization can't install it. Every page still works, but changes are off, as [pg-boss
+versions](./versions.md) describes. The [free dashboard](../dashboard.md#job-actions) follows every
+pg-boss release and still retries, cancels and resumes a job.
+
+### Subscribing again
+
+An organization that subscribes again can install new versions, starting from the current release.
+Nothing is owed for the time between. Fetch the license again to get the new term.
+
+## Unlicensed installs
+
+Pro also runs with no license at all, which is the normal state after a fresh `npm ci` that hasn't
+run the license command. The License page then shows **Unlicensed**. Every Pro feature still works.
