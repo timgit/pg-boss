@@ -65,27 +65,23 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | Overview and queues, with each queue's status and its counts over time | ✓ | ✓ |
 | Jobs, filtered by state, queue and payload, with each job's details | ✓ | ✓ |
 | Schedules, subscriptions and warnings | ✓ | ✓ |
-| Registered pg-boss instances | ✓ | ✓ |
-| Background migration status | ✓ | ✓ |
-| [Multiple connected databases or schemas](./databases.md), such as Production and Staging, each with a name and a color | ✓ | ✓ |
-| Sign-in | One username and password shared by every user, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
-| Mounting in an existing Node server, or under a sub-path | ✓ | ✓ |
-| [Retry, cancel and resume a job](./changes.md) | ✓ | ✓, by role and in the audit log |
+| [Multiple connected databases or schemas](./databases.md), such as Production and Staging | ✓ | ✓ |
+| [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
+| [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, instances restarting, gone quiet or at a limit, and failed operations, each with its own thresholds and [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
+| Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |
+| A [status page](./status.md) of each queue's health day by day, with each day's states and alerts in time order | | ✓ |
+| [Operations](./operations.md) across multiple queues, including [dead letter redrive](./operations.md#redrive) | | ✓ |
 | [Send and delete jobs](./changes.md) | | ✓ |
 | [Create and delete queues and schedules](./changes.md) | | ✓ |
-| [Operations](./operations.md) across multiple queues, including [dead letter redrive](./operations.md#redrive) | | ✓ |
-| [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
-| Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
-| A [status page](./status.md) of each queue's health day by day, with each day's states and alerts in time order | | ✓ |
-| [Instances](./instances.md) grouped by name and host, with what needs attention across them, and each instance's pool, CPU, memory or event loop marked at its limit | | ✓ |
-| [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, instances restarting, gone quiet or at a limit, and failed operations | | ✓ |
-| Each rule's own thresholds, queues and the time a condition must hold, with [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
-| Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |
+| [Retry, cancel and resume a job](./changes.md) | ✓ | ✓, by role and in the audit log |
+| Sign-in | One username and password shared by every user, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
 | [Groups](./accounts.md), with [roles](./roles.md) per database | | ✓ |
 | [Single sign-on](./sso.md) through an existing OpenID Connect provider | | ✓ |
 | An [audit log](./audit-log.md) of every change | | ✓ |
 | The [Pro API](./api.md), so a deploy script, a CI job or a worker in another language can send, fetch, complete and retry jobs without a Node.js client | | ✓ |
 | [API tokens](./api-tokens.md) for service accounts, whose role decides which methods a token may call | | ✓ |
+| Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
+| Registered [instances](./instances.md) | ✓ | ✓, grouped by name and host, with what needs attention across them, and each instance's pool, CPU, memory or event loop marked at its limit |
 | [Prometheus metrics](./metrics.md) at `/metrics`, for existing dashboards and alerting to scrape | | ✓ |
 | Support from the author of pg-boss | | ✓ |
 
