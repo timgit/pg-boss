@@ -43,7 +43,10 @@ To keep `license.json` on a mounted volume instead, point
 ## Expiration
 
 A subscription renews until it's canceled. A canceled subscription lasts until the end of the period
-already paid for. After that, the License page shows **Term ended** while Pro keeps running.
+already paid for. From then on, the registry accepts the license key only for the versions the table
+below allows. A deploy that has to download any other version fails. Pro keeps running wherever it's
+already installed. The License page shows **Term ended** once the installed license's term passes,
+which is a year after the license was last fetched.
 
 What an organization may still install and use depends on its plan and how long it paid:
 
