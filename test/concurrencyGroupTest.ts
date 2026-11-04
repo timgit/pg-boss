@@ -4,6 +4,7 @@ import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
+import type { FetchOptions } from '../src/types.ts'
 
 describe('groupConcurrency', function () {
   it('should store group id and tier with job', async function () {
@@ -435,6 +436,73 @@ describe('groupConcurrency', function () {
     } finally {
       await client.end()
     }
+  })
+
+  // Runs `claim` inside a transaction that stays open, then a second fetch whose claim statement
+  // reads a snapshot from before that transaction commits. The transaction commits once the second
+  // fetch's claim returns, followed by `afterCommit`, so the second fetch's recount sees both claims.
+  async function raceFetch (options: FetchOptions, claim: FetchOptions, afterCommit: () => Promise<unknown> = async () => {}) {
+    const boss = ctx.boss!
+    const client = new pg.Client({ connectionString: helper.getConnectionString() })
+    await client.connect()
+
+    try {
+      await client.query('BEGIN')
+      const first = await boss.fetch(ctx.schema, { ...claim, db: { executeSql: (text, values) => client.query(text, values) } })
+
+      let committed = false
+      const second = await boss.fetch(ctx.schema, {
+        ...options,
+        db: {
+          executeSql: async (text, values) => {
+            const result = await boss.getDb().executeSql(text, values)
+            if (!committed) {
+              committed = true
+              await client.query('COMMIT')
+              await afterCommit()
+            }
+            return result
+          }
+        }
+      })
+
+      return { first, second }
+    } finally {
+      await client.end()
+    }
+  }
+
+  async function states (ids: string[]) {
+    return Promise.all(ids.map(async id => (await ctx.boss!.getJobById(ctx.schema, id))?.state))
+  }
+
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should still give back the rest of a batch when the queue policy refuses one job', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.createQueue(ctx.schema, { policy: 'stately' })
+    const g1 = { id: 'tenant-1' }
+    const g2 = { id: 'tenant-2' }
+    const a1 = await ctx.boss.send(ctx.schema, {}, { group: g1, singletonKey: 'a1' })
+    const a2 = await ctx.boss.send(ctx.schema, {}, { group: g2, singletonKey: 'a2' })
+    const b1 = await ctx.boss.send(ctx.schema, {}, { group: g1, singletonKey: 'b1' })
+    const b2 = await ctx.boss.send(ctx.schema, {}, { group: g2, singletonKey: 'b2' })
+    assertTruthy(a1)
+    assertTruthy(a2)
+    assertTruthy(b1)
+    assertTruthy(b2)
+
+    // Once b1 is active, stately takes another created job for key b1, so b1 cannot go back.
+    let blocker: string | null = null
+    const { first, second } = await raceFetch(
+      { groupConcurrency: 1, batchSize: 2 },
+      { groupConcurrency: 1, batchSize: 2 },
+      async () => { blocker = await ctx.boss!.send(ctx.schema, {}, { group: g1, singletonKey: 'b1' }) }
+    )
+
+    expect(first.map(job => job.id).sort()).toEqual([a1, a2].sort())
+    assertTruthy(blocker)
+    // b1 is refused and runs. b2 has no conflict and goes back.
+    expect(second.map(job => job.id)).toEqual([b1])
+    expect(await states([b1, b2, blocker])).toEqual(['active', 'created', 'created'])
   })
 
   it('should validate groupConcurrency option in work', async function () {

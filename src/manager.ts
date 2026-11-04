@@ -2329,13 +2329,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       if (excessIds.length > 0) {
-        try {
-          await this.restore(name, excessIds, { db })
-          rows = rows.filter(row => !excessIds.includes(row.id))
-        } catch (err: any) {
-          // A policy index can refuse the job back to created. Run it rather than leave it active.
-          if (err?.code !== '23505') throw err
-        }
+        const givenBack = await this.#giveBack(name, excessIds, db)
+        rows = rows.filter(row => !givenBack.has(row.id))
 
         // Fetches that raced can all give back. A random pause before trying again lets one win.
         if (rows.length === 0 && attempt < 3) {
@@ -2355,6 +2350,35 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Even a minimal fetch (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds and
     // heartbeatSeconds, so normalize regardless of includeMetadata.
     return this.#numericJobFields(rows) as types.Job<T>[]
+  }
+
+  // Returns the ids that went back to created. A policy index can refuse a job its way back (a
+  // stately key whose created slot filled after the claim), and one refusal fails the whole
+  // statement, so on 23505 each id is tried alone and only the refused ones stay active and run.
+  // Inside a caller's transaction the first 23505 aborts it (25P02), and everything left runs.
+  async #giveBack (name: string, ids: string[], db: types.IDatabase): Promise<Set<string>> {
+    try {
+      await this.restore(name, ids, { db })
+      return new Set(ids)
+    } catch (err: any) {
+      if (err?.code !== '23505') throw err
+    }
+
+    const givenBack = new Set<string>()
+
+    if (ids.length === 1) return givenBack
+
+    for (const id of ids) {
+      try {
+        await this.restore(name, id, { db })
+        givenBack.add(id)
+      } catch (err: any) {
+        if (err?.code === '25P02') break
+        if (err?.code !== '23505') throw err
+      }
+    }
+
+    return givenBack
   }
 
   // The id argument of the calls that settle or refresh a claim. Jobs passed as { id, retryCount }
