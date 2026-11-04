@@ -167,6 +167,27 @@ jobs:
     - name: Check doc anchors resolve
       run: npm run docs:anchors
 
+  # Builds the package and typechecks a consumer against dist/ with skipLibCheck off, the way a
+  # strict downstream project sees it. The suite runs from src/, so a declaration that names a type
+  # stripInternal removed only shows up here (#988).
+  types-dist:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24
+
+    - name: Install
+      run: npm ci
+
+    - name: Typecheck the built declarations
+      run: npm run test:types-dist
+
   # Fast feedback on every push/PR against a real CockroachDB cluster: the distributed-mode
   # invariants the rest of the suite can't express, and the migrations. Migrations are here rather
   # than left to a pre-release run because CockroachDB refuses schema the other backends accept
