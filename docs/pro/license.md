@@ -58,11 +58,10 @@ What an organization may still install and use depends on its plan and how long 
 | Fetch a new license | No | No |
 | Support | No | No |
 
-An annual subscription that wasn't refunded has paid for 12 months by the time it ends. A monthly
-subscription reaches 12 months after 12 monthly payments that weren't refunded, even when the months
-aren't consecutive. On a monthly subscription under 12 months, Pro keeps running only so that a lapse
-never takes a dashboard away without warning. Running past the end gives no right to keep using it.
-See section 2 of `LICENSE`.
+An annual subscription has paid for 12 months by the time it ends. A monthly subscription reaches 12
+months after 12 monthly payments, even when the months aren't consecutive. On a monthly subscription
+under 12 months, Pro keeps running only so that a lapse never takes a dashboard away without
+warning. Running past the end gives no right to keep using it. See section 2 of `LICENSE`.
 
 ### Upgrading pg-boss after the subscription ends
 
