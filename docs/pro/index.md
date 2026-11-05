@@ -12,7 +12,12 @@ import operations from '../images/pro/operations.webp'
 import operationsDark from '../images/pro/operations-dark.webp'
 import group from '../images/pro/group.webp'
 import groupDark from '../images/pro/group-dark.webp'
+import { VPButton } from 'vitepress/theme'
 </script>
+
+<div class="buy-pro buy-pro-title">
+  <VPButton tag="a" size="medium" theme="brand" text="Buy Pro" href="https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc" />
+</div>
 
 # pg-boss Pro
 
@@ -89,9 +94,11 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 
 Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or databases. A subscription includes every new version and support. When an annual subscription ends, or a monthly subscription ends after 12 months or more, the organization keeps the right to install and use every version released until then. See [Cancellation](./license.md#cancellation).
 
-[Buy Pro](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc). Polar takes the payment and shows the license key on its purchases page.
+Pro is sold through Polar, which takes the payment and shows the license key on its purchases page.
 
-Pro connects only to the places its configuration names. See [network activity](./network.md).
+<div class="buy-pro">
+  <VPButton tag="a" size="big" theme="brand" text="Buy Pro" href="https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc" />
+</div>
 
 ## Getting started
 

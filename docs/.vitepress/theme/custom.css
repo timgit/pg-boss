@@ -93,3 +93,18 @@ html:not(.dark) .vp-doc img.dark-only {
 .medium-zoom-image--opened {
   z-index: 100;
 }
+
+/* The Buy Pro buttons on the Pro page. The doc's link underline would otherwise show on them. The
+   one beside the title floats right, level with the h1's 40px line. */
+.vp-doc .buy-pro {
+  margin: 24px 0;
+}
+
+.vp-doc .buy-pro a {
+  text-decoration: none;
+}
+
+.vp-doc .buy-pro-title {
+  float: right;
+  margin: 0 0 0 16px;
+}
