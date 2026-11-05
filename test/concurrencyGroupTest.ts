@@ -549,6 +549,52 @@ describe('groupConcurrency', function () {
     expect(await states([b1, b2, blocker])).toEqual(['active', 'created', 'created'])
   })
 
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should fetch again after giving back every job it claimed', async function () {
+    const boss = ctx.boss = await helper.start(ctx.bossConfig)
+    const group = { id: 'tenant-123' }
+    const job1 = await boss.send(ctx.schema, {}, { group })
+    const job2 = await boss.send(ctx.schema, {}, { group })
+    assertTruthy(job1)
+    assertTruthy(job2)
+
+    const client = new pg.Client({ connectionString: helper.getConnectionString() })
+    await client.connect()
+
+    const db = boss.getDb()
+    const executeSql = db.executeSql
+    let claimText: string | null = null
+    let claims = 0
+
+    try {
+      await client.query('BEGIN')
+      const first = await boss.fetch(ctx.schema, { groupConcurrency: 1, db: { executeSql: (text, values) => client.query(text, values) } })
+      expect(first.map(job => job.id)).toEqual([job1])
+
+      // The fetch below has no db, so it runs on the instance's own. Its claim reads a snapshot
+      // without job1. The open transaction commits once that claim returns job2.
+      db.executeSql = async (text, values) => {
+        const result = await executeSql.call(db, text, values)
+        if (text === claimText) claims++
+        if (!claimText && result.rows?.some((row: any) => row.id === job2)) {
+          claimText = text
+          claims++
+          await client.query('COMMIT')
+        }
+        return result
+      }
+
+      const second = await boss.fetch(ctx.schema, { groupConcurrency: 1 })
+
+      // job2 went back, and the second claim saw job1 active and took nothing.
+      expect(second).toEqual([])
+      expect(claims).toBe(2)
+      expect(await states([job1, job2])).toEqual(['active', 'created'])
+    } finally {
+      db.executeSql = executeSql
+      await client.end()
+    }
+  })
+
   it('should validate groupConcurrency option in work', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
