@@ -39,8 +39,10 @@ export function getPool (connectionString: string): pg.Pool {
     pool = new Pool({
       connectionString,
       max: 10,
-      statement_timeout: timeoutMs,
       query_timeout: timeoutMs + CLIENT_TIMEOUT_HEADROOM_MS,
+      onConnect: async (client) => {
+        await client.query(`SET statement_timeout = ${timeoutMs}`)
+      },
     })
 
     // Handle pool errors to prevent unhandled rejections
