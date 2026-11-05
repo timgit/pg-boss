@@ -4,6 +4,7 @@ import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
+import type { FetchOptions } from '../src/types.ts'
 
 describe('groupConcurrency', function () {
   it('should store group id and tier with job', async function () {
@@ -433,6 +434,163 @@ describe('groupConcurrency', function () {
       expect((await boss.getJobById(ctx.schema, job2))?.state).toBe('active')
       expect((await boss.getJobById(ctx.schema, job3))?.state).toBe('created')
     } finally {
+      await client.end()
+    }
+  })
+
+  // Runs `claim` inside a transaction that stays open, then a second fetch whose claim statement
+  // reads a snapshot from before that transaction commits. The transaction commits once the second
+  // fetch's claim returns, followed by `afterCommit`, so the second fetch's recount sees both claims.
+  async function raceFetch (options: FetchOptions, claim: FetchOptions, afterCommit: () => Promise<unknown> = async () => {}) {
+    const boss = ctx.boss!
+    const client = new pg.Client({ connectionString: helper.getConnectionString() })
+    await client.connect()
+
+    try {
+      await client.query('BEGIN')
+      const first = await boss.fetch(ctx.schema, { ...claim, db: { executeSql: (text, values) => client.query(text, values) } })
+
+      let committed = false
+      const second = await boss.fetch(ctx.schema, {
+        ...options,
+        db: {
+          executeSql: async (text, values) => {
+            const result = await boss.getDb().executeSql(text, values)
+            if (!committed) {
+              committed = true
+              await client.query('COMMIT')
+              await afterCommit()
+            }
+            return result
+          }
+        }
+      })
+
+      return { first, second }
+    } finally {
+      await client.end()
+    }
+  }
+
+  async function states (ids: string[]) {
+    return Promise.all(ids.map(async id => (await ctx.boss!.getJobById(ctx.schema, id))?.state))
+  }
+
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should give back only the jobs past a limit above 1 from a batch', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const group = { id: 'tenant-123' }
+    const ids = [
+      await ctx.boss.send(ctx.schema, {}, { group }),
+      await ctx.boss.send(ctx.schema, {}, { group }),
+      await ctx.boss.send(ctx.schema, {}, { group })
+    ]
+    const [job1, job2, job3] = ids
+    assertTruthy(job1)
+    assertTruthy(job2)
+    assertTruthy(job3)
+
+    const { first, second } = await raceFetch({ groupConcurrency: 2, batchSize: 2 }, { groupConcurrency: 2 })
+
+    expect(first.map(job => job.id)).toEqual([job1])
+    // The batch claimed job2 and job3 against a snapshot with no active job. With job1 committed
+    // the group holds 3 against a limit of 2, so one of the two goes back.
+    expect(second).toHaveLength(1)
+    expect((await states([job2, job3])).sort()).toEqual(['active', 'created'])
+    expect(await states([job1, second[0].id])).toEqual(['active', 'active'])
+  })
+
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should judge a give-back by the group tier limit', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const group = { id: 'tenant-123', tier: 'gold' }
+    const groupConcurrency = { default: 1, tiers: { gold: 2 } }
+    const ids = [
+      await ctx.boss.send(ctx.schema, {}, { group }),
+      await ctx.boss.send(ctx.schema, {}, { group }),
+      await ctx.boss.send(ctx.schema, {}, { group })
+    ]
+    const [job1, job2, job3] = ids
+    assertTruthy(job1)
+    assertTruthy(job2)
+    assertTruthy(job3)
+
+    const { second } = await raceFetch({ groupConcurrency, batchSize: 2 }, { groupConcurrency })
+
+    // Judged by the default of 1, both would go back. The gold limit of 2 keeps one.
+    expect(second).toHaveLength(1)
+    expect((await states([job2, job3])).sort()).toEqual(['active', 'created'])
+  })
+
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should still give back the rest of a batch when the queue policy refuses one job', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.createQueue(ctx.schema, { policy: 'stately' })
+    const g1 = { id: 'tenant-1' }
+    const g2 = { id: 'tenant-2' }
+    const a1 = await ctx.boss.send(ctx.schema, {}, { group: g1, singletonKey: 'a1' })
+    const a2 = await ctx.boss.send(ctx.schema, {}, { group: g2, singletonKey: 'a2' })
+    const b1 = await ctx.boss.send(ctx.schema, {}, { group: g1, singletonKey: 'b1' })
+    const b2 = await ctx.boss.send(ctx.schema, {}, { group: g2, singletonKey: 'b2' })
+    assertTruthy(a1)
+    assertTruthy(a2)
+    assertTruthy(b1)
+    assertTruthy(b2)
+
+    // Once b1 is active, stately takes another created job for key b1, so b1 cannot go back.
+    let blocker: string | null = null
+    const { first, second } = await raceFetch(
+      { groupConcurrency: 1, batchSize: 2 },
+      { groupConcurrency: 1, batchSize: 2 },
+      async () => { blocker = await ctx.boss!.send(ctx.schema, {}, { group: g1, singletonKey: 'b1' }) }
+    )
+
+    expect(first.map(job => job.id).sort()).toEqual([a1, a2].sort())
+    assertTruthy(blocker)
+    // b1 is refused and runs. b2 has no conflict and goes back.
+    expect(second.map(job => job.id)).toEqual([b1])
+    expect(await states([b1, b2, blocker])).toEqual(['active', 'created', 'created'])
+  })
+
+  it.skipIf(helper.isPglite || helper.isDistributed || helper.isYugabyteDb)('should fetch again after giving back every job it claimed', async function () {
+    const boss = ctx.boss = await helper.start(ctx.bossConfig)
+    const group = { id: 'tenant-123' }
+    const job1 = await boss.send(ctx.schema, {}, { group })
+    const job2 = await boss.send(ctx.schema, {}, { group })
+    assertTruthy(job1)
+    assertTruthy(job2)
+
+    const client = new pg.Client({ connectionString: helper.getConnectionString() })
+    await client.connect()
+
+    const db = boss.getDb()
+    const executeSql = db.executeSql
+    let claimText: string | null = null
+    let claims = 0
+
+    try {
+      await client.query('BEGIN')
+      const first = await boss.fetch(ctx.schema, { groupConcurrency: 1, db: { executeSql: (text, values) => client.query(text, values) } })
+      expect(first.map(job => job.id)).toEqual([job1])
+
+      // The fetch below has no db, so it runs on the instance's own. Its claim reads a snapshot
+      // without job1. The open transaction commits once that claim returns job2.
+      db.executeSql = async (text, values) => {
+        const result = await executeSql.call(db, text, values)
+        if (text === claimText) claims++
+        if (!claimText && result.rows?.some((row: any) => row.id === job2)) {
+          claimText = text
+          claims++
+          await client.query('COMMIT')
+        }
+        return result
+      }
+
+      const second = await boss.fetch(ctx.schema, { groupConcurrency: 1 })
+
+      // job2 went back, and the second claim saw job1 active and took nothing.
+      expect(second).toEqual([])
+      expect(claims).toBe(2)
+      expect(await states([job1, job2])).toEqual(['active', 'created'])
+    } finally {
+      db.executeSql = executeSql
       await client.end()
     }
   })
