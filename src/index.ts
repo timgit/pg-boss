@@ -509,6 +509,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.notifyWorker(workerId)
   }
 
+  drain (options?: types.DrainOptions): Promise<types.DrainResult> {
+    return this.#manager.drain(options)
+  }
+
   subscribe (event: string, name: string): Promise<void> {
     return this.#manager.subscribe(event, name)
   }
@@ -771,6 +775,8 @@ export type {
   DatabaseOptions,
   FetchGroupConcurrencyOptions,
   DependencyRef,
+  DrainOptions,
+  DrainResult,
   FetchOptions,
   FindJobsOptions,
   FlowJob,
