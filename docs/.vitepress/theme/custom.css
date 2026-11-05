@@ -95,7 +95,8 @@ html:not(.dark) .vp-doc img.dark-only {
 }
 
 /* The Buy Pro buttons on the Pro page. The doc's link underline would otherwise show on them. The
-   one beside the title floats right, level with the h1's 40px line. */
+   one beside the title floats right, level with the h1's 40px line, and is lifted above the h1,
+   whose position: relative would otherwise paint it over the button and take its clicks. */
 .vp-doc .buy-pro {
   margin: 24px 0;
 }
@@ -105,6 +106,8 @@ html:not(.dark) .vp-doc img.dark-only {
 }
 
 .vp-doc .buy-pro-title {
+  position: relative;
+  z-index: 1;
   float: right;
   margin: 0 0 0 16px;
 }
