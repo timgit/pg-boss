@@ -8,9 +8,9 @@ By default the proxy is stateless. It turns off job supervision, scheduling and 
 
 - Call pg-boss methods (`send`, `fetch`, `complete`, `getQueue`, and more) over plain JSON.
 - Run it on any runtime. It ships a runtime-neutral entry point and a Node server, with shutdown adapters for Node, Deno and Bun.
-- Explore the API in the built-in Swagger UI, with an OpenAPI spec served next to it.
+- Explore the API in the built-in Swagger UI, or read the OpenAPI spec served next to it.
 - Allowlist or denylist specific pg-boss methods to control what's exposed.
-- Turn on basic authentication and CORS, both optional.
+- Turn on optional basic authentication and CORS.
 - Configure everything from code options or environment variables.
 
 ## Quick start
@@ -102,7 +102,7 @@ await stop()
 
 ### Node convenience entry point
 
-This entry point gives you a Node server that's ready to listen and handles shutdown signals for you:
+This entry point returns a Node server that's ready to listen and handles shutdown signals for you:
 
 ```ts
 import { createProxyServerNode } from '@pg-boss/proxy/node'
@@ -226,7 +226,7 @@ const { app, boss } = await createProxyService({
 
 ### Environment variables
 
-Or configure everything with environment variables:
+The proxy also reads these environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -310,7 +310,7 @@ PGBOSS_PROXY_CORS_CREDENTIALS=true
 PGBOSS_PROXY_CORS_MAX_AGE=3600
 ```
 
-When `PGBOSS_PROXY_CORS_ORIGIN` is set, the proxy applies CORS middleware to every route under the prefix. The root page and docs don't get it.
+When `PGBOSS_PROXY_CORS_ORIGIN` is set, the proxy applies CORS middleware to every route under the prefix, but not to the root page or docs.
 
 ### Custom middleware
 
@@ -349,16 +349,16 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-- It runs after `middleware`, so it sees anything a middleware set on the context. It runs before the proxy validates the request body or query.
-- Return `true` to let the call through. `false` refuses it with `403 Forbidden`, and `{ status, message }` refuses it with that status. Anything else, including returning nothing, refuses the call with `403`.
+- `authorize` runs after `middleware`, so it sees anything a middleware set on the context. It runs before the proxy validates the request body or query.
+- Return `true` to let the call through. `false` refuses it with `403 Forbidden`. `{ status, message }` refuses it with that status. Anything else, including returning nothing, refuses the call with `403`.
 - The refusal keeps any headers you set on the context before returning, such as `WWW-Authenticate`.
-- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec aren't API routes, so they never reach it.
-- A hook that throws answers `500`, with the message only when `exposeErrors` is on.
+- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec aren't API routes, so requests for them never reach `authorize`.
+- An `authorize` hook that throws answers `500`. The response includes the message only when `exposeErrors` is on.
 - Methods removed by `routes.allow` or `routes.deny` have no route, so they answer `404` before `authorize` is called.
 
 ### Mounting several services
 
-`app` is a Hono app, so you can mount it in another one with `route()`. Each service wraps its own `PgBoss` instance, so one parent app can serve several databases:
+`app` is a Hono app, so you can mount it in another Hono app with `route()`. Each service wraps its own `PgBoss` instance, so one parent app can serve several databases:
 
 ```ts
 import { Hono } from 'hono'
@@ -380,7 +380,7 @@ for (const [name, connectionString] of Object.entries(databases)) {
 - With `prefix: ''`, a database's methods are at `/db/<name>/send` and so on. With the default prefix they're at `/db/<name>/api/send`.
 - The root page, the docs and the OpenAPI spec are served under the mount too (`/db/<name>/docs`) and link through it. The spec lists the mount as its server, so the docs' **Try it out** calls the right database.
 - `env: {}` keeps every service from reading `PGBOSS_PROXY_*` variables and `DATABASE_URL` from the process, which would otherwise apply to every service.
-- Each service has its own `stop()`. Call each one when the parent shuts down.
+- Call each service's `stop()` when the parent shuts down.
 
 ### Custom PgBoss factory
 
@@ -424,7 +424,7 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-To expose every method except the ones listed, use `deny`:
+To expose every method except the listed methods, use `deny`:
 
 ```ts
 const { app, boss } = await createProxyService({

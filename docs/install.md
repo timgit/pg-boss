@@ -16,7 +16,7 @@ If you can't or don't want to grant CREATE, you have two options:
 > If you manage the schema by hand, watch future releases for schema changes.
 
 > [!WARNING]
-> pg-boss supports installing into an existing schema for advanced use cases, **but it's discouraged**. Creation can fail on an object name collision, and uninstalling takes more steps.
+> pg-boss supports installing into an existing schema for advanced use cases, **but it's discouraged**. Creation can fail on an object name collision. Uninstalling also takes more steps.
 
 # Database uninstall
 
@@ -26,6 +26,6 @@ To remove pg-boss from a database, drop its schema:
 DROP SCHEMA pgboss CASCADE
 ```
 
-Use your schema's name in place of `pgboss` if you set one.
+If you set a different schema name, use it in place of `pgboss`.
 
 If pg-boss was installed into an existing schema that also holds other objects, dropping the schema would remove those too. Drop only pg-boss's own objects instead, with the SQL from [`pg-boss plans uninstall --schema <name>`](./cli#plans) or [`getUninstallPlans()`](./api/utils#getuninstallplans-schema-options).

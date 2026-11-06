@@ -1,7 +1,7 @@
 # Sponsors
 
-pg-boss is MIT licensed and always will be. One person maintains it, and
-sponsorship pays for the maintenance, security response and support behind it.
+pg-boss is MIT licensed and always will be. Sponsorship pays for the
+maintenance, security response and support that its one maintainer provides.
 
 [Become a sponsor](https://github.com/sponsors/timgit)
 

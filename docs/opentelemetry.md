@@ -21,22 +21,22 @@ With [`propagateContext`](#options) set, pg-boss stores the active trace context
 | --- | --- | --- |
 | `send {queue}` | producer | `send()`, `sendAfter()`, `sendThrottled()`, `sendDebounced()` |
 | `insert {queue}` | producer | `insert()` |
-| `upsert {queue}` | producer | `upsert()`, whether it inserts a job or updates one |
-| `flow {queue}` or `flow` | producer | `flow()`, named after the queue when every job in the flow shares one |
+| `upsert {queue}` | producer | `upsert()`, whether it inserts or updates a job |
+| `flow {queue}` or `flow` | producer | `flow()`, named after the queue when every job in the flow shares a queue |
 | `publish {event}` | producer | `publish()`, parent of the `send` span to each subscribed queue |
 | `receive {queue}` | client | `fetch()` called by the application |
 | `process {queue}` | consumer | a `work()` handler running over a batch |
 | `complete {queue}`, `fail {queue}`, `cancel {queue}`, `delete {queue}` | client | `complete()`, `fail()`, `cancel()`, `deleteJob()` |
 
-A `process` span covers the handler and the completion or failure pg-boss records after it, so spans created inside the handler, and spans of instrumented database calls, are its children.
+A `process` span covers the handler and the completion or failure pg-boss records after it, so spans created inside the handler and spans of instrumented database calls are its children.
 
-Trace context propagation is off until you set `propagateContext`, and the parent and link rules below need it. Without it, each `process` span starts a trace of its own.
+Trace context propagation is off until you set `propagateContext`. The parent and link rules below need `propagateContext`. Without it, each `process` span starts a trace of its own.
 
-When a worker processes one job at a time, the `process` span is a child of the job's `send` span, and baggage active at `send()` is active in the handler. A batch (`batchSize` above 1) starts a trace of its own and links to the `send` span of every job in it. `receive` spans link the same way. pg-boss never uses the trace context `work()` was called in as a parent, because the worker loop runs long after the call that started it.
+When a worker processes one job at a time, the `process` span is a child of the job's `send` span. Baggage active at `send()` is then active in the handler too. A batch (`batchSize` above 1) starts a trace of its own and links to the `send` span of every job in it. `receive` spans link the same way. pg-boss never uses the trace context `work()` was called in as a parent, because the worker loop runs long after the call that started it.
 
 A worker's own polling has no span, since a span per empty poll would bury the traces that matter. A handler that throws ends its `process` span with an error status, the exception recorded as an event, and `error.type` set. When a handler outruns its timeout, pg-boss ends the span the same way when it fails the batch, even if the handler goes on running.
 
-The trace context survives retries, dead lettering and `redrive()`, so each attempt of a job, including its copy in a dead letter queue, is part of the trace its `send()` started.
+The trace context survives retries, dead lettering and `redrive()`, so every attempt of a job and the job's dead letter copy belong to the trace the job's `send()` started.
 
 ### Attributes
 
@@ -63,9 +63,9 @@ The trace context survives retries, dead lettering and `redrive()`, so each atte
 | `messaging.process.duration` | histogram | `s` | Duration of each `process` span |
 | `pgboss.queue.jobs` | gauge | `{job}` | Jobs per queue by `pgboss.job.state` (`deferred`, `ready`, `blocked`, `active`, `failed`), as of the last queue cache refresh. `blocked` is jobs waiting on a [`flow()`](./api/jobs.md#flow-jobs-options) parent |
 
-Metrics carry `messaging.system`, `messaging.operation.name`, `messaging.operation.type`, `messaging.destination.name`, `db.namespace`, `pgboss.schema` and, on failure, `error.type`. The namespace tells apart instances in one process that share a queue name in different schemas or databases. To keep fewer series, drop the two attributes with an SDK View. pg-boss leaves out job ids and batch sizes so they don't multiply the number of series.
+Metrics carry `messaging.system`, `messaging.operation.name`, `messaging.operation.type`, `messaging.destination.name`, `db.namespace`, `pgboss.schema` and, on failure, `error.type`. The namespace tells apart instances in one process that share a queue name in different schemas or databases. To keep fewer series, drop `db.namespace` and `pgboss.schema` with an SDK View. pg-boss leaves out job ids and batch sizes so they don't multiply the number of series.
 
-`pgboss.queue.jobs` reads the counts pg-boss already keeps in memory, refreshed every [`queueCacheIntervalSeconds`](./api/constructor.md#queuecacheintervalseconds) from the stats [monitoring](./api/constructor.md#monitorintervalseconds) records, so observing it runs no queries.
+`pgboss.queue.jobs` reads the counts pg-boss already keeps in memory, so observing it runs no queries. pg-boss refreshes those counts every [`queueCacheIntervalSeconds`](./api/constructor.md#queuecacheintervalseconds) from the stats [monitoring](./api/constructor.md#monitorintervalseconds) records.
 
 ## Options
 
@@ -94,7 +94,7 @@ const boss = new PgBoss({
 
 * **propagator**, `TextMapPropagator`, default the global propagator
 
-  The propagator that writes the trace context stored on a job and reads it back when the job is processed. An SDK registers W3C Trace Context and Baggage globally when it starts, unless the application configures another. With no propagator registered (for example, when you pass a `tracerProvider` without registering it globally), pg-boss stores nothing. To store trace ids without baggage, pass a `W3CTraceContextPropagator`:
+  The propagator that writes the trace context stored on a job and reads it back when the job is processed. An SDK registers W3C Trace Context and Baggage globally when it starts, unless the application configures a different propagator. With no propagator registered (for example, when you pass a `tracerProvider` without registering it globally), pg-boss stores nothing. To store trace ids without baggage, pass a `W3CTraceContextPropagator`:
 
   ```js
   import { W3CTraceContextPropagator } from '@opentelemetry/core'
@@ -107,15 +107,15 @@ const boss = new PgBoss({
 
 * **tracerProvider**, `TracerProvider`
 
-  The provider to create spans with instead of the global one.
+  The provider to create spans with instead of the global tracer provider.
 
 * **meterProvider**, `MeterProvider`
 
-  The provider to create instruments with instead of the global one.
+  The provider to create instruments with instead of the global meter provider.
 
 ## Database instrumentation
 
-pg-boss talks to Postgres through `pg`, so `@opentelemetry/instrumentation-pg` records a span for each of its queries, including a worker's polling. Queries made inside a `process` span nest under it. To drop the polling queries, which run outside any span, set the instrumentation's `requireParentSpan` option:
+pg-boss talks to Postgres through `pg`, so `@opentelemetry/instrumentation-pg` records a span for each pg-boss query, including a worker's polling. Queries made inside a `process` span nest under it. To drop the polling queries, which run outside any span, set the instrumentation's `requireParentSpan` option:
 
 ```js
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg'
@@ -127,7 +127,7 @@ new NodeSDK({
 
 ## Storage
 
-pg-boss stores the trace context in the `trace_context` column of the job table, as the propagator's key/value pairs. With the SDK's default propagators that is `traceparent` and, when baggage is active at `send()`, `baggage` too:
+pg-boss stores the trace context in the `trace_context` column of the job table, as the propagator's key/value pairs. With the SDK's default propagators, the pairs are `traceparent` and, when baggage is active at `send()`, `baggage` too:
 
 ```json
 { "traceparent": "00-...", "baggage": "tenant=acme" }

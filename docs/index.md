@@ -71,9 +71,9 @@ readme()
   })
 ```
 
-pg-boss is a job queue built in Node.js on top of PostgreSQL. It gives Node.js applications background processing and reliable asynchronous execution.
+pg-boss is a job queue built in Node.js on top of PostgreSQL. Node.js applications use pg-boss for background processing and reliable asynchronous execution.
 
-pg-boss relies on SKIP LOCKED, a Postgres feature built for message queues that resolves the record locking problems relational databases have. Concurrent workers claim jobs without blocking each other, and job processing gets the guarantee of atomic commits.
+pg-boss relies on SKIP LOCKED, a Postgres feature built for message queues that resolves the record locking problems relational databases have. Concurrent workers claim jobs without blocking each other. Job processing gets the guarantee of atomic commits.
 
 pg-boss suits teams who know relational database semantics and operations (SQL, querying and backups). It's most useful to a team already running PostgreSQL that wants fewer systems to monitor and support.
 
@@ -112,11 +112,11 @@ See the [proxy documentation](/proxy) for details.
 
 ## Pro 🚀
 
-[pg-boss Pro](/pro/) is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Console, users send, retry and delete jobs, create queues and schedules, and run batch operations across queues, as their role allows. Every change is recorded in the audit log. Through the API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service, along with single sign-on and Prometheus metrics. Pro is built and supported by the author of pg-boss, and it's sold as a yearly or monthly subscription. Subscriptions, along with sponsorship, pay for the maintenance of pg-boss.
+[pg-boss Pro](/pro/) is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Console, users send, retry and delete jobs, create queues and schedules, and run batch operations across queues. Each user makes only the changes their role allows. Every change is recorded in the audit log. Scripts, CI jobs and other systems call pg-boss's methods through the API using an API token. Pro also adds single sign-on, Prometheus metrics, queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service. Pro is built and supported by the author of pg-boss and sold as a yearly or monthly subscription. Subscriptions and sponsorship pay for the maintenance of pg-boss.
 
 ## Sponsors
 
-pg-boss is MIT licensed and always will be. One person maintains it, and sponsorship pays for the maintenance, security response and support behind it.
+pg-boss is MIT licensed and always will be. Sponsorship pays for the maintenance, security response and support that its one maintainer provides.
 
 [Become a sponsor](https://github.com/sponsors/timgit), or see everyone who already does on the [sponsors page](/sponsors).
 

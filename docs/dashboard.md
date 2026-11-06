@@ -1,6 +1,6 @@
 # Dashboard
 
-The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. Most of the dashboard is read-only. However, you can [retry, cancel or resume](#job-actions) a job on its detail page. The [pg-boss Pro Console](./pro/index.md) adds sending and deleting jobs, changing many jobs at once, and creating queues and schedules for authenticated users, each with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
+The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. The dashboard is read-only except for [retry, cancel and resume](#job-actions) on a job's detail page. The [pg-boss Pro Console](./pro/index.md) adds sending and deleting jobs, changing many jobs at once, and creating queues and schedules for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
 
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting.webp){.light-only}
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting-dark.webp){.dark-only}
@@ -25,21 +25,21 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 
 ### Overview
 
-The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the database's connections between pg-boss, other applications and what is free, out of the server's limit. The most recent warnings are under it.
+The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the server's connection limit between pg-boss, other applications and what is free. The most recent warnings are under it.
 
 ![Overview page](./images/dashboard-overview.webp){.light-only}
 ![Overview page](./images/dashboard-overview-dark.webp){.dark-only}
 
 ### Jobs
 
-Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The queue filter searches queue names as you type and lists the first 20 matches, with a line saying when more match. The state filter starts on unfinished (created, retry and active), and also offers all states or any single one. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, canceled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`), and **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
+Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The queue filter searches queue names as you type and lists the first 20 matches and says when more match. The state filter starts on unfinished (created, retry and active), and also offers all states or any single state. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, canceled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`). **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
 
 ![Jobs page](./images/dashboard-jobs.webp){.light-only}
 ![Jobs page](./images/dashboard-jobs-dark.webp){.dark-only}
 
 ### Job detail
 
-One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on, beside a sidebar with its timeline, retries and configuration. A running job shows how long it has been running, its heartbeat, and a countdown to its expiration, and the page picks up a new state without a reload. A completed job opens on its output.
+One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on. A sidebar beside the error shows the job's timeline, retries and configuration. A running job shows how long it has been running, its heartbeat, and a countdown to its expiration. The page picks up a new state without a reload. A completed job opens on its output.
 
 ![A failed job's page](./images/dashboard-job.webp){.light-only}
 ![A failed job's page](./images/dashboard-job-dark.webp){.dark-only}
@@ -48,15 +48,15 @@ The timeline shows the times the job's row keeps. A retry overwrites the start t
 
 #### Job actions
 
-A failed job has **Retry job**, a canceled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. Each calls pg-boss's own [`retry()`, `cancel()` or `resume()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes, and the dashboard doesn't record who made them.
+A failed job has **Retry job**, a canceled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. Each calls pg-boss's own [`retry()`, `cancel()` or `resume()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes. The dashboard doesn't record who made them.
 
 pg-boss makes the change, so the dashboard's copy of `pg-boss` must be on the database's schema version. On any other version, pages still read and the page says why the change was refused. Set `PGBOSS_DASHBOARD_READ_ONLY=true` to hide the buttons and refuse every change.
 
-A job copied into a dead letter queue shows why it's there, from the original job's output, and a lineage chain from the first job to this one. The job records only the first job (the root) and the job it was copied from (the source), so any hops between them show as a gap. Select either to see its timeline, taken from its own row while it still exists, or from what was copied onto this job once it has been deleted. The dashboard looks up the root in the queue a redrive returns jobs to, so a root redriven into a different queue shows as not found.
+A job copied into a dead letter queue shows why it's there (taken from the original job's output) and a lineage chain from the first job to this job. The job records only the first job (the root) and the job it was copied from (the source), so any hops between them show as a gap. Select the root or the source to see that job's timeline. The dashboard reads the timeline from that job's row while the row still exists, or from what was copied onto this job after the row is deleted. The dashboard looks up the root in the queue a redrive returns jobs to, so a root redriven into a different queue shows as not found.
 
 ### Queues
 
-Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline and storage mode (shared or partitioned). pg-boss's own queues, such as `__pgboss__send-it` for cron, are left out. Sort by any column but the trend, search by name, or show only the queues needing attention or the partitioned ones. Clicking a queue opens its detail page. It shows the queue's counts in one card, as on the overview, with the ready count and a sparkline above the rest of what's queued. Its newest 10 jobs in the chosen state come next, with its settings beside them. **View all** opens the [Jobs](#jobs) page filtered to the queue and that state. The page marks a queue that other queues send failed jobs to as a dead letter queue. **View metrics**, or any of the page's counts, opens the queue's [metrics page](#queue-metrics).
+Every queue in the schema with its policy and cached counts (queued, deferred, ready, active, failed, total), a trend sparkline and storage mode (shared or partitioned). pg-boss's own queues, such as `__pgboss__send-it` for cron, are left out. Sort by any column but the trend, search by name, or show only the queues needing attention or the partitioned queues. Clicking a queue opens its detail page. The detail page shows the queue's counts in one card, as the overview does. The ready count and a sparkline sit above the rest of what's queued. Next, the queue's newest 10 jobs in the chosen state sit beside the queue's settings. **View all** opens the [Jobs](#jobs) page filtered to the queue and that state. The page marks a queue that other queues send failed jobs to as a dead letter queue. **View metrics** and each of the page's counts open the queue's [metrics page](#queue-metrics).
 
 ![Queues page](./images/dashboard-queues.webp){.light-only}
 ![Queues page](./images/dashboard-queues-dark.webp){.dark-only}
@@ -66,12 +66,12 @@ Every queue in the schema with its policy and cached counts (queued, deferred, r
 
 ### Queue metrics
 
-One queue's counts over time (`/queues/:name/metrics`), charted from what pg-boss records in `queue_stats`, in two charts:
+One queue's counts over time (`/queues/:name/metrics`). Two charts plot what pg-boss records in `queue_stats`:
 
 - **Waiting**: every job not started yet, stacked by why it waits (ready, blocked by a flow parent, or deferred). Together they are the queue's queued count. Blocked is queued less ready and deferred, so it needs nothing more from pg-boss.
 - **Active and failed**: jobs being worked, and failures still stored. **Show total stored** adds every job the queue holds.
 
-Choose whether each point is the highest, lowest or average of the samples in its bucket. The range runs from the last hour to the last 30 days (24 hours by default), or set your own start and end. The queue page's counts open this page at the chart that holds them.
+Choose whether each point is the highest, lowest or average of the samples in its bucket. Pick a range from the last hour to the last 30 days (24 hours by default), or set your own start and end. The queue page's counts open this page at the chart that holds them.
 
 ![A queue's metrics page](./images/dashboard-queue-metrics.webp){.light-only}
 ![A queue's metrics page](./images/dashboard-queue-metrics-dark.webp){.dark-only}
@@ -80,26 +80,26 @@ Choose whether each point is the highest, lowest or average of the samples in it
 
 ### Schedules
 
-Schedules registered with `boss.schedule()`, showing the target queue, optional key, expression, a human-readable frequency, the next occurrence and timezone. The dashboard reads both schedule kinds through pg-boss itself, so it badges a schedule stored as an [RRULE](./api/scheduling.md#rrule-expressions) and shows the same next occurrence the scheduling pass will use. Each schedule's detail page shows its data, options and the last job it created.
+Schedules registered with `boss.schedule()`. The list shows the target queue, optional key, expression, a human-readable frequency, the next occurrence and timezone. The dashboard reads both schedule kinds through pg-boss itself, so it badges a schedule stored as an [RRULE](./api/scheduling.md#rrule-expressions) and shows the same next occurrence the scheduling pass will use. Each schedule's detail page shows its data, options and the last job it created.
 
 ![Schedules page](./images/dashboard-schedules.webp){.light-only}
 ![Schedules page](./images/dashboard-schedules-dark.webp){.dark-only}
 
 ### Subscriptions
 
-Events registered with [`boss.subscribe()`](./api/pubsub.md), one row per event with every queue subscribed to it, sortable by event, queue count or when a queue last subscribed. A queue's page shows how many events it is subscribed to and links here, filtered to those events.
+Events registered with [`boss.subscribe()`](./api/pubsub.md). Each row is an event with every queue subscribed to it. Sort by event, queue count or when a queue last subscribed. A queue's page shows how many events it is subscribed to and links to this page filtered to those events.
 
 ![Subscriptions page](./images/dashboard-subscriptions.webp){.light-only}
 ![Subscriptions page](./images/dashboard-subscriptions-dark.webp){.dark-only}
 
 ### Instances
 
-Every pg-boss instance registered in the database's [instance registry](./api/ops.md#getinstances-options), one row each, with its status (live, quiet or stopped), the pg-boss version it runs, which of `supervise` and `schedule` it has on, and the queues it works. Filter by status, or by **Recent** for the ones that started, stopped or went quiet in the last 24 hours. An instance's page shows its pool, CPU, memory and event loop at its last heartbeat, against the limits it read, then its workers and its options, with the non-default ones listed first. Beside those cards, its process card gives its id, connection name, start and last heartbeat, the connections Postgres has open under that name now, and any crash restarts (instances with its name on its host that ended without `stop()` in a row before it started). The registry needs pg-boss 12.36 or later (schema 44). On an older schema the page says so.
+Every pg-boss instance registered in the database's [instance registry](./api/ops.md#getinstances-options). Each row shows an instance's status (live, quiet or stopped), the pg-boss version it runs, which of `supervise` and `schedule` it has on, and the queues it works. Filter by status, or by **Recent** for the instances that started, stopped or went quiet in the last 24 hours. An instance's page shows its pool, CPU, memory and event loop at its last heartbeat against the limits it read. Its workers and options follow, with non-default options listed first. Beside those cards, a process card shows the instance's id, connection name, start and last heartbeat, the connections Postgres has open under that name now, and any crash restarts (instances with the same name on the same host that ended without `stop()` in a row before this instance started). The registry needs pg-boss 12.36 or later (schema 44). On an older schema the page says so.
 
 Three tiles sit above the list:
 
 - **Live** counts the live instances and their hosts, and how many went quiet or stopped cleanly in the last 24 hours.
-- **Database connections** counts the server's connections out of `max_connections`, with pg-boss's apart from other applications'.
+- **Database connections** counts the server's connections out of `max_connections` and separates pg-boss's connections from other applications'.
 - **Versions and options** lists the pg-boss versions live and which live instances have `supervise` and `schedule` on.
 
 ![Instances page](./images/dashboard-instances.webp){.light-only}
@@ -107,14 +107,14 @@ Three tiles sit above the list:
 
 ### Migrations
 
-Status of boss async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. The page lists each command's version, target table and status, and filters by status. A command opens a page with the SQL that was (or will be) executed, any error message, and when it was queued, started and ended.
+Status of boss async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. The page lists each command's version, target table and status, and filters by status. Each command's page shows the SQL that was (or will be) executed, any error message, and when the command was queued, started and ended.
 
 ![Migrations page](./images/dashboard-migrations.webp){.light-only}
 ![Migrations page](./images/dashboard-migrations-dark.webp){.dark-only}
 
 ### Warnings
 
-Every warning pg-boss emitted while [`persistWarnings`](#enabling-warning-persistence) was enabled, such as slow queries, queue backlogs or clock skew, newest first. Each entry shows its type, message, key details (for example the queue and its size, or the query duration) and time. You can filter the list by warning type. An entry opens a page with its full message, its queue and every detail it recorded.
+Every warning pg-boss emitted while [`persistWarnings`](#enabling-warning-persistence) was enabled, newest first. Examples are slow queries, queue backlogs and clock skew. Each entry shows its type, message, key details (for example the queue and its size, or the query duration) and time. You can filter the list by warning type. Each entry's page shows its full message, its queue and every detail it recorded.
 
 ![Warnings page](./images/dashboard-warnings.webp){.light-only}
 ![Warnings page](./images/dashboard-warnings-dark.webp){.dark-only}
@@ -127,7 +127,7 @@ Every warning pg-boss emitted while [`persistWarnings`](#enabling-warning-persis
 
 ### Matching pg-boss versions
 
-Dashboard 2.x reads a database on pg-boss schema version 32 or later (pg-boss 12.21 or later), so it doesn't have to match the pg-boss your application runs. 2.0 has been run against every schema from 32 to 46 (pg-boss 12.38). Pages show what a newer schema stores, such as the count of jobs blocked by a flow parent from schema 44, and leave it out on an older one.
+Dashboard 2.x reads a database on pg-boss schema version 32 or later (pg-boss 12.21 or later), so it doesn't have to match the pg-boss your application runs. 2.0 has been run against every schema from 32 to 46 (pg-boss 12.38). Pages show what a newer schema stores, such as the count of jobs blocked by a flow parent from schema 44, and leave it out on an older schema.
 
 The dashboard does not migrate your schema, and it starts no pg-boss instance of its own, so it never appears in [`getInstances()`](./api/ops.md#getinstances-options).
 
@@ -143,7 +143,7 @@ Releases before 2.0 were each built for one schema version and only work against
 | 1.8.x | 12.31.x to 12.32.x | 41 |
 | 1.7.x | 12.30.x | 40 |
 
-No 1.x release matches pg-boss 12.36.x (schema 44). 2.x reads it.
+No 1.x release matches pg-boss 12.36.x (schema 44). 2.x reads schema 44.
 
 ## Installation
 
@@ -213,9 +213,9 @@ PGBOSS_SCHEMA="pgboss|jobs" \
 npx pg-boss-dashboard
 ```
 
-Two unnamed entries for the same database, such as one database under two schemas, would share a name. The later one shows its schema, as in `app (jobs)`. Name each one to choose what shows instead.
+Two unnamed entries for the same database, such as one database under two schemas, would share a name. The later entry shows its schema, as in `app (jobs)`. Name each entry to choose what shows instead.
 
-The top bar on every page starts with the name of the database being shown, and a colored dot that marks its place in the configuration. When you configure more than one database, the name opens a menu to switch between them, and switching keeps you on the same page. From a page about one item, such as a queue or a job, it opens the list that page sits under instead (Queues, for both), since the other database may not have that item. The URL's `db` query parameter holds the selected database (a URL without it opens the first database), so a shared link opens the same database.
+The top bar on every page starts with the name of the database being shown, and a colored dot that marks its place in the configuration. When you configure more than one database, the name opens a menu to switch between them. Switching keeps you on the same page. From a page about one item, such as a queue or a job, switching opens the list that page sits under instead (Queues, for both), since the other database may not have that item. The URL's `db` query parameter holds the selected database (a URL without it opens the first database), so a shared link opens the same database.
 
 ## Production deployment
 
@@ -267,7 +267,7 @@ services:
 
 ### Reverse proxy
 
-For production, place a reverse proxy in front of any of the above options. Example Nginx configuration:
+For production, place a reverse proxy in front of any of the above options. This Nginx configuration accepts HTTPS and forwards plain HTTP to the dashboard:
 
 ```nginx
 server {
@@ -284,7 +284,7 @@ server {
 }
 ```
 
-Behind this proxy, pages load but every action fails with a 400 until you set the site URL. The browser sends `Origin: https://pgboss.example.com`. The proxy forwards plain HTTP, so the dashboard sees a request for `http://pgboss.example.com`, and React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch. Set `PGBOSS_DASHBOARD_SITE_URL` to the URL your browser uses:
+Behind this proxy, pages load but every action fails with a 400 until you set the site URL. The browser sends `Origin: https://pgboss.example.com`. The proxy forwards plain HTTP, so the dashboard sees a request for `http://pgboss.example.com`. React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch. Set `PGBOSS_DASHBOARD_SITE_URL` to the URL your browser uses:
 
 ```bash
 PGBOSS_DASHBOARD_SITE_URL=https://pgboss.example.com npx pg-boss-dashboard
@@ -292,7 +292,7 @@ PGBOSS_DASHBOARD_SITE_URL=https://pgboss.example.com npx pg-boss-dashboard
 
 Every request then takes this scheme and host, so actions and redirects match what the browser sees. Give the origin only. A sub-path goes in `PGBOSS_DASHBOARD_BASE_PATH`. The dashboard stops at startup on a value with a path, a query or credentials.
 
-While it's set, actions work only from that site. Unset it to use the dashboard directly, for example at `http://localhost:3000`.
+While `PGBOSS_DASHBOARD_SITE_URL` is set, actions work only from that site. Unset it to use the dashboard directly, for example at `http://localhost:3000`.
 
 ### Serving under a sub-path
 
@@ -302,7 +302,7 @@ By default the dashboard serves from the root path (`/`). To serve it under a su
 PGBOSS_DASHBOARD_BASE_PATH=/pgboss npx pg-boss-dashboard
 ```
 
-Assets, in-app navigation, and action redirects all stay under the prefix. It's a runtime setting, so it works with the published npm package as is, with no rebuild. Have the reverse proxy forward the prefix unchanged, without stripping it. Match `/pgboss` with no trailing slash, because the home page fetches its data at `/pgboss.data`.
+Assets, in-app navigation, and action redirects all stay under the prefix. The base path is a runtime setting, so the published npm package needs no rebuild. Have the reverse proxy forward the prefix unchanged, without stripping it. Match `/pgboss` with no trailing slash, because the home page fetches its data at `/pgboss.data`.
 
 ```nginx
 location /pgboss {
@@ -320,7 +320,7 @@ location /pgboss {
 
 If you already run a Node.js server, you can mount the dashboard in it instead of running a separate process. `createDashboardHandler()` returns a standard [Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) handler, `(request: Request) => Promise<Response>`.
 
-With a framework built on `Request`/`Response`, such as Hono, it plugs straight in:
+A framework built on `Request`/`Response`, such as Hono, passes requests straight to the handler:
 
 ```ts
 import { Hono } from 'hono'
@@ -339,7 +339,7 @@ app.all('/admin/queues.data', (c) => dashboard(c.req.raw)) // the home page's da
 app.all('/admin/queues/*', (c) => dashboard(c.req.raw))
 ```
 
-With Express, Fastify or plain `node:http`, convert the request first. `@hono/node-server` ships an adapter that does it:
+With Express, Fastify or plain `node:http`, convert the request first. `@hono/node-server` ships an adapter that does the conversion:
 
 ```ts
 import express from 'express'
@@ -362,13 +362,13 @@ app.use(['/admin/queues', '/admin/queues.data'], requireAdmin, (req, res) => {
 
 When you mount the handler:
 
-- **Authentication is yours.** The handler adds none of its own. Mounted without a guard, any visitor can read job payloads. Place it behind whatever already protects your admin routes.
+- **Authentication is yours.** The handler adds none of its own. Without a guard in front of the handler, any visitor can read job payloads. Place the handler behind whatever already protects your admin routes.
 - **It's lazy.** The handler imports nothing and opens no database connection until the first request arrives. Its connection pool drains again when the dashboard is idle.
 - **It doesn't depend on the working directory.** It resolves static assets relative to the installed package.
-- **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, which sits beside the mount path instead of under it. A `/admin/queues/*` pattern alone misses it, and the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
-- **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`. The handler leaves signals to you, and `await dashboard.close()` ends its database pools. A closed handler answers 503.
+- **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, which sits beside the mount path instead of under it. A `/admin/queues/*` pattern alone misses that request, so the Home link shows a 404. Anything else outside the base path gets a plain 404 from the handler.
+- **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`. The handler leaves signals to you. `await dashboard.close()` ends its database pools. A closed handler answers 503.
 - **Behind a reverse proxy, pass the public URL.** React Router rejects a form submission whose `Origin` doesn't match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `siteUrl: 'https://admin.example.com'`, which works like [`PGBOSS_DASHBOARD_SITE_URL`](#reverse-proxy), or pass the handler a `Request` with the public URL.
-- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` and `PGBOSS_DASHBOARD_READ_ONLY` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_SITE_URL` don't, because the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`. If it or `PGBOSS_DASHBOARD_SITE_URL` is set while its option is off, the dashboard says so when you construct the handler.
+- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` and `PGBOSS_DASHBOARD_READ_ONLY` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_SITE_URL` don't, because the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`. If `PGBOSS_DASHBOARD_AUTH_*` or `PGBOSS_DASHBOARD_SITE_URL` is set while the matching option is off, the dashboard says so when you construct the handler.
 
 ## Enabling warning persistence
 
@@ -425,7 +425,7 @@ pg-boss's monitor caches queue statistics in the `queue` table. They update ever
 
 ### Empty queue metrics
 
-- Ensure `persistQueueStats: true` is set on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty, and the queue and metrics pages show a banner saying so.
+- Ensure `persistQueueStats: true` is set on the pg-boss instances that run the monitor. Without it `queue_stats` stays empty. The queue and metrics pages then show a banner saying so.
 - History starts with the first monitor pass after the option is turned on, so a range that reaches back before then is empty for that stretch.
 
 ## Contributing
