@@ -8,7 +8,7 @@
 
 ## Install
 
-Pro is served from a private registry, not from npmjs. The license key is the registry credential, and the only one needed. Polar shows it on its purchases page.
+Pro is served from a private registry, not from npmjs. The license key is the only credential the registry needs, which is shown on the purchases page of the Polar account that bought the subscription.
 
 Put both lines in the `.npmrc` of the project that installs Pro:
 
