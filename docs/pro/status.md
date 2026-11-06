@@ -1,6 +1,6 @@
 # Status
 
-`/pro/status` is laid out like a public status page and shows how each queue kept up on each of the last ninety days. Each queue has a strip of days and its uptime. A strip across the top covers every queue. Rows stay in name order whatever their state, since a status page is read by position.
+`/pro/status` is laid out like a public status page and shows how each queue kept up on each of the last ninety days. Each queue has a strip of days and its uptime. A summary strip at the top of the page summarizes status across all queues.
 
 ![The status page](../images/pro/status.webp){.light-only}
 ![The status page](../images/pro/status-dark.webp){.dark-only}
@@ -13,18 +13,26 @@ When more than 3 minutes go by without a pass, as when Pro was stopped, the next
 
 ## Days
 
-Days are UTC days. A queue's day adds up the time recorded in each state and takes the color of the least healthy state that totals 5 minutes or more. From least healthy, the order is stalled, then falling behind, then absorbing a spike. Short stretches count toward the total, so three 2-minute stalls color a day stalled. Recovering never colors a day. A day with nothing recorded is gray. Today's cell shows the day so far.
+Days are UTC days. Today's cell shows the day so far. A queue's day adds up the time recorded in each state and takes the color of the least healthy state that totals 5 minutes or more. The table lists the states from least healthy. Short stretches count toward the total, so three 2-minute stalls color a day stalled.
 
-Each day on the strip across every queue takes the color of the least healthy queue that day, and is gray only when no queue was recorded. Its tooltip counts the queues in each color. Opening a day there narrows the list to the queues that stalled, fell behind or absorbed a spike that day. **Affected** lists the queues that did so on any day shown. On a narrow screen the strips show the last thirty days.
+| Color | State |
+| - | - |
+| Red | Stalled |
+| Orange | Falling behind |
+| Yellow | Absorbing a spike |
+| Green | Keeping up. No state above reached 5 minutes. Recovering doesn't color a day, so a day spent recovering is green too. |
+| Gray | Nothing recorded for the queue that day |
+
+Each day on the summary strip takes the color of the least healthy queue that recorded anything that day. Its tooltip counts the queues in each color. Opening a day there narrows the list to the queues that stalled, fell behind or absorbed a spike that day. **Affected** lists the queues that did so on any day shown. On a narrow screen the strips show the last thirty days.
 
 ## Day details
 
-A day colored stalled, falling behind or absorbing a spike opens to its 24 hours as a band and the same day as a timeline. Each row of the timeline is a stretch of one state with the UTC time it started. A row also shows how long the stretch lasted, unless the queue was keeping up. A stretch shorter than 5 minutes is folded into the row next to it, which counts the stretches it includes. The band still shows every stretch. Stretches in the state that colored the day are never folded, so three 2-minute stalls on a day colored stalled are three rows. A gap of 5 minutes or more with nothing recorded is a row of its own. Short stretches just before such a gap show only on the band.
+A day colored stalled, falling behind or absorbing a spike opens to its 24 hours as a band and the same day as a timeline. The band colors each stretch as the table above does, and shows recovering stretches in blue. Each row of the timeline is a stretch of one state with the UTC time it started. A row also shows how long the stretch lasted, unless the queue was keeping up. A stretch shorter than 5 minutes is folded into the row next to it, which counts the stretches it includes. The band still shows every stretch. Stretches in the state that colored the day aren't folded, so three 2-minute stalls on a day colored stalled are three rows. A gap of 5 minutes or more with nothing recorded is a row of its own. Short stretches just before such a gap show only on the band.
 
 ![A day's details on the status page](../images/pro/status-day.webp){.light-only}
 ![A day's details on the status page](../images/pro/status-day-dark.webp){.dark-only}
 
-Each change made that day to an [alert](./alerts.md) on the queue is a row at the time it happened, linked to the alert: when it opened, who acknowledged it, and when and why it closed. Alert rows are never folded. An alert opened on an earlier day and still open at 00:00 has a row at 00:00 with the day it opened. Every alert on the queue appears except a failed operation's. Alerts don't change a day's color or a queue's uptime, which come only from the recorded states, so a green day opens nothing even when an alert changed that day.
+Each change made that day to an [alert](./alerts.md) on the queue is a row at the time it happened, linked to the alert: when it opened, who acknowledged it, and when and why it closed. Alert rows aren't folded. An alert opened on an earlier day and still open at 00:00 has a row at 00:00 with the day it opened. Every alert on the queue appears except a failed operation's. Alerts don't change a day's color or a queue's uptime, which come only from the recorded states, so a green day opens nothing even when an alert changed that day.
 
 ## Uptime
 
