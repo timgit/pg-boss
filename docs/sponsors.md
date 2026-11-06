@@ -8,6 +8,12 @@ behind it.
 
 <!-- The lists below are generated from GitHub Sponsors by scripts/sync-sponsors.js. Do not edit them directly. -->
 
+## Advisory Sponsors
+
+<div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">
+  <a href="https://supabase.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/54469796?s=256&amp;v=4" alt="Supabase" title="Supabase" width="128" height="128" style="border-radius: 8px;"></a>
+</div>
+
 ## Production Sponsors
 
 <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">

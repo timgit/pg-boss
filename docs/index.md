@@ -122,6 +122,7 @@ pg-boss is MIT licensed and always will be. It is maintained by one person, and 
 
 <!-- sponsors:start The logos below are generated from GitHub Sponsors by scripts/sync-sponsors.js. Do not edit them directly. -->
 <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">
+  <a href="https://supabase.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/54469796?s=256&amp;v=4" alt="Supabase" title="Supabase" width="128" height="128" style="border-radius: 8px;"></a>
   <a href="https://superpower.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/114334709?s=256&amp;v=4" alt="Superpower" title="Superpower" width="96" height="96" style="border-radius: 8px;"></a>
   <a href="https://altruistiq.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/88195975?s=256&amp;v=4" alt="Altruistiq" title="Altruistiq" width="64" height="64" style="border-radius: 8px;"></a>
   <a href="https://wasp.sh/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/55102317?s=256&amp;v=4" alt="wasp-lang" title="wasp-lang" width="64" height="64" style="border-radius: 8px;"></a>
