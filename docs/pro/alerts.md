@@ -1,6 +1,6 @@
 # Alerts
 
-`/pro/alerts` lists the alerts on the current database, open alerts
+The **Alerts** page lists the alerts on the current database, open alerts
 first. Its filters show the alerts that need attention, open alerts, closed alerts or every alert. The bell
 in the top bar counts the alerts that need attention, which are the open alerts nobody has
 acknowledged. The count shows in red when any of those alerts is critical. Its menu lists the latest
@@ -18,8 +18,8 @@ banner, because no alert opens or closes until the evaluator runs again.
 
 Alerts come only from rules that are turned on. A rule
 belongs to the database that was selected when the rule was created.
-Rules live behind the **Rules** button on the alerts page (`/pro/alerts/rules`),
-which only [global admins](./roles.md#global-admin) see.
+Rules live under **Alerts › Rules** in the sidebar. Only
+[global admins](./roles.md#global-admin) see them.
 A rule's page lists the 8 alerts it opened most recently. When the rule has opened
 more, a link there opens this list filtered to that rule.
 

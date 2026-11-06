@@ -1,13 +1,13 @@
 # Accounts and groups
 
-Pro authenticates each user with their own account. Users sign in at `/login`
-and sign out from the account menu (the picture or initials at the top right).
+Pro authenticates each user with their own account. Users sign out from the account menu
+(the picture or initials at the top right).
 
 [Roles and access](./roles.md) lists what each role may do.
 
 ## Managing accounts
 
-Accounts live at `/pro/accounts`, under **Settings** in the sidebar. Only
+Accounts live under **Settings › Accounts** in the sidebar. Only
 [global admins](./roles.md#global-admin) see the page. An admin on a single
 database doesn't get this screen, because from it they could widen their own
 grant.
@@ -60,7 +60,7 @@ Pro always refuses two changes, and says so:
 
 Pro sends no invitation email, because it runs inside the organization's network and may have
 no mail credentials. A global admin sends the invitation link, or sets the
-first password and hands it over. The person then changes it at `/pro/profile`,
+first password and hands it over. The person then changes it
 from **Profile** in the account menu at the top right. That page needs no role.
 It shows who is signed in and what that account may do, and takes the current
 password and the new password twice. Changing the password there signs out
@@ -69,7 +69,7 @@ every other session and keeps the current session.
 ## Groups
 
 An account can hold a role directly or through a group. Groups
-live at `/pro/groups`, where the search box keeps the groups whose name or
+live under **Settings › Groups**, where the search box keeps the groups whose name or
 description holds the text. Give a group a role on a database (or on all
 databases), and every member has that role. **Add people** adds members by searching for a name or address
 or by pasting a list of addresses. Where two roles apply to the same database, the person may do everything

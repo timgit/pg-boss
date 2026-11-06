@@ -69,7 +69,7 @@ The sidebar lists each `work()` call on the queue, with its instance and its bus
 ![The Workers card on a queue's page](../images/pro/queue-workers.webp){.light-only width=384}
 ![The Workers card on a queue's page](../images/pro/queue-workers-dark.webp){.dark-only width=384}
 
-The backlog chart is the Waiting chart from the free [metrics page](../dashboard.md#queue-metrics), with ready, blocked and deferred jobs stacked and active jobs drawn over them. **View metrics** and the page's counts open this chart, and `/queues/:name/metrics` redirects to it. Pro has one backlog chart, so two charts on different ranges can't disagree.
+The backlog chart is the Waiting chart from the free [metrics page](../dashboard.md#queue-metrics), with ready, blocked and deferred jobs stacked and active jobs drawn over them. **View metrics** and the page's counts open this chart. Pro has one backlog chart, so two charts on different ranges can't disagree.
 
 Under the charts, a row of changes marks what users did through the Pro Console (from the audit log) and what the instances working the queue did. An instance mark shows when the instance started, stopped, went quiet, or started on a new pg-boss version.
 

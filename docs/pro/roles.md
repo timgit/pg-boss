@@ -17,7 +17,7 @@ An account with the admin role on all databases is a global admin, whether the g
 
 ## Access by database
 
-The accounts list answers the question people ask during an outage, which is who can act on this database and why. Choose the database in **Role on** at `/pro/accounts`. The list then shows each person or service account with a role there and counts how many hold each role. Beside each account, the list shows the role the account ends up with and the grant that role comes from, directly or through a group. Any weaker grants appear under that grant. A role granted for every database appears for each database. A disabled account shows that it has no role.
+The accounts list answers the question people ask during an outage, which is who can act on this database and why. Choose the database in the accounts list's **Role on** filter. The list then shows each person or service account with a role there and counts how many hold each role. Beside each account, the list shows the role the account ends up with and the grant that role comes from, directly or through a group. Any weaker grants appear under that grant. A role granted for every database appears for each database. A disabled account shows that it has no role.
 
 ![Who can act on a database](../images/pro/access.webp){.light-only}
 ![Who can act on a database](../images/pro/access-dark.webp){.dark-only}

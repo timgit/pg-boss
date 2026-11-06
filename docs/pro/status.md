@@ -1,6 +1,6 @@
 # Status
 
-`/pro/status` is laid out like a public status page and shows how each queue kept up on each of the last ninety days. Each queue has a strip of days and its uptime. A strip at the top of the page summarizes status across all queues.
+The **Status** page is laid out like a public status page and shows how each queue kept up on each of the last ninety days. Each queue has a strip of days and its uptime. A strip at the top of the page summarizes status across all queues.
 
 ![The status page](../images/pro/status.webp){.light-only}
 ![The status page](../images/pro/status-dark.webp){.dark-only}

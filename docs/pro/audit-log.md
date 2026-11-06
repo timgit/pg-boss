@@ -1,6 +1,6 @@
 # Audit log
 
-`/pro/audit` lists every change made through the Pro Console and the [Pro API](./api.md), newest first, except the job calls a service account isn't [set to record](./api-tokens.md). Each row shows who made the change, what it was, the database it was made in, and when. Only [global admins](./roles.md#global-admin) see the page. An entry's page shows the state on either side of the change and the address it came from.
+The **Audit log** lists every change made through the Pro Console and the [Pro API](./api.md), newest first, except the job calls a service account isn't [set to record](./api-tokens.md). Each row shows who made the change, what it was, the database it was made in, and when. Only [global admins](./roles.md#global-admin) see the page. An entry's page shows the state on either side of the change and the address it came from.
 
 ![The audit log](../images/pro/audit-log.webp){.light-only}
 ![The audit log](../images/pro/audit-log-dark.webp){.dark-only}

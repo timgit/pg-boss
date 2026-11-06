@@ -1,6 +1,6 @@
 # Operations
 
-**Operations** (`/pro/ops`) runs one verb (retry, cancel, resume or delete)
+**Operations** runs one verb (retry, cancel, resume or delete)
 over every job matching a filter at once. It's the page for the morning after
 a bad deploy. The same page also runs a [redrive](#redrive) out of a dead letter
 queue and a [purge](#purge) that empties a queue.
@@ -51,7 +51,7 @@ still matches.
 - Deleted jobs are gone. The page warns that there is no undo.
 
 The page saves a filter by name, so a user can apply it again from the top of the page.
-**Operation history** (`/pro/ops/history`, linked from the page header) lists
+**Operation history** in the page header lists
 every operation on the database from the last 90 days, newest first, and shows how
 each operation ended. Filter it by action or by how the operations ended. For
 [global admins](./roles.md#global-admin), each row links to its entries in the audit log.

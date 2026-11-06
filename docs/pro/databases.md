@@ -4,7 +4,7 @@ Pro shows one connected database at a time. Every page about a database shows it
 dot at the start of the top bar. When `DATABASE_URL` lists more than one database, a menu
 there switches between them.
 
-`/pro/databases` is visible only to [global admins](./roles.md#global-admin) and lists each database by its id. A global admin sets a
+**Settings › Databases** is visible only to [global admins](./roles.md#global-admin) and lists each database by its id. A global admin sets a
 friendly name, such as Production or Test, with the pencil beside a database. A name saves when you press Enter or
 leave the field, and falls back to the id when it's empty. A color saves when you pick it.
 Names show in the database menu, in alert emails and webhook

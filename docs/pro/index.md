@@ -37,7 +37,7 @@ Pro is built and supported by the author of pg-boss. Upgrading from the [free da
   <figure>
     <img class="light-only" src="../images/pro/tile-status.webp" :data-zoom-src="status" alt="The status page">
     <img class="dark-only" src="../images/pro/tile-status-dark.webp" :data-zoom-src="statusDark" alt="The status page">
-    <figcaption><a href="/pro/status">Status page</a>Each queue's health day by day, with each day's states and alerts in time order.</figcaption>
+    <figcaption><a href="/pro/status">Status page</a>Each queue's health day by day, with each day's verdicts and alerts in time order.</figcaption>
   </figure>
   <figure>
     <img class="light-only" src="../images/pro/tile-hex.webp" :data-zoom-src="queuesHex" alt="Every queue as a hexagon colored by its health">

@@ -66,7 +66,7 @@ Every queue in the schema with its policy and cached counts (queued, deferred, r
 
 ### Queue metrics
 
-One queue's counts over time (`/queues/:name/metrics`). Two charts plot what pg-boss records in `queue_stats`:
+One queue's counts over time. Two charts plot what pg-boss records in `queue_stats`:
 
 - **Waiting**: every job not started yet, stacked by why it waits (ready, blocked by a flow parent, or deferred). Together they are the queue's queued count. Blocked is queued less ready and deferred, so it needs nothing more from pg-boss.
 - **Active and failed**: jobs being worked, and failures still stored. **Show total stored** adds every job the queue holds.

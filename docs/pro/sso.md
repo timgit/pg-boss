@@ -1,6 +1,6 @@
 # Single sign-on
 
-At `/pro/sso`, a global admin points Pro at any OpenID Connect provider, such as Okta,
+Under **Settings › SSO**, a global admin points Pro at any OpenID Connect provider, such as Okta,
 Entra, Google, Auth0 or Keycloak. The page runs in the order you set it up:
 
 - **Login page** names the **Sign in with…** button.

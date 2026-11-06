@@ -1,6 +1,6 @@
 # Destinations
 
-Destinations live in Settings (`/pro/destinations`) and are shared by the rules of every
+Destinations live under **Settings › Destinations** and are shared by the rules of every
 database. A destination is an email, a webhook, or PagerDuty. **Send
 test** sends a sample alert that fires and then resolves, to show the
 receiver handling both.
