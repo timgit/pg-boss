@@ -352,7 +352,7 @@ const { app, boss } = await createProxyService({
 - `authorize` runs after `middleware`, so it sees anything a middleware set on the context. It runs before the proxy validates the request body or query.
 - Return `true` to let the call through. `false` refuses it with `403 Forbidden`. `{ status, message }` refuses it with that status. Anything else, including returning nothing, refuses the call with `403`.
 - The refusal keeps any headers you set on the context before returning, such as `WWW-Authenticate`.
-- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec aren't API routes, so requests for them never reach `authorize`.
+- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec aren't API routes, so requests for them don't reach `authorize`.
 - An `authorize` hook that throws answers `500`. The response includes the message only when `exposeErrors` is on.
 - Methods removed by `routes.allow` or `routes.deny` have no route, so they answer `404` before `authorize` is called.
 

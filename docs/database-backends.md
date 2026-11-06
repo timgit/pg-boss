@@ -202,7 +202,7 @@ The [CLI](cli#migrate) runs the same builds directly after the migration.
   its transaction opens. The error names where the setting came from.
 - When something takes the claim away mid-handler and the handler then settles the job itself
   through `tx`, that settle comes back as a raw `40001` retry error instead of `affected: 0`. The
-  transaction rolls back either way, so the handler's writes never land beside a job that is about
+  transaction rolls back either way, so the handler's writes don't land beside a job that is about
   to run again. Only the error the job records differs from the message PostgreSQL produces.
 
 **Because `cockroachdb` disables table partitioning:**
@@ -265,7 +265,7 @@ they run in every mode.
 
 ### Tested: Citus (compatible in standard mode)
 
-Citus is a PostgreSQL extension that can shard tables across nodes. pg-boss never calls
+Citus is a PostgreSQL extension that can shard tables across nodes. pg-boss doesn't call
 `create_distributed_table()`, so its tables stay **local to the coordinator** and behave like plain
 PostgreSQL. The **full pg-boss test suite passes** against a single-node Citus coordinator
 (`citusdata/citus`, PostgreSQL 18 + Citus 14) with the `citus` extension loaded and **no special
@@ -389,7 +389,7 @@ await boss.createQueue('email')
 await boss.send('email', { to: 'user@example.com' })
 ```
 
-As with PGlite, you own the client. pg-boss never calls `end()` on it.
+As with PGlite, you own the client. pg-boss doesn't call `end()` on it.
 
 #### Enqueueing inside a transaction
 

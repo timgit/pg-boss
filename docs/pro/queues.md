@@ -76,6 +76,6 @@ Under the charts, a row of changes marks what users did through the Pro Console 
 ![A queue's page](../images/pro/queue.webp){.light-only}
 ![A queue's page](../images/pro/queue-dark.webp){.dark-only}
 
-If a queue's `deleteAfterSeconds` is shorter than the monitor pass, the queue deletes finished jobs before the monitor counts them. The page warns about the short `deleteAfterSeconds` above the charts. Those jobs are never counted, so throughput and wait and run times read low.
+If a queue's `deleteAfterSeconds` is shorter than the monitor pass, the queue deletes finished jobs before the monitor counts them. The page warns about the short `deleteAfterSeconds` above the charts. Those jobs aren't counted, so throughput and wait and run times read low.
 
 Wait and run times need pg-boss 12.36 or later.

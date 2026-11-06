@@ -20,7 +20,7 @@ passes, from the throughput pg-boss counts with `persistQueueStats`. Without tha
 option, or when its counts don't cover those passes (as just after a supervisor
 starts), Pro reads the queue's ready count at each pass. A fall between two
 passes is activity. That count is net, so canceling or deleting ready jobs also
-lowers it. A consumer slower than arrivals never lowers it. If pg-boss's monitor
+lowers it. A consumer slower than arrivals doesn't lower it. If pg-boss's monitor
 hasn't refreshed the queue's counts in its last three passes, the check skips the
 queue until the monitor refreshes them.
 

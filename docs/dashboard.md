@@ -129,7 +129,7 @@ Every warning pg-boss emitted while [`persistWarnings`](#enabling-warning-persis
 
 Dashboard 2.x reads a database on pg-boss schema version 32 or later (pg-boss 12.21 or later), so it doesn't have to match the pg-boss your application runs. 2.0 has been run against every schema from 32 to 46 (pg-boss 12.38). Pages show what a newer schema stores, such as the count of jobs blocked by a flow parent from schema 44, and leave it out on an older schema.
 
-The dashboard does not migrate your schema, and it starts no pg-boss instance of its own, so it never appears in [`getInstances()`](./api/ops.md#getinstances-options).
+The dashboard does not migrate your schema, and it starts no pg-boss instance of its own, so it doesn't appear in [`getInstances()`](./api/ops.md#getinstances-options).
 
 Releases before 2.0 were each built for one schema version and only work against a database on that version. Opening a job on another version fails with `pg-boss database requires migrations`:
 

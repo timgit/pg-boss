@@ -196,7 +196,7 @@ Int, default 1 day
 
 How often maintenance runs against queue tables to drop queued and completed jobs.
 
-Maintenance deletes expired jobs and their leftover flow dependencies in batches. Each batch runs in its own transaction, so a large backlog never becomes one long transaction.
+Maintenance deletes expired jobs and their leftover flow dependencies in batches. Each batch runs in its own transaction, so a large backlog doesn't become one long transaction.
 
 ### `monitorIntervalSeconds`
 
@@ -242,7 +242,7 @@ Bool | object, default true
 
 Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY` during maintenance.
 
-Autovacuum reclaims heap space but never shrinks a btree, so a job index stays at the size of the largest backlog its queue has ever held. Every later vacuum then walks all of those pages, which becomes the dominant cost on a queue that has drained. pg-boss rebuilds an index only when it fails a density check, so a healthy installation never runs a rebuild.
+Autovacuum reclaims heap space but doesn't shrink a btree, so a job index stays at the size of the largest backlog its queue has ever held. Every later vacuum then walks all of those pages, which becomes the dominant cost on a queue that has drained. pg-boss rebuilds an index only when it fails a density check, so a healthy installation doesn't run a rebuild.
 
 Set to `false` to disable rebuilds. Detection keeps working, so bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommands-options) still returns the statements to run by hand. Indexes the connected role doesn't own get the same detection without rebuilds. So do `db` adapters that wrap queries in a transaction, because `REINDEX CONCURRENTLY` can't run inside a transaction.
 
@@ -255,7 +255,7 @@ Pass an object to change the thresholds:
 | `minPages` | int | 128 | Ignore indexes smaller than this many 8 kB pages |
 | `maxEntriesPerPage` | number | 5 | Live entries per page below which an index counts as bloated. A freshly built job index holds 140-170 |
 | `minSizeRatio` | number | 4 | How many times larger than its live entries need an index must be. pg-boss estimates the needed size from `pg_stats`, so it doesn't mistake a wide `singletonKey`, which legitimately packs fewer than five entries per page, for bloat |
-| `maxIndexBytes` | int | 2147483648 | Never rebuild an index larger than this |
+| `maxIndexBytes` | int | 2147483648 | Skip indexes larger than this |
 
 ```js
 const boss = new PgBoss({
@@ -264,7 +264,7 @@ const boss = new PgBoss({
 })
 ```
 
-Only [`supervise()`](./ops.md#supervise-name-options) and [`getReindexCommands()`](./ops.md#getreindexcommands-options) accept `force`, because a timer that rebuilt every job index on every interval is never what you want.
+Only [`supervise()`](./ops.md#supervise-name-options) and [`getReindexCommands()`](./ops.md#getreindexcommands-options) accept `force`, because a timer that rebuilt every job index on every interval would rebuild healthy indexes too.
 
 ### `reindexIntervalSeconds`
 
@@ -285,7 +285,7 @@ The check takes one measurement and reports two [`warning`](./events.md#warning)
 | `xmin_horizon` | vacuum runs and reclaims nothing | find and release whatever is pinning the horizon |
 | `autovacuum_disabled` | nothing is vacuuming the table at all | turn autovacuum back on, or vacuum on a schedule that keeps up |
 
-A pinned horizon is the precondition behind most reports of a Postgres queue degrading over time. The queue's own counters can't show it. A backlog caused by too few workers looks exactly like a backlog caused by vacuum reclaiming nothing. The check reads `pg_stat_user_tables` for pg-boss's own job tables across two supervise passes, so it measures the damage directly. The first pass after a horizon is pinned never warns. [Warning types](./events.md#warning-types) lists what each type fires on and what it carries.
+A pinned horizon is the precondition behind most reports of a Postgres queue degrading over time. The queue's own counters can't show it. A backlog caused by too few workers looks exactly like a backlog caused by vacuum reclaiming nothing. The check reads `pg_stat_user_tables` for pg-boss's own job tables across two supervise passes, so it measures the damage directly. The first pass after a horizon is pinned doesn't warn. [Warning types](./events.md#warning-types) lists what each type fires on and what it carries.
 
 This option has no threshold to tune. A table qualifies at the point Postgres itself would vacuum it, which is `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor × n_live_tup`. The check reads per-table storage parameters before cluster settings. The autovacuum settings set the sensitivity, so set them per table if you want one queue watched more or less closely:
 
@@ -293,7 +293,7 @@ This option has no threshold to tune. A table qualifies at the point Postgres it
 ALTER TABLE pgboss.job_common SET (autovacuum_vacuum_scale_factor = 0.05);
 ```
 
-An `xmin_horizon` warning names the holder it found. Track it down through `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. Where the connected role can't read one of those catalogs, the warning lists that catalog in `unreadableSources`, so a partial answer never passes for a clean answer.
+An `xmin_horizon` warning names the holder it found. Track it down through `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. Where the connected role can't read one of those catalogs, the warning lists that catalog in `unreadableSources`, so a partial answer can't pass for a clean answer.
 
 Not available on CockroachDB, which reclaims on its own schedule rather than from the oldest live snapshot.
 
@@ -393,4 +393,4 @@ pg-boss doesn't re-parse the values it reads back, so whatever a global [`pg-typ
 The common case is a `timestamptz` parser that returns something other than a `Date`, such as `Temporal.Instant` or Luxon's `DateTime`. pg-boss does its own timestamp arithmetic in SQL rather than in JavaScript, so it supports such a parser. Such a parser has two consequences:
 
 * Types that document a `Date`, such as `capturedOn` on [`getQueueStats()`](./queues.md#getqueuestats-name-options) or `createdOn` on a job, will hold whatever your parser returned. The declared type describes what the default parser produces, and pg-boss doesn't convert values to it.
-* A value that throws on coercion is safe to hand back, because pg-boss never coerces such a value. Every `Temporal` type throws from `valueOf` by design.
+* A value that throws on coercion is safe to hand back, because pg-boss doesn't coerce such a value. Every `Temporal` type throws from `valueOf` by design.

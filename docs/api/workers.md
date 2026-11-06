@@ -47,7 +47,7 @@ By default, a worker fetches 1 job every 2 seconds.
   Each `JobResult` is `{ id, status, output? }` where `id` matches a job from the batch, `status` is `'completed'`, `'failed'`, or `'deadletter'`, and `output` is stored on that job (the completion result, or the failure detail). Notes:
 
   - **`deadletter`** fails the job for good and sends it straight to the queue's dead letter queue, skipping any retries it has left. The `output` goes with it to the dead letter job. On a queue with no dead letter queue, the job fails for good, as a `failed` job with no retries left does.
-  - A job the handler leaves out of the array is **failed** with the error `no disposition returned by handler`. The job then retries or goes to the dead letter queue under the queue's settings. pg-boss never assumes a result.
+  - A job the handler leaves out of the array is **failed** with the error `no disposition returned by handler`. The job then retries or goes to the dead letter queue under the queue's settings. pg-boss doesn't assume a result.
   - **Throwing** from the handler still fails the whole batch, as it does without `perJobResults`. Report a failed job in the returned array, and throw only for an error that affects the whole batch.
   - Resolving with anything other than an array fails the whole batch.
 
@@ -91,7 +91,7 @@ By default, a worker fetches 1 job every 2 seconds.
 
   The default leaves the handler's own timeout and its rollback all the time they need, so the server gives up only once neither has run. pg-boss sets it as `transaction_timeout` where the server has that setting (PostgreSQL 17+, CockroachDB). Elsewhere it sets `idle_in_transaction_session_timeout`, which bounds the gaps between the handler's statements, not the whole transaction. Either way the server drops the connection, the batch rolls back, and the job retries under its own retry policy.
 
-  pg-boss never widens a bound the connection already has. Where a role, a managed provider or a pooler has set the GUC to something stricter, that value stands and this option can't raise it. Transactional handlers run the longest transactions pg-boss opens, so they're the last place to relax someone else's limit. If pg-boss can't ask the server which GUC it recognizes, or can't read the connection's existing bound from `pg_settings`, it emits a [`transaction_timeout_probe`](./events.md#warning) warning once. It then runs its batches with no database-side bound and asks again a minute later.
+  pg-boss doesn't widen a bound the connection already has. Where a role, a managed provider or a pooler has set the GUC to something stricter, that value stands and this option can't raise it. Transactional handlers run the longest transactions pg-boss opens, so they're the last place to relax someone else's limit. If pg-boss can't ask the server which GUC it recognizes, or can't read the connection's existing bound from `pg_settings`, it emits a [`transaction_timeout_probe`](./events.md#warning) warning once. It then runs its batches with no database-side bound and asks again a minute later.
 
 * **priority**, bool, **deprecated, ignored since 12.30.0**
 
@@ -167,7 +167,7 @@ By default, a worker fetches 1 job every 2 seconds.
 
 * **heartbeatRefreshSeconds**, number
 
-  Custom interval in seconds at which the worker sends heartbeats for active jobs. Defaults to `heartbeatSeconds / 2` (derived from the job's heartbeat configuration). Keep it below `heartbeatSeconds`, or a job can miss its heartbeat between refreshes. `heartbeatRefreshSeconds` is set on the worker only, never on a queue or a job.
+  Custom interval in seconds at which the worker sends heartbeats for active jobs. Defaults to `heartbeatSeconds / 2` (derived from the job's heartbeat configuration). Keep it below `heartbeatSeconds`, or a job can miss its heartbeat between refreshes. `heartbeatRefreshSeconds` is set on the worker only, not on a queue or a job.
 
   The distinction between `heartbeatSeconds` and `heartbeatRefreshSeconds`:
   - `heartbeatSeconds` (queue/job level) defines the **contract**: how long before a missing heartbeat is considered a failure

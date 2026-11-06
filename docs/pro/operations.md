@@ -25,7 +25,7 @@ still matches.
 
 - Each verb only touches what it could touch on its own: retry acts on
   failures, resume on cancellations, cancel on anything unfinished, delete on
-  everything. The count follows the same rule, so it never promises more than
+  everything. The count follows the same rule, so it doesn't promise more than
   the verb does.
 - A payload value is read as JSON when it parses and as text otherwise, so
   `42` matches the number and `"42"` the string.
@@ -35,7 +35,7 @@ still matches.
 - Each recount is read-only and gives up after 10 seconds. On a large job
   table, narrow the filter to a queue or an age.
 - The operation runs in chunks beside the live queues and commits each chunk, so
-  a large operation never holds locks for minutes. **Stop after this chunk**
+  a large operation doesn't hold locks for minutes. **Stop after this chunk**
   ends the operation there and keeps what's already done. The button shows to users whose role can
   run the operation's verb on that database.
 - The page runs the operation by posting one chunk at a time, so the run needs

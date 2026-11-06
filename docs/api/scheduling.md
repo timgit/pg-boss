@@ -88,7 +88,7 @@ Any instance on a release that supports rules can read a rule. During a rolling 
 
 ## Catch-up after an outage
 
-A pass sends the occurrences of the preceding 60 seconds, so an occurrence that came due while no instance was running a pass is never sent. A deployment that was down or between deploys for an hour never sends what that hour held. The `missed` option sets what a schedule does about missed occurrences.
+A pass sends the occurrences of the preceding 60 seconds, so an occurrence that came due while no instance was running a pass isn't sent. A deployment that was down or between deploys for an hour doesn't send what that hour held. The `missed` option sets what a schedule does about missed occurrences.
 
 | `missed` | What a schedule sends for a gap |
 | --- | --- |
@@ -102,7 +102,7 @@ await boss.schedule('report', '0 3 * * *', null, { missed: 'once' })
 
 The gap runs from the last time any instance ran a cron pass to the moment the due window opens. pg-boss records the time of that last pass on its version row. Passes run every `cronMonitorIntervalSeconds` (30 by default, 45 at the ceiling) against a 60-second window, so a deployment that keeps running has no gap and the option costs it nothing. A gap opens when the passes stop: the deployment is down, in the middle of a deploy, or running with `schedule: false`.
 
-A schedule never catches up on time before its own row was written. `created_on` bounds the range, so a schedule written while nothing was running catches up only from when it was written. Re-running `schedule()` for an existing `(name, key)` leaves that bound where it is, so a deployment that registers its schedules on every boot still catches up on the outage it just ended.
+A schedule doesn't catch up on time before its own row was written. `created_on` bounds the range, so a schedule written while nothing was running catches up only from when it was written. Re-running `schedule()` for an existing `(name, key)` leaves that bound where it is, so a deployment that registers its schedules on every boot still catches up on the outage it just ended.
 
 The option applies to both formats. A rule is read backwards over the gap the same way a cron expression is.
 

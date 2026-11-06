@@ -40,7 +40,7 @@ the next sign-in links the account again. Pointing Pro at a new issuer links eac
 again by its address.
 
 If the provider sends a group claim, each row of **Groups** maps one of the provider's group names onto a Pro
-group that already exists. Pro syncs only the mapped groups, so a group kept by hand is never
+group that already exists. Pro syncs only the mapped groups, so a group kept by hand isn't
 emptied because the provider doesn't list it. A token with no group claim means a
 person in no group, so Pro takes them out of every mapped group. Okta sends no
 group claim when none of the person's groups passes its filter. A claim holding one name as a string

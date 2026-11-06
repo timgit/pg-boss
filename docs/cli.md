@@ -60,7 +60,7 @@ pg-boss version --connection-string postgres://localhost/myapp
 
 Reports anything in the live schema that no longer matches what pg-boss expects. `doctor` is the CLI wrapper around [`detectSchemaDrift()`](api/ops#detectschemadrift), whose docs cover what the check compares and what each backend skips.
 
-Exits `0` when the schema is clean and `1` when drift is found or pg-boss is not installed, so it can gate a deploy. Extra-index warnings never change the exit code.
+Exits `0` when the schema is clean and `1` when drift is found or pg-boss is not installed, so it can gate a deploy. Extra-index warnings don't change the exit code.
 
 ```bash
 pg-boss doctor --connection-string postgres://localhost/myapp

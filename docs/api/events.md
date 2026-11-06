@@ -70,7 +70,7 @@ pg-boss emits `handler_overrun` once per batch, but a handler that overruns on e
 
 ### Startup and configuration warnings
 
-These warnings describe how this instance is set up. Each fires when the instance starts, a worker registers, or a transactional worker first runs. They'd fire again on every restart, so pg-boss emits them as events only and never writes them to the `warning` table. Log them from a `warning` listener at startup.
+These warnings describe how this instance is set up. Each fires when the instance starts, a worker registers, or a transactional worker first runs. They'd fire again on every restart, so pg-boss emits them as events only and doesn't write them to the `warning` table. Log them from a `warning` listener at startup.
 
 | Type | Description | Data Properties |
 |------|-------------|-----------------|

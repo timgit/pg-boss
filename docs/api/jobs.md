@@ -123,7 +123,7 @@ You can also set every retry, expiration and retention option on the queue. Each
 
   Any other string is read as a relative delay from now in Postgres interval syntax, so
   `'5 minutes'`, `'1 hour'`, `'PT1H'` and `'90'` (bare seconds) are all valid. A string that begins
-  with a calendar date but isn't a valid date time (`'2027-13-45'`) is an error and is never read as a delay.
+  with a calendar date but isn't a valid date time (`'2027-13-45'`) is an error and isn't read as a delay.
 
   The ISO 8601 year-month and ordinal date formats are *not* recognized as date times.
   They're valid Postgres intervals, so pg-boss reads them as long delays and doesn't reject them:
@@ -370,7 +370,7 @@ interface JobInsert<T = object> {
 
 Each field works like the `send()` option of the same name, so a `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
 
-Returns a `Promise<string[] | null>`. Without `returnId: true` and with spies off, it resolves to `null`. With `returnId: true`, it resolves to the ids of the jobs that were inserted, or to `null` when no jobs were inserted (an empty input array included). It never resolves to an empty array. The example below adds `?? []` to always get an array back.
+Returns a `Promise<string[] | null>`. Without `returnId: true` and with spies off, it resolves to `null`. With `returnId: true`, it resolves to the ids of the jobs that were inserted, or to `null` when no jobs were inserted (an empty input array included). It doesn't resolve to an empty array. The example below adds `?? []` to always get an array back.
 
 Behind the scenes, `insert()` is a single `INSERT` statement. An error on any job (a value of the wrong type, for example) rolls back the whole batch. pg-boss skips a job that conflicts with an existing job and still inserts the rest of the batch. Conflicts are a duplicate `id`, a second job in the same `singletonSeconds` throttle slot, or a second queued job for the same `singletonKey` on a queue whose [policy](./queues#createqueue-name-queue) accepts only one queued job per key (`short`, `stately` or `exclusive`). The returned ids can then be fewer than the jobs passed in. They also aren't guaranteed to line up with the input by position. To match input jobs to output ids, set each job's `id` in the input array. Use [`flow()`](#flow-jobs-options) when the batch must be all or nothing, since it rolls back if any job is skipped. With a custom `db`, the insert commits or rolls back with your transaction.
 
@@ -611,7 +611,7 @@ such a job runs it again on its own without resuming the original flow.
   way as [`findJobs()`](#findjobs-name-options).
 - `createdBefore`: only redrive jobs that arrived in the dead letter queue before
   this `Date`. Pass the same value to every call of a loop to drain a fixed set,
-  so jobs dead-lettered while it runs are never swept in.
+  so jobs dead-lettered while it runs aren't swept in.
 - `ids`: only redrive these jobs, by their id in the dead letter queue.
 - `limit`: maximum number of jobs to move in this call, oldest first (default
   `1000`). Loop or schedule repeated calls to drain large dead letter queues at a
@@ -629,7 +629,7 @@ In a dead letter queue with the `key_strict_fifo` policy, only the oldest collis
 `singletonKey` is failed. Jobs with a key that an active, retrying or failed job holds
 aren't redrive candidates until that job is resolved, which is the same rule fetch follows.
 
-`redrive()` never moves jobs that a dead letter queue's own workers have already failed.
+`redrive()` doesn't move jobs that a dead letter queue's own workers have already failed.
 Only jobs still waiting there are candidates. The return value counts only the jobs
 re-created. If every waiting job collided, a call returns `0` even though jobs remained.
 The collided jobs are now failed, so the next call moves on.
@@ -774,7 +774,7 @@ await boss.retry('email-send', ids)
 
 ### Passing jobs instead of ids
 
-`complete()`, `fail()`, `touch()`, `cancel()` and `deleteJob()` accept the jobs `fetch()` returned in place of their ids, or any object with the job's `id` and `retryCount`. The call then applies only to the attempt that was fetched. If the claim lapsed in the meantime (the job expired or missed its heartbeat, and another worker retried it), pg-boss leaves the job alone and reports it as not affected. The newer attempt never gets the older attempt's outcome.
+`complete()`, `fail()`, `touch()`, `cancel()` and `deleteJob()` accept the jobs `fetch()` returned in place of their ids, or any object with the job's `id` and `retryCount`. The call then applies only to the attempt that was fetched. If the claim lapsed in the meantime (the job expired or missed its heartbeat, and another worker retried it), pg-boss leaves the job alone and reports it as not affected. The newer attempt doesn't get the older attempt's outcome.
 
 ```js
 const [job] = await boss.fetch('report-generation')

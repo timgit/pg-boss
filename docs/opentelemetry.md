@@ -32,7 +32,7 @@ A `process` span covers the handler and the completion or failure pg-boss record
 
 Trace context propagation is off until you set `propagateContext`. The parent and link rules below need `propagateContext`. Without it, each `process` span starts a trace of its own.
 
-When a worker processes one job at a time, the `process` span is a child of the job's `send` span. Baggage active at `send()` is then active in the handler too. A batch (`batchSize` above 1) starts a trace of its own and links to the `send` span of every job in it. `receive` spans link the same way. pg-boss never uses the trace context `work()` was called in as a parent, because the worker loop runs long after the call that started it.
+When a worker processes one job at a time, the `process` span is a child of the job's `send` span. Baggage active at `send()` is then active in the handler too. A batch (`batchSize` above 1) starts a trace of its own and links to the `send` span of every job in it. `receive` spans link the same way. pg-boss doesn't use the trace context `work()` was called in as a parent, because the worker loop runs long after the call that started it.
 
 A worker's own polling has no span, since a span per empty poll would bury the traces that matter. A handler that throws ends its `process` span with an error status, the exception recorded as an event, and `error.type` set. When a handler outruns its timeout, pg-boss ends the span the same way when it fails the batch, even if the handler goes on running.
 
