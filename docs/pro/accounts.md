@@ -1,16 +1,7 @@
 # Accounts and groups
 
-Pro authenticates each user with their own account. On first run it has no
-accounts, so open the setup link Pro prints to its log and create the first
-administrator (see [install](./install.md)). That page closes for good the
-moment the first account exists. After that, sign in at `/login`,
+Pro authenticates each user with their own account. Users sign in at `/login`
 and sign out from the account menu (the picture or initials at the top right).
-
-Accounts, sessions and role assignments live in Pro's own schema, `pgboss_pro`
-by default. The schema sits in the first configured database, unless
-`PGBOSS_PRO_DATABASE_URL` says otherwise. The server creates and migrates it at
-startup. Pro's schema is separate from the `pgboss` schema the queue uses, so nothing here
-touches the job tables.
 
 [Roles and access](./roles.md) lists what each role may do.
 
