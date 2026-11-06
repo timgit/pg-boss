@@ -166,6 +166,25 @@ describe('db.server', () => {
 
       await getPool(cs).end()
     })
+
+    it('sets statement_timeout on the session instead of as a startup parameter', async () => {
+      vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', '12345')
+      const { getPool } = await import('~/lib/db.server')
+      const cs = ctx.connectionString + '?application_name=session_timeout_test'
+      const pool = getPool(cs)
+
+      // pg sends a statement_timeout pool option in the startup packet, which some proxies like RDS Proxy reject
+      expect((pool.options as { statement_timeout?: unknown }).statement_timeout).toBeUndefined()
+
+      const client = await pool.connect()
+      try {
+        const { rows } = await client.query('SHOW statement_timeout')
+        expect(rows[0].statement_timeout).toBe('12345ms')
+      } finally {
+        client.release()
+        await pool.end()
+      }
+    })
   })
 
   describe('pool error handling', () => {
