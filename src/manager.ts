@@ -1681,6 +1681,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.db.executeSql(sql, [event, name])
   }
 
+  async getSubscriptions (event?: string, limit?: number, after?: Pick<types.Subscription, 'event' | 'name'>): Promise<types.Subscription[]> {
+    const limited = limit !== undefined
+    const paging = [...(after ? [after.event, after.name] : []), ...(limited ? [limit] : [])]
+    const sql = event
+      ? plans.getSubscriptionsByEvent(this.config.schema, limited, !!after)
+      : plans.getSubscriptions(this.config.schema, limited, !!after)
+    const { rows } = await this.db.executeSql(sql, event ? [event, ...paging] : paging)
+    return rows
+  }
+
   publish (event: string, data?: object, options?: types.SendOptions): Promise<void>
   async publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     assert(event, 'Missing required argument')
