@@ -1993,6 +1993,32 @@ export function unsubscribe (schema: string) {
   `
 }
 
+const SUBSCRIPTION_COLUMNS = `
+  event,
+  name,
+  created_on as "createdOn",
+  updated_on as "updatedOn"
+`
+
+export function getSubscriptions (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SUBSCRIPTION_COLUMNS} FROM ${schema}.subscription
+    ${after ? 'WHERE (event, name) > ($1, $2)' : ''}
+    ORDER BY event, name
+    ${limited ? `LIMIT $${after ? 3 : 1}` : ''}
+  `
+}
+
+export function getSubscriptionsByEvent (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SUBSCRIPTION_COLUMNS} FROM ${schema}.subscription
+    WHERE event = $1
+      ${after ? 'AND (event, name) > ($2, $3)' : ''}
+    ORDER BY name
+    ${limited ? `LIMIT $${after ? 4 : 2}` : ''}
+  `
+}
+
 export function getQueuesForEvent (schema: string) {
   return `
     SELECT name FROM ${schema}.subscription

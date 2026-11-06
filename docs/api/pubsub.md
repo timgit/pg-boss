@@ -35,3 +35,28 @@ Remove the subscription of queue `name` to `event`.
 ```js
 await boss.unsubscribe('user.signed-up', 'crm-sync')
 ```
+
+### `getSubscriptions(event?, options)`
+
+Returns subscriptions, sorted by event and queue name. Pass an event to read only that event's subscriptions.
+
+`options` takes `limit`, from 1 to 100,000 with a default of 1000, and `after`, the last row of the previous page.
+
+```js
+const subscriptions = await boss.getSubscriptions()
+
+for (const { event, name } of subscriptions) {
+  console.log(`${event} -> ${name}`)
+}
+
+const signedUp = await boss.getSubscriptions('user.signed-up')
+```
+
+Each subscription carries the following properties.
+
+| Property | Description |
+| --- | --- |
+| `event` | Event the queue is subscribed to |
+| `name` | Queue that receives a job when the event is published |
+| `createdOn` | When the subscription was first stored |
+| `updatedOn` | When the subscription was last written |
