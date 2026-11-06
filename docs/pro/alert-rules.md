@@ -150,10 +150,17 @@ A check rule names its check by id:
 Pro keeps every change to what a rule decides as a version. A version can't
 be changed afterward. Only the definition is versioned. Changing the name,
 destination, notification interval, on or off state, or silence adds no version.
-Saving the same definition again adds nothing. Going back to an earlier
+Saving the same definition again adds nothing. Pro compares definitions after filling in defaults
+and sorting, so reordering conditions or leaving out a default value adds nothing either. Going back to an earlier
 definition adds a new version, which the rule's history marks as the same as the earlier
 version. Each version has a page that shows its definition and what changed between
 it and the current version.
+
+**Reset to default** saves a default rule's original definition as a new version, and is disabled
+while the definition already matches it. When a Pro release changes how a check decides, Pro saves a
+new version of each rule that uses the check. The history names pg-boss Pro as the author. The
+[audit log](./audit-log.md) records the reason. Like any new version, the release's version restarts the
+hold and closes the open alerts the new logic no longer matches.
 
 A link under the rule's name, such as **Version 2 of 4**, opens the version
 history. The link is on the rule's page and on each version's page, and names the
