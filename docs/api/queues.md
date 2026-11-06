@@ -122,15 +122,15 @@ You can use both. A job that fails through either mechanism follows the same ret
 
 A worker that only looked dead (a network partition, a stalled event loop) keeps running its handler after pg-boss fails its job this way. The job can then run twice, so handlers should be idempotent. The original worker can't settle the retry, because a worker's completion, failure and heartbeat apply only to the attempt it claimed. The job's `retryCount` identifies that attempt. Once the job has been retried, pg-boss discards the original worker's result. A [transactional worker](./workers.md#work-name-options-handler) rolls its writes back. The original worker also finds out, because its next heartbeat that reaches the database aborts the job's `signal`. A handler that listens to the signal can stop early.
 
-Use a heartbeat for long-running jobs where the gap between "worker died" and "job expired" would be unacceptably large. For example, with `expireInSeconds: 7200`, pg-boss won't detect that a 2-hour video processing job failed until 2 hours after it started, even if its worker crashed right away. With `heartbeatSeconds: 60`, pg-boss detects a dead worker within a minute.
+Use a heartbeat for long-running jobs where the gap between "worker died" and "job expired" would be unacceptably large. For example, with `expireInSeconds: 7200`, pg-boss won't detect that a 2-hour video processing job failed until 2 hours after it started, even if its worker crashed right away. With `heartbeatSeconds: 60`, pg-boss detects a dead worker within about two minutes at the default intervals.
 
-Expiration alone is enough only when the expiration time is short enough that you can wait for it to trigger a retry. `expireInSeconds` is usually set well above the typical job duration, to allow for slowdowns, rate limiting, and transient errors. The default is 15 minutes, so even a quick task like sending an email could wait 15 minutes before expiration catches a dead worker. A heartbeat detects the dead worker in seconds, however long the expiration is.
+Expiration alone is enough only when the expiration time is short enough that you can wait for it to trigger a retry. `expireInSeconds` is usually set well above the typical job duration, to allow for slowdowns, rate limiting, and transient errors. The default is 15 minutes, so even a quick task like sending an email could wait 15 minutes before expiration catches a dead worker. A heartbeat detects the dead worker within `heartbeatSeconds` plus a monitor interval, however long the expiration is.
 
 #### Recommended values
 
 Set `expireInSeconds` to the maximum time a job should ever take (allowing for the slowest conditions). Set `heartbeatSeconds` based on how quickly you need to detect a dead worker and retry.
 
-Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (default 60s), since the monitor must run to observe a stale heartbeat. Setting `heartbeatSeconds` below `monitorIntervalSeconds` gains nothing.
+Actual detection time is `heartbeatSeconds` plus up to the longer of [`monitorIntervalSeconds`](./constructor.md#monitorintervalseconds) and [`superviseIntervalSeconds`](./constructor.md#superviseintervalseconds), which both default to 60 seconds. pg-boss finds a stale heartbeat only when the monitor next checks the queue, so detection in seconds needs both intervals lowered too.
 
 | Job type | `expireInSeconds` | `heartbeatSeconds` | Dead worker detected in |
 | - | - | - | - |

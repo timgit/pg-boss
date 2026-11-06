@@ -15,8 +15,9 @@ it.
 ![The destinations page](../images/pro/destinations-dark.webp){.dark-only}
 
 Pro sends every alert to its destinations when it fires and again when it
-closes, whichever way it closes: the condition ended, a user resolved or acknowledged an event, an event
-expired, or its rule changed, was turned off or was deleted. A resolve goes once, and only
+closes, whichever way it closes: the condition ended, a user resolved it, an event
+expired, or its rule changed, was turned off or was deleted. Acknowledging an event also sends
+the resolve, while the event stays open in Pro. A resolve goes once, and only
 to the destinations the fire went to. A fire or resolve that fails to send is tried again on
 each evaluation pass until it goes or has had five attempts in all.
 

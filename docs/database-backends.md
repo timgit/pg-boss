@@ -123,7 +123,7 @@ CockroachDB:
   fetch time, which is typical for job queues.
 
 - **`noMultiMutationCte`** is about the *write* path. pg-boss's `complete`, `fail`, and supervisor
-  expiry normally run as a single CTE that mutates more than one table at once (e.g. completing a
+  expiry normally run as a single CTE that mutates the job table more than once (e.g. completing a
   job and unblocking its flow dependents). CockroachDB rejects such a CTE with `multiple mutations of the
   same table "job" are not supported`. With `noMultiMutationCte`, those operations run as separate
   statements inside one transaction instead, so a job can't be lost between them.
@@ -413,8 +413,9 @@ Without Drizzle, wrap a `sql.begin()` transaction the same way `fromBunSql` wrap
 
 #### Driver differences
 
-Three `Bun.SQL` behaviors differ from `pg` in ways pg-boss would otherwise trip over. The adapters
-handle them, so you don't need to do anything. They're listed because the first explains the shape
+Three `Bun.SQL` behaviors differ from `pg` in ways pg-boss would otherwise trip over. You don't need
+to do anything about them. The adapters handle array parameters and error codes. pg-boss's own SQL
+handles parameter type inference. They're listed because the first explains the shape
 of the queries you'll see in `pg_stat_statements`, and because the first two are upstream bugs that
 a later Bun release may fix.
 
@@ -460,7 +461,7 @@ findings.
 `DeprecationWarning` (code `PGBOSS_DEP_YUGABYTEDB`). Run with `--trace-deprecation` to find where it
 is set.
 
-**Use `backend: 'yugabytedb'`.** It enables `noAdvisoryLocks`, `noTablePartitioning`,
+**Until the next major, set `backend: 'yugabytedb'` to run on YugabyteDB.** It enables `noAdvisoryLocks`, `noTablePartitioning`,
 `noIndexProgressView`, `noReindex` and `noMonitorVacuum`, and keeps the standard fetch mode. YugabyteDB does **not** need `noSkipLocked` or `noMultiMutationCte` (it has
 neither CockroachDB's `SKIP LOCKED` issues nor the multi-mutation CTE restriction). The suite was
 last run against a single-node YugabyteDB (`docker compose -f docker-compose.yugabyte.yaml up -d`,

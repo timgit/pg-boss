@@ -252,7 +252,7 @@ await boss.sendDebounced('reindex-document', { docId: 'doc-1' }, null, 30, 'doc-
 
 ### `update(name, data, options)`
 
-Updates the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`). Jobs that are already `active`, `completed`, or otherwise terminal can't be updated. If nothing matches, it resolves with an empty `jobs` array and `updated: 0`.
+Updates the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`). Jobs in any other state, `active` included, can't be updated. If nothing matches, it resolves with an empty `jobs` array and `updated: 0`.
 
 Target the job with **exactly one** of:
 

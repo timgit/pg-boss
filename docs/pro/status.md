@@ -7,9 +7,9 @@
 
 ## Recording
 
-Pro's alert evaluator runs once a minute. On each pass it judges every queue's [health](./queues.md#health) over the last hour and records the verdict in Pro's own tables, because pg-boss keeps a week of stats and this page shows ninety days. A pass credits up to 3 minutes since the previous pass to the state the queue was last seen in. A new state starts at the pass that first sees it, so every stretch starts and ends on a pass. A queue too quiet or too new to judge isn't recorded for that time.
+Pro's alert evaluator runs once a minute. On each pass it judges every queue's [health](./queues.md#health) over the last hour and records the verdict in Pro's own tables, because pg-boss keeps stats for [`queueStatRetentionDays`](../api/constructor.md#queuestatretentiondays) (7 by default) and this page shows ninety days. A pass credits up to 3 minutes since the previous pass to the state the queue was last seen in. A new state starts at the pass that first sees it, so every stretch starts and ends on a pass. A queue too quiet or too new to judge isn't recorded for that time.
 
-When more than 3 minutes go by without a pass, as when Pro was stopped, the next pass replays the gap a minute at a time from the stats pg-boss kept. Each minute is judged as the evaluator would have judged it live. Time pg-boss has no stats for stays unrecorded. The first pass against a database replays as far back as those stats go, so history starts with the week pg-boss already holds. Pro deletes history older than ninety days. The page header says when the last pass finished.
+When more than 3 minutes go by without a pass, as when Pro was stopped, the next pass replays the gap a minute at a time from the stats pg-boss kept. Each minute is judged as the evaluator would have judged it live. Time pg-boss has no stats for stays unrecorded. The first pass against a database replays as far back as those stats go, so history starts with the stats pg-boss already holds (a week by default). Pro deletes history older than ninety days. The page header says when the last pass finished.
 
 ## Days
 

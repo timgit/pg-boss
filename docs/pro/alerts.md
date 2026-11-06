@@ -28,7 +28,8 @@ more, a link there opens this list filtered to that rule.
 
 Operators and admins can **acknowledge** an open alert, until it closes
 or for an hour, four hours or a day. The alert then leaves the bell's count for every user.
-Pro also holds the alert's notifications. Conditions, such as a stalled queue, close by
+Pro also holds the alert's notifications. For an event, acknowledging sends its resolve to the
+destinations, as closing does. Conditions, such as a stalled queue, close by
 themselves when they stop matching. Events, such as a pg-boss warning or a failed
 operation, have no condition that could stop matching. An event closes when a user
 resolves it or 24 hours after the event last happened, so a warning that keeps
