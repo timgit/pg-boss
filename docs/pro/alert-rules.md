@@ -6,7 +6,7 @@ Every database starts with one rule for each check Pro can run. Five are on:
 
 - **Queue stalled or falling behind**: the queue's health verdict, read from its
   throughput.
-- **Queue with no workers**: jobs are ready and nothing has taken one for two
+- **Queue with no workers**: jobs are ready and nothing has taken a job for two
   monitor passes.
 - **No live instance supervising**: nothing is running pg-boss's maintenance.
 - **An operation failed**: an operation that failed, or a redrive that left
@@ -18,14 +18,14 @@ a queue drained with `fetch()` and `complete()` counts as worked. A job active a
 the last monitor pass is activity. So is a job completed or failed in the last two
 passes, from the throughput pg-boss counts with `persistQueueStats`. Without that
 option, or when its counts don't cover those passes (as just after a supervisor
-starts), Pro reads the queue's ready count at each pass, and a fall between two
+starts), Pro reads the queue's ready count at each pass. A fall between two
 passes is activity. That count is net, so canceling or deleting ready jobs also
-lowers it, and a consumer slower than arrivals never does. If pg-boss's monitor
+lowers it. A consumer slower than arrivals never lowers it. If pg-boss's monitor
 hasn't refreshed the queue's counts in its last three passes, the check skips the
-queue until it does.
+queue until the monitor refreshes them.
 
 The alert says which pg-boss instances have a `work()` on the queue. When no
-live instance has one, it names the last instance that did and how long that
+live instance has a `work()` on the queue, the alert names the last instance that did and how long that
 instance has been quiet.
 
 The [instance](./instances.md) checks start off:
@@ -40,7 +40,7 @@ The [instance](./instances.md) checks start off:
 - **An instance near its memory limit**
 
 No rule sends a notification until it has a [destination](./destinations.md).
-Their alerts still open and appear on the [Alerts](./alerts.md) page. A default
+Alerts from a rule with no destination still open and appear on the [Alerts](./alerts.md) page. A default
 rule can be edited and turned off,
 but never deleted. **Reset to default** puts back its original definition.
 A database added to `DATABASE_URL` later gets its default rules on the
@@ -59,47 +59,47 @@ evaluator's next pass.
 - **Threshold** compares a queue's metrics with numbers set on the rule. Conditions
   combine with *all* or *any*, with one level of grouping inside, as in "ready
   above 1,000 and (p95 wait above 10 minutes or nothing completing)". The metrics
-  are queued, ready, active, deferred, blocked and total jobs, from pg-boss's
-  cached counts. The stats pg-boss keeps add jobs arriving, completing and failing
-  per minute, the oldest ready job's wait, p95 wait and p95 run time, a p95 from
+  from pg-boss's cached counts are queued, ready, active, deferred, blocked and
+  total jobs. The stats pg-boss keeps add jobs arriving, completing and failing
+  per minute, the oldest ready job's wait, p95 wait and p95 run time. Each p95 comes from
   at least 20 jobs. No rule counts the job table itself. A metric with no data,
   such as p95 wait when fewer jobs finished, neither matches nor resolves. An
-  open alert stays open until the data comes back, unless the rest of the rule
-  decides it alone.
+  open alert stays open until the data comes back, unless the rule's other
+  conditions decide the result without that metric.
 - **Check** is one of the built-in checks above with its settings: which health
   verdicts count and over which interval, how many ready jobs a queue with no
   workers needs before it counts, how many restarts make a loop.
-- **Warning** turns pg-boss warnings into alerts: every type or only the ones the rule names,
-  on every queue or some.
+- **Warning** turns pg-boss warnings into alerts. The rule matches every warning type or only
+  the types it names, on every queue or only some queues.
 - **Operation** raises an alert for each failed operation and for each redrive
-  that left [collisions](./operations.md#redrive), jobs the destination refused.
+  that left [collisions](./operations.md#redrive), which are jobs the destination queue refused.
 
-A health alert on a queue whose stats stop, because its supervisors are down
-or its stats are off, stays open. It resolves as deleted only when the queue is
+A health alert stays open when a queue's stats stop because its supervisors
+are down or its stats are off. It resolves as deleted only when the queue is
 gone from pg-boss.
 
 A threshold or check raises an alert only once it has held for the number of
 minutes the rule sets. Every rule has a severity, critical or watch.
 
-Queue rules apply to every queue, to a list, or to names matching patterns, less
-any exceptions. A pattern uses `*` for any run of characters and `?` for exactly
-one, and matches the whole name. `/` isn't special, so `billing-*` matches
+Queue rules apply to every queue, to a list, or to names matching patterns, and
+leave out any queues listed as exceptions. A pattern uses `*` for any run of characters and `?` for exactly
+one character, and matches the whole name. `/` isn't special, so `billing-*` matches
 `billing-eu/retry`. When two rules that are turned on watch the same queues the
-same way, the rule's page names the other one. Each rule raises its own alert.
+same way, each rule's page names the other rule. Each rule raises its own alert.
 
-The rule's page also sets where the rule sends, and how often at most it notifies
-about the same thing (60 minutes by default). A threshold or check that resolved
+The rule's page also has settings for where the rule sends and how often at most
+it notifies about the same thing (60 minutes by default). A threshold or check that resolved
 and then matches again notifies at once, because the resolve closed the incident
-on call. The rule's hold is what keeps a queue that keeps flipping from notifying
+on call. The rule's hold keeps a queue that flips back and forth from notifying
 on every change. The page's **Silence 1h** button
 is for a deploy or a maintenance window. A silenced rule still opens alerts but
-sends no notifications, and the silence ends by itself.
+sends no notifications. The silence ends by itself.
 
 ## JSON definitions
 
 The **JSON** switch on the editor shows the same rule as its definition. The
 editor checks each edit against the schema that parses every save, so a
-message under the editor is the one a save would give, at the path it applies to.
+message under the editor matches the message a save would give and names the path it applies to.
 Unknown keys are errors. Each metric has one fixed unit (jobs, per minute or
 seconds), so `"value": 600` on `waitP95Seconds` is ten minutes.
 
@@ -147,27 +147,27 @@ A check rule names its check by id:
 
 ## Versions
 
-Pro keeps every change to what a rule decides as a version, and a version can't
+Pro keeps every change to what a rule decides as a version. A version can't
 be changed afterward. Only the definition is versioned. Changing the name,
 destination, notification interval, on or off state, or silence adds no version.
 Saving the same definition again adds nothing. Going back to an earlier
-one adds a new version, which the rule's history marks as the same as the earlier
-one. Each version has a page that shows its definition and what changed between
-it and the current one.
+definition adds a new version, which the rule's history marks as the same as the earlier
+version. Each version has a page that shows its definition and what changed between
+it and the current version.
 
 A link under the rule's name, such as **Version 2 of 4**, opens the version
-history. It's on the rule's page and on each version's page, and names the
+history. The link is on the rule's page and on each version's page, and names the
 version on screen. The history lists every version newest first, with who saved
 it, when, and how many lines it changed from the version before.
 
 ![A rule version against the current one](../images/pro/alert-rule-version.webp){.light-only}
 ![A rule version against the current one](../images/pro/alert-rule-version-dark.webp){.dark-only}
 
-Each alert keeps the version that opened it, and its page links there. When a
-rule changes while it has open alerts, they keep their version, and from the next
-pass the evaluator judges them by the new definition. An alert that no longer matches closes as "the
+Each alert keeps the version that opened it, which the alert's page links to. When a
+rule changes while it has open alerts, those alerts keep their version. From the next
+pass, the evaluator judges them by the new definition. An alert that no longer matches closes as "the
 rule changed", so it isn't read as the problem fixing itself. Turning a rule off
-closes its alerts as "the rule was turned off", and deleting one closes them as
+closes its alerts as "the rule was turned off". Deleting a rule closes them as
 "the rule was deleted". A deleted rule's versions stay readable from the alerts
 that point at them.
 
@@ -175,9 +175,9 @@ that point at them.
 
 - Warning rules read what `persistWarnings` stores. With it off there are no
   warnings to match.
-- Health, and the per-minute rates in thresholds, read the stats
+- The health check and the per-minute rates in thresholds read the stats
   `persistQueueStats` keeps (pg-boss 12.35 or later). Waits and run times need
-  pg-boss 12.36, and so do the instance checks, which read its instance registry.
+  pg-boss 12.36, and so do the instance checks, which read pg-boss's instance registry.
 - The evaluator runs once a minute as a pg-boss job in a `<schema>_queue` schema
   of its own. A pass holds a Postgres advisory lock on Pro's store while it
   runs, so Pro replicas run one pass at a time between them and send everything
@@ -185,10 +185,10 @@ that point at them.
   session of its own, so a pooler in front of the store must not be in
   transaction mode.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
-  the Console, and tries again each minute until it runs. Mounted in a host
-  application, it starts on the first request the handler serves.
+  the Console, and tries again each minute until it runs. When Pro is mounted in a host
+  application, the evaluator starts on the first request the handler serves.
 - On SIGTERM or SIGINT, or when a host application calls the handler's
   `close()`, a pass in progress gets up to 20 seconds to finish before the
-  database connections close. A replica that dies during a pass lets the lock go
-  with its connection, so the next minute's pass runs, and pg-boss fails the
-  dead pass's job about two minutes later, once its heartbeat stops.
+  database connections close. A replica that dies during a pass releases the lock
+  with its connection, so the next minute's pass runs. pg-boss fails the
+  dead pass's job about two minutes later, once the job's heartbeat stops.

@@ -1,8 +1,8 @@
 # Metrics
 
-`/metrics` serves Prometheus metrics for the databases an [API token](./api-tokens.md)'s service account can see. The metrics come only from what pg-boss already records, without counting the job table: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
+`/metrics` serves Prometheus metrics for the databases an [API token](./api-tokens.md)'s service account can see. No metric counts the job table. The metrics come only from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
 
-Pro's queue health, Status page and alerts don't need `/metrics`. It's for a team that already
+Pro's queue health, Status page and alerts don't need `/metrics`. The endpoint is for a team that already
 collects metrics with Prometheus, or with another tool that reads the Prometheus format.
 
 | Metric | Labels | What |
@@ -20,7 +20,7 @@ collects metrics with Prometheus, or with another tool that reads the Prometheus
 | `pgboss_instance_cpu_cores` | `database`, `instance`, `name`, `host` | CPU cores its process used. |
 | `pgboss_instance_memory_bytes` | `database`, `instance`, `name`, `host` | Its process's resident memory. |
 
-Pro leaves out any figure pg-boss hasn't recorded, so it never shows up as 0. Rates and health need `persistQueueStats`. Wait times, run times and the instance metrics need pg-boss 12.36. The 0.99 quantile appears once the hour holds 100 finished jobs.
+Pro leaves out any figure pg-boss hasn't recorded, so a missing figure never shows up as 0. Rates and health need `persistQueueStats`. Wait times, run times and the instance metrics need pg-boss 12.36. The 0.99 quantile appears once the hour holds 100 finished jobs.
 
 ## Prometheus
 

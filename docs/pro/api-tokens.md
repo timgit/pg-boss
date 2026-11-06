@@ -5,25 +5,25 @@ A script, a CI job, a Prometheus scrape or a worker in another language reaches 
 - A service account has [roles](./roles.md) on databases like a person: a viewer for a scrape, an operator on one database for a CI redrive, a worker for a worker.
 - It can't sign in to the Pro Console by password, SSO or invitation. It acts only through its tokens, and only on the [Pro API](./api.md) and `/metrics`.
 - Disabling it stops every one of its tokens at once.
-- It can have several tokens, so one can be replaced with no gap: create the new one, deploy it, revoke the old one.
+- It can have several tokens, so a token can be replaced with no gap: create the new token, deploy it, revoke the old token.
 
 ## Service accounts list
 
-They live in **Settings › Accounts**, beside the people, only visible to [global admins](./roles.md#global-admin).
-**Service accounts** at the top of that list (`/pro/accounts?kind=service`) shows each one's
+Service accounts live in **Settings › Accounts**, beside the people. Only [global admins](./roles.md#global-admin) see them.
+**Service accounts** at the top of that list (`/pro/accounts?kind=service`) shows each service account's
 purpose, roles, working tokens, when it was last used and from where, and marks a token that
 expires within 14 days.
 
 ![Service accounts](../images/pro/service-accounts.webp){.light-only}
 ![Service accounts](../images/pro/service-accounts-dark.webp){.dark-only}
 
-**Add service account**, or **Add** then **Service account** on the list of every account, takes a name, a description, and a first role. Its page then shows:
+**Add service account** (or **Add** then **Service account** on the list of every account) takes a name, a description, and a first role. The service account's page then shows:
 
 - **Roles**: what its tokens may do, and on which databases. Grant and remove them here. A service
   account can't join a group.
 - **API tokens**: each with its name, its first characters, who created it, when it expires and
   when it was last used. **Create token** asks for a name and an expiry and shows the token once, to
-  copy. **Revoke** stops one at once.
+  copy. **Revoke** stops a token at once.
 - **Audit**: whether its sending, fetching, completing and failing are recorded.
 - **Using a token**: a `curl` for the API and for open alerts, with this Console's address.
 - **Recent activity**: what its tokens did, and the changes made to it.
@@ -33,7 +33,7 @@ expires within 14 days.
 
 ## Tokens
 
-A token is `pgbp_` followed by 43 characters, and Pro shows it once, at creation. Pro keeps only its hash and its first characters, to tell tokens apart. Each token expires after 30, 90 or 365 days or never, and any token can be revoked. Pro records when and where a token was last used, at most once a minute.
+A token is `pgbp_` followed by 43 characters. Pro shows it once, at creation. Pro keeps only its hash and its first characters, to tell tokens apart. Each token expires after 30, 90 or 365 days or never. Any token can be revoked. Pro records when and where a token was last used, at most once a minute.
 
 A client sends the token in an `Authorization: Bearer` header:
 

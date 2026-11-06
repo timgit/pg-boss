@@ -1,6 +1,6 @@
 # Instances
 
-The free dashboard lists every pg-boss instance registered in a database. Pro groups instances by name and host and says what needs attention across them, under the free page's Live tile. On an instance's page, it marks the pool, CPU, memory or event loop in amber when the instance is at that limit.
+The free dashboard lists every pg-boss instance registered in a database. Under the free page's Live tile, Pro groups instances by name and host and shows what needs attention across them. On an instance's page, Pro marks the pool, CPU, memory or event loop in amber when the instance is at that limit.
 
 ![The instances page](../images/pro/instances.webp){.light-only}
 ![The instances page](../images/pro/instances-dark.webp){.dark-only}
@@ -16,13 +16,13 @@ The instance [alert rules](./alert-rules.md#default-rules) decide what needs att
 - a blocked event loop
 - a process at its CPU limit or near its memory limit
 
-A queue's page names the instances working it, and its charts mark them starting, stopping and going quiet.
+A queue's page names the instances working the queue. The page's charts mark when each instance starts, stops or goes quiet.
 
 The registry needs pg-boss 12.36 or later. An instance started with `registerInstance: false` works without appearing here.
 
 ## Shared options
 
-Live instances should agree on these options, or they undo each other's work. Pro compares each one across the live instances it applies to:
+Live instances should agree on these options, or they undo each other's work. Pro compares each option across the live instances it applies to:
 
 - Every instance: `backend`, `useListenNotify`
 - Instances with `supervise` on: `superviseIntervalSeconds`, `maintenanceIntervalSeconds`, `monitorIntervalSeconds`, `bamIntervalSeconds`, `flowIntervalSeconds`, `reindex`, `reindexIntervalSeconds`, `monitorVacuum`, `persistWarnings`, `warningRetentionDays`, `persistQueueStats`, `queueStatRetentionDays`, `warningSlowQuerySeconds`, `warningQueueSize`

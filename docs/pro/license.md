@@ -21,7 +21,7 @@ What an organization may still install and use depends on its plan and how long 
 | Support | No | No |
 
 On a monthly subscription under 12 months, Pro keeps running only so that a lapse never takes a
-dashboard away without warning. Running past the end gives no right to keep using it. See section 2
+dashboard away without warning. Running past the end gives no right to keep using Pro. See section 2
 of `LICENSE`.
 
 ### Upgrading pg-boss after the subscription ends

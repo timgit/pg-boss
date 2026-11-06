@@ -8,7 +8,7 @@
 
 ## Install
 
-Pro is served from a private registry, not from npmjs. The license key is the only credential the registry needs, which is shown on the purchases page of the Polar account that bought the subscription.
+Pro is served from a private registry, not from npmjs. The license key is the only credential the registry needs. The key is shown on the purchases page of the Polar account that bought the subscription.
 
 Put both lines in the `.npmrc` of the project that installs Pro:
 
@@ -44,14 +44,14 @@ On first run there are no accounts, so Pro prints a setup link to its log:
 pg-boss Pro: no account yet. Open /setup?token=… to create the first administrator.
 ```
 
-Open it, such as `http://localhost:3000/setup?token=…`, and create the first administrator. The page refuses anyone without the token, so whoever reaches a new install first can't take it. The token is new each time the process starts. With several instances behind a load balancer, set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md) so they share one, and open `/setup?token=` followed by its value. The page closes for good once the first account exists.
+Open the setup link (for example `http://localhost:3000/setup?token=…`) and create the first administrator. The page refuses anyone without the token, so whoever reaches a new install first can't take it. The token is new each time the process starts. With several instances behind a load balancer, set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md) so they share one token, and open `/setup?token=` followed by its value. The page closes for good once the first account exists.
 
 ![Creating the first administrator](../images/pro/setup.webp){.light-only}
 ![Creating the first administrator](../images/pro/setup-dark.webp){.dark-only}
 
-Pro keeps its own tables (accounts, rules, alerts and the audit log among them) in a `pgboss_pro` schema, separate from pg-boss's, and creates and migrates it on startup. Nothing in it touches the job tables. [Environment variables](./environment.md) lists every variable.
+Pro keeps its own tables (accounts, rules, alerts and the audit log among them) in a `pgboss_pro` schema separate from pg-boss's, and creates and migrates that schema on startup. Nothing in it touches the job tables. [Environment variables](./environment.md) lists every variable.
 
-Like the free dashboard's, `DATABASE_URL` takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
+As in the free dashboard, `DATABASE_URL` takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
 
 ## Docker
 
