@@ -27,7 +27,7 @@ By default, a worker fetches 1 job every 2 seconds.
 
 * **perJobResults**, bool, *(default=false)*
 
-  Lets a batch handler complete or fail each job on its own. By default a batch handler is all or nothing. Returning completes every job in the batch, and throwing fails every job. The return value is stored as `output` only when `batchSize` is 1. With `perJobResults` on, the handler resolves with an array of `JobResult` objects instead, one per job it processed, and pg-boss settles each job with its own output:
+  When true, a batch handler completes or fails each job on its own. By default a batch handler is all or nothing, so returning completes every job in the batch and throwing fails every job. The return value is stored as `output` only when `batchSize` is 1. With `perJobResults` on, the handler resolves with an array of `JobResult` objects instead, one per job it processed. pg-boss settles each job with its own output:
 
   ```js
   await boss.work('resize-image', { batchSize: 10, perJobResults: true }, async (jobs) => {
@@ -46,14 +46,14 @@ By default, a worker fetches 1 job every 2 seconds.
 
   Each `JobResult` is `{ id, status, output? }` where `id` matches a job from the batch, `status` is `'completed'`, `'failed'`, or `'deadletter'`, and `output` is stored on that job (the completion result, or the failure detail). Notes:
 
-  - **`deadletter`** fails the job for good and sends it straight to the queue's dead letter queue, skipping any retries it has left. The `output` goes with it to the dead letter job. On a queue with no dead letter queue, the job fails for good, the same as a `failed` job with no retries left.
-  - A job the handler leaves out of the array is **failed** with an error saying so, and it retries or goes to the dead letter queue as the queue's settings say. pg-boss never assumes a result.
+  - **`deadletter`** fails the job for good and sends it straight to the queue's dead letter queue, skipping any retries it has left. The `output` goes with it to the dead letter job. On a queue with no dead letter queue, the job fails for good, as a `failed` job with no retries left does.
+  - A job the handler leaves out of the array is **failed** with the error `no disposition returned by handler`. The job then retries or goes to the dead letter queue under the queue's settings. pg-boss never assumes a result.
   - **Throwing** from the handler still fails the whole batch, as it does without `perJobResults`. Report a failed job in the returned array, and throw only for an error that affects the whole batch.
   - Resolving with anything other than an array fails the whole batch.
 
 * **transactional**, bool, *(default=false)*
 
-  Run the handler and the job's completion inside one database transaction. The handler receives a second argument: a `db` for that transaction, with the same `executeSql` interface every pg-boss `db` option takes.
+  Runs the handler and the job's completion inside one database transaction. The handler receives a second argument: a `db` for that transaction, with the same `executeSql` interface every pg-boss `db` option takes.
 
   ```js
   await boss.work('charge-customer', { transactional: true }, async (jobs, tx) => {
@@ -66,32 +66,32 @@ By default, a worker fetches 1 job every 2 seconds.
   })
   ```
 
-  Everything written through `tx` commits with the job's completion, so the handler can't leave its side effects committed and the job unfinished, or the reverse. On a throw, the writes and the completion roll back together, and pg-boss fails the job on a pooled connection, so retries and dead lettering work as they do for any other worker. Nothing else about the job changes. pg-boss claims it before the transaction opens, so `expireInSeconds` bounds it and heartbeats refresh it while the handler runs.
+  Everything written through `tx` commits with the job's completion, so neither can commit without the other. On a throw, the writes and the completion roll back together. pg-boss then fails the job on a pooled connection, so retries and dead lettering work as they do for any other worker. Nothing else about the job changes. pg-boss claims the job before the transaction opens, so `expireInSeconds` bounds the job and heartbeats refresh the job while the handler runs.
 
-  A commit needs the claim the handler started with. If anything takes the job away meanwhile, the transaction rolls back, because the job is about to run again. The job can be taken away by its expiration, a heartbeat the database stopped seeing, an operator's `cancel()` or `fail()`, another instance's supervisor, or a shutdown that abandons the handler. Settling the job yourself is fine, as long as it goes through `complete()`, `fail()`, `cancel()` or `deleteJob()` with `{ db: tx }`. A raw `UPDATE` of the job table looks the same as a lost claim, so it rolls back.
+  A commit needs the claim the handler started with. If anything takes the job away meanwhile, the transaction rolls back, because the job is about to run again. The job can be taken away by its expiration, a heartbeat the database stopped seeing, an operator's `cancel()` or `fail()`, another instance's supervisor, or a shutdown that abandons the handler. Settling the job yourself is fine, as long as the call goes through `complete()`, `fail()`, `cancel()` or `deleteJob()` with `{ db: tx }`. A raw `UPDATE` of the job table looks the same as a lost claim, so the transaction rolls back.
 
   **Requirements and limits**
 
   - Needs a database connection pg-boss can open a transaction on: the built-in pool, or a `db` adapter implementing `beginTransaction`. Passing `transactional: true` without one throws from `work()`.
-  - Can't be combined with `perJobResults`. One transaction has one outcome, so there is nothing to commit job by job, and `work()` refuses the combination.
-  - **Every handler in flight holds a pool connection until it finishes.** Set `max` above `localConcurrency` (summed over your transactional queues), with room to spare for fetches, failures and maintenance. Otherwise those queries wait out `connectionTimeoutMillis` and reject. pg-boss emits a `warning` from `work()` when the pool has no room left.
-  - **The transaction stays open for as long as the handler runs.** A long transaction stops vacuum from reclaiming dead rows anywhere in the database, so this suits handlers that finish in seconds. For long work, keep the default worker and use the `db` option on `complete()` instead. The database bounds the transaction either way, as `transactionTimeoutSeconds` below describes.
-  - **Some backends can't run a transactional worker with heartbeats.** The heartbeat writes the claimed row from a pooled connection. An engine that then refuses the handler's transaction a write to that row (CockroachDB, under serializable isolation) fails the completion. On those backends `work()` refuses the combination, because the worker would fail every batch, and `expireInSeconds` takes the heartbeat's place as the bound on a stuck handler. See [database backends](../database-backends.md#compatibility-flags).
+  - Can't be combined with `perJobResults`. One transaction has one outcome, so there is nothing to commit job by job. `work()` refuses the combination.
+  - **Every handler in flight holds a pool connection until it finishes.** Set `max` above `localConcurrency` (summed over your transactional queues) and leave room for fetches, failures and maintenance. Otherwise the fetch, fail and maintenance queries wait out `connectionTimeoutMillis` and reject. pg-boss emits a `warning` from `work()` when the pool has no room left.
+  - **The transaction stays open for as long as the handler runs.** A long transaction stops vacuum from reclaiming dead rows anywhere in the database, so `transactional` suits handlers that finish in seconds. For long work, keep the default worker and use the `db` option on `complete()` instead. The database bounds the transaction either way, as `transactionTimeoutSeconds` below describes.
+  - **Some backends can't run a transactional worker with heartbeats.** The heartbeat writes the claimed row from a pooled connection. An engine that then refuses the handler's transaction a write to that row (CockroachDB, under serializable isolation) fails the completion. On those backends `work()` refuses the combination, because the worker would fail every batch. `expireInSeconds` takes the heartbeat's place as the bound on a stuck handler. See [database backends](../database-backends.md#compatibility-flags).
   - **A SQL error the handler catches leaves the transaction aborted.** Postgres then rejects every later statement in it, including the completion pg-boss runs there, so the job fails even though the handler returned. Either let such an error propagate, or isolate the statement behind a `SAVEPOINT` of your own.
 
 * **transactionTimeoutSeconds**, int, *(default=`expireInSeconds` + 5)*
 
-  How long the database gives the handler's transaction before it kills the connection under it. Only valid alongside `transactional`; `0` removes the bound.
+  How long the handler's transaction may run before the database kills its connection. Only valid alongside `transactional`; `0` removes the bound.
 
-  `expireInSeconds` is the timer that ends a slow handler, and it fires first. This option covers what no timer inside the process can, which is the process itself failing under an open transaction (a starved event loop, or a driver stuck below the promise). Until something closes that transaction, it keeps advertising `backend_xmin` and holds vacuum off every table in the database. [`monitorVacuum`](./constructor.md#monitorvacuum) reports that as an `xmin_horizon` warning.
+  `expireInSeconds` is the timer that ends a slow handler and fires first. This option covers what no timer inside the process can, which is the process itself failing under an open transaction (a starved event loop, or a driver stuck below the promise). Until something closes that transaction, it keeps advertising `backend_xmin` and holds vacuum off every table in the database. [`monitorVacuum`](./constructor.md#monitorvacuum) reports such a transaction as an `xmin_horizon` warning.
 
   ```js
   await boss.work('charge-customer', { transactional: true, transactionTimeoutSeconds: 60 }, handler)
   ```
 
-  The default gives the handler's own timeout and its rollback all the time they need, so the server gives up only once neither has run. pg-boss sets it as `transaction_timeout` where the server has that setting (PostgreSQL 17+, CockroachDB). Elsewhere it sets `idle_in_transaction_session_timeout`, which bounds the gaps between the handler's statements, not the whole transaction. Either way the server drops the connection, the batch rolls back, and the job retries under its own retry policy.
+  The default leaves the handler's own timeout and its rollback all the time they need, so the server gives up only once neither has run. pg-boss sets it as `transaction_timeout` where the server has that setting (PostgreSQL 17+, CockroachDB). Elsewhere it sets `idle_in_transaction_session_timeout`, which bounds the gaps between the handler's statements, not the whole transaction. Either way the server drops the connection, the batch rolls back, and the job retries under its own retry policy.
 
-  pg-boss never widens a bound the connection already has. Where a role, a managed provider or a pooler has set the GUC to something stricter, that value stands and this option can't raise it. These are the longest transactions pg-boss opens, so they're the last place to relax someone else's limit. If pg-boss can't ask the server which GUC it recognizes, or can't read the connection's existing bound from `pg_settings`, it emits a [`transaction_timeout_probe`](./events.md#warning) warning once. It then runs its batches with no database-side bound and asks again a minute later.
+  pg-boss never widens a bound the connection already has. Where a role, a managed provider or a pooler has set the GUC to something stricter, that value stands and this option can't raise it. Transactional handlers run the longest transactions pg-boss opens, so they're the last place to relax someone else's limit. If pg-boss can't ask the server which GUC it recognizes, or can't read the connection's existing bound from `pg_settings`, it emits a [`transaction_timeout_probe`](./events.md#warning) warning once. It then runs its batches with no database-side bound and asks again a minute later.
 
 * **priority**, bool, **deprecated, ignored since 12.30.0**
 
@@ -113,11 +113,11 @@ By default, a worker fetches 1 job every 2 seconds.
 
   Base interval to check for new jobs, in seconds. Must be >=0.5 (500ms). Used when no faster or slower mode applies: queues without `notify`, or notify-enabled queues when the LISTEN/NOTIFY listener is unavailable.
 
-  > **Note**: When [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for a queue, workers are woken the instant a job is created and polling automatically falls back to the slower `notifyPollingIntervalSeconds` backstop, so you don't need to raise `pollingIntervalSeconds` yourself.
+  > **Note**: When [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for a queue, workers are woken the instant a job is created. Polling then falls back to the slower `notifyPollingIntervalSeconds` backstop, so you don't need to raise `pollingIntervalSeconds` yourself.
 
 * **notifyPollingIntervalSeconds**, number, *(default=30, or `pollingIntervalSeconds` when that's larger)*
 
-  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms) and at least `pollingIntervalSeconds`.
+  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listen-notify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this interval can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms) and at least `pollingIntervalSeconds`.
 
 * **burstWhenReadyExceeds**, int
 
@@ -134,7 +134,7 @@ By default, a worker fetches 1 job every 2 seconds.
   Number of workers to start for this queue in the current Node.js process. Each worker polls and processes jobs on its own, so one `work()` call can process jobs in parallel.
 
   > [!NOTE]
-  > This is a per-node setting. In a distributed deployment with multiple nodes, each node manages its own workers independently. For example, if you have 3 nodes each calling `work()` with `localConcurrency: 5`, you'll have 15 total workers across your cluster.
+  > `localConcurrency` is a per-node setting. In a distributed deployment with multiple nodes, each node manages its own workers independently. For example, if you have 3 nodes each calling `work()` with `localConcurrency: 5`, you'll have 15 total workers across your cluster.
 
 
   ```js
@@ -153,7 +153,7 @@ By default, a worker fetches 1 job every 2 seconds.
   - An object with limits by tier, in the format `groupConcurrency` below describes.
 
   > [!NOTE]
-  > This is a per-node limit. In a distributed deployment, each node enforces its own limit independently. Use `groupConcurrency` instead if you need global coordination across nodes.
+  > `localGroupConcurrency` is a per-node limit. In a distributed deployment, each node enforces its own limit independently. Use `groupConcurrency` instead if you need global coordination across nodes.
 
   ```js
   // Limit each tenant to 2 concurrent jobs on this node (no DB overhead)
@@ -249,14 +249,14 @@ In this setup:
 
 - Use `localGroupConcurrency` when fairness on each node is enough and you want no database queries for it
 - Use `groupConcurrency` when you need a strict limit across all your nodes
-- You can't use both on one worker, so pick one
+- A single worker can't use both options
 
 **Handler function**
 
-`handler` returns a promise, usually by being an `async` function. A value or object it returns is stored in the job's `output` property. If it throws, pg-boss calls `fail()` for its jobs and stores the error in `output`, and the jobs become available for retry.
+`handler` returns a promise, usually by being an `async` function. A value or object it returns is stored in the job's `output` property. If it throws, pg-boss calls `fail()` for its jobs and stores the error in `output`. The jobs then become available for retry.
 
 > [!TIP]
-> By default this is all-or-nothing across the batch. To complete and fail individual jobs within a batch, each with its own `output`, enable the **perJobResults** option above.
+> By default the handler's outcome is all-or-nothing across the batch. To complete and fail individual jobs within a batch, each with its own `output`, enable the **perJobResults** option above.
 
 The jobs argument is an array of jobs with the following properties.
 
@@ -270,13 +270,13 @@ The jobs argument is an array of jobs with the following properties.
 |`signal`| AbortSignal | Aborted when the handler runs past `expireInSeconds`, when pg-boss shuts down while it runs, or when a heartbeat finds this job no longer active under this worker's claim |
 
 
-An example of a worker that checks for a job every 10 seconds.
+The following worker checks for a job every 10 seconds.
 
 ```js
 await boss.work('email-welcome', { pollingIntervalSeconds: 10 }, ([ job ]) => myEmailService.sendWelcomeEmail(job.data))
 ```
 
-An example of a worker that returns a maximum of 5 jobs in a batch.
+The following worker receives a maximum of 5 jobs in a batch.
 
 ```js
 await boss.work('email-welcome', { batchSize: 5 }, (jobs) => myEmailService.sendWelcomeEmails(jobs.map(job => job.data)))
@@ -286,9 +286,9 @@ await boss.work('email-welcome', { batchSize: 5 }, (jobs) => myEmailService.send
 
 By default, workers fetch new jobs by polling every `pollingIntervalSeconds`, so a new job waits up to one interval before a worker picks it up. pg-boss can also use Postgres [`LISTEN/NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html) to wake workers the moment a job is created, which cuts the wait to milliseconds.
 
-**It's opt-in, and it runs on top of polling.** Polling keeps running as a safety net, so a missed notification (during a brief connection drop, for example) never loses a job. A notification only tells a worker to fetch now instead of waiting. The locking fetch, queue policies and concurrency limits work as before.
+**LISTEN/NOTIFY is opt-in and runs on top of polling.** Polling keeps running as a safety net, so a missed notification (during a brief connection drop, for example) never loses a job. A notification only tells a worker to fetch now instead of waiting. The locking fetch, queue policies and concurrency limits work the same with or without notifications.
 
-**Enabling it requires two opt-ins:**
+**Enabling LISTEN/NOTIFY requires two opt-ins:**
 
 1. Start the instance with [`useListenNotify: true`](./constructor.md#uselistennotify). The instance then runs a listener on one dedicated database connection.
 2. Mark each queue that should emit notifications with the [`notify: true`](./queues.md#createqueue-name-queue) option on `createQueue()` (or `updateQueue()`).
@@ -313,18 +313,18 @@ await boss.send('email-welcome', { to: 'new@user.com' })
 
 - Only **immediately-available** jobs emit a notification. Future-dated jobs (`startAfter`, `sendAfter()`, throttling/debouncing) and jobs blocked by [flow](./jobs.md) dependencies are picked up by polling once they become eligible.
 - A NOTIFY is emitted transactionally with the insert, so it fires on commit. When you create jobs inside your own transaction via the `db` option, the notification commits atomically with your transaction.
-- The listener needs a **session-pinned** connection. It works with the built-in pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, pg-boss emits a [`warning`](./events.md#warning) of type `listen_notify_unavailable` and continues polling only.
+- The listener needs a **session-pinned** connection. The listener works with the built-in pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, pg-boss emits a [`warning`](./events.md#warning) of type `listen_notify_unavailable` and continues polling only.
 - The notification channel is namespaced per `schema`, so multiple pg-boss instances (and other services) on the same database do not collide.
 
 ### `work(name, handler)`
 
-Simplified work() without an options argument
+`work()` can be called without an options argument:
 
 ```js
 await boss.work('email-welcome', ([ job ]) => emailer.sendWelcomeEmail(job.data))
 ```
 
-work() with active job deletion
+A handler can delete its job once the work is done:
 
 ```js
 const queue = 'email-welcome'
@@ -335,7 +335,7 @@ await boss.work(queue, async ([ job ]) => {
 })
 ```
 
-work() with abort signal
+A handler can pass `job.signal` to any call that accepts an abort signal:
 
 ```js
 await boss.work('process-video', async ([ job ]) => {
@@ -343,9 +343,9 @@ await boss.work('process-video', async ([ job ]) => {
 })
 ```
 
-Each job has its own signal. On a queue with `heartbeatSeconds`, a heartbeat that finds a job no longer active under this worker's claim aborts that job's signal. A job stops being active under the claim when it failed after its heartbeat went stale or it expired (it may already be running elsewhere), or when something completed, failed, canceled or deleted it, the handler included. The rest of the batch keeps running. pg-boss discards whatever the handler returns for a job it no longer holds, so stopping early only saves the work. A heartbeat that fails to reach the database aborts nothing.
+Each job has its own signal. On a queue with `heartbeatSeconds`, a heartbeat that finds a job no longer active under this worker's claim aborts that job's signal. A job stops being active under the claim when the job failed after its heartbeat went stale or when the job expired. In both cases the job may already be running elsewhere. Completing, failing, canceling or deleting the job also ends the claim, even when the handler makes the call. The rest of the batch keeps running. pg-boss discards whatever the handler returns for a job it no longer holds, so stopping early only saves the work. A heartbeat that fails to reach the database aborts nothing.
 
-When a handler runs past `expireInSeconds`, pg-boss fails its batch and aborts every signal in it. Aborting can't stop a handler that ignores its signal, so the worker waits for the handler to return before it fetches again, and emits a [`handler_overrun`](./events.md#warning) warning while it waits. Until that handler actually stops, it counts against `localConcurrency` and `localGroupConcurrency`, and its worker doesn't pick up the job's retry.
+When a handler runs past `expireInSeconds`, pg-boss fails its batch and aborts every signal in it. Aborting can't stop a handler that ignores its signal, so the worker waits for the handler to return before it fetches again, and emits a [`handler_overrun`](./events.md#warning) warning while it waits. Until that handler stops, it counts against `localConcurrency` and `localGroupConcurrency`. Its worker doesn't pick up the job's retry in that time.
 
 A handler that never returns holds its worker until [`offWork()`](#offwork-name-options) or [`stop()`](./ops.md#stop-options) stops the worker. Neither waits for the handler, but its `localGroupConcurrency` slots stay taken until it returns. While the worker waits, [`getWipData()`](#getwipdata-options) shows it as `active` with a `count` of 0, since its jobs have already failed.
 
@@ -401,7 +401,7 @@ Removes a worker by name or id and stops polling.
 
 * **wait**, boolean, *(default=true when no options are passed)*
 
-  Whether the promise waits for current jobs to finish. It doesn't wait for a handler that outran its timeout, which keeps running on its own (see [`work(name, handler)`](#work-name-handler)). Passing options without `wait`, such as `{ id }`, doesn't wait, so pass `wait: true` with them to wait.
+  Whether the promise waits for current jobs to finish. It doesn't wait for a handler that outran its timeout, which keeps running on its own (see [`work(name, handler)`](#work-name-handler)). When options such as `{ id }` are passed without `wait`, the promise doesn't wait. Pass `wait: true` with them to wait.
 
 * **id**, string
 

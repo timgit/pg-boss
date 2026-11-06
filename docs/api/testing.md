@@ -106,7 +106,7 @@ afterEach(() => {
 
 ## Controlling time
 
-Anything that waits in pg-boss waits on a clock: a worker's next poll, a job's `startAfter`, a retry delay, a handler's expiration, a cron schedule's next minute. `TestClock` lets the test control that clock, in JavaScript and in Postgres. Pass one as the `clock` constructor option, and time moves only when the test moves it.
+Anything that waits in pg-boss waits on a clock: a worker's next poll, a job's `startAfter`, a retry delay, a handler's expiration, a cron schedule's next minute. With a `TestClock`, the test controls that clock in both JavaScript and Postgres. Pass a `TestClock` as the `clock` constructor option. Time then moves only when the test moves it.
 
 ```js
 import { PgBoss, TestClock } from 'pg-boss'
@@ -137,33 +137,33 @@ Advances the clock by `ms` and fires every timer that falls due along the way, i
 
 `tick` waits for pg-boss to settle, which means no pg-boss statement is in flight. It waits before it starts, after each timer it fires, and after it reaches the target. A worker poll that `tick` fires has finished its fetch by the time `tick` resolves. If that fetch came back empty and re-armed the poll before the target, the same `tick` fires it again.
 
-`tick` doesn't wait for your handlers, including statements a transactional handler runs through its `tx`. Observe their outcomes with a spy or by querying, as above. Queries your code runs through `boss.getDb()` are the exception. They use pg-boss's own connection, so `tick` counts them, and a handler waiting on one holds up `tick` until it returns. Don't tick while your test holds a transaction open, because a pg-boss statement waiting on its lock keeps `tick` waiting too.
+`tick` doesn't wait for your handlers or for statements a transactional handler runs through its `tx`. Observe their outcomes with a spy or by querying, as above. Queries your code runs through `boss.getDb()` use pg-boss's own connection, so `tick` does count them. A handler waiting on such a query holds up `tick` until the query returns. Don't tick while your test holds a transaction open, because a pg-boss statement waiting on its lock keeps `tick` waiting too.
 
-Only one `tick` or `setTime` can be in progress at a time, and another call to either rejects while one is running. An interval fires once per period crossed, so ticking an hour past a worker polling every two seconds runs 1800 polls. To jump, use `setTime`.
+Only one `tick` or `setTime` can be in progress at a time, so a second call to either rejects. An interval fires once per period crossed, so ticking an hour past a worker polling every two seconds runs 1800 polls. To jump, use `setTime`.
 
 ### `clock.setTime(t)`
 
-Jumps to `t`, forwards or backwards, without firing anything. A forward jump counts as elapsed time, as it does in Postgres. Every timer the jump passed fires once on the next `tick`, and an interval then keeps its period from `t`. After a jump a month ahead, a worker polling every second polls once, and pg-boss fails a handler that's past its expiration. A backward jump leaves timers where they are, so they fire when the clock gets back to their due time. `setTime` rejects while a `tick` is in progress. Postgres evaluates `start_after <= now()` against an earlier time without complaint, so a test that moves backwards has to handle the consequences.
+Jumps to `t`, forwards or backwards, without firing anything. A forward jump counts as elapsed time, as it does in Postgres. Every timer the jump passed fires once on the next `tick`. An interval then keeps its period from `t`. After a jump a month ahead, a worker polling every second polls once. pg-boss also fails a handler that's past its expiration. A backward jump leaves timers where they are, so they fire when the clock gets back to their due time. `setTime` rejects while a `tick` is in progress. Postgres evaluates `start_after <= now()` against an earlier time without complaint, so a test that moves backwards has to handle the consequences.
 
-`setTime` settles first, like `tick`, then jumps. It takes whole milliseconds, but Postgres timestamps carry microseconds and pg-boss jitters retry backoff. So a job's `start_after` can fall a fraction of a millisecond after the millisecond you read. Round up before jumping to it, or the job won't be due yet.
+Like `tick`, `setTime` settles first and then jumps. It takes whole milliseconds, but Postgres timestamps carry microseconds and pg-boss jitters retry backoff. So a job's `start_after` can fall a fraction of a millisecond after the millisecond you read. Round up before jumping to it, or the job won't be due yet.
 
 ### Database clock
 
-While a `TestClock` is attached, `${schema}.job_now()`, the function every pg-boss statement reads the clock through, returns the fake time. The fake time reaches job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It doesn't change `pg_catalog.now()` or your own SQL, and it leaves the `created_on` of rows your application inserts directly unaffected.
+While a `TestClock` is attached, `${schema}.job_now()` returns the fake time. Every pg-boss statement reads the clock through that function. The fake time reaches job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It doesn't change `pg_catalog.now()` or your own SQL, and it leaves the `created_on` of rows your application inserts directly unaffected.
 
-Only sessions that set `pgboss.test_clock = 'on'` see the fake time. An instance without a `TestClock` on the same schema keeps real time, and so does anything started after a killed run left the override behind.
+Only sessions that set `pgboss.test_clock = 'on'` see the fake time. An instance without a `TestClock` on the same schema keeps real time. So does anything started after a killed run left the override behind.
 
 `start()` declares that `SET` through the adapter's `setSessionStatements()`, before it opens a connection or runs a statement.
 
-pg-boss refuses a `TestClock` on an adapter that doesn't implement `setSessionStatements()`. A pooled adapter that skipped the setup would silently read fake time on some connections and real time on others, differently on every checkout.
+pg-boss refuses a `TestClock` on an adapter that doesn't implement `setSessionStatements()`. A pooled adapter that skipped the setup would silently read fake time on some connections and real time on others. The mix would change on every checkout.
 
 pg-boss's own pool applies the statements in its `connect` handler. The bundled PGlite adapter runs them once, which is all a single-session driver needs.
 
 Releasing the clock restores the plain function body, drops the clock table, and issues `disableClockOverride()`.
 
-With `PGliteWorker`, a single leader instance serves every tab, so every tab shares the session setting. A `TestClock` attached through one tab puts every tab on fake time. pg-boss reapplies the setting when leadership moves to a new tab, because the move would otherwise silently drop the schema back to real time. It can't scope the setting to one instance, though.
+With `PGliteWorker`, a single leader instance serves every tab, so every tab shares the session setting. A `TestClock` attached through one tab puts every tab on fake time. pg-boss reapplies the setting when leadership moves to a new tab, because the move would otherwise silently drop the schema back to real time. pg-boss can't scope the setting to one instance, though.
 
-`start()` attaches the clock after the schema is installed, and `stop()` releases it, which restores the real clock for that schema. Several instances can share one `TestClock`, and the schema stays on fake time until the last instance stops.
+`start()` attaches the clock after the schema is installed. `stop()` releases the clock, which restores the real clock for that schema. When several instances share one `TestClock`, the schema stays on fake time until the last instance stops.
 
 Anything pg-boss waits on that is not a clock, such as a database round trip or a handler's own promise, still takes real time.
 

@@ -26,7 +26,7 @@ Creates a new job and returns the job id.
 
 * **id**, uuid
 
-  Optional id. If you don't set one, pg-boss creates a uuid.
+  Optional id. If you don't set an id, pg-boss creates a uuid.
 
 * **deadLetter**, string
 
@@ -44,7 +44,7 @@ Creates a new job and returns the job id.
 
 * **retryBackoff**, bool
 
-  Default: false. Retries with exponential backoff based on retryDelay, instead of a fixed delay. If retryDelay isn't set, it starts at 1. Roughly, the delay between runs is `retryDelay * 2 ^ retryCount` with some jitter. The full function for the backoff delay is `Math.min(retryDelayMax, retryDelay * (2 ** Math.min(16, retryCount + 1) / 2 + 2 ** Math.min(16, retryCount + 1) / 2 * Math.random()))`, where `retryCount` is the count before this retry, 0 on the first failure
+  Default: false. Retries with exponential backoff based on retryDelay, instead of a fixed delay. If retryDelay isn't set, it starts at 1. Roughly, the delay between runs is `retryDelay * 2 ^ retryCount` with some jitter. The full function for the backoff delay is `Math.min(retryDelayMax, retryDelay * (2 ** Math.min(16, retryCount + 1) / 2 + 2 ** Math.min(16, retryCount + 1) / 2 * Math.random()))`, where `retryCount` is the count before this retry (0 on the first failure).
 
 * **retryDelayMax**, int
 
@@ -54,7 +54,7 @@ Creates a new job and returns the job id.
 
 * **heartbeatSeconds**, int
 
-  Default: none (disabled). Expected heartbeat interval in seconds. Overrides the queue-level `heartbeatSeconds` for this job. When it's set, `work()` sends heartbeats for you. If no heartbeat arrives within this interval, the monitor fails or retries the job. Must be >= 10. See [Heartbeat vs expiration](queues#heartbeat-vs-expiration) for guidance on when to use this and recommended values.
+  Default: none (disabled). Expected heartbeat interval in seconds. Overrides the queue-level `heartbeatSeconds` for this job. When it's set, `work()` sends heartbeats for you. If no heartbeat arrives within this interval, the monitor fails or retries the job. Must be >= 10. See [Heartbeat vs expiration](queues#heartbeat-vs-expiration) for guidance on when to use a heartbeat and recommended values.
 
 **Expiration options**
 
@@ -79,7 +79,7 @@ You can also set every retry, expiration and retention option on the queue. Each
 
 * **db**, object
 
-  You can use your own adapter in place of pg-boss's default one, as long as it implements this interface (the same as the pg module).
+  You can use your own adapter in place of pg-boss's default adapter, as long as it implements this interface (the same as the pg module).
 
     ```ts
     interface Db {
@@ -119,14 +119,14 @@ You can also set every retry, expiration and retention option on the queue. Each
   | `'2027-01-01'` | 2027-01-01 00:00 UTC |
 
   A string naming a time zone instead of an offset (`'2027-01-01 08:00:00 America/New_York'`) is
-  left for the database to resolve, and follows that zone's rules, including daylight saving.
+  left for the database to resolve and follows that zone's rules, including daylight saving.
 
-  Any other string is read as a relative delay from now, using Postgres interval syntax, so
+  Any other string is read as a relative delay from now in Postgres interval syntax, so
   `'5 minutes'`, `'1 hour'`, `'PT1H'` and `'90'` (bare seconds) are all valid. A string that begins
-  with a calendar date but isn't a valid date time (`'2027-13-45'`) is an error, and it's never read as a delay.
+  with a calendar date but isn't a valid date time (`'2027-13-45'`) is an error and is never read as a delay.
 
   The ISO 8601 year-month and ordinal date formats are *not* recognized as date times.
-  They're valid Postgres intervals, so pg-boss reads them as very long delays and doesn't reject them:
+  They're valid Postgres intervals, so pg-boss reads them as long delays and doesn't reject them:
 
   | String | Read as |
   | --- | --- |
@@ -170,7 +170,7 @@ These options throttle jobs to one per time slot. You set them when sending, bec
 
 For example, if you set `singletonSeconds` to 60 and send 2 jobs within the same minute, only the first is accepted and resolves a job id. The second resolves `null`.
 
-When a job is throttled and `singletonNextSlot` is true, pg-boss schedules the job to run after the current time slot. `sendDebounced()`, for example, sets this option to true.
+When a job is throttled and `singletonNextSlot` is true, pg-boss schedules the job to run after the current time slot. For example, `sendDebounced()` sets this option to true.
 
 As with queue policies, `singletonKey` applies the throttle per key, so each key gets one job within the time slot.
 
@@ -225,7 +225,7 @@ await boss.sendAfter('email-reminder', { userId: 123 }, null, '2027-01-01T13:30:
 
 ### `sendThrottled(name, data, options, seconds, key)`
 
-Allows only one job to be sent to the same queue within a number of seconds. The first job in the interval is accepted. Every other job in the same interval isn't created, and the call resolves `null`.
+Sends at most one job to the same queue within a number of seconds. The first job in the interval is accepted. For every other job in the same interval, the call creates nothing and resolves `null`.
 
 It's a shorthand for `send()` with the `singletonSeconds` and `singletonKey` options set. The `key` argument is optional.
 
@@ -240,7 +240,7 @@ if (!jobId) {
 
 ### `sendDebounced(name, data, options, seconds, key)`
 
-Works like `sendThrottled()`, except when a job was already sent in the current interval. Then it adds the job to the next interval, if that interval doesn't have one yet.
+Works like `sendThrottled()`, except that when a job was already sent in the current interval, it adds the job to the next interval if the next interval has no job yet.
 
 It's a shorthand for `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` options set. The `key` argument is optional.
 
@@ -259,7 +259,7 @@ Target the job with **exactly one** of:
 - `options.id`: a single job by id.
 - `options.singletonKey`: jobs sharing that key.
 
-Only the fields you supply change, and any option you omit keeps the job's current value. Passing only a new `data` payload with a target replaces the payload and leaves the job's existing `startAfter`, `priority`, retry settings and so on as they were.
+Only the fields you supply change; any option you omit keeps the job's current value. Passing only a new `data` payload with a target replaces the payload and leaves the job's existing `startAfter`, `priority`, retry settings and so on as they were.
 
 You can update these fields:
 
@@ -277,7 +277,7 @@ You can update these fields:
 * `heartbeatSeconds`
 * `group`
 
-The job always keeps its `singletonKey` and `singletonOn` (throttle slot). To change only options and keep the payload, pass `undefined` for `data`. Passing `null` clears it.
+The job always keeps its `singletonKey` and `singletonOn` (throttle slot). To change only options and keep the payload, pass `undefined` for `data`. Passing `null` clears the payload.
 
 If the updated job can now run (its `startAfter` is in the past) and its queue has `LISTEN`/`NOTIFY` enabled, pg-boss sends a wake-up notification so idle workers fetch it promptly.
 
@@ -291,7 +291,7 @@ await boss.update('email', { to: 'a@b.co', retries: 0 }, { id: jobId })
 await boss.update('article', { articleId: 42, body: '…latest…' }, { singletonKey: 'article-42' })
 ```
 
-A `singletonKey` is only guaranteed unique per state under the `short` and `stately` policies. So several pre-active jobs can share a key, for example under throttling or debouncing, or with a key you set yourself on a `standard` queue. Use `options.match` to choose which of them to update, ordered by `createdOn`:
+A `singletonKey` is only guaranteed unique per state under the `short` and `stately` policies. Under throttling or debouncing, or with a key you set yourself on a `standard` queue, several pre-active jobs can share a key. `options.match` uses their `createdOn` order to pick which of those jobs to update:
 
 - `newest` (default): overwrite the most recently created match.
 - `oldest`: overwrite the earliest created match.
@@ -313,13 +313,13 @@ await boss.update({
 
 ### `upsert(name, data, options)`
 
-Updates one or more **not-yet-active** jobs (state `created` or `retry`), or inserts a job when none match. It's meant for special cases, and `send()` stays the usual way to create jobs. `upsert()` runs `update()` first, and if nothing matches, it runs `insert()`. It takes the same options as `update()`. When matching by `id`, pg-boss creates the new job with that id. With `singletonKey`, it supports the same `match` option as `update()`. On a `key_strict_fifo` queue, though, `singletonKey` is required to insert.
+Updates one or more **not-yet-active** jobs (state `created` or `retry`), or inserts a job when none match. It's meant for special cases. `send()` stays the usual way to create jobs. `upsert()` runs `update()` first and runs `insert()` if nothing matches. It takes the same options as `update()`. When matching by `id`, pg-boss creates the new job with that id. With `singletonKey`, it supports the same `match` option as `update()`. On a `key_strict_fifo` queue, an insert requires `singletonKey`.
 
 Returns a `Promise<UpsertResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the updated job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 
-Concurrent `upsert()` calls with the same `singletonKey` agree on one job. At most one of them inserts, and the others update that job, waiting for the first one's transaction to finish if they have to. The guarantee holds on every queue policy and inside a transaction passed as `db`, but only between upserts. A `send()` or `insert()` with the same key still adds a job of its own wherever the queue policy allows several queued jobs per key (`standard`, `singleton` and `key_strict_fifo`). A job brought back with `resume()` also queues beside a newer upserted one and doesn't replace it.
+Concurrent `upsert()` calls with the same `singletonKey` agree on one job. At most one of them inserts. The others update that job and wait for the inserting call's transaction to finish when they have to. Between upserts, the guarantee holds on every queue policy and inside a transaction passed as `db`. A `send()` or `insert()` with the same key still adds a job of its own wherever the queue policy accepts several queued jobs per key (`standard`, `singleton` and `key_strict_fifo`). A job brought back with `resume()` also queues beside a newer upserted job and doesn't replace it.
 
-On CockroachDB the later upsert fails with a serialization error (`40001`) instead of waiting. pg-boss runs it again, up to 3 attempts in all, when the transaction is its own. Inside a `db` you pass, the error reaches you to retry.
+On CockroachDB the later upsert fails with a serialization error (`40001`) instead of waiting. When pg-boss owns the transaction, it runs the upsert for up to 3 attempts in all. Inside a `db` you pass, the call rejects with the error for you to retry.
 
 ```js
 // ensure exactly one queued "process this article" job carries the latest body
@@ -368,11 +368,11 @@ interface JobInsert<T = object> {
 }
 ```
 
-Each field works like the `send()` option of the same name, and a `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
+Each field works like the `send()` option of the same name, so a `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
 
-Returns a `Promise<string[] | null>`. Without `returnId: true`, and with spies off, it resolves to `null`. With `returnId: true` it resolves to the ids of the jobs that were inserted, or to `null` when no jobs were inserted, including when the array passed in is empty. It never resolves to an empty array. Add `?? []`, as in the example below, to always get an array back.
+Returns a `Promise<string[] | null>`. Without `returnId: true` and with spies off, it resolves to `null`. With `returnId: true`, it resolves to the ids of the jobs that were inserted, or to `null` when no jobs were inserted (an empty input array included). It never resolves to an empty array. The example below adds `?? []` to always get an array back.
 
-Behind the scenes, `insert()` is a single `INSERT` statement. An error on any job, such as a value of the wrong type, rolls back the whole batch. A job that conflicts with an existing one is skipped, and the rest of the batch is still inserted. Conflicts are a duplicate `id`, a second job in the same `singletonSeconds` throttle slot, or a second queued job for the same `singletonKey` on a queue whose [policy](./queues#createqueue-name-queue) allows only one (`short`, `stately` or `exclusive`). The returned ids can then be fewer than the jobs passed in, and they aren't guaranteed to line up with the input by position. To match input jobs to output ids, set each job's `id` in the input array. Use [`flow()`](#flow-jobs-options) when the batch must be all or nothing, since it rolls back if any job is skipped. With a custom `db`, the insert commits or rolls back with your transaction.
+Behind the scenes, `insert()` is a single `INSERT` statement. An error on any job (a value of the wrong type, for example) rolls back the whole batch. pg-boss skips a job that conflicts with an existing job and still inserts the rest of the batch. Conflicts are a duplicate `id`, a second job in the same `singletonSeconds` throttle slot, or a second queued job for the same `singletonKey` on a queue whose [policy](./queues#createqueue-name-queue) accepts only one queued job per key (`short`, `stately` or `exclusive`). The returned ids can then be fewer than the jobs passed in. They also aren't guaranteed to line up with the input by position. To match input jobs to output ids, set each job's `id` in the input array. Use [`flow()`](#flow-jobs-options) when the batch must be all or nothing, since it rolls back if any job is skipped. With a custom `db`, the insert commits or rolls back with your transaction.
 
 ```js
 const ids = await boss.insert('etl', [
@@ -385,13 +385,13 @@ const ids = await boss.insert('etl', [
 
 ### `flow(jobs, options)`
 
-Creates a set of jobs and their dependencies atomically, in one transaction.
+Creates a set of jobs and their dependencies atomically in one transaction.
 
 Use `flow()` when jobs depend on other jobs. `send()` and `insert()` don't take dependencies, because creating jobs and dependencies in separate calls can race with job completion.
 
 pg-boss makes the call atomic when it owns the database connection. If you pass a custom `db` in `options`, wrap the call in your own transaction if the job and dependency inserts must commit or roll back together.
 
-The method accepts a flat array of jobs in any order. Each job has a local `ref`, and dependent jobs reference parent refs with `dependsOn`.
+The method accepts a flat array of jobs in any order. Each job has a local `ref`. Dependent jobs reference parent refs with `dependsOn`.
 
 ```ts
 interface FlowJob {
@@ -420,17 +420,17 @@ const flow = await boss.flow([
 const loadJobId = flow.load
 ```
 
-Dependent jobs are created in a `blocked` state, and fetch skips them until all their parent jobs have completed. If a parent job fails or is canceled, the child stays blocked. You can `cancel` or `fail` the blocked child yourself.
+Dependent jobs are created in a `blocked` state. `fetch()` skips them until all their parent jobs have completed. If a parent job fails or is canceled, the child stays blocked. You can `cancel` or `fail` the blocked child yourself.
 
-A dependent job with `startAfter` can be fetched only once all its dependencies have completed and `startAfter` has passed. When its last dependency resolves, its `startAfter` moves up to that moment unless it's already later. It then reads as the time the job could first run, and the job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
+A dependent job with `startAfter` can be fetched only once all its dependencies have completed and `startAfter` has passed. When its last dependency resolves, its `startAfter` moves up to that moment unless it's already later. `startAfter` then reads as the time the job could first run. The job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from that time.
 
 Unblocking happens off the completion hot path. A background resolver wakes shortly after a parent completes (see [`flowIntervalSeconds`](./constructor.md#flowintervalseconds) in the constructor options) and unblocks any dependents that are now ready. So completing a job stays fast however many flows exist. The resolver runs when `supervise` is enabled. Call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
 
 ### `resolveFlow()`
 
-Runs a flow-resolution pass now, without waiting for the next background cycle, and unblocks the dependents of any parents that have completed. Returns a promise that resolves when the pass finishes. Use it for deterministic tests, or when you've disabled `supervise` and drive maintenance yourself.
+Runs a flow-resolution pass without waiting for the next background cycle and unblocks the dependents of any parents that have completed. Returns a promise that resolves when the pass finishes. Use it for deterministic tests, or when you've disabled `supervise` and drive maintenance yourself.
 
-A call made while another pass is in flight waits for it to finish, and `stop()` waits for the call. After `stop()`, it resolves without running.
+A call made while another pass is in flight waits for that pass to finish. `stop()` waits for a running call. A call after `stop()` resolves without running.
 
 ```js
 await boss.complete('extract', parentJobId)
@@ -524,7 +524,7 @@ came from:
 - `sourceId` is the id of the original job.
 - `sourceCreatedOn` is the original job's creation time.
 - `sourceRetryCount` is how many retries it used before it was dead-lettered.
-- `sourceOutput` is the original job's `output` when it failed, usually its error.
+- `sourceOutput` is the original job's `output` when it failed, which is usually its error.
 
 The dead-lettered job's own `output` starts empty, since it's a new job that hasn't run.
 `sourceId` only names the previous hop, which after a redrive is the redriven copy.
@@ -561,7 +561,7 @@ await Promise.allSettled(jobs.map(async job => {
 Deletes a job by id. Accepts a fetched job in place of its id, which only deletes the attempt that was fetched (see [passing jobs instead of ids](#passing-jobs-instead-of-ids)).
 
 > [!NOTE]
-> `deleteJob()` supports a "fetch then delete" workflow like SQS's. Workers don't delete jobs by default, so everything works out of the box, including throttling and debouncing. Those need jobs to exist to enforce a unique constraint. For example, if you debounce a queue to "only allow 1 job per hour", deleting jobs after processing reopens that time slot and breaks your throttling policy.
+> `deleteJob()` supports a "fetch then delete" workflow like SQS's. Workers don't delete jobs by default, so everything works out of the box. Throttling and debouncing in particular need jobs to exist to enforce a unique constraint. For example, if you debounce a queue to "only allow 1 job per hour", deleting jobs after processing reopens that time slot and breaks your throttling policy.
 
 ```js
 const [job] = await boss.fetch('email-send')
@@ -596,9 +596,9 @@ jobs that aren't being processed (still in the `created`/`retry` state)
 are moved.
 
 `redrive()` can't recover jobs that were part of a flow. A dead-lettered
-parent never reaches the `completed` state, so its dependents stay blocked, and the
-re-created job has a new id that the existing dependency rows don't point at. Redriving
-such a job runs it again on its own, and the original flow doesn't resume.
+parent never reaches the `completed` state, so its dependents stay blocked. The
+re-created job also has a new id that the existing dependency rows don't point at. Redriving
+such a job runs it again on its own without resuming the original flow.
 
 `options`:
 
@@ -618,21 +618,21 @@ such a job runs it again on its own, and the original flow doesn't resume.
   controlled rate.
 
 The destination can refuse a re-created copy because its `short`, `stately` or
-`exclusive` policy already holds a job with the same `singletonKey` (or one earlier in the
-same batch does). The job isn't lost. It stays in the dead letter queue in the `failed` state, with an
-`output` saying why (`reason: 'redrive_conflict'`, plus the `destination`, `policy`,
-`singletonKey` and a `message`). Retry it once the job it collided with has finished, and it
-becomes a redrive candidate again. Otherwise the dead letter queue's `deleteAfterSeconds`
+`exclusive` policy already holds a job with the same `singletonKey` (or an earlier job in the
+same batch does). The job isn't lost. It stays in the dead letter queue in the `failed` state.
+Its `output` records why (`reason: 'redrive_conflict'`, plus the `destination`, `policy`,
+`singletonKey` and a `message`). Once the job it collided with has finished, retry the refused
+job to make it a redrive candidate again. Otherwise the dead letter queue's `deleteAfterSeconds`
 removes it like any other failed job.
 
 In a dead letter queue with the `key_strict_fifo` policy, only the oldest collision per
 `singletonKey` is failed. Jobs with a key that an active, retrying or failed job holds
-aren't redrive candidates until that job is resolved, the same rule fetch follows.
+aren't redrive candidates until that job is resolved, which is the same rule fetch follows.
 
 `redrive()` never moves jobs that a dead letter queue's own workers have already failed.
 Only jobs still waiting there are candidates. The return value counts only the jobs
-re-created. So a call can return `0` while waiting jobs
-remain, if every one of them collided. Those are now failed, and the next call moves on.
+re-created. If every waiting job collided, a call returns `0` even though jobs remained.
+The collided jobs are now failed, so the next call moves on.
 
 ```js
 // drain a dead letter queue back to its source queues, 500 at a time, stopping at the
@@ -651,17 +651,17 @@ Reports what [`redrive()`](#redrive-name-options) would do with the same options
 without moving anything. It takes every `redrive()` filter and uses the same matching,
 so the numbers agree with what a redrive would move at that moment.
 
-It reads at most `limit` matching jobs of each kind, and doesn't count past that:
+It reads at most `limit` matching jobs of each kind and doesn't count past the limit:
 
-- `limit`: most jobs to read of each kind, those a redrive would move and those it
-  would leave in place, from 1 to 100,000 (default `1000`). A count that reaches it
-  means at least that many.
+- `limit`: most jobs to read of each kind (jobs a redrive would move, and jobs it
+  would leave in place), from 1 to 100,000 (default `1000`). A count that reaches the
+  limit means at least that many.
 
-Returns `{ total, destinations, unroutable }`, each counting the jobs read:
+Returns `{ total, destinations, unroutable }`. Each field counts the jobs read:
 
-- `total`: the matching jobs read, routable or not.
+- `total`: the matching jobs read, which includes the unroutable jobs.
 - `destinations`: `{ name, count }` for each queue the matching jobs would land in,
-  largest first. Without `destination` this is the fan-out back to each source queue.
+  largest first. Without `destination`, the list is the fan-out back to each source queue.
 - `unroutable`: matching jobs a redrive would leave in place, because they have no
   recorded source queue and no `destination` was given, or their source queue no
   longer exists.
@@ -681,7 +681,7 @@ const { total, destinations, unroutable } = await boss.previewRedrive('email-dlq
 
 Deletes all queued jobs in a queue, and resolves to how many it deleted.
 
-It deletes in batches, each in its own transaction, so the delete isn't atomic. If it fails
+It deletes in batches with one transaction per batch, so the delete isn't atomic. If it fails
 partway, the batches before the failure stay deleted. A job sent while it runs may or may not
 be deleted.
 
@@ -704,7 +704,7 @@ Deletes all jobs in a queue, including active jobs.
 
 If you don't give a queue name, it deletes jobs from all queues.
 
-Resolves to how many jobs it deleted, deleting in batches as `deleteQueuedJobs()` does. A partitioned queue, or every queue when no name is given, is emptied with a single `TRUNCATE` instead. `TRUNCATE` reports no count, so the call resolves to `null`, and the cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete, including `deleteQueuedJobs()` and `deleteStoredJobs()`, `totalCount` drops by the number of jobs deleted right away, and the other cached counts catch up at the next monitor pass.
+It deletes in batches as `deleteQueuedJobs()` does and resolves to how many jobs it deleted. For a partitioned queue, and for every queue when no name is given, the call uses a single `TRUNCATE` instead. `TRUNCATE` reports no count, so the call resolves to `null`. The cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete (`deleteQueuedJobs()` and `deleteStoredJobs()` included), `totalCount` drops by the number of jobs deleted right away. The other cached counts catch up at the next monitor pass.
 
 ```js
 // delete everything in one queue
@@ -728,7 +728,7 @@ await boss.cancel('email-send', jobId)
 
 Cancels a set of pending or active jobs.
 
-With an array of ids, the call can partly succeed, depending on the state of each job. It's a best-effort operation.
+With an array of ids, whether each job is canceled depends on its state, so the call can partly succeed. It's a best-effort operation.
 
 ```js
 await boss.cancel('email-send', [jobId1, jobId2])
@@ -736,7 +736,7 @@ await boss.cancel('email-send', [jobId1, jobId2])
 
 ### `resume(name, id, options)`
 
-Resumes a canceled job. Its `startAfter` moves up to the time it was resumed unless it's already later, so its wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
+Resumes a canceled job. Its `startAfter` moves up to the time of the resume unless the current value is already later, so the job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
 
 ```js
 await boss.resume('email-send', jobId)
@@ -752,7 +752,7 @@ await boss.resume('email-send', [jobId1, jobId2])
 
 ### `retry(name, id, options)`
 
-Retries a failed job. Its `startAfter` moves up to the time it was retried unless it's already later, so its wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
+Retries a failed job. Its `startAfter` moves up to the time of the retry unless the current value is already later, so the job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
 
 ```js
 await boss.retry('email-send', jobId)
@@ -774,7 +774,7 @@ await boss.retry('email-send', ids)
 
 ### Passing jobs instead of ids
 
-`complete()`, `fail()`, `touch()`, `cancel()` and `deleteJob()` accept the jobs `fetch()` returned in place of their ids, or any object with the job's `id` and `retryCount`. The call then applies only to the attempt that was fetched. If the claim lapsed in the meantime (the job expired or missed its heartbeat, and another worker retried it), pg-boss leaves the job alone and reports it as not affected. The newer attempt never gets this one's outcome.
+`complete()`, `fail()`, `touch()`, `cancel()` and `deleteJob()` accept the jobs `fetch()` returned in place of their ids, or any object with the job's `id` and `retryCount`. The call then applies only to the attempt that was fetched. If the claim lapsed in the meantime (the job expired or missed its heartbeat, and another worker retried it), pg-boss leaves the job alone and reports it as not affected. The newer attempt never gets the older attempt's outcome.
 
 ```js
 const [job] = await boss.fetch('report-generation')
@@ -812,7 +812,7 @@ await boss.complete('report-generation', job, { reportUrl: report.url })
 
 * **db**, object, see notes in `send()`
 
-The promise resolves with `{ jobs, requested, affected }`. `affected` is `1` when the job was completed, and `0` when it couldn't be, for example because it isn't active.
+The promise resolves with `{ jobs, requested, affected }`. `affected` is `1` when the job was completed and `0` when it couldn't be (for example, because it isn't active).
 
 ### `complete(name, [ids], data, options)`
 
@@ -827,7 +827,7 @@ The promise resolves with `{ jobs, requested, affected }`, where `jobs` holds th
 
 Marks an active job as failed.
 
-The promise resolves with `{ jobs, requested, affected }`. `affected` is `1` when the job was marked as failed, and `0` when it couldn't be, for example because it already completed.
+The promise resolves with `{ jobs, requested, affected }`. `affected` is `1` when the job was marked as failed and `0` when it couldn't be (for example, because it already completed).
 
 ```js
 const [job] = await boss.fetch('email-send')
@@ -933,7 +933,7 @@ Finds jobs in a queue by id, singleton key, data, or any combination of these. R
 
 * **after**, string
 
-  The id of the last job of the previous page, to read the next one. Rejects if that job no
+  The id of the last job of the previous page, to read the next page. Rejects if that job no
   longer exists.
 
 * **db**, object, see notes in `send()`
@@ -976,7 +976,7 @@ const jobs = await boss.findJobs('my-queue', {
 
 ### `getDependencies(name, id, options)`
 
-Returns an array of references to the parent jobs the given job depends on, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last reference as `options.after` to read the next page.
+Returns an array of references to the parent jobs the given job depends on, sorted by queue name and id. `options.limit` sets the most it returns (1 to 100,000, default 1000). Pass the last reference as `options.after` to read the next page.
 
 ```js
 const parents = await boss.getDependencies('aggregate-results', jobId)
@@ -985,7 +985,7 @@ const parents = await boss.getDependencies('aggregate-results', jobId)
 
 ### `getDependents(name, id, options)`
 
-Returns an array of references to the child jobs that depend on the given job, sorted by queue name and id. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last reference as `options.after` to read the next page.
+Returns an array of references to the child jobs that depend on the given job, sorted by queue name and id. `options.limit` sets the most it returns (1 to 100,000, default 1000). Pass the last reference as `options.after` to read the next page.
 
 ```js
 const children = await boss.getDependents('process-data', parentJobId)
