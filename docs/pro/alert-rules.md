@@ -2,7 +2,7 @@
 
 ## Default rules
 
-Every database starts with one rule for each check Pro can run. Five are on:
+Every database starts with one rule for each check Pro can run. Six are on:
 
 - **Queue stalled or falling behind**: the queue's health verdict, read from its
   throughput.
@@ -12,6 +12,8 @@ Every database starts with one rule for each check Pro can run. Five are on:
 - **An operation failed**: an operation that failed, or a redrive that left
   collisions.
 - **pg-boss warnings**: every warning type pg-boss records.
+- **An instance restarting in a loop**: instances with one name on one host ended
+  without `stop()` 3 times within an hour.
 
 **Queue with no workers** judges by what leaves the queue, whoever takes it, so
 a queue drained with `fetch()` and `complete()` counts as worked. A job active at
@@ -26,11 +28,12 @@ queue until the monitor refreshes them.
 
 The alert says which pg-boss instances have a `work()` on the queue. When no
 live instance has a `work()` on the queue, the alert names the last instance that did and how long that
-instance has been quiet.
+instance has been quiet. Jobs in a dead letter queue usually wait for a person,
+so the check skips a queue that another queue names as its `deadLetter` until an
+instance has had a `work()` on that queue.
 
-The [instance](./instances.md) checks start off:
+The other [instance](./instances.md) checks start off:
 
-- **An instance restarting in a loop**
 - **An instance gone quiet**
 - **More than one pg-boss version live**
 - **Instances with different shared options**
