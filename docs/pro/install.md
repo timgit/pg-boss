@@ -41,7 +41,7 @@ DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-pro
 On first run there are no accounts, so Pro prints a setup link to its log:
 
 ```
-pg-boss Pro: no account yet. Open /setup?token=… to create the first administrator.
+pg-boss Pro: no account yet. Open /setup?token=… to create the first administrator. The link works until this process restarts.
 ```
 
 Open the setup link (for example `http://localhost:3000/setup?token=…`) and create the first administrator. The page refuses anyone without the token, so whoever reaches a new install first can't take it. The token is new each time the process starts. With several instances behind a load balancer, set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md) so they share one token, and open `/setup?token=` followed by its value. The page closes for good once the first account exists.
