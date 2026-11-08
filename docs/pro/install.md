@@ -10,6 +10,14 @@
 
 Pro is served from a private registry, not from npmjs. The license key is the only credential the registry needs. The key is shown on the purchases page of the Polar account that bought the subscription.
 
+To run Pro as its own server, create a project for it:
+
+```bash
+npm init -y
+```
+
+To [mount Pro](./mount.md) in an existing application, install it in that application's project.
+
 Put both lines in the `.npmrc` of the project that installs Pro:
 
 ```
