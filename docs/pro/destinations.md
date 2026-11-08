@@ -35,6 +35,8 @@ on this machine, so the password and messages never cross the network in the
 clear. For an internal relay without TLS, **Send without TLS when the server offers none**
 turns off the STARTTLS requirement.
 
+Pro sends each email with an HTML part and a plain text part, for mail clients that show only text.
+
 ## Webhook
 
 Pro stores a webhook's URL encrypted, since receivers often keep their token in
