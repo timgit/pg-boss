@@ -191,6 +191,37 @@ describe('pubsub', function () {
     }
   })
 
+  it('should look up subscriptions on the db passed in options', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const boss = ctx.boss
+
+    await boss.createQueue('subqueue')
+    await boss.subscribe('event', 'subqueue')
+
+    const own = boss.getDb()
+    const execute = own.executeSql.bind(own)
+    const statement = plans.getQueuesForEvent(ctx.schema)
+    const statements: string[] = []
+    const db = {
+      executeSql: (sql: string, values?: unknown[]) => {
+        statements.push(sql)
+        return execute(sql, values)
+      }
+    }
+
+    const spy = vi.spyOn(own, 'executeSql')
+
+    try {
+      await boss.publish('event', { message: 'hi' }, { db })
+      expect(statements).toContain(statement)
+      expect(spy).not.toHaveBeenCalledWith(statement, ['event'])
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect((await boss.findJobs('subqueue')).map(job => job.data)).toEqual([{ message: 'hi' }])
+  })
+
   it('should ignore a subscriber removed before publication', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
@@ -277,9 +308,10 @@ describe('pubsub', function () {
 
       // The subscription goes with the queue, so the deletion lands after publish() selected it.
       const db = ctx.boss.getDb()
+      const selection = plans.getQueuesForEvent(ctx.schema)
       const caller = {
         async executeSql (sql: string, values?: unknown[]) {
-          await other.deleteQueue(ctx.schema)
+          if (sql !== selection) await other.deleteQueue(ctx.schema)
           return db.executeSql(sql, values)
         }
       }

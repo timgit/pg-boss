@@ -1691,7 +1691,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   async #publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     const sql = plans.getQueuesForEvent(this.config.schema)
-    const { rows } = await this.db.executeSql(sql, [event])
+    const { rows } = await this.assertDb(options ?? {}).executeSql(sql, [event])
 
     const results = await Promise.allSettled(rows.map(({ name }) => this.send(name, data, options)))
 
