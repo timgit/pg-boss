@@ -3,7 +3,7 @@
 ## Requirements
 
 - Node.js 22.12 or later.
-- A Postgres database with a pg-boss schema, version 44 (pg-boss 12.36) or later. Pro makes changes only on the schema of the pg-boss it's built with. See [pg-boss versions](./versions.md).
+- A Postgres database. Pro reads a pg-boss schema from version 44 (pg-boss 12.36) on, and makes changes only on the schema of the pg-boss it's built with. See [pg-boss versions](./versions.md).
 - A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
 ## Install
@@ -41,6 +41,8 @@ In CI, keep the token out of the file. npm substitutes the variable when it read
 ```
 
 ## Run
+
+`DATABASE_URL` names the database the application's pg-boss uses. On startup, Pro installs pg-boss's schema in each database that has none, as pg-boss's own `start()` does, so Pro also runs on a new database.
 
 ```bash
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-pro
