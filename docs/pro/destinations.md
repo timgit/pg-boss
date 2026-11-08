@@ -37,6 +37,8 @@ turns off the STARTTLS requirement.
 
 Pro sends each email with an HTML part and a plain text part, for mail clients that show only text.
 
+![An alert email for a stalled queue](../images/pro/alert-email.webp)
+
 ## Webhook
 
 Pro stores a webhook's URL encrypted, since receivers often keep their token in
