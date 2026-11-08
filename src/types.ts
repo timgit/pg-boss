@@ -1657,16 +1657,12 @@ export interface PersistedWarning {
 }
 
 export interface CommandResponse {
-  /** @internal */
   jobs: string[];
-  /** @internal */
   requested: number;
-  /** @internal */
   affected: number;
   /**
    * The ids the statement actually settled, where it reports them. `jobs` is the list that was
    * asked about; this is the subset that landed.
-   * @internal
    */
   settled?: string[];
 }
