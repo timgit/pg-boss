@@ -103,5 +103,5 @@ Pro is sold through Polar, which takes the payment and shows the license key on 
 ## Getting started
 
 1. [Install and run](./install.md) Pro.
-2. Open the setup link Pro prints to its log, and create the first administrator.
+2. Open the setup link Pro prints to its log, and create the first global administrator.
 3. Give the default alert rules a [destination](./destinations.md), so their alerts send notifications.
