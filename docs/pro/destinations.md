@@ -50,7 +50,8 @@ login, an address that `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES` blocks, or a missing
 destination's deliveries.
 
 Before each attempt, Pro checks that the send is still worth making. A fire whose alert has
-closed or been acknowledged isn't sent, and no resolve follows it. Nothing goes to a destination
+closed or been acknowledged isn't sent, and no resolve follows it. A resolve isn't sent when its
+alert is open again, or when a later fire went to the same destination. Nothing goes to a destination
 that's off or deleted. A send that hasn't started within an hour is dropped. Deleting a destination
 deletes its queue and any sends still waiting in it.
 
