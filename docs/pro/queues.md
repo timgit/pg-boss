@@ -35,7 +35,7 @@ Time to drain compares arrivals with finishing over the last 15 minutes, and the
 | Clears in | More is finishing than arriving, with more than 20 jobs ready above usual. It shows about how long until the backlog is back to usual. |
 | Keeping up | The backlog is within 20 jobs of usual, or arrivals and finishing are about even. |
 
-This **Keeping up** reads the last 15 minutes, so it can differ from the health verdict of the same name, which reads the hour.
+This **Keeping up** reads the last 15 minutes. It can differ from the health verdict of the same name, which reads the hour.
 
 ![The Table view](../images/pro/queues-table.webp){.light-only}
 ![The Table view](../images/pro/queues-table-dark.webp){.dark-only}
@@ -49,7 +49,7 @@ Each queue gets a card, ten to a page.
 
 ### Hex view
 
-Each queue is a hexagon colored by its health, up to 500 to a page. The hexagons get smaller as a page holds more. The smallest hexagons show the first letter of each part of the name, so `payments-final` reads `pf`. Hover over a hexagon for the queue's name, health and counts.
+Each queue is a hexagon colored by its health, up to 500 to a page. The hexagons get smaller as a page holds more. The smallest hexagons show the first letter of each part of the name. On them, `payments-final` reads `pf`. Hover over a hexagon for the queue's name, health and counts.
 
 Over a range longer than an hour, a hexagon shows the lower of the queue's health now and the lowest health it held for 5 minutes or more in the range. A longer range never shows a queue as healthier than a shorter range does. The hover shows how long the low point lasted.
 
@@ -69,13 +69,13 @@ The sidebar lists each `work()` call on the queue, with its instance and its bus
 ![The Workers card on a queue's page](../images/pro/queue-workers.webp){.light-only width=384}
 ![The Workers card on a queue's page](../images/pro/queue-workers-dark.webp){.dark-only width=384}
 
-The backlog chart is the Waiting chart from the free [metrics page](../dashboard.md#queue-metrics), with ready, blocked and deferred jobs stacked and active jobs drawn over them. **View metrics** and the page's counts open this chart. Pro has one backlog chart, so two charts on different ranges can't disagree.
+The backlog chart is the Waiting chart from the free [metrics page](../dashboard.md#queue-metrics), with ready, blocked and deferred jobs stacked and active jobs drawn over them. **View metrics** and the page's counts open this chart. Because Pro has one backlog chart, two charts on different ranges can't disagree.
 
 Under the charts, a row of changes marks what users did through the Pro Console (from the audit log) and what the instances working the queue did. An instance mark shows when the instance started, stopped, went quiet, or started on a new pg-boss version.
 
 ![A queue's page](../images/pro/queue.webp){.light-only}
 ![A queue's page](../images/pro/queue-dark.webp){.dark-only}
 
-If a queue's `deleteAfterSeconds` is shorter than the monitor pass, the queue deletes finished jobs before the monitor counts them. The page warns about the short `deleteAfterSeconds` above the charts. Those jobs aren't counted, so throughput and wait and run times read low.
+If a queue's `deleteAfterSeconds` is shorter than the monitor pass, the queue deletes finished jobs before the monitor counts them. The page warns about the short `deleteAfterSeconds` above the charts. Throughput and wait and run times read low, because those jobs aren't counted.
 
 Wait and run times need pg-boss 12.36 or later.

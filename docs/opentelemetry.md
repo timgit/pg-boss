@@ -28,7 +28,7 @@ With [`propagateContext`](#options) set, pg-boss stores the active trace context
 | `process {queue}` | consumer | a `work()` handler running over a batch |
 | `complete {queue}`, `fail {queue}`, `cancel {queue}`, `delete {queue}` | client | `complete()`, `fail()`, `cancel()`, `deleteJob()` |
 
-A `process` span covers the handler and the completion or failure pg-boss records after it, so spans created inside the handler and spans of instrumented database calls are its children.
+A `process` span covers the handler and the completion or failure pg-boss records after it. Spans created inside the handler and spans of instrumented database calls are its children.
 
 Trace context propagation is off until you set `propagateContext`. The parent and link rules below need `propagateContext`. Without it, each `process` span starts a trace of its own.
 
@@ -36,7 +36,7 @@ When a worker processes one job at a time, the `process` span is a child of the 
 
 A worker's own polling has no span, since a span per empty poll would bury the traces that matter. A handler that throws ends its `process` span with an error status, the exception recorded as an event, and `error.type` set. When a handler outruns its timeout, pg-boss ends the span the same way when it fails the batch, even if the handler goes on running.
 
-The trace context survives retries, dead lettering and `redrive()`, so every attempt of a job and the job's dead letter copy belong to the trace the job's `send()` started.
+Every attempt of a job and the job's dead letter copy belong to the trace the job's `send()` started, because the trace context survives retries, dead lettering and `redrive()`.
 
 ### Attributes
 
@@ -65,7 +65,7 @@ The trace context survives retries, dead lettering and `redrive()`, so every att
 
 Metrics carry `messaging.system`, `messaging.operation.name`, `messaging.operation.type`, `messaging.destination.name`, `db.namespace`, `pgboss.schema` and, on failure, `error.type`. The namespace tells apart instances in one process that share a queue name in different schemas or databases. To keep fewer series, drop `db.namespace` and `pgboss.schema` with an SDK View. pg-boss leaves out job ids and batch sizes so they don't multiply the number of series.
 
-`pgboss.queue.jobs` reads the counts pg-boss already keeps in memory, so observing it runs no queries. pg-boss refreshes those counts every [`queueCacheIntervalSeconds`](./api/constructor.md#queuecacheintervalseconds) from the stats [monitoring](./api/constructor.md#monitorintervalseconds) records.
+Observing `pgboss.queue.jobs` runs no queries, because it reads the counts pg-boss already keeps in memory. pg-boss refreshes those counts every [`queueCacheIntervalSeconds`](./api/constructor.md#queuecacheintervalseconds) from the stats [monitoring](./api/constructor.md#monitorintervalseconds) records.
 
 ## Options
 
@@ -90,7 +90,7 @@ const boss = new PgBoss({
 
 * **propagateContext**, bool, default false
 
-  Store the trace context of `send()` on the job, so the span that processes it continues the producer's trace. It's opt-in because it writes to every job. Otherwise, an application that already runs an OpenTelemetry SDK would start storing trace context on upgrade with no pg-boss configuration change. With the SDK's default propagators, the stored context includes W3C Baggage, as described under [Storage](#storage).
+  Store the trace context of `send()` on the job. The span that processes the job then continues the producer's trace. It's opt-in because it writes to every job. Otherwise, an application that already runs an OpenTelemetry SDK would start storing trace context on upgrade with no pg-boss configuration change. With the SDK's default propagators, the stored context includes W3C Baggage, as described under [Storage](#storage).
 
 * **propagator**, `TextMapPropagator`, default the global propagator
 
@@ -115,7 +115,7 @@ const boss = new PgBoss({
 
 ## Database instrumentation
 
-pg-boss talks to Postgres through `pg`, so `@opentelemetry/instrumentation-pg` records a span for each pg-boss query, including a worker's polling. Queries made inside a `process` span nest under it. To drop the polling queries, which run outside any span, set the instrumentation's `requireParentSpan` option:
+Because pg-boss talks to Postgres through `pg`, `@opentelemetry/instrumentation-pg` records a span for each pg-boss query, including a worker's polling. Queries made inside a `process` span nest under it. To drop the polling queries, which run outside any span, set the instrumentation's `requireParentSpan` option:
 
 ```js
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg'

@@ -26,7 +26,7 @@ Postgres-compatible engines), or `embedded` (in-process PostgreSQL).
 | `citus` | distributed | *(none, coordinator-local tables behave like plain PostgreSQL)* |
 | `pglite` | embedded | *(none, full PostgreSQL; see [PGlite](#pglite-embedded))* |
 
-pg-boss derives everything above from `backend`, so a deployment can't end up with an
+Because pg-boss derives everything above from `backend`, a deployment can't end up with an
 inconsistent combination. The sections below explain each behavior and name the internal flag it
 maps to in the source. Databases without a profile
 (Aurora DSQL, Spanner) are **not yet supported**.
@@ -48,8 +48,8 @@ available (❌), pg-boss automatically switches to the compatible alternative. S
 deliberately sharded job table would lose `SKIP LOCKED` compatibility and need the atomic-`UPDATE`
 fetch instead. See [Citus](#tested-citus-compatible-in-standard-mode).
 
-² PGlite is embedded single-connection PostgreSQL, so LISTEN/NOTIFY works entirely in-process. The
-`fromPglite` adapter wires it up automatically, so `useListenNotify` works with no extra setup.
+² Because PGlite is embedded single-connection PostgreSQL, LISTEN/NOTIFY works entirely in-process.
+`useListenNotify` works with no extra setup, because the `fromPglite` adapter wires it up automatically.
 
 Bun's `Bun.SQL` client has no row of its own, because it's a different *driver* for the same
 PostgreSQL database. It runs on the `postgres` profile with every feature above (LISTEN/NOTIFY
@@ -74,7 +74,7 @@ maps to in the source.
 | Timeout-only BAM reclaim | Reclaim a stuck `in_progress` [BAM](api/ops#getbamstatus) command on its timeout alone, for engines whose `pg_stat_progress_create_index` doesn't show whether an index build is still running. | A command whose instance died waits out the 24-hour timeout. BAM doesn't drop and rebuild an invalid index. | `noIndexProgressView` |
 | No index-bloat pass | Skip the [`reindex`](api/constructor#reindex) maintenance pass, detection included, for engines that store data outside PostgreSQL's heap and reject `REINDEX`. | No `index_bloat` warning, `getReindexCommands()` returns an empty list, and the CLI `reindex` command refuses to run. | `noReindex` |
 | No vacuum checks | Skip the [`monitorVacuum`](api/constructor#monitorvacuum) checks, for engines that reclaim rows with their own garbage collection instead of PostgreSQL's vacuum. | No `xmin_horizon`, `autovacuum_disabled` or `monitor_backoff` warning. | `noMonitorVacuum` |
-| Inline table indexes | Declare each table's primary key, indexes and constraints inside its `CREATE TABLE` on a fresh install, instead of as statements after it. | None. The inline `INDEX` syntax is CockroachDB's, so pg-boss uses inline indexes only after the server reports itself as CockroachDB. Migrations are unaffected. | `inlineTableIndexes` |
+| Inline table indexes | Declare each table's primary key, indexes and constraints inside its `CREATE TABLE` on a fresh install, instead of as statements after it. | None. pg-boss uses inline indexes only after the server reports itself as CockroachDB, because the inline `INDEX` syntax is CockroachDB's. Migrations are unaffected. | `inlineTableIndexes` |
 
 Lock-free fetch, split-statement writes, the transactional-heartbeat refusal, the LISTEN/NOTIFY,
 BAM, index-bloat and vacuum changes are **runtime** behaviors; the other six are **schema** choices
@@ -91,7 +91,7 @@ CockroachDB:
   UPDATE SKIP LOCKED`. In some distributed engines the statement has two problems:
   1. **Performance degradation under concurrency.** With 500 workers, mean latency for `SELECT FOR
      UPDATE SKIP LOCKED` can reach 311ms or higher ([CockroachDB #97135](https://github.com/cockroachdb/cockroach/issues/97135)).
-  2. **Unexpected row skipping.** `SKIP LOCKED` can skip unlocked rows, so workers miss
+  2. **Unexpected row skipping.** `SKIP LOCKED` can skip unlocked rows. Workers then miss
      available work ([CockroachDB #121917](https://github.com/cockroachdb/cockroach/issues/121917)).
 
   With `noSkipLocked`, pg-boss instead claims jobs with an atomic `UPDATE ... RETURNING` and a
@@ -118,24 +118,24 @@ CockroachDB:
 
   See [Andrew Werner's article on distributed work queues](https://dev.to/ajwerner/quick-and-easy-exactly-once-distributed-work-queues-using-serializable-transactions-jdp)
   for the pattern. The trade-off shows under high contention, when several workers' CTEs may select
-  the same candidate rows and all attempt the `UPDATE`. Only one worker wins the rows, so the others
+  the same candidate rows and all attempt the `UPDATE`. Only one worker wins the rows. The others
   receive empty results and poll again. The empty results are acceptable when processing time >>
   fetch time, which is typical for job queues.
 
 - **`noMultiMutationCte`** is about the *write* path. pg-boss's `complete`, `fail`, and supervisor
   expiry normally run as a single CTE that mutates the job table more than once (e.g. completing a
   job and unblocking its flow dependents). CockroachDB rejects such a CTE with `multiple mutations of the
-  same table "job" are not supported`. With `noMultiMutationCte`, those operations run as separate
-  statements inside one transaction instead, so a job can't be lost between them.
+  same table "job" are not supported`. With `noMultiMutationCte`, those operations instead run as separate
+  statements inside one transaction so that a job can't be lost between them.
 
 pg-boss replaces only `SKIP LOCKED` in the fetch path. Other operations still use ordinary
 `SELECT ... FOR UPDATE` (without `SKIP LOCKED`), which distributed engines support fine.
 
 pg-boss handles a third CockroachDB quirk separately. CockroachDB returns integer columns (`INT8`)
-as text, so pg-boss `Number()`-coerces the numeric job and queue fields on read **whenever `backend ===
-'cockroachdb'`**. Integers as text are a wire-format property of the database, so pg-boss keys the
-coercion on the backend identity instead of a compatibility flag. (Stock Postgres returns these fields as `int4` numbers, so no
-coercion is needed there.)
+as text. pg-boss `Number()`-coerces the numeric job and queue fields on read **whenever `backend ===
+'cockroachdb'`**. It keys the coercion on the backend identity instead of a compatibility flag,
+because integers as text are a wire-format property of the database. (Stock Postgres returns these
+fields as `int4` numbers, which need no coercion.)
 
 ### Transaction isolation
 
@@ -175,7 +175,7 @@ read. See
 
 **Upgrades on CockroachDB** commit without building indexes on existing tables. The migration queues each
 index build as a [BAM](api/ops#getbamstatus) command, which runs after the migration on an instance
-with `migrate` enabled, so `start()` doesn't wait for it. Until a build finishes, queries run without
+with `migrate` enabled. `start()` doesn't wait for the builds. Until a build finishes, queries run without
 that index. The migration still builds a unique index that a write depends on, such as the index
 behind `upsert()` by key. If [`stop()`](api/ops#stop-options) times out during a build,
 pg-boss closes the connection waiting on it and marks the row failed. CockroachDB finishes the build
@@ -191,9 +191,9 @@ The [CLI](cli#migrate) runs the same builds directly after the migration.
 
 - A queue with `heartbeatSeconds` set can't have a transactional worker
   (`noTransactionalHeartbeat`). By design, the heartbeat refreshes `heartbeat_on` on the claimed
-  row from a pooled connection, so the job stays visibly `active` while the handler runs. Under
-  serializable isolation, that write lands above the handler transaction's timestamp, so
-  CockroachDB refuses the completion pg-boss runs inside the transaction. `work()` rejects the
+  row from a pooled connection so that the job stays visibly `active` while the handler runs. Under
+  serializable isolation, the heartbeat write lands above the handler transaction's timestamp.
+  CockroachDB then refuses the completion pg-boss runs inside the transaction. `work()` rejects the
   combination, because the worker would fail every batch. Drop `heartbeatSeconds` and let
   `expireInSeconds` bound the job, or drop `transactional` and settle with `complete({ db })`.
   A `heartbeatSeconds` that appears after `work()` has checked the queue gets past that check. The
@@ -202,8 +202,8 @@ The [CLI](cli#migrate) runs the same builds directly after the migration.
   its transaction opens. The error names where the setting came from.
 - When something takes the claim away mid-handler and the handler then settles the job itself
   through `tx`, that settle comes back as a raw `40001` retry error instead of `affected: 0`. The
-  transaction rolls back either way, so the handler's writes don't land beside a job that is about
-  to run again. Only the error the job records differs from the message PostgreSQL produces.
+  transaction rolls back either way, which keeps the handler's writes from landing beside a job
+  that is about to run again. Only the error the job records differs from the message PostgreSQL produces.
 
 **Because `cockroachdb` disables table partitioning:**
 - Queue-level partitioning (`partition: true` on `createQueue`) is not supported
@@ -229,8 +229,8 @@ latest (with rollback on error).
 
 #### Testing the runtime toggles
 
-`noSkipLocked` and `noMultiMutationCte` are pure runtime behaviors (no schema impact) that work on
-plain PostgreSQL, so the project exercises them two ways:
+Because `noSkipLocked` and `noMultiMutationCte` are pure runtime behaviors (no schema impact) that
+work on plain PostgreSQL, the project exercises them two ways:
 
 - **`npm run test:distributed`** runs the **entire** test suite on Postgres with
   `DISTRIBUTED=true`, which makes `test/testHelper.ts`'s `getConfig()` set the internal
@@ -242,15 +242,15 @@ plain PostgreSQL, so the project exercises them two ways:
   cluster (`DB_TYPE=cockroachdb`, which also enables the compatibility flags above). It's a focused
   smoke test of real CockroachDB compatibility and runs on every push/PR.
 - **`npm run test:cockroachdb:full`** runs the **entire** suite against a real CockroachDB cluster
-  (`--no-file-parallelism`). The full run is the compatibility-matrix / regression signal. It isn't part of
-  CI, so run it before a release or after touching SQL. A fresh schema installs in well under a
+  (`--no-file-parallelism`). The full run is the compatibility-matrix / regression signal. Because it isn't
+  part of CI, run it before a release or after touching SQL. A fresh schema installs in well under a
   second, because every table's indexes are declared inside its `CREATE TABLE` (see
   `inlineTableIndexes`). The remaining time is CockroachDB's latency on the test bodies themselves. The
   per-test timeout goes up automatically under CockroachDB (see `vitest.config.ts`).
 - **`npm run test:cockroachdb:single`** starts a single-node, in-memory CockroachDB
   (`docker-compose.cockroach-single.yaml`) and runs the same full suite against it in about half
   the time the three-node cluster takes. Use it for local iteration; only the three-node cluster
-  exercises replication. The two use the same port, so stop one before starting the other.
+  exercises replication. Because both clusters use the same port, stop the running cluster before starting the other.
 
 For tests that depend on PostgreSQL-only features (table partitioning, covering indexes, or an exact
 PostgreSQL schema/migration shape), `test/testHelper.ts` exports `itPostgresOnly` /
@@ -259,14 +259,14 @@ PostgreSQL schema/migration shape), `test/testHelper.ts` exports `itPostgresOnly
 
 `test/distributedDatabaseTest.ts` holds the invariants the general suite cannot express
 (concurrent-fetch deduplication, `failDistributed`/`completeDistributed` composition inside a caller
-transaction, and the compatibility-flag construction paths). Those cases force distributed runtime
-via `__test__distributed` (or select `backend: 'cockroachdb'` for the schema-construction case), so
-they run in every mode.
+transaction, and the compatibility-flag construction paths). Because those cases force distributed
+runtime via `__test__distributed` (or select `backend: 'cockroachdb'` for the schema-construction
+case), they run in every mode.
 
 ### Tested: Citus (compatible in standard mode)
 
-Citus is a PostgreSQL extension that can shard tables across nodes. pg-boss doesn't call
-`create_distributed_table()`, so its tables stay **local to the coordinator** and behave like plain
+Citus is a PostgreSQL extension that can shard tables across nodes. Because pg-boss doesn't call
+`create_distributed_table()`, its tables stay **local to the coordinator** and behave like plain
 PostgreSQL. The **full pg-boss test suite passes** against a single-node Citus coordinator
 (`citusdata/citus`, PostgreSQL 18 + Citus 14) with the `citus` extension loaded and **no special
 flags**. Partitioning, queue policies, flows, heartbeat, multi-master, and migrations all work.
@@ -293,8 +293,8 @@ A *distributed* job table would then need the CockroachDB-style atomic-`UPDATE` 
 embedded in your Node.js (or browser) process and needs no separate database server. Because PGlite is real
 PostgreSQL, pg-boss runs against it with **no compatibility flags**. Declarative partitioning,
 deferrable constraints, advisory locks, covering indexes, `SELECT FOR UPDATE SKIP LOCKED`, and the
-multi-statement migration DDL all work. PGlite is embedded single-connection PostgreSQL, so it's
-**not** a distributed backend. pg-boss reaches it through the `@electric-sql/pglite` client and the
+multi-statement migration DDL all work. Because PGlite is embedded single-connection PostgreSQL,
+it's **not** a distributed backend. pg-boss reaches it through the `@electric-sql/pglite` client and the
 `fromPglite` adapter instead of the `pg` connection pool.
 
 #### Usage
@@ -330,7 +330,7 @@ await boss.complete('email', job.id)
 
 #### Lifecycle
 
-pg-boss opens and closes its default `pg` pool, but it does **not** open or close a PGlite instance. You own the instance, so construct it before `boss.start()` and close it after `boss.stop()`:
+pg-boss opens and closes its default `pg` pool, but it does **not** open or close a PGlite instance. Because you own the instance, construct it before `boss.start()` and close it after `boss.stop()`:
 
 ```ts
 await boss.stop()
@@ -342,9 +342,9 @@ object you provide.
 
 #### Single-connection considerations
 
-PGlite serializes everything through one connection. pg-boss's background loops (maintenance,
-scheduling, monitoring) and your workers all share that single connection, so PGlite processes
-queries one at a time. One connection is enough because PGlite queues requests internally, but keep
+PGlite serializes everything through one connection. Because pg-boss's background loops
+(maintenance, scheduling, monitoring) and your workers all share that single connection, PGlite
+processes queries one at a time. One connection is enough because PGlite queues requests internally, but keep
 concurrency modest:
 
 - A large `batchSize` or many concurrent workers gain nothing, because they can't run in parallel.
@@ -359,8 +359,8 @@ schema and data persist wherever the PGlite instance stores its data directory.
 
 ### Bun (driver)
 
-[Bun](https://bun.sh) ships its own PostgreSQL client, `Bun.SQL`. It talks to an ordinary PostgreSQL
-server, so it needs no backend profile of its own. Every feature works on the default `postgres`
+[Bun](https://bun.sh) ships its own PostgreSQL client, `Bun.SQL`. Because it talks to an ordinary
+PostgreSQL server, it needs no backend profile of its own. Every feature works on the default `postgres`
 profile. `Bun.SQL` is a different *driver*, which pg-boss reaches through an adapter instead of the
 `pg` connection pool.
 
@@ -394,7 +394,7 @@ As with PGlite, you own the client. pg-boss doesn't call `end()` on it.
 #### Enqueueing inside a transaction
 
 The `db` option on `send()`, `insert()`, `complete()` and friends takes anything implementing
-`executeSql`, so job writes can join a transaction you already own. On Drizzle over `bun-sql`, use
+`executeSql` so that job writes can join a transaction you already own. On Drizzle over `bun-sql`, use
 the [Drizzle adapter](api/adapters.md#drizzle) as with any other driver:
 
 ```ts
@@ -420,14 +420,14 @@ of the queries you'll see in `pg_stat_statements`, and because the first two are
 a later Bun release may fix.
 
 - **Array parameters.** Bun cannot encode a JS array as a PostgreSQL array parameter. It stringifies
-  the array, so every `= ANY($n::uuid[])` fails with `malformed array literal`
+  the array, which makes every `= ANY($n::uuid[])` fail with `malformed array literal`
   ([oven-sh/bun#18775](https://github.com/oven-sh/bun/issues/18775)). Both adapters expand an
-  array-cast parameter into `ARRAY[$2,$3]` of scalar parameters, so bind count varies with the
-  number of ids in a `complete()` or `cancel()` call.
-- **Parameter type inference.** Bun infers a bind parameter's type from the cast in front of it, so
+  array-cast parameter into `ARRAY[$2,$3]` of scalar parameters. The bind count varies
+  with the number of ids in a `complete()` or `cancel()` call.
+- **Parameter type inference.** Because Bun infers a bind parameter's type from the cast in front of it,
   `$n::json` re-encodes an already-serialized payload
-  ([oven-sh/bun#28819](https://github.com/oven-sh/bun/issues/28819)). pg-boss routes those casts
-  through `::text::json` for every driver, so this behavior is handled in the SQL instead of in an adapter.
+  ([oven-sh/bun#28819](https://github.com/oven-sh/bun/issues/28819)). To handle this behavior in the
+  SQL instead of in an adapter, pg-boss routes those casts through `::text::json` for every driver.
 - **Error codes.** Bun reports every server error as `ERR_POSTGRES_SERVER_ERROR` and puts the
   SQLSTATE in `errno`, where `pg` puts it in `code`. `fromBunSql` moves the SQLSTATE onto `code`,
   where pg-boss reads it to tell a lost fetch race from a real failure.
@@ -480,14 +480,14 @@ TABLE … PARTITION OF …`) inside the same transaction that inserts the queue 
 behaviors make that transaction fail:
 
 1. On a conflict, YugabyteDB can't transparently retry a multi-statement transaction sent over the
-   *simple* query protocol. pg-boss wraps these operations in a `BEGIN; … ; COMMIT;` text block, so
-   the conflict surfaces as `current transaction is expired or aborted`.
-2. DDL is **not rolled back transactionally**, so the partition table survives the aborted
+   *simple* query protocol. Because pg-boss wraps these operations in a `BEGIN; … ; COMMIT;` text
+   block, the conflict surfaces as `current transaction is expired or aborted`.
+2. Because DDL is **not rolled back transactionally**, the partition table survives the aborted
    transaction. A retry then fails with `relation "…" already exists`.
 
 `noTablePartitioning` keeps all jobs in one table and skips the per-queue DDL, which avoids both
-failures. Advisory locks are a [Tech Preview](https://github.com/yugabyte/yugabyte-db/issues/3642)
-on YugabyteDB, so the profile also enables `noAdvisoryLocks`.
+failures. The profile also enables `noAdvisoryLocks`, because advisory locks are a
+[Tech Preview](https://github.com/yugabyte/yugabyte-db/issues/3642) on YugabyteDB.
 
 **Not supported on YugabyteDB:** partitioned queues (`partition: true`), multi-master concurrent
 startup, and schema migrations between pg-boss versions, which all involve DDL under contention. A
@@ -503,8 +503,8 @@ Avoiding the partition DDL (`noTablePartitioning`) is the only thing that works.
 
 ### Not supported: Aurora DSQL
 
-Aurora DSQL has no `backend` profile, so you can't currently configure pg-boss to run against
-it. The notes below are for contributors evaluating a future profile.
+Because Aurora DSQL has no `backend` profile, you can't currently configure pg-boss to run
+against it. The notes below are for contributors evaluating a future profile.
 
 [Amazon Aurora DSQL](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility.html)
 is a serverless distributed SQL database with PostgreSQL compatibility. However, it uses
@@ -534,7 +534,7 @@ creation and OCC behavior. If you experiment with Aurora DSQL, please report you
 
 ### Not supported: Spanner
 
-Spanner has no `backend` profile, so you can't currently configure pg-boss for it. Google Cloud
+Because Spanner has no `backend` profile, you can't currently configure pg-boss for it. Google Cloud
 Spanner provides PostgreSQL wire compatibility through
 [PGAdapter](https://cloud.google.com/spanner/docs/pgadapter). A profile would likely need
 `noSkipLocked`, `noMultiMutationCte`, `noTablePartitioning`, `noDeferrableConstraints`, and
@@ -597,8 +597,8 @@ The limitations below apply when pg-boss runs with `noSkipLocked` (the atomic-UP
 ### Serialization errors (CockroachDB)
 
 CockroachDB uses SERIALIZABLE isolation by default. Under high contention, transactions may fail with
-serialization errors (`40001`) and need to retry. `fetch()` rejects with that error. A worker emits it
-as an `error` event and fetches again on its next poll, so no job is lost.
+serialization errors (`40001`) and need to retry. `fetch()` rejects with that error. No job is lost,
+because a worker emits the error as an `error` event and fetches again on its next poll.
 
 ### Empty results under contention
 

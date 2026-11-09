@@ -33,7 +33,7 @@ npm install @pg-boss/pro
 
 The second line points the whole `@pg-boss` scope at the private registry. The free packages, `@pg-boss/dashboard` and `@pg-boss/proxy`, keep resolving from npmjs, because the registry redirects anything that isn't Pro.
 
-In CI, keep the token out of the file. npm substitutes the variable when it reads `.npmrc`, so the same file works on a laptop and in a pipeline:
+In CI, keep the token out of the file. The same `.npmrc` works on a laptop and in a pipeline, because npm substitutes the variable when it reads the file:
 
 ```
 //npm.pgboss.io/:_authToken=${PGBOSS_PRO_TOKEN}
@@ -48,7 +48,7 @@ In pg-boss's schema, Pro reads what its pages show and makes changes through pg-
 
 In the store database, the role needs the [CREATE](https://www.postgresql.org/docs/current/sql-grant.html) privilege to create Pro's `pgboss_pro` and `pgboss_pro_queue` schemas on first start. Pro migrates them on startup after an upgrade, which needs the role that owns them.
 
-Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state, so the connection counts by state can read low.
+Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state. For that role, the connection counts by state can read low.
 
 The following is a sample script that grants these permissions:
 
@@ -59,19 +59,19 @@ GRANT pg_read_all_stats TO leastprivuser;
 
 ## Run
 
-`DATABASE_URL` names the database the application's pg-boss uses. On startup, Pro installs pg-boss's schema in each database that has none, as pg-boss's own `start()` does, so Pro also runs on a new database.
+`DATABASE_URL` names the database the application's pg-boss uses. On startup, Pro installs pg-boss's schema in each database that has none, as pg-boss's own `start()` does. Pro also runs on a new database.
 
 ```bash
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-pro
 ```
 
-On first run there are no accounts, so Pro prints a setup link to its log:
+On first run there are no accounts. Pro prints a setup link to its log:
 
 ```
 pg-boss Pro: no account yet. Open /setup?token=… to create the first global administrator. The link works until this process restarts.
 ```
 
-Open the setup link (for example `http://localhost:3000/setup?token=…`) and create the first global administrator. The page refuses anyone without the token, so whoever reaches a new install first can't take it. The token is new each time the process starts. With several instances behind a load balancer, set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md) so they share one token, and open `/setup?token=` followed by its value. The page closes for good once the first account exists.
+Open the setup link (for example `http://localhost:3000/setup?token=…`) and create the first global administrator. Whoever reaches a new install first can't take it, because the page refuses anyone without the token. The token is new each time the process starts. With several instances behind a load balancer, set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md) so they share one token, and open `/setup?token=` followed by its value. The page closes for good once the first account exists.
 
 ![Creating the first global administrator](../images/pro/setup.webp){.light-only}
 ![Creating the first global administrator](../images/pro/setup-dark.webp){.dark-only}
@@ -87,7 +87,7 @@ As in the free dashboard, `DATABASE_URL` takes several databases separated by `|
 
 ## Docker
 
-With the CI form of `.npmrc` above, pass the license key as a build secret, so no image layer keeps it:
+With the CI form of `.npmrc` above, pass the license key as a build secret so that no image layer keeps it:
 
 ```dockerfile
 FROM node:22-alpine

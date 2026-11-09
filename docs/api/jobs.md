@@ -100,8 +100,8 @@ You can also set every retry, expiration and retention option on the queue. Each
 
   A string that begins with an ISO 8601 calendar date (`YYYY-MM-DD`) is read as a date time. If it
   has an explicit zone designator (`Z` or an offset such as `+05:30`), it resolves to that exact
-  instant. If it has none, it's read as UTC, so the instant doesn't depend on the
-  database's time zone.
+  instant. If it has none, it's read as UTC whatever the
+  database's time zone is.
 
   | String | Resolves to |
   | --- | --- |
@@ -121,12 +121,12 @@ You can also set every retry, expiration and retention option on the queue. Each
   A string naming a time zone instead of an offset (`'2027-01-01 08:00:00 America/New_York'`) is
   left for the database to resolve and follows that zone's rules, including daylight saving.
 
-  Any other string is read as a relative delay from now in Postgres interval syntax, so
-  `'5 minutes'`, `'1 hour'`, `'PT1H'` and `'90'` (bare seconds) are all valid. A string that begins
+  Any other string is read as a relative delay from now in Postgres interval syntax, such as
+  `'5 minutes'`, `'1 hour'`, `'PT1H'` or `'90'` (bare seconds). A string that begins
   with a calendar date but isn't a valid date time (`'2027-13-45'`) is an error and isn't read as a delay.
 
   The ISO 8601 year-month and ordinal date formats are *not* recognized as date times.
-  They're valid Postgres intervals, so pg-boss reads them as long delays and doesn't reject them:
+  pg-boss reads them as long delays and doesn't reject them, because they're valid Postgres intervals:
 
   | String | Read as |
   | --- | --- |
@@ -172,7 +172,7 @@ For example, if you set `singletonSeconds` to 60 and send 2 jobs within the same
 
 When a job is throttled and `singletonNextSlot` is true, pg-boss schedules the job to run after the current time slot. For example, `sendDebounced()` sets this option to true.
 
-As with queue policies, `singletonKey` applies the throttle per key, so each key gets one job within the time slot.
+As with queue policies, the throttle allows one job per `singletonKey` within the time slot.
 
 ```js
 const payload = {
@@ -301,7 +301,7 @@ A `singletonKey` is only guaranteed unique per state under the `short` and `stat
 
 ### `update({ name, data, options })`
 
-This overload takes a single object with name, data, and options properties. `data` is optional, so omit it to change only options.
+This overload takes a single object with name, data, and options properties. `data` is optional. Omit it to change only options.
 
 ```js
 await boss.update({
@@ -368,7 +368,7 @@ interface JobInsert<T = object> {
 }
 ```
 
-Each field works like the `send()` option of the same name, so a `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
+Each field works like the `send()` option of the same name. For example, a `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
 
 Returns a `Promise<string[] | null>`. Without `returnId: true` and with spies off, it resolves to `null`. With `returnId: true`, it resolves to the ids of the jobs that were inserted, or to `null` when no jobs were inserted (an empty input array included). It doesn't resolve to an empty array. The example below adds `?? []` to always get an array back.
 
@@ -455,11 +455,11 @@ Returns an array of jobs from a queue.
 
   * `priority`, bool, **deprecated, ignored since 12.30.0**
 
-    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput. The fetch index is ordered to match the fetch, so there is no sort to skip. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. Setting it to `false` emits a Node `DeprecationWarning` (code `PGBOSS_DEP_FETCH_SORT`) once per option per instance, and the next major will reject it. Run with `--trace-deprecation` to find the call site.
+    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput. There is no sort to skip, because the fetch index is ordered to match the fetch. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. Setting it to `false` emits a Node `DeprecationWarning` (code `PGBOSS_DEP_FETCH_SORT`) once per option per instance, and the next major will reject it. Run with `--trace-deprecation` to find the call site.
 
   * `orderByCreatedOn`, bool, **deprecated, ignored since 12.30.0**
 
-    Jobs are always fetched in creation order. The fetch index provides that order directly, so disabling it saved nothing measurable.
+    Jobs are always fetched in creation order. Disabling the option saved nothing measurable, because the fetch index provides that order directly.
 
   * `includeMetadata`, bool, *default: false*
 
@@ -531,8 +531,8 @@ The dead-lettered job's own `output` starts empty, since it's a new job that has
 On the first failure, `sourceRootId` is the same as `sourceId`.
 These fields are `null` for jobs that weren't dead-lettered.
 
-After a redrive, every later dead-lettered and redriven copy of the job carries the same
-`sourceRootId`, so you can find a job's whole history from its original id.
+You can find a job's whole history from its original id, because after a redrive every later
+dead-lettered and redriven copy of the job carries the same `sourceRootId`.
 
 **Notes**
 
@@ -561,7 +561,7 @@ await Promise.allSettled(jobs.map(async job => {
 Deletes a job by id. Accepts a fetched job in place of its id, which only deletes the attempt that was fetched (see [passing jobs instead of ids](#passing-jobs-instead-of-ids)).
 
 > [!NOTE]
-> `deleteJob()` supports a "fetch then delete" workflow like SQS's. Workers don't delete jobs by default, so everything works out of the box. Throttling and debouncing in particular need jobs to exist to enforce a unique constraint. For example, if you debounce a queue to "only allow 1 job per hour", deleting jobs after processing reopens that time slot and breaks your throttling policy.
+> `deleteJob()` supports a "fetch then delete" workflow like SQS's. Everything works out of the box because workers don't delete jobs by default. Throttling and debouncing in particular need jobs to exist to enforce a unique constraint. For example, if you debounce a queue to "only allow 1 job per hour", deleting jobs after processing reopens that time slot and breaks your throttling policy.
 
 ```js
 const [job] = await boss.fetch('email-send')
@@ -583,20 +583,20 @@ await boss.deleteJob('email-send', jobs.map(job => job.id))
 Moves jobs out of a dead letter queue and re-creates them as fresh jobs on their original source queue. `name` is the
 dead letter queue to drain. Returns the number of jobs moved.
 
-Each job goes back to the queue it originally failed on (its `sourceName`),
-so a single dead letter queue that collects from many source queues fans back out
+Each job goes back to the queue it originally failed on (its `sourceName`).
+A single dead letter queue that collects from many source queues fans back out
 correctly. A re-created job gets a new id (with [`sourceRootId`](#fetch-name-options) still
 pointing at the job `send()` returned), a reset retry count and cleared output.
 It also gets the destination queue's current retry, retention, policy, expiration, heartbeat, and
 deadLetter configuration. Per-job overrides passed to the original `send()` (such as
 `expireInSeconds` or `retryLimit`) aren't restored, since the queue's configuration wins.
-The job keeps its `priority`, `singletonKey`, and `group`, so a redriven
-job keeps its ordering weight and stays subject to its group concurrency limits. Only
+The job keeps its `priority`, `singletonKey`, and `group`. Its ordering weight
+and group concurrency limits stay in effect. Only
 jobs that aren't being processed (still in the `created`/`retry` state)
 are moved.
 
-`redrive()` can't recover jobs that were part of a flow. A dead-lettered
-parent never reaches the `completed` state, so its dependents stay blocked. The
+`redrive()` can't recover jobs that were part of a flow. The dependents of a dead-lettered
+parent stay blocked, because the parent never reaches the `completed` state. The
 re-created job also has a new id that the existing dependency rows don't point at. Redriving
 such a job runs it again on its own without resuming the original flow.
 
@@ -610,8 +610,8 @@ such a job runs it again on its own without resuming the original flow.
 - `data`: only redrive jobs whose payload contains this object, matched the same
   way as [`findJobs()`](#findjobs-name-options).
 - `createdBefore`: only redrive jobs that arrived in the dead letter queue before
-  this `Date`. Pass the same value to every call of a loop to drain a fixed set,
-  so jobs dead-lettered while it runs aren't swept in.
+  this `Date`. Pass the same value to every call of a loop to drain a fixed set
+  that leaves out jobs dead-lettered while the loop runs.
 - `ids`: only redrive these jobs, by their id in the dead letter queue.
 - `limit`: maximum number of jobs to move in this call, oldest first (default
   `1000`). Loop or schedule repeated calls to drain large dead letter queues at a
@@ -632,7 +632,7 @@ aren't redrive candidates until that job is resolved, which is the same rule fet
 `redrive()` doesn't move jobs that a dead letter queue's own workers have already failed.
 Only jobs still waiting there are candidates. The return value counts only the jobs
 re-created. If every waiting job collided, a call returns `0` even though jobs remained.
-The collided jobs are now failed, so the next call moves on.
+The next call moves on, because the collided jobs are now failed.
 
 ```js
 // drain a dead letter queue back to its source queues, 500 at a time, stopping at the
@@ -648,8 +648,8 @@ do {
 ### `previewRedrive(name, options)`
 
 Reports what [`redrive()`](#redrive-name-options) would do with the same options,
-without moving anything. It takes every `redrive()` filter and uses the same matching,
-so the numbers agree with what a redrive would move at that moment.
+without moving anything. It takes every `redrive()` filter and uses the same matching.
+Its numbers agree with what a redrive would move at that moment.
 
 It reads at most `limit` matching jobs of each kind and doesn't count past the limit:
 
@@ -681,7 +681,7 @@ const { total, destinations, unroutable } = await boss.previewRedrive('email-dlq
 
 Deletes all queued jobs in a queue, and resolves to how many it deleted.
 
-It deletes in batches with one transaction per batch, so the delete isn't atomic. If it fails
+The delete isn't atomic, because it runs in batches with one transaction per batch. If it fails
 partway, the batches before the failure stay deleted. A job sent while it runs may or may not
 be deleted.
 
@@ -704,7 +704,7 @@ Deletes all jobs in a queue, including active jobs.
 
 If you don't give a queue name, it deletes jobs from all queues.
 
-It deletes in batches as `deleteQueuedJobs()` does and resolves to how many jobs it deleted. For a partitioned queue, and for every queue when no name is given, the call uses a single `TRUNCATE` instead. `TRUNCATE` reports no count, so the call resolves to `null`. The cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete (`deleteQueuedJobs()` and `deleteStoredJobs()` included), `totalCount` drops by the number of jobs deleted right away. The other cached counts catch up at the next monitor pass.
+It deletes in batches as `deleteQueuedJobs()` does and resolves to how many jobs it deleted. For a partitioned queue, and for every queue when no name is given, the call uses a single `TRUNCATE` instead. The call then resolves to `null`, because `TRUNCATE` reports no count. The cached counts in [`getQueue()`](./queues.md#getqueue-name) are zeroed at the same time. After any other delete (`deleteQueuedJobs()` and `deleteStoredJobs()` included), `totalCount` drops by the number of jobs deleted right away. The other cached counts catch up at the next monitor pass.
 
 ```js
 // delete everything in one queue
@@ -728,7 +728,7 @@ await boss.cancel('email-send', jobId)
 
 Cancels a set of pending or active jobs.
 
-With an array of ids, whether each job is canceled depends on its state, so the call can partly succeed. It's a best-effort operation.
+With an array of ids, the call can partly succeed, because whether each job is canceled depends on its state. It's a best-effort operation.
 
 ```js
 await boss.cancel('email-send', [jobId1, jobId2])
@@ -736,7 +736,7 @@ await boss.cancel('email-send', [jobId1, jobId2])
 
 ### `resume(name, id, options)`
 
-Resumes a canceled job. Its `startAfter` moves up to the time of the resume unless the current value is already later, so the job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
+Resumes a canceled job. Its `startAfter` moves up to the time of the resume unless the current value is already later. The job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from that `startAfter`.
 
 ```js
 await boss.resume('email-send', jobId)
@@ -752,7 +752,7 @@ await boss.resume('email-send', [jobId1, jobId2])
 
 ### `retry(name, id, options)`
 
-Retries a failed job. Its `startAfter` moves up to the time of the retry unless the current value is already later, so the job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from then.
+Retries a failed job. Its `startAfter` moves up to the time of the retry unless the current value is already later. The job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from that `startAfter`.
 
 ```js
 await boss.retry('email-send', jobId)
@@ -818,7 +818,7 @@ The promise resolves with `{ jobs, requested, affected }`. `affected` is `1` whe
 
 Completes a set of active jobs (or queued jobs with `includeQueued: true`).
 
-The promise resolves with `{ jobs, requested, affected }`, where `jobs` holds the ids passed, `requested` their count, and `affected` how many were completed. pg-boss leaves alone any job it can't complete, so `affected` can be lower than `requested`.
+The promise resolves with `{ jobs, requested, affected }`, where `jobs` holds the ids passed, `requested` their count, and `affected` how many were completed. `affected` can be lower than `requested`, because pg-boss leaves alone any job it can't complete.
 
 > [!NOTE]
 > See the note on `cancel([ids])` about batch calls, which can partly succeed.
@@ -851,7 +851,7 @@ const jobs = await boss.fetch('email-send', { batchSize: 10 })
 await boss.fail('email-send', jobs, { message: 'smtp outage' })
 ```
 
-The promise resolves with `{ jobs, requested, affected }`, where `jobs` holds the ids passed, `requested` their count, and `affected` how many were marked as failed. pg-boss leaves alone any job it can't fail, so `affected` can be lower than `requested`.
+The promise resolves with `{ jobs, requested, affected }`, where `jobs` holds the ids passed, `requested` their count, and `affected` how many were marked as failed. `affected` can be lower than `requested`, because pg-boss leaves alone any job it can't fail.
 
 > [!NOTE]
 > See the note on `cancel([ids])` about batch calls, which can partly succeed.

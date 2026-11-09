@@ -25,7 +25,7 @@ who later signs in through the provider lands on the same account, with the
 roles they already had. Pro refuses an address the provider hasn't verified.
 Creating an account for an unknown address is off by default and is turned on
 under **Accounts**. That setting needs the email domains that get an account. Pro
-matches each domain exactly, so `example.com` doesn't admit `mail.example.com`. Without that limit,
+matches each domain exactly. The domain `example.com` doesn't admit `mail.example.com`. Without that limit,
 anyone with a mailbox at a provider with public sign-up, such as Google or Auth0,
 would get an account. A new account starts as viewer or operator on
 all databases, or with no role until a global admin assigns it a role, but never
@@ -40,11 +40,11 @@ the next sign-in links the account again. Pointing Pro at a new issuer links eac
 again by its address.
 
 If the provider sends a group claim, each row of **Groups** maps one of the provider's group names onto a Pro
-group that already exists. Pro syncs only the mapped groups, so a group kept by hand isn't
-emptied because the provider doesn't list it. A token with no group claim means a
-person in no group, so Pro takes them out of every mapped group. Okta sends no
+group that already exists. Pro syncs only the mapped groups. A group kept by hand isn't
+emptied because the provider doesn't list it. Pro reads a token with no group claim as a
+person in no group and takes them out of every mapped group. Okta sends no
 group claim when none of the person's groups passes its filter. A claim holding one name as a string
-counts as that one group. Membership changes only at sign-in, so a person
+counts as that one group. Membership changes only at sign-in. A person
 removed at the provider leaves the mapped group at their next sign-in.
 
 Two cases change no membership. One is a token where Entra ID says it left the
@@ -52,9 +52,9 @@ groups out past its group limit (`_claim_names` or `hasgroups`). The other is a
 sign-in that would take the last global admin out of the group that makes them
 a global admin.
 
-A sign-in through the provider starts a Pro session that lasts 12 hours. Pro
-doesn't check with the provider again during the session, so a person disabled or signed out
-there keeps their open session until it ends. To end the session at once, disable the
+A sign-in through the provider starts a Pro session that lasts 12 hours. A person
+disabled or signed out at the provider keeps their open session until it ends, because Pro
+doesn't check with the provider again during the session. To end the session at once, disable the
 account in Pro, which ends its sessions immediately.
 
 The issuer must match the issuer the provider's discovery document names, with or

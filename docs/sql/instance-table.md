@@ -39,7 +39,7 @@ CREATE TABLE pgboss.instance (
 | `host`, `pid` | Where it runs |
 | `version`, `node_version` | pg-boss and Node.js versions |
 | `application_name` | The `application_name` its connections carry, `pgboss:` and the first 8 characters of `id` unless set otherwise |
-| `heartbeat_seconds` | Its heartbeat interval, so each row can be judged quiet on its own |
+| `heartbeat_seconds` | Its heartbeat interval. Each row can be judged quiet on its own |
 | `supervise` … `persist_warnings` | Its constructor options |
 | `pool_max` … `pool_waiting` | Its connection pool at the last heartbeat. Null for a `db` adapter |
 | `workers` | One entry per `work()` call at the last heartbeat |

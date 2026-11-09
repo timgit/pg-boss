@@ -6,7 +6,7 @@ A row at the top counts the open alerts that aren't acknowledged, split into cri
 
 Pro keeps the free overview's four figures across all queues and adds a line under three of them. **Ready** adds the p95 wait over the last hour and the oldest ready job's wait as the last few minutes' monitor passes saw it. **Active** adds how many instances are live in the [instance registry](./instances.md). **Failed** adds how many jobs failed in the last hour. The wait and failure lines read the stats pg-boss records with `persistQueueStats`.
 
-The free overview lists the five queues holding the most jobs. Pro lists the first five of the queue list sorted by **Needs attention**, so every queue is judged by its [health](./queues.md#health) over the last hour. When two queues are equal, the busier queue goes first. pg-boss's own queues are left out. The table adds each queue's health, its p95 wait over the last hour and its [uptime](./status.md#uptime) over the last 30 days, and drops the status badge. A link beside the title opens the full [queue list](./queues.md#queues).
+The free overview lists the five queues holding the most jobs. Pro lists the first five of the queue list sorted by **Needs attention**. The sort judges every queue by its [health](./queues.md#health) over the last hour. When two queues are equal, the busier queue goes first. pg-boss's own queues are left out. The table adds each queue's health, its p95 wait over the last hour and its [uptime](./status.md#uptime) over the last 30 days, and drops the status badge. A link beside the title opens the full [queue list](./queues.md#queues).
 
 The column beside the sections has three cards:
 

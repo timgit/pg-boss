@@ -89,7 +89,7 @@ Each row describes one index that is holding far more pages than its live entrie
 | `bytes` | Size on disk |
 | `owned` | Whether the connected role can `REINDEX` it |
 
-`pages` and `entries` come from `pg_class`, which only `VACUUM` and `ANALYZE` refresh, so the results go stale on a table with autovacuum disabled.
+`pages` and `entries` come from `pg_class`, which only `VACUUM` and `ANALYZE` refresh. On a table with autovacuum disabled, the results go stale.
 
 ### `percentile(bins, p)`
 
@@ -118,7 +118,7 @@ Combines two histograms into one by adding their counts bin by bin, as if every 
 addBins([0, 2, 5, 1, …], [1, 0, 3, 4, …]) // [1, 2, 8, 5, …]
 ```
 
-`addBins()` returns a new array and leaves both arguments unchanged. A `null` argument counts as an empty histogram, so `null` is a safe starting value when combining a list. The result is `null` only when both arguments are `null`.
+`addBins()` returns a new array and leaves both arguments unchanged. A `null` argument counts as an empty histogram, which makes `null` a safe starting value when combining a list. The result is `null` only when both arguments are `null`.
 
 ```js
 import { addBins, percentile } from 'pg-boss'

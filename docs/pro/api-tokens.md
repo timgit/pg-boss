@@ -1,11 +1,11 @@
 # API tokens and service accounts
 
-A script, a CI job, a Prometheus scrape or a worker in another language reaches Pro with an API token. A token belongs to a **service account**, which is an account for a machine, so the token keeps working when the person who set it up leaves.
+A script, a CI job, a Prometheus scrape or a worker in another language reaches Pro with an API token. A token belongs to a **service account**, which is an account for a machine. The token keeps working when the person who set it up leaves.
 
 - A service account has [roles](./roles.md) on databases like a person: a viewer for a scrape, an operator on one database for a CI redrive, a worker for a worker.
 - It can't sign in to the Pro Console by password, SSO or invitation. It acts only through its tokens, and only on the [Pro API](./api.md) and `/metrics`.
 - Disabling it stops every one of its tokens at once.
-- It can have several tokens, so a token can be replaced with no gap: create the new token, deploy it, revoke the old token.
+- It can have several tokens. To replace a token with no gap, create the new token, deploy it, then revoke the old token.
 
 ## Service accounts list
 
@@ -41,7 +41,7 @@ A client sends the token in an `Authorization: Bearer` header:
 curl -H "Authorization: Bearer $PGBOSS_PRO_API_TOKEN" https://console.example.com/pro/api/v1/pgboss/getQueues
 ```
 
-Tokens work only on the API and [`/metrics`](./metrics.md). The Console's pages ignore them, and the API ignores a session cookie. Pro answers a missing or invalid token with `401` and `WWW-Authenticate: Bearer`. After five invalid tokens from one address in fifteen minutes, Pro answers that address's invalid tokens with `429` for fifteen minutes, so guessing gets no answer. A valid token from the address still works, so a client sharing an address with someone guessing isn't cut off.
+Tokens work only on the API and [`/metrics`](./metrics.md). The Console's pages ignore them, and the API ignores a session cookie. Pro answers a missing or invalid token with `401` and `WWW-Authenticate: Bearer`. After five invalid tokens from one address in fifteen minutes, Pro answers that address's invalid tokens with `429` for fifteen minutes. A client sharing an address with someone guessing isn't cut off, because a valid token from the address still works.
 
 ## Audit
 

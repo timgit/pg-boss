@@ -26,7 +26,7 @@ because a mail relay or a chat server on the same network is the usual setup.
 Set `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES=true` to keep webhook and SMTP
 destinations on the public internet. Pro then refuses any destination whose host resolves to a loopback,
 private, link-local, shared or other non-public address. The destination's
-deliveries show the reason. Pro checks the address it connects to, so a host name can't pass the
+deliveries show the reason. Pro checks the address it connects to. A host name can't pass the
 check and then resolve somewhere private. PagerDuty and Resend are public
 already. Single sign-on isn't covered, because providers often run on the
 internal network. The provider's endpoints must use https, or http on localhost.

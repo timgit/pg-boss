@@ -2,7 +2,7 @@
 
 The [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package is an HTTP proxy that exposes pg-boss methods over a JSON API. Use it to call pg-boss from non-Node runtimes or serverless functions, or to pool connections as you scale.
 
-By default the proxy is stateless. It turns off job supervision, scheduling and migrations, so it only opens a database connection and serves requests. `start()` starts its pg-boss instance, which opens the database connection.
+By default the proxy is stateless. It only opens a database connection and serves requests, because it turns off job supervision, scheduling and migrations. `start()` starts its pg-boss instance, which opens the database connection.
 
 ## Features
 
@@ -332,7 +332,7 @@ const { app, boss } = await createProxyService({
 
 ### Authorizing each call
 
-`middleware` runs before every route under the prefix and doesn't know which method was called. The proxy calls `authorize` for each API request with the pg-boss method name, so you can grant access by method and by caller:
+`middleware` runs before every route under the prefix and doesn't know which method was called. The proxy calls `authorize` for each API request with the pg-boss method name so that you can grant access by method and by caller:
 
 ```ts
 const { app, boss } = await createProxyService({
@@ -349,16 +349,16 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-- `authorize` runs after `middleware`, so it sees anything a middleware set on the context. It runs before the proxy validates the request body or query.
+- `authorize` runs after `middleware` and sees anything a middleware set on the context. It runs before the proxy validates the request body or query.
 - Return `true` to let the call through. `false` refuses it with `403 Forbidden`. `{ status, message }` refuses it with that status. Anything else, including returning nothing, refuses the call with `403`.
 - The refusal keeps any headers you set on the context before returning, such as `WWW-Authenticate`.
-- `/meta` is authorized as the method `meta`. The root page, the docs and the OpenAPI spec aren't API routes, so requests for them don't reach `authorize`.
+- `/meta` is authorized as the method `meta`. Requests for the root page, the docs and the OpenAPI spec don't reach `authorize`, because they aren't API routes.
 - An `authorize` hook that throws answers `500`. The response includes the message only when `exposeErrors` is on.
-- Methods removed by `routes.allow` or `routes.deny` have no route, so they answer `404` before `authorize` is called.
+- A request for a method removed by `routes.allow` or `routes.deny` answers `404` before `authorize` is called, because the method has no route.
 
 ### Mounting several services
 
-`app` is a Hono app, so you can mount it in another Hono app with `route()`. Each service wraps its own `PgBoss` instance, so one parent app can serve several databases:
+`app` is a Hono app, which you can mount in another Hono app with `route()`. One parent app can serve several databases, because each service wraps its own `PgBoss` instance:
 
 ```ts
 import { Hono } from 'hono'
@@ -378,7 +378,7 @@ for (const [name, connectionString] of Object.entries(databases)) {
 ```
 
 - With `prefix: ''`, a database's methods are at `/db/<name>/send` and so on. With the default prefix they're at `/db/<name>/api/send`.
-- The root page, the docs and the OpenAPI spec are served under the mount too (`/db/<name>/docs`) and link through it. The spec lists the mount as its server, so the docs' **Try it out** calls the right database.
+- The root page, the docs and the OpenAPI spec are served under the mount too (`/db/<name>/docs`) and link through it. The docs' **Try it out** calls the right database, because the spec lists the mount as its server.
 - `env: {}` keeps every service from reading `PGBOSS_PROXY_*` variables and `DATABASE_URL` from the process, which would otherwise apply to every service.
 - Call each service's `stop()` when the parent shuts down.
 

@@ -6,7 +6,7 @@
 | `PGBOSS_SCHEMA` | `pgboss` | The schema pg-boss was installed into. |
 | `PORT` | `3000` | |
 | `HOST` | `0.0.0.0` | |
-| `PGBOSS_DASHBOARD_BASE_PATH` | `/` | Serve under a prefix, such as `/pgboss`. Read at startup, so changing it needs no rebuild. |
+| `PGBOSS_DASHBOARD_BASE_PATH` | `/` | Serve under a prefix, such as `/pgboss`. Changing it needs no rebuild, because Pro reads it at startup. |
 | `PGBOSS_DASHBOARD_SITE_URL` | | The public address, as `https://host[:port]`, for a Console behind a proxy that ends HTTPS. Links in alerts use it with the base path. Without it, alerts carry no link. The API examples on a service account's page fall back to the address the page was opened at. See [reverse proxy](../dashboard.md#reverse-proxy). |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | `60000` | A statement timeout in milliseconds, for the pages' reads and for the connections the alert evaluator and Operations open. |
 | `PGBOSS_PRO_DATABASE_URL` | the first database | Where Pro keeps its own tables. |

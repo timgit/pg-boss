@@ -16,9 +16,9 @@ Avoid the following format, which is parsed as "only run exactly at 3:30:30 am e
 
 Set `cronMonitorIntervalSeconds` to change how often schedules are checked, and `cronWorkerIntervalSeconds` to change how often cron jobs run.
 
-To limit clock skew and drift, every 10 minutes each instance compares its clock to the database server's clock. pg-boss stores any skew and uses it as an offset during cron evaluation, so all instances stay synchronized. pg-boss then uses job throttling internally so only 1 job is sent, even when several instances are running.
+To limit clock skew and drift, every 10 minutes each instance compares its clock to the database server's clock. pg-boss stores any skew and uses it as an offset during cron evaluation to keep all instances synchronized. pg-boss then uses job throttling internally so only 1 job is sent, even when several instances are running.
 
-Set `clockMonitorIntervalSeconds` to change the clock monitoring interval. Cron evaluation reads the time from the instance's [`clock`](./constructor.md#clock) option, so a [`TestClock`](./testing.md#controlling-time) can move a schedule to its next occurrence without waiting for it. To turn scheduling off on an instance, pass this in the constructor options.
+Set `clockMonitorIntervalSeconds` to change the clock monitoring interval. Because cron evaluation reads the time from the instance's [`clock`](./constructor.md#clock) option, a [`TestClock`](./testing.md#controlling-time) can move a schedule to its next occurrence without waiting for it. To turn scheduling off on an instance, pass this in the constructor options.
 
 ```js
 {
@@ -30,7 +30,7 @@ For more cron documentation and examples, see the docs for the [cron-parser pack
 
 ## RRULE expressions
 
-pg-boss reads an expression as a recurrence rule, as defined in [RFC 5545](https://datatracker.ietf.org/doc/html/rfc5545#section-3.3.10), when it has a `FREQ=` part or a line that opens with an iCalendar property such as `DTSTART` or `RRULE`. [rrule-temporal](https://www.npmjs.com/package/rrule-temporal) evaluates it. Everything else is a cron expression. No cron field contains `=`, `:` or `;`, so a cron expression can't be mistaken for a rule.
+pg-boss reads an expression as a recurrence rule, as defined in [RFC 5545](https://datatracker.ietf.org/doc/html/rfc5545#section-3.3.10), when it has a `FREQ=` part or a line that opens with an iCalendar property such as `DTSTART` or `RRULE`. [rrule-temporal](https://www.npmjs.com/package/rrule-temporal) evaluates it. Everything else is a cron expression. A cron expression can't be mistaken for a rule, because no cron field contains `=`, `:` or `;`.
 
 Rules cover the schedules cron can't express: the last Friday of the month, every second Monday, a schedule that stops on a date or after a number of runs.
 
@@ -51,13 +51,13 @@ await boss.schedule('standup', [
 
 * **Time zone**
 
-  When `DTSTART` names a time zone, as `DTSTART;TZID=Europe/Berlin:20260901T090000` does, the rule uses it. Otherwise the `tz` option sets the zone, so `FREQ=DAILY;BYHOUR=9` with `tz: 'America/Chicago'` runs at nine in Chicago through every daylight saving transition.
+  When `DTSTART` names a time zone, as `DTSTART;TZID=Europe/Berlin:20260901T090000` does, the rule uses it. Otherwise the `tz` option sets the zone. With `tz: 'America/Chicago'`, `FREQ=DAILY;BYHOUR=9` runs at nine in Chicago through every daylight saving transition.
 
 * **DTSTART**
 
-  A rule with no `DTSTART` is anchored on 1970-01-01T00:00:00 in the schedule's time zone. The anchor is the same in every instance and every release. An `INTERVAL` counts from that anchor, so `FREQ=HOURLY;INTERVAL=6` runs every six hours from midnight on the epoch. Supply a `DTSTART` to choose the phase yourself. pg-boss rejects `COUNT` without a `DTSTART`, since counting from the epoch leaves a rule with nothing left to send.
+  A rule with no `DTSTART` is anchored on 1970-01-01T00:00:00 in the schedule's time zone. The anchor is the same in every instance and every release. `FREQ=HOURLY;INTERVAL=6` runs every six hours from midnight on the epoch, because an `INTERVAL` counts from that anchor. Supply a `DTSTART` to choose the phase yourself. pg-boss rejects `COUNT` without a `DTSTART`, since counting from the epoch leaves a rule with nothing left to send.
 
-  An `HOURLY`, `MINUTELY` or `SECONDLY` `INTERVAL` counts elapsed time instead of clock time. The epoch anchor falls in standard time, so in a zone that observes daylight saving, the local time of those occurrences moves with the offset. `FREQ=HOURLY;INTERVAL=6` with `tz: 'America/Chicago'` lands on 00:00, 06:00, 12:00 and 18:00 in January and on 01:00, 07:00, 13:00 and 19:00 in July. To pin the hours to the clock, name them. `FREQ=DAILY;BYHOUR=0,6,12,18` holds across a transition, as `0 */6 * * *` does.
+  An `HOURLY`, `MINUTELY` or `SECONDLY` `INTERVAL` counts elapsed time instead of clock time. Because the epoch anchor falls in standard time, the local time of those occurrences moves with the offset in a zone that observes daylight saving. `FREQ=HOURLY;INTERVAL=6` with `tz: 'America/Chicago'` lands on 00:00, 06:00, 12:00 and 18:00 in January and on 01:00, 07:00, 13:00 and 19:00 in July. To pin the hours to the clock, name them. `FREQ=DAILY;BYHOUR=0,6,12,18` holds across a transition, as `0 */6 * * *` does.
 
 * **Finite rules**
 
@@ -69,13 +69,13 @@ await boss.schedule('standup', [
 
 * **Stored format**
 
-  `schedule()` works out which format an expression is in once and stores the answer in the schedule table's `kind` column (`cron` or `rrule`). `getSchedules()` returns that column. Every pass reads the expression the way the column says, so validation and later passes can't read the format differently. A row written straight into the table with SQL has to name its own kind, because the column defaults to `cron` (the format of every schedule stored before rules existed).
+  `schedule()` works out which format an expression is in once and stores the answer in the schedule table's `kind` column (`cron` or `rrule`). `getSchedules()` returns that column. Validation and later passes can't read the format differently, because every pass reads the expression the way the column says. A row written straight into the table with SQL has to name its own kind, because the column defaults to `cron` (the format of every schedule stored before rules existed).
 
   The column is only a hint. When an expression can't be read the way the column says but is written in the other format, the pass reads it as written and corrects the column. So a row that lost its label keeps firing. The label can be lost to a schema rollback and re-upgrade, or to an upsert from an instance whose release predates the column.
 
 Any instance on a release that supports rules can read a rule. During a rolling upgrade, an instance still on an older release reads the expression as cron, can't parse it, and reports an [`invalid_schedule`](./events.md#warning) warning until the instance is replaced. Add rule schedules once the deployment is upgraded.
 
-`schedule()` validates the expression, so a rule that would be read differently than it was meant is rejected before it reaches the table:
+`schedule()` validates the expression. A rule that would be read differently than it was meant is rejected before it reaches the table:
 
 * an unknown part such as `BYHOURS=9`, or an unknown property such as `DTSRAT`, which a parser drops before evaluating the rest
 * a value out of range, such as `BYHOUR=25` or the `25` in `BYHOUR=9,25`, which a parser also drops quietly
@@ -88,7 +88,7 @@ Any instance on a release that supports rules can read a rule. During a rolling 
 
 ## Catch-up after an outage
 
-A pass sends the occurrences of the preceding 60 seconds, so an occurrence that came due while no instance was running a pass isn't sent. A deployment that was down or between deploys for an hour doesn't send what that hour held. The `missed` option sets what a schedule does about missed occurrences.
+A pass sends the occurrences of the preceding 60 seconds. An occurrence that came due while no instance was running a pass isn't sent. A deployment that was down or between deploys for an hour doesn't send what that hour held. The `missed` option sets what a schedule does about missed occurrences.
 
 | `missed` | What a schedule sends for a gap |
 | --- | --- |
@@ -100,15 +100,15 @@ A pass sends the occurrences of the preceding 60 seconds, so an occurrence that 
 await boss.schedule('report', '0 3 * * *', null, { missed: 'once' })
 ```
 
-The gap runs from the last time any instance ran a cron pass to the moment the due window opens. pg-boss records the time of that last pass on its version row. Passes run every `cronMonitorIntervalSeconds` (30 by default, 45 at the ceiling) against a 60-second window, so a deployment that keeps running has no gap and the option costs it nothing. A gap opens when the passes stop: the deployment is down, in the middle of a deploy, or running with `schedule: false`.
+The gap runs from the last time any instance ran a cron pass to the moment the due window opens. pg-boss records the time of that last pass on its version row. Passes run every `cronMonitorIntervalSeconds` (30 by default, 45 at the ceiling) against a 60-second window. A deployment that keeps running has no gap, which means the option costs it nothing. A gap opens when the passes stop: the deployment is down, in the middle of a deploy, or running with `schedule: false`.
 
-A schedule doesn't catch up on time before its own row was written. `created_on` bounds the range, so a schedule written while nothing was running catches up only from when it was written. Re-running `schedule()` for an existing `(name, key)` leaves that bound where it is, so a deployment that registers its schedules on every boot still catches up on the outage it just ended.
+A schedule doesn't catch up on time before its own row was written. A schedule written while nothing was running catches up only from when it was written, because `created_on` bounds the range. Re-running `schedule()` for an existing `(name, key)` leaves that bound where it is. A deployment that registers its schedules on every boot still catches up on the outage it just ended.
 
 The option applies to both formats. A rule is read backwards over the gap the same way a cron expression is.
 
 Consider these before choosing `once`:
 
-* **One job for the whole gap, which looks like any other scheduled job.** The job carries the schedule's `data` unchanged, so a handler can't tell that the job is late or which occurrence the job stands for. Three days of downtime sends one job for last night's occurrence and nothing for the two nights before it.
+* **One job for the whole gap, which looks like any other scheduled job.** The job carries the schedule's `data` unchanged. A handler can't tell that the job is late or which occurrence the job stands for. Three days of downtime sends one job for last night's occurrence and nothing for the two nights before it.
 
 * **The catch-up job can arrive beside the occurrence that is due now.** The catch-up job and the due job are filed under different minutes, unless the missed occurrence happens to share a minute with the due occurrence. A `singletonKey`, or a queue policy that allows one queued job (`short`, `stately`, `exclusive`), collapses them like any other pair.
 
@@ -132,9 +132,9 @@ Creates a schedule that sends jobs to the queue on a cron expression or an [RRUL
 * **tz**
 
   An optional time zone name, UTC by default. pg-boss reads a `null` or empty zone as no zone
-  chosen, so either also means UTC. A value threaded out of a config object can be `null` or empty,
+  chosen, which means UTC. A value threaded out of a config object can be `null` or empty,
   as can a value read back off a schedule row written before zones were validated. `schedule()` rejects an
-  unrecognized zone, so a typo can't be stored and then fail on the cron pass.
+  unrecognized zone so that a typo can't be stored and then fail on the cron pass.
 
 * **key**
   
@@ -159,7 +159,7 @@ await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicag
 
 ### `unschedule(name)`
 
-Removes the queue's schedule that has no key. A keyed schedule stays, so pass its `key` to remove it.
+Removes the queue's schedule that has no key and leaves keyed schedules in place. To remove a keyed schedule, pass its `key`.
 
 ```js
 await boss.unschedule('notification-abc')
@@ -208,7 +208,7 @@ Each schedule has the following properties.
 | `updatedOn` | When the definition was last changed |
 | `lastJobId` | Id of the job the schedule most recently created |
 
-`lastJobId` connects a schedule to its last run, so you can inspect a queue's history from the
+`lastJobId` connects a schedule to its last run. Use it to inspect a queue's history from the
 schedule that produced it.
 
 ```js
@@ -222,12 +222,12 @@ if (schedule.lastJobId) {
 }
 ```
 
-`lastJobId` isn't a foreign key. The job it names falls under the queue's retention policy and is
-eventually deleted, so it may no longer exist. Re-running `schedule()` for the same `(name, key)`
+`lastJobId` isn't a foreign key. The job it names may no longer exist, because the queue's retention policy
+eventually deletes it. Re-running `schedule()` for the same `(name, key)`
 updates the definition and leaves `lastJobId` alone. `unschedule()` removes the row entirely.
 
 pg-boss records `lastJobId` on a best-effort basis in a separate statement after it creates the
-job, so `null` doesn't prove a schedule never fired. A schedule reads `null` until its next run when
+job. A `null` value doesn't prove a schedule never fired. A schedule reads `null` until its next run when
 it last fired before the upgrade that added the column, or when its annotating statement failed
 after its job was already created. Treat `lastJobId` as a pointer to the last run pg-boss observed. The queue's
 job history is the complete record of what actually ran.
@@ -252,8 +252,8 @@ if (schedule) {
 
 Returns the next occurrences an expression produces, as an array of `Date`. The expression is a
 cron expression or an [RRULE](#rrule-expressions). `previewSchedule()` tells them apart the same
-way `schedule()` does, so you can preview a stored schedule from its `cron` column without
-consulting its `kind`. It validates the expression and time zone exactly as `schedule()` does, so
+way `schedule()` does. You can preview a stored schedule from its `cron` column without
+consulting its `kind`. It validates the expression and time zone exactly as `schedule()` does, which means
 anything it previews can also be stored.
 
 `previewSchedule()` doesn't query the database or need a started instance.
@@ -267,12 +267,12 @@ anything it previews can also be stored.
 
 * **tz**, string, *default: `UTC`*
 
-  Time zone the expression is evaluated in. A `null` or empty zone is read as no zone given, so
+  Time zone the expression is evaluated in. Because a `null` or empty zone is read as no zone given,
   previewing a stored schedule from its `timezone` column works whatever release wrote the row.
 
 * **from**, Date, *default: database time*
 
-  The point the walk starts from. Every occurrence returned is strictly after it, so passing back
+  The point the walk starts from. Every occurrence returned is strictly after it. Passing back
   the last occurrence of one page returns the next page.
 
   The default is this instance's clock plus the skew cached against the database, which is the same
@@ -284,10 +284,10 @@ anything it previews can also be stored.
 * **count**, number, *default: 5*
 
   How many occurrences to return. Must be an integer between 1 and 1000. A finite rule can return
-  fewer and returns none once its last occurrence has passed. `schedule()` refuses to store a rule
-  like that, so previewing a stored rule is how you find out it has finished.
+  fewer and returns none once its last occurrence has passed. Because `schedule()` refuses to store a rule
+  like that, previewing a stored rule is how you find out it has finished.
 
-  Occurrences of a sparse expression are expensive to find. The walk is synchronous, so it gives
+  Occurrences of a sparse expression are expensive to find. The walk is synchronous and gives
   up after a second to avoid holding the event loop for as long as the count would take. If
   the walk gives up, ask for fewer occurrences and page with `from`.
 
@@ -297,9 +297,8 @@ boss.previewSchedule('0 3 * * *', { tz: 'America/Chicago', count: 3 })
 boss.previewSchedule('FREQ=MONTHLY;BYDAY=-1FR;BYHOUR=17', { tz: 'America/Chicago', count: 3 })
 ```
 
-The result lists the expression's occurrences. A pass runs every `cronMonitorIntervalSeconds` and
-sends any occurrence from the preceding 60 seconds, so a job lands at or shortly after each listed
-time.
+The result lists the expression's occurrences. A job lands at or shortly after each listed time, because a pass runs
+every `cronMonitorIntervalSeconds` and sends any occurrence from the preceding 60 seconds.
 
 To preview a stored schedule, read it first:
 

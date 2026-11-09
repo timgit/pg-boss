@@ -8,7 +8,7 @@ GRANT CREATE ON DATABASE db1 TO leastprivuser;
 
 If you can't or don't want to grant CREATE, you have two options:
 
-1. **CLI (recommended).** Use the pg-boss CLI to create the schema and run migrations. The CLI can print the SQL without running it (`--dry-run` or the `plans` command), so a DBA can review the commands and run them by hand. See the [CLI documentation](./cli) for details.
+1. **CLI (recommended).** Use the pg-boss CLI to create the schema and run migrations. The CLI can print the SQL without running it (`--dry-run` or the `plans` command) for a DBA to review and run by hand. See the [CLI documentation](./cli) for details.
 
 2. **Static functions.** Use the included [utility functions](./api/utils) to get the SQL commands from code.
 

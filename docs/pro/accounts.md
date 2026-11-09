@@ -42,7 +42,7 @@ account is disabled, its password is set or changed another way, or the person s
 
 Failed sign-ins lock for fifteen minutes. Five failures against an account from one client
 address in fifteen minutes lock that account from that address. Five failures from one client address lock
-that address out of every account. An account is locked from everywhere only after twenty failures, so a
+that address out of every account. An account is locked from everywhere only after twenty failures. A
 stranger can't lock someone out of their own account in a few tries. The account's page shows
 the lock, where a global admin can clear it.
 

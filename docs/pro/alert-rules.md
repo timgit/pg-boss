@@ -15,21 +15,21 @@ Every database starts with one rule for each check Pro can run. Six are on:
 - **An instance restarting in a loop**: instances with one name on one host ended
   without `stop()` 3 times within an hour.
 
-**Queue with no workers** judges by what leaves the queue, whoever takes it, so
-a queue drained with `fetch()` and `complete()` counts as worked. A job active at
+**Queue with no workers** judges by what leaves the queue, whoever takes it.
+A queue drained with `fetch()` and `complete()` counts as worked. A job active at
 the last monitor pass is activity. So is a job completed or failed in the last two
 passes, from the throughput pg-boss counts with `persistQueueStats`. Without that
 option, or when its counts don't cover those passes (as just after a supervisor
 starts), Pro reads the queue's ready count at each pass. A fall between two
-passes is activity. That count is net, so canceling or deleting ready jobs also
-lowers it. A consumer slower than arrivals doesn't lower it. If pg-boss's monitor
+passes is activity. Canceling or deleting ready jobs also lowers that count,
+because the count is net. A consumer slower than arrivals doesn't lower it. If pg-boss's monitor
 hasn't refreshed the queue's counts in its last three passes, the check skips the
 queue until the monitor refreshes them.
 
 The alert says which pg-boss instances have a `work()` on the queue. When no
 live instance has a `work()` on the queue, the alert names the last instance that did and how long that
-instance has been quiet. Jobs in a dead letter queue usually wait for a person,
-so the check skips a queue that another queue names as its `deadLetter` until an
+instance has been quiet. Jobs in a dead letter queue usually wait for a person.
+The check skips a queue that another queue names as its `deadLetter` until an
 instance has had a `work()` on that queue.
 
 The other [instance](./instances.md) checks start off:
@@ -87,7 +87,7 @@ minutes the rule sets. Every rule has a severity, critical or watch.
 
 Queue rules apply to every queue, to a list, or to names matching patterns, and
 leave out any queues listed as exceptions. A pattern uses `*` for any run of characters and `?` for exactly
-one character, and matches the whole name. `/` isn't special, so `billing-*` matches
+one character, and matches the whole name. Because `/` isn't special, `billing-*` matches
 `billing-eu/retry`. When two rules that are turned on watch the same queues the
 same way, each rule's page names the other rule. Each rule raises its own alert.
 
@@ -102,10 +102,10 @@ sends no notifications. The silence ends by itself.
 ## JSON definitions
 
 The **JSON** switch on the editor shows the same rule as its definition. The
-editor checks each edit against the schema that parses every save, so a
+editor checks each edit against the schema that parses every save. A
 message under the editor matches the message a save would give and names the path it applies to.
 Unknown keys are errors. Each metric has one fixed unit (jobs, per minute or
-seconds), so `"value": 600` on `waitP95Seconds` is ten minutes.
+seconds). On `waitP95Seconds`, `"value": 600` is ten minutes.
 
 ```json
 {
@@ -130,7 +130,7 @@ seconds), so `"value": 600` on `waitP95Seconds` is ten minutes.
 }
 ```
 
-A save stores the definition in a normal order, so conditions ordered by hand
+A save stores the definition in a normal order. Conditions ordered by hand
 can come back sorted.
 
 A check rule names its check by id:
@@ -154,8 +154,8 @@ A check rule names its check by id:
 Pro keeps every change to what a rule decides as a version. A version can't
 be changed afterward. Only the definition is versioned. Changing the name,
 destination, notification interval, on or off state, or silence adds no version.
-Saving the same definition again adds nothing. Pro compares definitions after filling in defaults
-and sorting, so reordering conditions or leaving out a default value adds nothing either. Going back to an earlier
+Saving the same definition again adds nothing. Reordering conditions or leaving out a default value adds nothing
+either, because Pro compares definitions after filling in defaults and sorting. Going back to an earlier
 definition adds a new version, which the rule's history marks as the same as the earlier
 version. Each version has a page that shows its definition and what changed between
 it and the current version.
@@ -177,7 +177,7 @@ it, when, and how many lines it changed from the version before.
 Each alert keeps the version that opened it, which the alert's page links to. When a
 rule changes while it has open alerts, those alerts keep their version. From the next
 pass, the evaluator judges them by the new definition. An alert that no longer matches closes as "the
-rule changed", so it isn't read as the problem fixing itself. Turning a rule off
+rule changed". That close reason tells the alert apart from a problem that fixed itself. Turning a rule off
 closes its alerts as "the rule was turned off". Deleting a rule closes them as
 "the rule was deleted". A deleted rule's versions stay readable from the alerts
 that point at them.
@@ -191,15 +191,15 @@ that point at them.
   pg-boss 12.36, and so do the instance checks, which read pg-boss's instance registry.
 - The evaluator runs once a minute as a pg-boss job in a `<schema>_queue` schema
   of its own. A pass holds a Postgres advisory lock on Pro's store while it
-  runs, so Pro replicas run one pass at a time between them and send everything
-  once. A minute whose job finds the lock taken skips its pass. The lock needs a
-  session of its own, so a pooler in front of the store must not be in
-  transaction mode.
+  runs. Pro replicas run one pass at a time between them and send everything
+  once. A minute whose job finds the lock taken skips its pass. A pooler in front of
+  the store must not be in transaction mode, because the lock needs a session
+  of its own.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
   the Console, and tries again each minute until it runs. When Pro is mounted in a host
   application, the evaluator starts on the first request the handler serves.
 - On SIGTERM or SIGINT, or when a host application calls the handler's
   `close()`, a pass in progress gets up to 20 seconds to finish before the
   database connections close. A replica that dies during a pass releases the lock
-  with its connection, so the next minute's pass runs. pg-boss fails the
+  with its connection. The next minute's pass then runs. pg-boss fails the
   dead pass's job about two minutes later, once the job's heartbeat stops.

@@ -52,4 +52,4 @@ Beside pg-boss's methods, the API serves Pro's own alerts:
 
 ## Scaling
 
-The API runs in the same process as the Console. Most traffic needs nothing more. For heavy worker traffic, run more replicas of the same container behind the load balancer. The replicas evaluate alerts once between them, so an extra replica costs only memory. A load balancer can send `/pro/api/` to replicas of its own.
+The API runs in the same process as the Console. Most traffic needs nothing more. For heavy worker traffic, run more replicas of the same container behind the load balancer. An extra replica costs only memory, because the replicas evaluate alerts once between them. A load balancer can send `/pro/api/` to replicas of its own.

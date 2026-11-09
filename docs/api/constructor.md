@@ -89,7 +89,7 @@ const { rows } = await executeSql(text, values)
 assert(rows[0].input === 'arg1')
 ```
 
-Some of pg-boss's statements are several statements in one text. pg-boss reads rows from statements before the last, so for a multi-statement text `executeSql` must return an array with every statement's result, the way `pg` does.
+Some of pg-boss's statements are several statements in one text. pg-boss reads rows from statements before the last. For a multi-statement text, `executeSql` must return an array with every statement's result, the way `pg` does.
 
 See [Custom type parsers](#custom-type-parsers) for how a global `pg-types` parser interacts with pg-boss, whether you bring your own pool or not.
 
@@ -105,7 +105,7 @@ To use a name that isn't a legal bare identifier, such as a name containing dash
 new PgBoss({ schema: '"My-Schema"' })
 ```
 
-pg-boss uses the value verbatim as an identifier, so the quotes stay as written. `MySchema` and `"MySchema"` are different schemas, because PostgreSQL folds the unquoted form to `myschema`. pg-boss rejects double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters inside a quoted name.
+pg-boss uses the value verbatim as an identifier, quotes included. `MySchema` and `"MySchema"` are different schemas, because PostgreSQL folds the unquoted form to `myschema`. pg-boss rejects double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters inside a quoted name.
 
 The length limit is in bytes because a quoted name can hold multi-byte characters. PostgreSQL silently truncates identifiers past 63 bytes, which would leave the configured name and the stored name out of sync for good.
 
@@ -123,7 +123,7 @@ Bool, default false
 
 When true, `start()` installs into `schema` even when another schema differing from it only by case already holds a pg-boss installation.
 
-The check this disables exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different schemas. PostgreSQL folds the unquoted form to `myschema` and stores the quoted form verbatim. Getting the quoting wrong doesn't raise an error on its own. pg-boss finds no installation and creates an empty second schema, so every existing job seems to have vanished. Set this only if you want two installations whose names differ by case.
+The check this disables exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different schemas. PostgreSQL folds the unquoted form to `myschema` and stores the quoted form verbatim. Getting the quoting wrong doesn't raise an error on its own. Every existing job seems to have vanished, because pg-boss finds no installation and creates an empty second schema. Set this only if you want two installations whose names differ by case.
 
 ### `backend`
 
@@ -142,9 +142,9 @@ for what each backend enables and the [compatibility matrix](../database-backend
 
 Bool, default false
 
-Enables a `LISTEN/NOTIFY` listener that wakes workers on notify-enabled queues the moment a job is created, so they don't wait out their `pollingIntervalSeconds`. The listener lowers latency on top of polling. Polling always stays active as a fallback, so a missed notification never loses a job. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for how it works and for the per-queue `notify` option that controls which queues emit notifications.
+Enables a `LISTEN/NOTIFY` listener that wakes workers on notify-enabled queues the moment a job is created, before their `pollingIntervalSeconds` runs out. The listener lowers latency on top of polling. A missed notification never loses a job, because polling always stays active as a fallback. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for how it works and for the per-queue `notify` option that controls which queues emit notifications.
 
-This option holds one dedicated database connection open for listening. It needs a session-pinned connection, which the built-in connection pool and a `db` adapter that implements `listen` both provide. PgBouncer in transaction or statement pooling mode disables `LISTEN/NOTIFY`, so the listener can't run through it. When pg-boss can't establish a listener, it emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only.
+This option holds one dedicated database connection open for listening. It needs a session-pinned connection, which the built-in connection pool and a `db` adapter that implements `listen` both provide. The listener can't run through PgBouncer in transaction or statement pooling mode, because those modes disable `LISTEN/NOTIFY`. When pg-boss can't establish a listener, it emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only.
 
 ### `notifyHeartbeatIntervalMs`
 
@@ -196,7 +196,7 @@ Int, default 1 day
 
 How often maintenance runs against queue tables to drop queued and completed jobs.
 
-Maintenance deletes expired jobs and their leftover flow dependencies in batches. Each batch runs in its own transaction, so a large backlog doesn't become one long transaction.
+Maintenance deletes expired jobs and their leftover flow dependencies in batches. A large backlog doesn't become one long transaction, because each batch runs in its own transaction.
 
 ### `monitorIntervalSeconds`
 
@@ -204,7 +204,7 @@ Int, default 60 seconds
 
 How often pg-boss checks each queue for backlogs and expired jobs, and calculates its stats.
 
-pg-boss fails jobs past their expiration or heartbeat in batches too, so a fleet that stopped with many jobs active recovers in short transactions.
+pg-boss fails jobs past their expiration or heartbeat in batches too. A fleet that stopped with many jobs active recovers in short transactions.
 
 ### `bamIntervalSeconds`
 
@@ -242,11 +242,11 @@ Bool | object, default true
 
 Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY` during maintenance.
 
-Autovacuum reclaims heap space but doesn't shrink a btree, so a job index stays at the size of the largest backlog its queue has ever held. Every later vacuum then walks all of those pages, which becomes the dominant cost on a queue that has drained. pg-boss rebuilds an index only when it fails a density check, so a healthy installation doesn't run a rebuild.
+A job index stays at the size of the largest backlog its queue has ever held, because autovacuum reclaims heap space but doesn't shrink a btree. Every later vacuum then walks all of those pages, which becomes the dominant cost on a queue that has drained. pg-boss rebuilds an index only when it fails a density check. A healthy installation doesn't run a rebuild.
 
-Set to `false` to disable rebuilds. Detection keeps working, so bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommands-options) still returns the statements to run by hand. Indexes the connected role doesn't own get the same detection without rebuilds. So do `db` adapters that wrap queries in a transaction, because `REINDEX CONCURRENTLY` can't run inside a transaction.
+Set to `false` to disable rebuilds. Detection keeps working and still raises an `index_bloat` [`warning`](./events.md#warning) on bloat. [`getReindexCommands()`](./ops.md#getreindexcommands-options) still returns the statements to run by hand. Indexes the connected role doesn't own get the same detection without rebuilds. So do `db` adapters that wrap queries in a transaction, because `REINDEX CONCURRENTLY` can't run inside a transaction.
 
-CockroachDB skips both rebuilds and detection. It stores data outside PostgreSQL's heap, so it has no btree page bloat to reclaim. It also rejects `REINDEX` and doesn't report the page counts the check reads.
+CockroachDB skips both rebuilds and detection. It has no btree page bloat to reclaim, because it stores data outside PostgreSQL's heap. It also rejects `REINDEX` and doesn't report the page counts the check reads.
 
 Pass an object to change the thresholds:
 
@@ -254,7 +254,7 @@ Pass an object to change the thresholds:
 | --- | --- | --- | --- |
 | `minPages` | int | 128 | Ignore indexes smaller than this many 8 kB pages |
 | `maxEntriesPerPage` | number | 5 | Live entries per page below which an index counts as bloated. A freshly built job index holds 140-170 |
-| `minSizeRatio` | number | 4 | How many times larger than its live entries need an index must be. pg-boss estimates the needed size from `pg_stats`, so it doesn't mistake a wide `singletonKey`, which legitimately packs fewer than five entries per page, for bloat |
+| `minSizeRatio` | number | 4 | How many times larger than its live entries need an index must be. Because pg-boss estimates the needed size from `pg_stats`, it doesn't mistake a wide `singletonKey` for bloat. A wide key legitimately packs fewer than five entries per page |
 | `maxIndexBytes` | int | 2147483648 | Skip indexes larger than this |
 
 ```js
@@ -285,15 +285,15 @@ The check takes one measurement and reports two [`warning`](./events.md#warning)
 | `xmin_horizon` | vacuum runs and reclaims nothing | find and release whatever is pinning the horizon |
 | `autovacuum_disabled` | nothing is vacuuming the table at all | turn autovacuum back on, or vacuum on a schedule that keeps up |
 
-A pinned horizon is the precondition behind most reports of a Postgres queue degrading over time. The queue's own counters can't show it. A backlog caused by too few workers looks exactly like a backlog caused by vacuum reclaiming nothing. The check reads `pg_stat_user_tables` for pg-boss's own job tables across two supervise passes, so it measures the damage directly. The first pass after a horizon is pinned doesn't warn. [Warning types](./events.md#warning-types) lists what each type fires on and what it carries.
+A pinned horizon is the precondition behind most reports of a Postgres queue degrading over time. The queue's own counters can't show it. A backlog caused by too few workers looks exactly like a backlog caused by vacuum reclaiming nothing. The check measures the damage directly. It reads `pg_stat_user_tables` for pg-boss's own job tables across two supervise passes. The first pass after a horizon is pinned doesn't warn. [Warning types](./events.md#warning-types) lists what each type fires on and what it carries.
 
-This option has no threshold to tune. A table qualifies at the point Postgres itself would vacuum it, which is `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor × n_live_tup`. The check reads per-table storage parameters before cluster settings. The autovacuum settings set the sensitivity, so set them per table if you want one queue watched more or less closely:
+This option has no threshold to tune. A table qualifies at the point Postgres itself would vacuum it, which is `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor × n_live_tup`. The check reads per-table storage parameters before cluster settings. The autovacuum settings set the sensitivity. To watch one queue more or less closely, set them per table:
 
 ```sql
 ALTER TABLE pgboss.job_common SET (autovacuum_vacuum_scale_factor = 0.05);
 ```
 
-An `xmin_horizon` warning names the holder it found. Track it down through `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. Where the connected role can't read one of those catalogs, the warning lists that catalog in `unreadableSources`, so a partial answer can't pass for a clean answer.
+An `xmin_horizon` warning names the holder it found. Track it down through `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. Where the connected role can't read one of those catalogs, the warning lists that catalog in `unreadableSources` so that a partial answer can't pass for a clean answer.
 
 Not available on CockroachDB, which reclaims on its own schedule rather than from the oldest live snapshot.
 
@@ -378,19 +378,19 @@ These options exist for tests. Leave them unset in production.
 
 Object, default the system clock
 
-Where this instance reads the time and schedules its timers: every poll, heartbeat, cron pass, backoff and timeout. Pass a [`TestClock`](./testing.md#controlling-time) to drive time by hand in tests. The clock also takes over the Postgres side, so `${schema}.job_now()` reports the same time for pg-boss's own statements. pg-boss accepts any object with `now`, `setTimeout`, `clearTimeout`, `setInterval` and `clearInterval`.
+Where this instance reads the time and schedules its timers: every poll, heartbeat, cron pass, backoff and timeout. Pass a [`TestClock`](./testing.md#controlling-time) to drive time by hand in tests. The clock also takes over the Postgres side, where `${schema}.job_now()` reports the same time for pg-boss's own statements. pg-boss accepts any object with `now`, `setTimeout`, `clearTimeout`, `setInterval` and `clearInterval`.
 
 ### `__test__enableSpies`
 
 Bool, default false
 
-Enables [`getSpy()`](./testing.md#getspy-name) for deterministic tests. It adds tracking overhead on every state transition, so leave it unset in production.
+Enables [`getSpy()`](./testing.md#getspy-name) for deterministic tests. Leave it unset in production, because it adds tracking overhead on every state transition.
 
 ## Custom type parsers
 
-pg-boss doesn't re-parse the values it reads back, so whatever a global [`pg-types`](https://github.com/brianc/node-pg-types) parser returns reaches pg-boss and the public API unchanged. A global parser reaches pg-boss whether you pass your own [`db`](#db) or let pg-boss build the pool, because `pg.types.setTypeParser()` is global to the `pg` module either way.
+Whatever a global [`pg-types`](https://github.com/brianc/node-pg-types) parser returns reaches pg-boss and the public API unchanged, because pg-boss doesn't re-parse the values it reads back. A global parser reaches pg-boss whether you pass your own [`db`](#db) or let pg-boss build the pool, because `pg.types.setTypeParser()` is global to the `pg` module either way.
 
-The common case is a `timestamptz` parser that returns something other than a `Date`, such as `Temporal.Instant` or Luxon's `DateTime`. pg-boss does its own timestamp arithmetic in SQL rather than in JavaScript, so it supports such a parser. Such a parser has two consequences:
+The common case is a `timestamptz` parser that returns something other than a `Date`, such as `Temporal.Instant` or Luxon's `DateTime`. pg-boss supports such a parser because it does its own timestamp arithmetic in SQL rather than in JavaScript. Such a parser has two consequences:
 
 * Types that document a `Date`, such as `capturedOn` on [`getQueueStats()`](./queues.md#getqueuestats-name-options) or `createdOn` on a job, will hold whatever your parser returned. The declared type describes what the default parser produces, and pg-boss doesn't convert values to it.
 * A value that throws on coercion is safe to hand back, because pg-boss doesn't coerce such a value. Every `Temporal` type throws from `valueOf` by design.

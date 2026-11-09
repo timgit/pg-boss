@@ -25,22 +25,22 @@ still matches.
 
 - Each verb only touches what it could touch on its own: retry acts on
   failures, resume on cancellations, cancel on anything unfinished, delete on
-  everything. The count follows the same rule, so it doesn't promise more than
+  everything. The count follows the same rule and doesn't promise more than
   the verb does.
-- A payload value is read as JSON when it parses and as text otherwise, so
-  `42` matches the number and `"42"` the string.
+- A payload value is read as JSON when it parses and as text otherwise.
+  For example, `42` matches the number and `"42"` the string.
 - Permissions are the same as for a single job. Deleting needs `job:delete`, which
   only the admin role has. The page doesn't offer deleting to an operator and
   refuses an operator's delete request.
 - Each recount is read-only and gives up after 10 seconds. On a large job
   table, narrow the filter to a queue or an age.
-- The operation runs in chunks beside the live queues and commits each chunk, so
-  a large operation doesn't hold locks for minutes. **Stop after this chunk**
+- The operation runs in chunks beside the live queues and commits each chunk.
+  A large operation doesn't hold locks for minutes. **Stop after this chunk**
   ends the operation there and keeps what's already done. The button shows to users whose role can
   run the operation's verb on that database.
-- The page runs the operation by posting one chunk at a time, so the run needs
-  the page open. Leaving the page or closing the tab stops the operation after
-  the chunk in progress, so the page asks first. The history shows a run whose page went
+- The run needs the page open, because the page runs the operation by posting one
+  chunk at a time. Leaving the page or closing the tab stops the operation after
+  the chunk in progress. The page asks before the user leaves. The history shows a run whose page went
   away as stopped a minute after its last chunk.
 - One operation runs at a time in a database. The page refuses a second operation at
   confirm and names the operation already running.
@@ -50,7 +50,7 @@ still matches.
   too.
 - Deleted jobs are gone. The page warns that there is no undo.
 
-The page saves a filter by name, so a user can apply it again from the top of the page.
+The page saves a filter by name. A user can apply a saved filter again from the top of the page.
 **Operation history** in the page header lists
 every operation on the database from the last 90 days, newest first, and shows how
 each operation ended. Filter it by action or by how the operations ended. For
@@ -79,7 +79,7 @@ with.
 - A job with no source queue recorded (sent straight to the dead letter queue)
   stays put unless the redrive names a destination. The page shows how many such jobs there are.
 - Each job is re-created with a new id, retry count 0, and the destination's
-  current retry, retention and expiry settings, so a job from a flow runs on
+  current retry, retention and expiry settings. A job from a flow runs on
   its own without resuming the flow.
 - A job the destination refuses under its policy (`short`, `singleton`,
   `stately`) is a collision. It stays failed in the dead letter queue with
@@ -104,9 +104,9 @@ what to empty picks the call:
 
 A queue's page offers **Purge** to users who can delete jobs. Purging needs
 `job:delete`, as deleting does. The count before confirming reads at most 1,000
-jobs. The call takes no filter, so the purge empties the queue as it is at run
+jobs. Because the call takes no filter, the purge empties the queue as it is at run
 time, including jobs that arrive after the count. Purging everything also
-deletes jobs being worked, so their workers find nothing to complete.
+deletes jobs being worked, whose workers then find nothing to complete.
 
 The purge runs in one chunk. The history shows how many jobs it deleted, from the
 number pg-boss returns or, when pg-boss returns none, from the queue's cached

@@ -11,7 +11,7 @@ Names show in the database menu, in alert emails and webhook
 payloads (`databaseName`, beside `databaseId`), and in the audit log. Renaming
 here keeps every link, alert rule and history row, because they all refer to the
 database's id, which comes from its name in `DATABASE_URL`. Renaming a database in `DATABASE_URL`
-changes the id, so rename it here instead. Adding or removing a database still happens in
+changes the id. Rename it here instead. Adding or removing a database still happens in
 `DATABASE_URL`.
 
 ![The databases page](../images/pro/databases.webp){.light-only}
@@ -30,6 +30,6 @@ Profile name the area there instead.
 | Sending, retrying, canceling and deleting jobs, and queue and schedule changes | Profile |
 | The API at `/pro/api/v1/<database>` | Service accounts and their tokens |
 
-A role is granted for one database or for all databases, so the same user can be an
+A role is granted for one database or for all databases. The same user can be an
 operator on one database and a viewer on another. The Console remembers the last database
-viewed for 30 days, so a page that names none, such as Settings, leads back to it.
+viewed for 30 days. A page that names no database, such as Settings, leads back to it.

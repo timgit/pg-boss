@@ -21,7 +21,7 @@ import { VPButton } from 'vitepress/theme'
 
 # pg-boss Pro
 
-pg-boss Pro is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users make changes such as creating queues and jobs or modifying schedules, as their [role](./roles.md) allows. Every change is recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds enhanced health monitoring and a configurable rules engine, which can alert whoever is on call by email, webhook or a paging service, so a stalled queue is caught before it turns into an outage.
+pg-boss Pro is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users make changes such as creating queues and jobs or modifying schedules, as their [role](./roles.md) allows. Every change is recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds enhanced health monitoring and a configurable rules engine, which can alert whoever is on call by email, webhook or a paging service. An alert catches a stalled queue before it turns into an outage.
 
 Pro is built and supported by the author of pg-boss. Upgrading from the [free dashboard](../dashboard.md) is a change of package name, from `@pg-boss/dashboard` to `@pg-boss/pro`, when the database runs the pg-boss schema the Pro release is built for. On another schema, pages still open and changes are off. See [pg-boss versions](./versions.md).
 
@@ -83,7 +83,7 @@ Pro includes every page of the free dashboard. In Pro, roles, alert rules, the P
 | [Groups](./accounts.md), with [roles](./roles.md) per database | | ✓ |
 | [Single sign-on](./sso.md) through an existing OpenID Connect provider | | ✓ |
 | An [audit log](./audit-log.md) of every change | | ✓ |
-| The [Pro API](./api.md), so a deploy script, a CI job or a worker in another language can send, fetch, complete and retry jobs without a Node.js client | | ✓ |
+| The [Pro API](./api.md), through which a deploy script, a CI job or a worker in another language sends, fetches, completes and retries jobs without a Node.js client | | ✓ |
 | [API tokens](./api-tokens.md) for service accounts, whose role decides which methods a token may call | | ✓ |
 | Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
 | Registered [instances](./instances.md) | ✓ | ✓, grouped by name and host, with what needs attention across them, and each instance's pool, CPU, memory or event loop marked at its limit |
@@ -104,4 +104,4 @@ Pro is sold through Polar, which takes the payment and shows the license key on 
 
 1. [Install and run](./install.md) Pro.
 2. Open the setup link Pro prints to its log, and create the first global administrator.
-3. Give the default alert rules a [destination](./destinations.md), so their alerts send notifications.
+3. Give the default alert rules a [destination](./destinations.md) so that their alerts send notifications.

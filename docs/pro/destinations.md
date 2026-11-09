@@ -40,7 +40,7 @@ that address, the notifications carry no link. The page shows which address the 
 Email goes out through SMTP or Resend. Both are configured on the same page. Changing the
 SMTP host, port, user or TLS setting needs the password entered again. Pro
 requires STARTTLS unless the connection is TLS from the start or the server is
-on this machine, so the password and messages never cross the network in the
+on this machine. The password and messages never cross the network in the
 clear. For an internal relay without TLS, **Send without TLS when the server offers none**
 turns off the STARTTLS requirement.
 
@@ -54,7 +54,7 @@ Pro stores a webhook's URL encrypted, since receivers often keep their token in
 the path or the query. The page and the audit log show only the URL's origin. The
 edit form leaves its URL field blank. Leave the field blank to keep the URL, or enter a
 new URL. A new URL on another host needs the signing secret and Authorization
-header entered again or removed, so a stored secret never goes to a host it
+header entered again or removed. A stored secret never goes to a host it
 wasn't entered for.
 
 Pro sends one alert per request, as a POST with version 4 of
@@ -96,7 +96,7 @@ receive Pro's alerts with no relay:
 }
 ```
 
-- `fingerprint` and `groupKey` are the alert's id, so they're the same on every
+- `fingerprint` and `groupKey` are the alert's id. Both are the same on every
   send for one alert. A receiver dedupes on them. A resolve has
   `status: "resolved"`, the closing time in `endsAt` and the reason in
   `pgboss.closedReason`.

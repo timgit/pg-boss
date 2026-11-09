@@ -4,7 +4,7 @@ pg-boss has built-in spies for writing fast, deterministic tests without polling
 
 ## Enabling spies
 
-Spies stay off until you set the `__test__enableSpies` constructor option, so they add no overhead in production.
+Spies stay off until you set the `__test__enableSpies` constructor option. They add no overhead in production.
 
 ```js
 const boss = new PgBoss({
@@ -133,17 +133,17 @@ Returns the current fake time in epoch milliseconds.
 
 ### `clock.tick(ms)`
 
-Advances the clock by `ms` and fires every timer that falls due along the way, in due order. Before each timer fires, `tick` sets the clock to that timer's due time and pushes it to the database, so a poll that fires at second 30 runs its SQL against second 30. Intervals reschedule themselves after each firing. When the last due timer has fired, the clock lands on `now + ms`.
+Advances the clock by `ms` and fires every timer that falls due along the way, in due order. Before each timer fires, `tick` sets the clock to that timer's due time and pushes it to the database. A poll that fires at second 30 then runs its SQL against second 30. Intervals reschedule themselves after each firing. When the last due timer has fired, the clock lands on `now + ms`.
 
 `tick` waits for pg-boss to settle, which means no pg-boss statement is in flight. It waits before it starts, after each timer it fires, and after it reaches the target. A worker poll that `tick` fires has finished its fetch by the time `tick` resolves. If that fetch came back empty and re-armed the poll before the target, the same `tick` fires it again.
 
-`tick` doesn't wait for your handlers or for statements a transactional handler runs through its `tx`. Observe their outcomes with a spy or by querying, as above. Queries your code runs through `boss.getDb()` use pg-boss's own connection, so `tick` does count them. A handler waiting on such a query holds up `tick` until the query returns. Don't tick while your test holds a transaction open, because a pg-boss statement waiting on its lock keeps `tick` waiting too.
+`tick` doesn't wait for your handlers or for statements a transactional handler runs through its `tx`. Observe their outcomes with a spy or by querying, as above. `tick` does count queries your code runs through `boss.getDb()`, because they use pg-boss's own connection. A handler waiting on such a query holds up `tick` until the query returns. Don't tick while your test holds a transaction open, because a pg-boss statement waiting on its lock keeps `tick` waiting too.
 
-Only one `tick` or `setTime` can be in progress at a time, so a second call to either rejects. An interval fires once per period crossed, so ticking an hour past a worker polling every two seconds runs 1800 polls. To jump, use `setTime`.
+A call to `tick` or `setTime` rejects while another call to either is in progress. Because an interval fires once per period crossed, ticking an hour past a worker polling every two seconds runs 1800 polls. To jump, use `setTime`.
 
 ### `clock.setTime(t)`
 
-Jumps to `t`, forwards or backwards, without firing anything. A forward jump counts as elapsed time, as it does in Postgres. Every timer the jump passed fires once on the next `tick`. An interval then keeps its period from `t`. After a jump a month ahead, a worker polling every second polls once. pg-boss also fails a handler that's past its expiration. A backward jump leaves timers where they are, so they fire when the clock gets back to their due time. `setTime` rejects while a `tick` is in progress. Postgres evaluates `start_after <= now()` against an earlier time without complaint, so a test that moves backwards has to handle the consequences.
+Jumps to `t`, forwards or backwards, without firing anything. A forward jump counts as elapsed time, as it does in Postgres. Every timer the jump passed fires once on the next `tick`. An interval then keeps its period from `t`. After a jump a month ahead, a worker polling every second polls once. pg-boss also fails a handler that's past its expiration. After a backward jump, timers stay where they are and fire when the clock gets back to their due time. `setTime` rejects while a `tick` is in progress. A test that moves backwards has to handle the consequences, because Postgres evaluates `start_after <= now()` against an earlier time without complaint.
 
 Like `tick`, `setTime` settles first and then jumps. It takes whole milliseconds, but Postgres timestamps carry microseconds and pg-boss jitters retry backoff. So a job's `start_after` can fall a fraction of a millisecond after the millisecond you read. Round up before jumping to it, or the job won't be due yet.
 
@@ -161,13 +161,13 @@ pg-boss's own pool applies the statements in its `connect` handler. The bundled 
 
 Releasing the clock restores the plain function body, drops the clock table, and issues `disableClockOverride()`.
 
-With `PGliteWorker`, a single leader instance serves every tab, so every tab shares the session setting. A `TestClock` attached through one tab puts every tab on fake time. pg-boss reapplies the setting when leadership moves to a new tab, because the move would otherwise silently drop the schema back to real time. pg-boss can't scope the setting to one instance, though.
+With `PGliteWorker`, every tab shares the session setting, because a single leader instance serves every tab. A `TestClock` attached through one tab puts every tab on fake time. pg-boss reapplies the setting when leadership moves to a new tab, because the move would otherwise silently drop the schema back to real time. pg-boss can't scope the setting to one instance, though.
 
 `start()` attaches the clock after the schema is installed. `stop()` releases the clock, which restores the real clock for that schema. When several instances share one `TestClock`, the schema stays on fake time until the last instance stops.
 
 Anything pg-boss waits on that is not a clock, such as a database round trip or a handler's own promise, still takes real time.
 
-The graceful `stop()` deadline stays on real time. It bounds shutdown I/O rather than queue time, so a test that stops while a handler is still running returns after `timeout` without ticking.
+The graceful `stop()` deadline stays on real time. The deadline bounds shutdown I/O rather than queue time. A test that stops while a handler is still running returns after `timeout` without ticking.
 
 ## Example test
 

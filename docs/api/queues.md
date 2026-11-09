@@ -51,9 +51,9 @@ Allowed policy values:
 > - **retry**: waiting to be retried after a failure
 > - **failed**: permanently failed (exhausted all retries)
 >
-> Blocking is scoped to the individual key, so jobs with other keys remain fetchable. Priority can order work across keys but can't reorder jobs within a key. When pg-boss picks a key's FIFO head, it skips any job that can't be fetched yet, so a later job can run ahead of the skipped job. A job can't be fetched yet when `startAfter` defers it or an unmet flow dependency holds it. If that later job fails into `retry`, it keeps the key's head position until it completes or permanently fails, even once the earlier job becomes eligible. A job that has started must finish before any sibling runs. pg-boss applies fetch filters such as `minPriority` and `maxPriority` after it selects the head, so the filters can't skip the head.
+> Jobs with other keys remain fetchable, because blocking is scoped to the individual key. Priority can order work across keys but can't reorder jobs within a key. When pg-boss picks a key's FIFO head, it skips any job that can't be fetched yet. A later job can then run ahead of the skipped job. A job can't be fetched yet when `startAfter` defers it or an unmet flow dependency holds it. If that later job fails into `retry`, it keeps the key's head position until it completes or permanently fails, even once the earlier job becomes eligible. A job that has started must finish before any sibling runs. Fetch filters such as `minPriority` and `maxPriority` can't skip the head, because pg-boss applies them after it selects the head.
 >
-> **Fetch cost.** Each fetch selects one head per key across the whole queue before it applies priority and the batch limit. Its cost grows with the number of *distinct keys that have queued jobs* and doesn't depend on the `batchSize` or the total number of queued jobs. A few keys each holding a long backlog is the cheap case: 200 keys holding 1,000 jobs each means only 200 heads to rank. Many keys holding one job each is the expensive case, because every job is its own head. At 200,000 distinct keys with a single job each, a fetch takes roughly 1s, where a `standard` queue over the same rows takes 0.1s. If your keys are that numerous and don't build up a backlog, their jobs don't wait on each other, so `standard` might be a better policy.
+> **Fetch cost.** Each fetch selects one head per key across the whole queue before it applies priority and the batch limit. Its cost grows with the number of *distinct keys that have queued jobs* and doesn't depend on the `batchSize` or the total number of queued jobs. A few keys each holding a long backlog is the cheap case: 200 keys holding 1,000 jobs each means only 200 heads to rank. Many keys holding one job each is the expensive case, because every job is its own head. At 200,000 distinct keys with a single job each, a fetch takes roughly 1s, where a `standard` queue over the same rows takes 0.1s. If your keys are that numerous and don't build up a backlog, `standard` might be a better policy, because their jobs don't wait on each other.
 >
 > To unblock a key after a permanent failure, delete the failed job with `deleteJob()` or retry it with `retry()`. `getBlockedKeys()` lists the keys blocked by failed jobs.
 
@@ -64,11 +64,11 @@ Allowed policy values:
   When true, pg-boss creates a dedicated table for the queue in the partition scheme. By default every queue's jobs share one table. A queue that grows large or builds an unexpected backlog can slow that table down for the other queues. A dedicated table keeps a large queue from being that "noisy neighbor".
 
   > [!NOTE]
-  > pg-boss keeps jobs in one logical `job` table using Postgres's declarative list partitioning. Each queue created with `partition` gets a partition of its own. According to [the Postgres docs](https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), a partitioning hierarchy handles thousands of partitions well, so choose how many dedicated tables to use based on your own needs. If a database outgrows thousands of partitions, consider putting queues in separate schemas.
+  > pg-boss keeps jobs in one logical `job` table using Postgres's declarative list partitioning. Each queue created with `partition` gets a partition of its own. According to [the Postgres docs](https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), a partitioning hierarchy handles thousands of partitions well. Choose how many dedicated tables to use based on your own needs. If a database outgrows thousands of partitions, consider putting queues in separate schemas.
 
 * **deadLetter**, string
 
-  When a job fails after all its retries, pg-boss copies its payload into the queue named here. The copy is a job on the dead letter queue and runs under *that* queue's configuration, so its retry, retention, expiration, and heartbeat settings come from the dead letter queue. It keeps the original job's `priority`, `singletonKey`, and `group`, so ordering weight and group concurrency limits still apply. The dead-lettered job also records where it came from in the `sourceName`, `sourceId`, `sourceCreatedOn`, `sourceRetryCount`, and `sourceOutput` fields. Its `sourceRootId` field names the first job in the chain and survives any number of redrives. See [`redrive()`](jobs#redrive-name-options).
+  When a job fails after all its retries, pg-boss copies its payload into the queue named here. The copy is a job on the dead letter queue and runs under *that* queue's configuration. Its retry, retention, expiration, and heartbeat settings come from the dead letter queue. Ordering weight and group concurrency limits still apply, because the copy keeps the original job's `priority`, `singletonKey`, and `group`. The dead-lettered job also records where it came from in the `sourceName`, `sourceId`, `sourceCreatedOn`, `sourceRetryCount`, and `sourceOutput` fields. Its `sourceRootId` field names the first job in the chain and survives any number of redrives. See [`redrive()`](jobs#redrive-name-options).
 
 * **warningQueueSize**, int
 
@@ -76,7 +76,7 @@ Allowed policy values:
 
 * **notify**, boolean, default false
 
-  When true, creating a job on this queue that can run now emits a Postgres `NOTIFY`, so workers wake right away instead of waiting for their next poll. The option has an effect only when the instance starts with the [`useListenNotify`](./constructor.md#uselistennotify) option, which runs the listener. Jobs scheduled for the future (through `sendAfter()` or throttling or debouncing, for example) do **not** emit a notification. Polling picks them up once they're due. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify).
+  When true, creating a job on this queue that can run now emits a Postgres `NOTIFY`. Workers then wake right away instead of waiting for their next poll. The option has an effect only when the instance starts with the [`useListenNotify`](./constructor.md#uselistennotify) option, which runs the listener. Jobs scheduled for the future (through `sendAfter()` or throttling or debouncing, for example) do **not** emit a notification. Polling picks them up once they're due. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify).
 
 **Retry options**
 
@@ -113,24 +113,24 @@ Heartbeat and expiration are two independent mechanisms that catch different fai
 | | Heartbeat | Expiration |
 | - | - | - |
 | **Purpose** | Detect dead workers quickly | Abandon stale job attempts |
-| **What it means** | The worker stopped responding, so the job is still valid and should be retried elsewhere | The job has been active too long, so this attempt is no longer relevant |
+| **What it means** | The worker stopped responding. The job is still valid and should be retried elsewhere | The job has been active too long. This attempt is no longer relevant |
 | **Failure scenario** | Worker crash, OOM kill, network partition, node shutdown | Infinite loop, deadlock, unresponsive external dependency, or exceeding the time budget |
 | **Detection speed** | Fast (seconds to minutes) | Matches expected job duration |
 | **Default** | Disabled | 15 minutes |
 
 You can use both. A job that fails through either mechanism follows the same retry logic (`retryLimit`, `retryDelay`, etc.).
 
-A worker that only looked dead (a network partition, a stalled event loop) keeps running its handler after pg-boss fails its job this way. The job can then run twice, so handlers should be idempotent. The original worker can't settle the retry, because a worker's completion, failure and heartbeat apply only to the attempt it claimed. The job's `retryCount` identifies that attempt. Once the job has been retried, pg-boss discards the original worker's result. A [transactional worker](./workers.md#work-name-options-handler) rolls its writes back. The original worker also finds out, because its next heartbeat that reaches the database aborts the job's `signal`. A handler that listens to the signal can stop early.
+A worker that only looked dead (a network partition, a stalled event loop) keeps running its handler after pg-boss fails its job this way. Because the job can then run twice, handlers should be idempotent. The original worker can't settle the retry, because a worker's completion, failure and heartbeat apply only to the attempt it claimed. The job's `retryCount` identifies that attempt. Once the job has been retried, pg-boss discards the original worker's result. A [transactional worker](./workers.md#work-name-options-handler) rolls its writes back. The original worker also finds out, because its next heartbeat that reaches the database aborts the job's `signal`. A handler that listens to the signal can stop early.
 
 Use a heartbeat for long-running jobs where the gap between "worker died" and "job expired" would be unacceptably large. For example, with `expireInSeconds: 7200`, pg-boss won't detect that a 2-hour video processing job failed until 2 hours after it started, even if its worker crashed right away. With `heartbeatSeconds: 60`, pg-boss detects a dead worker within about two minutes at the default intervals.
 
-Expiration alone is enough only when the expiration time is short enough that you can wait for it to trigger a retry. `expireInSeconds` is usually set well above the typical job duration, to allow for slowdowns, rate limiting, and transient errors. The default is 15 minutes, so even a quick task like sending an email could wait 15 minutes before expiration catches a dead worker. A heartbeat detects the dead worker within `heartbeatSeconds` plus a monitor interval, however long the expiration is.
+Expiration alone is enough only when the expiration time is short enough that you can wait for it to trigger a retry. `expireInSeconds` is usually set well above the typical job duration, to allow for slowdowns, rate limiting, and transient errors. With the default of 15 minutes, even a quick task like sending an email could wait 15 minutes before expiration catches a dead worker. A heartbeat detects the dead worker within `heartbeatSeconds` plus a monitor interval, however long the expiration is.
 
 #### Recommended values
 
 Set `expireInSeconds` to the maximum time a job should ever take (allowing for the slowest conditions). Set `heartbeatSeconds` based on how quickly you need to detect a dead worker and retry.
 
-Actual detection time is `heartbeatSeconds` plus up to the longer of [`monitorIntervalSeconds`](./constructor.md#monitorintervalseconds) and [`superviseIntervalSeconds`](./constructor.md#superviseintervalseconds), which both default to 60 seconds. pg-boss finds a stale heartbeat only when the monitor next checks the queue, so detection in seconds needs both intervals lowered too.
+Actual detection time is `heartbeatSeconds` plus up to the longer of [`monitorIntervalSeconds`](./constructor.md#monitorintervalseconds) and [`superviseIntervalSeconds`](./constructor.md#superviseintervalseconds), which both default to 60 seconds. Because pg-boss finds a stale heartbeat only when the monitor next checks the queue, detection in seconds needs both intervals lowered too.
 
 | Job type | `expireInSeconds` | `heartbeatSeconds` | Dead worker detected in |
 | - | - | - | - |
@@ -183,7 +183,7 @@ await boss.deleteQueue('email-send')
 
 For a queue in the shared job table, `deleteQueue()` first deletes its jobs in batches, as [`deleteAllJobs()`](./jobs.md#deletealljobs-name) does, and then deletes the queue. If it fails partway, the jobs already deleted stay deleted and the queue remains. While another queue, or a job in another queue, names the queue as its dead letter queue, `deleteQueue()` rejects before it deletes anything.
 
-A queue created with `partition: true` has its own table. Dropping that table needs brief exclusive locks on the job tables. `deleteQueue()` takes the locks without waiting, so it never deadlocks with work in flight. While the locks are busy, `deleteQueue()` tries again for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue as it was.
+A queue created with `partition: true` has its own table. Dropping that table needs brief exclusive locks on the job tables. Because `deleteQueue()` takes the locks without waiting, it never deadlocks with work in flight. While the locks are busy, `deleteQueue()` tries again for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue as it was.
 
 Other instances find out on their next write to the deleted queue. Their `send()`, `insert()`, `upsert()` and `flow()` calls reject with `Queue <name> does not exist`, as for a queue that was never created. A job naming the deleted queue as its `deadLetter` rejects with `Dead letter queue <name> does not exist`.
 
@@ -246,40 +246,40 @@ The settings `policy` through `notify` are the stored values of the options desc
 
 **Counts**
 
-The monitor updates the counts on each pass, which runs every `monitorIntervalSeconds`. A queued job is exactly one of deferred, blocked or ready, so `queuedCount` is `deferredCount + blockedCount + readyCount`.
+The monitor updates the counts on each pass, which runs every `monitorIntervalSeconds`. `queuedCount` is `deferredCount + blockedCount + readyCount`, because a queued job is exactly one of deferred, blocked or ready.
 
 * `queuedCount`: jobs waiting to run. The queue backlog warning is based on it
 * `deferredCount`: queued jobs whose `startAfter` is in the future
 * `blockedCount`: queued jobs waiting on a [`flow()`](./jobs.md#flow-jobs-options) parent (`getQueues()` and `getQueue()` only)
 * `readyCount`: queued jobs that can run now
 * `activeCount`: jobs currently being processed
-* `failedCount`: failed jobs still retained in the table (the queue's retention policy bounds it, so `failedCount` is a rolling count of recent failures)
+* `failedCount`: failed jobs still retained in the table (a rolling count of recent failures, because the queue's retention policy bounds it)
 * `totalCount`: all jobs currently stored for the queue
 
-`totalCount` is the jobs the monitor pass counts as waiting, active or failed, plus the completed and canceled jobs the maintenance pass counts as it walks the queue. Each monitor pass adds the jobs that finished since, so the total stays current between maintenance passes. A job completed in a transaction that commits more than 10 seconds after it began can be left out until the next maintenance pass. `deleteJob()` and `resume()` immediately subtract the completed and canceled jobs a pass has already counted. When they're passed a `db`, the next maintenance pass corrects the total instead. The other jobs they move show at the next monitor pass. A delete or `resume()` that runs while a monitor or maintenance pass is counting the queue can leave the total off by the jobs it moved until the next maintenance pass. Queued jobs deleted just before a maintenance pass can count again until the next monitor pass. Until a queue's first maintenance pass after upgrading to 12.38, `totalCount` holds the count from before the upgrade minus the jobs deleted since, or the number of live jobs if that's higher.
+`totalCount` is the jobs the monitor pass counts as waiting, active or failed, plus the completed and canceled jobs the maintenance pass counts as it walks the queue. Between maintenance passes, the total stays current because each monitor pass adds the jobs that finished since. A job completed in a transaction that commits more than 10 seconds after it began can be left out until the next maintenance pass. `deleteJob()` and `resume()` immediately subtract the completed and canceled jobs a pass has already counted. When they're passed a `db`, the next maintenance pass corrects the total instead. The other jobs they move show at the next monitor pass. A delete or `resume()` that runs while a monitor or maintenance pass is counting the queue can leave the total off by the jobs it moved until the next maintenance pass. Queued jobs deleted just before a maintenance pass can count again until the next monitor pass. Until a queue's first maintenance pass after upgrading to 12.38, `totalCount` holds the count from before the upgrade minus the jobs deleted since, or the number of live jobs if that's higher.
 
 **Monitor pass fields**
 
 These fields hold what a monitor pass counted for the queue. Three deltas count the jobs created, completed and failed in the window since the previous pass. Other fields record how long the jobs that finished in that window waited and ran. pg-boss records these fields only when [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled on the instances that run monitoring. `getQueueStats()` returns these fields as `null` when `persistQueueStats` is disabled on the calling instance, and on snapshots captured before pg-boss 12.35 (the deltas) or 12.36 (the rest). `getQueues()` and `getQueue()` return the latest pass that counted. Until a pass has counted, the three deltas are `0` and the rest are `null`.
 
-Subtracting two snapshots' counts doesn't give a delta. `failedCount`, for example, also falls as retention deletes failed jobs, so its change differs from `failedDelta`.
+Subtracting two snapshots' counts doesn't give a delta. The change in `failedCount`, for example, differs from `failedDelta` because `failedCount` also falls as retention deletes failed jobs.
 
 * `createdDelta`: jobs created
 * `completedDelta`: jobs completed
-* `failedDelta`: jobs that failed terminally (a job that will be retried hasn't finished, so it isn't counted)
-* `deltaSeconds`: how many seconds the deltas cover. Monitor passes aren't evenly spaced (a deferred or missed pass covers several intervals), so compute a rate as `completedDelta / deltaSeconds * 60` instead of dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. When a queue goes more than two hours (or two monitor intervals, if that's longer) without its deltas being recorded, its next window starts fresh, so no single snapshot reports the whole gap.
+* `failedDelta`: jobs that failed terminally (a job that will be retried isn't counted, because it hasn't finished)
+* `deltaSeconds`: how many seconds the deltas cover. Because monitor passes aren't evenly spaced (a deferred or missed pass covers several intervals), compute a rate as `completedDelta / deltaSeconds * 60` instead of dividing by the bucket width. `null` on the first monitor pass that records a queue's deltas, and wherever the deltas are `null`. When a queue goes more than two hours (or two monitor intervals, if that's longer) without its deltas being recorded, its next window starts fresh. No single snapshot reports the whole gap.
 * `deltaOn`: when the interval the deltas cover ends, 10 seconds behind `capturedOn`.
-* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram (see **Wait and run histograms** below). A deferred job, a retry sitting out its backoff, a flow job waiting on its parents, or a canceled or failed job before `resume()` or `retry()` brings it back isn't counted as waiting. A job that failed without ever starting has no wait, so the histogram can hold fewer jobs than `completedDelta + failedDelta` but not more.
+* `waitBins`: how long each job that finished in the deltas' window waited, from when it could first start (the later of when it was created and its `startAfter`) to when a worker started it, as a histogram (see **Wait and run histograms** below). A deferred job, a retry sitting out its backoff, a flow job waiting on its parents, or a canceled or failed job before `resume()` or `retry()` brings it back isn't counted as waiting. The histogram can hold fewer jobs than `completedDelta + failedDelta` but not more, because a job that failed without ever starting has no wait.
 * `runBins`: how long the same jobs ran, from start to finish, in the same bins.
-* `readyOldestSeconds`: how long the oldest ready job had waited when the pass ran, leaving out deferred and blocked jobs. `0` when no ready job was waiting. `waitBins` counts a wait only once its job finishes, so a queue whose workers have stopped records no waits at all. `readyOldestSeconds` is the figure that keeps rising.
+* `readyOldestSeconds`: how long the oldest ready job had waited when the pass ran, leaving out deferred and blocked jobs. `0` when no ready job was waiting. Because `waitBins` counts a wait only once its job finishes, a queue whose workers have stopped records no waits at all. `readyOldestSeconds` is the figure that keeps rising.
 
 The deltas are eventually consistent. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it. The job's row becomes visible only when the transaction commits. So each window ends 10 seconds behind the pass. A transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting (or within the queue's `deleteAfterSeconds` or `retentionSeconds`, if either is shorter). So a snapshot from the last hour can still rise after it has been returned. It never falls. The histograms leave out a job that finishes inside a transaction longer than 10 seconds, even though the deltas take it in afterwards.
 
 **Wait and run histograms**
 
-`waitBins` and `runBins` are histograms: 48 bins, each counting the jobs whose time fell in its range. The bins are spaced logarithmically, each about 1.4 times as wide as the bin before, so they cover everything from under 10 ms to about 23 hours with the same relative precision for fast and slow jobs. To read percentiles from them, use [`getQueueStats()`](#getqueuestats-name-options)'s `percentiles` option, or [`addBins()`](./utils.md#addbins-a-b) and [`percentile()`](./utils.md#percentile-bins-p) for a single percentile over a whole window or across several queues.
+`waitBins` and `runBins` are histograms: 48 bins, each counting the jobs whose time fell in its range. The bins are spaced logarithmically, each about 1.4 times as wide as the bin before. They cover everything from under 10 ms to about 23 hours with the same relative precision for fast and slow jobs. To read percentiles from them, use [`getQueueStats()`](#getqueuestats-name-options)'s `percentiles` option, or [`addBins()`](./utils.md#addbins-a-b) and [`percentile()`](./utils.md#percentile-bins-p) for a single percentile over a whole window or across several queues.
 
-In `queue_stats` the histograms are stored as the `int[]` columns `wait_bins` and `run_bins`, with `NULL` in a bin no job landed in, so coalesce the bins when adding them up in SQL.
+In `queue_stats` the histograms are stored as the `int[]` columns `wait_bins` and `run_bins`. Because a bin no job landed in holds `NULL`, coalesce the bins when adding them up in SQL.
 
 **Other fields**
 
@@ -329,7 +329,7 @@ interface QueueStats {
 The result depends on whether stats are persisted:
 
 * When [`persistQueueStats`](./constructor.md#persistqueuestats) is enabled, `getQueueStats()` returns the recorded time series, filtered and downsampled by the options below.
-* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default pg-boss reads it from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale.
+* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default pg-boss reads it from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`). The value can be up to one monitor interval stale.
 
 **Options**
 
@@ -347,15 +347,15 @@ The result depends on whether stats are persisted:
 
 * **force**, boolean, default false
 
-  With `persistQueueStats` disabled, counts directly from the job table and updates the values in the queue table instead of reading the cache. The count still runs at most once a minute, so repeated calls with `force` don't always count again.
+  With `persistQueueStats` disabled, counts directly from the job table and updates the values in the queue table instead of reading the cache. Repeated calls with `force` don't always count again, because the count still runs at most once a minute.
 
 **Downsampling options**
 
-Over a wide window the raw series can be far larger than `limit`, so the newest `limit` rows show only the most recent slice. To sample the whole window evenly, downsample it into time buckets. Downsampling applies only with `persistQueueStats` enabled.
+Over a wide window the raw series can be far larger than `limit`. The newest `limit` rows then show only the most recent slice. To sample the whole window evenly, downsample it into time buckets. Downsampling applies only with `persistQueueStats` enabled.
 
 * **bucketSeconds**, int
 
-  Groups snapshots into fixed-width buckets this many seconds wide and returns one aggregated snapshot per bucket. Bucket boundaries align to the Unix epoch, so they're stable across calls.
+  Groups snapshots into fixed-width buckets this many seconds wide and returns one aggregated snapshot per bucket. Because bucket boundaries align to the Unix epoch, they're stable across calls.
 
 * **maxDataPoints**, int
 
@@ -365,9 +365,9 @@ Over a wide window the raw series can be far larger than `limit`, so the newest 
 
   How each count is combined within a bucket. `'max'` gives the peak depth (best for backlog alerting), `'min'` the trough, and `'avg'` the rounded mean. Applies only when `bucketSeconds` or `maxDataPoints` is set.
 
-`aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `readyOldestSeconds` is the largest in it. Counts are bucketed by `capturedOn` and deltas by `deltaOn`, so the two line up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it, so every bucket returned has real counts.
+`aggregate` applies to the counts only. The deltas, `deltaSeconds`, `waitBins` and `runBins` are summed within a bucket, and `readyOldestSeconds` is the largest in it. Bucketing counts by `capturedOn` and deltas by `deltaOn` lines the two up with no shifting on your side. As a result, the newest bucket's deltas are `null` until the monitor pass that covers it has run. Every bucket returned has real counts, because deltas whose bucket holds no snapshot are folded into the bucket of the newest snapshot before it.
 
-`limit` still caps the number of buckets returned, so size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
+Because `limit` still caps the number of buckets returned, size the bucket to stay within it. The covering index on `queue_stats` and daily partition pruning keep these aggregates fast with no extra setup.
 
 **Percentile options**
 

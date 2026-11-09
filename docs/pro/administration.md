@@ -30,5 +30,5 @@ Pro never writes a secret in the clear, and never sends a stored secret back to
 the browser. The fields show bullets. Saving without touching them keeps
 what's there, unless what the secret is sent to changed: a webhook's host, the
 SMTP server or user, or the SSO issuer or client id. Pro then asks for the secret
-again, so a stored secret only ever goes where it was entered for. Losing the key means re-entering those secrets. Nothing else
+again. A stored secret only ever goes where it was entered for. Losing the key means re-entering those secrets. Nothing else
 is lost.

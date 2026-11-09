@@ -28,8 +28,8 @@ of `LICENSE`.
 
 Each Pro release makes changes only on the schema version of the pg-boss it's built with. When the
 application upgrades to a pg-boss release with a new schema version, the installed Pro can't make
-changes on that schema. The Pro release built for that schema came out after the subscription ended,
-so the organization can't install it. Every page still works, but changes are off, as [pg-boss
+changes on that schema. The organization can't install the Pro release built for that schema,
+because that release came out after the subscription ended. Every page still works, but changes are off, as [pg-boss
 versions](./versions.md) describes. The [free dashboard](../dashboard.md#job-actions) follows every
 pg-boss release and still retries, cancels and resumes a job.
 

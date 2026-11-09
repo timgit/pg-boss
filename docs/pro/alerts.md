@@ -32,7 +32,7 @@ Pro also holds the alert's notifications. For an event, acknowledging sends its 
 destinations, as closing does. Conditions, such as a stalled queue, close by
 themselves when they stop matching. Events, such as a pg-boss warning or a failed
 operation, have no condition that could stop matching. An event closes when a user
-resolves it or 24 hours after the event last happened, so a warning that keeps
+resolves it or 24 hours after the event last happened. A warning that keeps
 repeating stays open.
 
 Rules have [their own page](./alert-rules.md), and [Destinations](./destinations.md) covers where alerts go.

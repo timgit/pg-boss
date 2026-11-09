@@ -1,6 +1,6 @@
 # Mount in your application
 
-An existing Node server can run Pro as a route, so it needs no second process:
+An existing Node server can run Pro as a route without a second process:
 
 ```ts
 import { getConnInfo } from '@hono/node-server/conninfo'

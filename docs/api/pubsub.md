@@ -9,8 +9,8 @@ Publishes an event with optional data and options, which take the same arguments
 If a subscribed queue is deleted while `publish()` runs, `publish()` skips the queue unless the send ran on a
 `db` you passed. In that case `publish()` reports the failure, because the failed statement may have aborted your
 transaction. Once every send settles, `publish()` rejects with an `AggregateError` that names each failed queue it
-didn't skip. Outside a transaction you own, the sends that succeeded keep their jobs, so retrying `publish()` can
-duplicate them.
+didn't skip. Outside a transaction you own, the sends that succeeded keep their jobs. Retrying `publish()` can
+duplicate those jobs.
 
 ```js
 // creates a job in each queue subscribed to 'user.signed-up'

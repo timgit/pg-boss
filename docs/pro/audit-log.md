@@ -20,8 +20,8 @@ Pro writes each change to the log in the same transaction as the change itself. 
 
 ## Address
 
-An entry records the address the connection came from. When that connection comes from a trusted proxy, Pro reads the `X-Forwarded-For` header from its right end, where each proxy adds the address it saw. Pro takes the first address there that isn't a trusted proxy. The trusted proxies are loopback unless [`PGBOSS_PRO_TRUSTED_PROXIES`](./environment.md) lists others, such as the address of a proxy in another container. From any other connection the header is ignored, so a client can't choose the address recorded.
+An entry records the address the connection came from. When that connection comes from a trusted proxy, Pro reads the `X-Forwarded-For` header from its right end, where each proxy adds the address it saw. Pro takes the first address there that isn't a trusted proxy. The trusted proxies are loopback unless [`PGBOSS_PRO_TRUSTED_PROXIES`](./environment.md) lists others, such as the address of a proxy in another container. From any other connection the header is ignored. A client can't choose the address recorded.
 
 Behind a proxy that isn't listed, every entry carries the proxy's address. When a private address that isn't listed sends `X-Forwarded-For`, Pro warns once on stderr and names the address to add. Behind a CDN in front of a trusted proxy, the address is the CDN's.
 
-A handler [mounted in another server](./mount.md) is passed a request without its connection, so the handler records the `clientIp` each call passes. A call without `clientIp` records no address. The sign-in and API token limits count failures against the same address.
+A handler [mounted in another server](./mount.md) is passed a request without its connection. The handler records the `clientIp` each call passes instead. A call without `clientIp` records no address. The sign-in and API token limits count failures against the same address.
