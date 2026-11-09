@@ -20,6 +20,11 @@ collects metrics with Prometheus, or with another tool that reads the Prometheus
 | `pgboss_instance_cpu_cores` | `database`, `instance`, `name`, `host` | CPU cores its process used. |
 | `pgboss_instance_memory_bytes` | `database`, `instance`, `name`, `host` | Its process's resident memory. |
 
+A service account whose role covers every database also gets [Pro's own queues](./databases.md#pro-queues),
+under `database="pro_queues"`: the alert evaluator's queue and a send queue for each destination.
+The metrics of a send queue carry a `destination` label with the destination's name. Pro's queues
+have no `pgboss_alerts_open`.
+
 Pro leaves out any figure pg-boss hasn't recorded instead of reporting it as 0. Rates and health need `persistQueueStats`. Wait times, run times and the instance metrics need pg-boss 12.36. The 0.99 quantile appears once the hour holds 100 finished jobs.
 
 ## Prometheus

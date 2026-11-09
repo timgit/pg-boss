@@ -191,10 +191,12 @@ that point at them.
   pg-boss 12.36, and so do the instance checks, which read pg-boss's instance registry.
 - The evaluator runs once a minute as a pg-boss job in a `<schema>_queue` schema
   of its own. A pass holds a Postgres advisory lock on Pro's store while it
-  runs. Pro replicas run one pass at a time between them and send everything
-  once. A minute whose job finds the lock taken skips its pass. A pooler in front of
+  runs. Pro replicas run one pass at a time between them, and the pass queues each
+  notification once to its destination's [send queue](./destinations.md#send-queues).
+  A minute whose job finds the lock taken skips its pass. A pooler in front of
   the store must not be in transaction mode, because the lock needs a session
-  of its own.
+  of its own. In transaction mode, the send queues also lose LISTEN/NOTIFY and find
+  new sends by polling every 10 seconds.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
   the Console, and tries again each minute until it runs. When Pro is mounted in a host
   application, the evaluator starts on the first request the handler serves.

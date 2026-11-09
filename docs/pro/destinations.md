@@ -7,6 +7,8 @@ receiver handling both.
 
 Each destination's row shows its last delivery: when it went and whether it was
 sent. For a failed delivery, the row also shows the receiver's response and how many deliveries failed in a row.
+**Send queue** shows how many sends are waiting or retrying, and links to the destination's
+[send queue](#send-queues).
 **Deliveries** opens every attempt to that destination (tests included) newest
 first, or only its failures. An alert's own page shows the deliveries made for
 it.
@@ -18,8 +20,8 @@ Pro sends every alert to its destinations when it fires and again when it
 closes, whichever way it closes: the condition ended, a user resolved it, an event
 expired, or its rule changed, was turned off or was deleted. Acknowledging an event also sends
 the resolve, while the event stays open in Pro. A resolve goes once, and only
-to the destinations the fire went to. A fire or resolve that fails to send is tried again on
-each evaluation pass until it goes or has had five attempts in all.
+to the destinations the fire went to. A send that fails is tried again by its
+[send queue](#send-queues).
 
 An alert that fires while its rule has no destination shows only in the Console. It isn't sent
 when the rule gets a destination later. Adding the first destination never sends a backlog of
@@ -34,6 +36,30 @@ turning it on.
 when Pro knows the Console's public address. Pro builds that address from [`PGBOSS_DASHBOARD_SITE_URL`](../dashboard.md#reverse-proxy),
 or `siteUrl` for a [mounted handler](./mount.md), plus the base path. Without
 that address, the notifications carry no link. The page shows which address the links use.
+
+## Send queues
+
+Each destination has a pg-boss queue of its own among [Pro queues](./databases.md#pro-queues). The
+evaluator queues every fire and resolve to it, and every Pro replica sends from it. A destination
+gets one send at a time, which keeps a slow or rate-limited destination from holding up any other's.
+
+A send that fails has five attempts in all. The first retry waits 20 to 40 seconds, and each wait
+after that roughly doubles, up to 5 minutes. Pro doesn't retry a failure that sending again can't
+fix: a 4xx answer other than 408 or 429, a redirect, a mail server's 5xx answer or refused
+login, an address that `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES` blocks, or a missing setting. Every attempt shows in the
+destination's deliveries.
+
+Before each attempt, Pro checks that the send is still worth making. A fire whose alert has
+closed or been acknowledged isn't sent, and no resolve follows it. Nothing goes to a destination
+that's off or deleted. A send that hasn't started within an hour is dropped. Deleting a destination
+deletes its queue and any sends still waiting in it.
+
+Pro queues each resolve once per fire, under a job id made from the alert and the fire. A finished
+send is kept for 8 days, which stops the evaluator from queuing the same resolve again.
+
+Every email destination sends through the one email account in **Outgoing email**. Two email
+destinations can still send at the same time. Resend answers a burst over its rate limit with 429, which
+Pro retries like any other failure.
 
 ## Email
 

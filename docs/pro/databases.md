@@ -33,3 +33,18 @@ Profile name the area there instead.
 A role is granted for one database or for all databases. The same user can be an
 operator on one database and a viewer on another. The Console remembers the last database
 viewed for 30 days. A page that names no database, such as Settings, leads back to it.
+
+## Pro queues
+
+Pro runs its own background work on pg-boss queues in `pgboss_pro_queue`, a schema beside Pro's
+tables in its store database. With `PGBOSS_PRO_SCHEMA` set, the schema is that name with `_queue`
+added. A global admin finds them as **Pro queues** under **Internal** at the end of the database
+menu. They aren't a database in `DATABASE_URL`. A banner on each of their pages says which
+database holds them.
+
+- `pgboss-pro-alerts` runs the alert evaluator once a minute.
+- Each alert destination has a [send queue](./destinations.md#send-queues), named
+  `pgboss-pro-send-` and the destination's id. Its page is titled with the destination's name.
+
+Their pages show rates, wait times and health like any other queue's, because Pro's pg-boss keeps
+`persistQueueStats` on. The Console makes no changes to Pro's queues.
