@@ -92,7 +92,26 @@ describe('root loader', () => {
 
     expect(data).toEqual({
       databases: [],
+      internal: [],
       currentDb: undefined,
     })
+  })
+
+  it('sends an overlay\'s own schemas apart from the databases, with their badge and never their connection string', async () => {
+    const provider = contextWith([primary])
+    provider.set(dbContext, {
+      ...provider.get(dbContext),
+      internal: [{ id: 'pro_queues', name: 'Pro queues', url: `postgres://admin:${PASSWORD}@db.internal:5432/app`, schema: 'pgboss_pro_queue', badge: 'Pro' }],
+    })
+
+    const data = await rootLoader({
+      request: new Request('http://localhost/'),
+      context: provider,
+      params: {},
+    } as Parameters<typeof rootLoader>[0])
+
+    expect(data.databases.map((db) => db.id)).toEqual(['primary'])
+    expect(data.internal).toEqual([{ id: 'pro_queues', name: 'Pro queues', schema: 'pgboss_pro_queue', badge: 'Pro' }])
+    expect(JSON.stringify(data)).not.toContain(PASSWORD)
   })
 })
