@@ -59,7 +59,7 @@ GRANT pg_read_all_stats TO leastprivuser;
 
 ## Run
 
-`DATABASE_URL` names the database the application's pg-boss uses. On startup, Pro installs pg-boss's schema in each database that has none, as pg-boss's own `start()` does. Pro also runs on a new database.
+`DATABASE_URL` names the database the application's pg-boss uses. On startup, Pro installs pg-boss's schema in each database that has none, as pg-boss's own `start()` does. Pro also runs on a new database. It installs only into a schema that's missing or empty. A schema that holds other tables, such as an application's after a typo in `PGBOSS_SCHEMA`, is left alone, and so is one whose name an existing pg-boss install uses with other capitals. Pro logs why. `PGBOSS_PRO_INSTALL_SCHEMA=false` turns the install off.
 
 ```bash
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-pro
