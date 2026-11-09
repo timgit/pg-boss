@@ -21,6 +21,10 @@ the resolve, while the event stays open in Pro. A resolve goes once, and only
 to the destinations the fire went to. A fire or resolve that fails to send is tried again on
 each evaluation pass until it goes or has had five attempts in all.
 
+An alert that fires while its rule has no destination shows only in the Console. It isn't sent
+when the rule gets a destination later. Adding the first destination never sends a backlog of
+open alerts.
+
 **Links in alerts.** Emails, webhooks and PagerDuty link each alert to its page
 when Pro knows the Console's public address. Pro builds that address from [`PGBOSS_DASHBOARD_SITE_URL`](../dashboard.md#reverse-proxy),
 or `siteUrl` for a [mounted handler](./mount.md), plus the base path. Without
