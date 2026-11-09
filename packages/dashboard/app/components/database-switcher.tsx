@@ -1,6 +1,6 @@
 import { useLocation, useNavigate, useParams, useRouteLoaderData, useSearchParams } from 'react-router'
 import { switchPathname } from '~/lib/database-switch'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Layers } from 'lucide-react'
 import type { PublicDatabase } from '~/lib/types'
 import { DATABASE_COLORS, databaseColor } from '~/lib/database-colors'
 import {
@@ -14,11 +14,34 @@ import {
 
 interface RootLoaderData {
   databases: PublicDatabase[]
+  internal?: PublicDatabase[]
   currentDb: PublicDatabase | undefined
 }
 
 function Dot ({ db, index }: { db: PublicDatabase, index: number }) {
   return <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: DATABASE_COLORS[databaseColor(db.color, index)] }} />
+}
+
+/** An overlay's own schema: a tile in place of a configured database's dot, so the two never read alike. */
+function InternalMark () {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] text-[var(--text-link)]"
+      style={{ background: 'color-mix(in srgb, var(--primary-500) 12%, transparent)' }}
+    >
+      <Layers className="h-3 w-3" />
+    </span>
+  )
+}
+
+function Name ({ db }: { db: PublicDatabase }) {
+  return (
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+      <span className="truncate font-medium">{db.name}</span>
+      {db.badge && <span className="pgboss-tier shrink-0">{db.badge}</span>}
+    </span>
+  )
 }
 
 /**
@@ -34,15 +57,17 @@ export function DatabaseSwitcher () {
   const routeParams = useParams()
 
   const databases = root?.databases ?? []
+  const internal = root?.internal ?? []
   const current = root?.currentDb
 
   if (!current) return null
 
+  const isInternal = internal.some((db) => db.id === current.id)
   const index = Math.max(0, databases.findIndex((db) => db.id === current.id))
   const label = (
     <>
-      <Dot db={current} index={index} />
-      <span className="max-w-[14rem] truncate font-medium text-[var(--text-primary)] max-sm:max-w-[9rem]">{current.name}</span>
+      {isInternal ? <InternalMark /> : <Dot db={current} index={index} />}
+      <span className="min-w-0 max-w-[14rem] text-[var(--text-primary)] max-sm:max-w-[9rem]"><Name db={current} /></span>
     </>
   )
 
@@ -56,7 +81,7 @@ export function DatabaseSwitcher () {
     navigate({ pathname, search: `?${next.toString()}` })
   }
 
-  if (databases.length <= 1) {
+  if (databases.length + internal.length <= 1) {
     return <span className="inline-flex h-8 min-w-0 items-center gap-2 text-sm" title="Database">{label}</span>
   }
 
@@ -86,6 +111,27 @@ export function DatabaseSwitcher () {
             {db.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
           </DropdownMenuItem>
         ))}
+        {internal.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Internal</DropdownMenuLabel>
+            {internal.map((db) => (
+              <DropdownMenuItem
+                key={db.id}
+                aria-current={db.id === current.id ? 'true' : undefined}
+                onClick={() => select(db.id)}
+                className="cursor-pointer gap-2.5 py-2"
+              >
+                <InternalMark />
+                <span className="flex min-w-0 flex-col">
+                  <Name db={db} />
+                  <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{db.schema}</span>
+                </span>
+                {db.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
         <DropdownMenuSeparator />
         <p className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]">Each database has its own queues, jobs and history.</p>
       </DropdownMenuContent>

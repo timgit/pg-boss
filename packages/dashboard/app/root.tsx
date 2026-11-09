@@ -136,7 +136,7 @@ const themeScript = `
 `;
 
 export async function loader({ context }: Route.LoaderArgs) {
-  const { databases, currentDb } = context.get(dbContext);
+  const { databases, internal = [], currentDb } = context.get(dbContext);
 
   // Project before returning. The sidebar needs an id, a display name and the
   // schema; it never needs the connection string. A loader's return value is
@@ -144,6 +144,7 @@ export async function loader({ context }: Route.LoaderArgs) {
   // every connection string, passwords included, in page source.
   return {
     databases: databases.map(toPublicDatabase),
+    internal: internal.map(toPublicDatabase),
     currentDb: currentDb ? toPublicDatabase(currentDb) : currentDb,
   };
 }

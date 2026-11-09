@@ -11,6 +11,7 @@ export interface DatabaseConfig {
   url: string;     // Connection string
   schema: string;  // pg-boss schema
   color?: DatabaseColor; // Set by an overlay; otherwise one is picked by position
+  badge?: string;  // A short label beside the name in the switcher, set by an overlay
 }
 
 /**
@@ -21,8 +22,8 @@ export interface DatabaseConfig {
  * the projection has to happen before the value leaves the server, not in the
  * component that renders it.
  */
-export function toPublicDatabase ({ id, name, schema, color }: DatabaseConfig): PublicDatabase {
-  return color ? { id, name, schema, color } : { id, name, schema }
+export function toPublicDatabase ({ id, name, schema, color, badge }: DatabaseConfig): PublicDatabase {
+  return { id, name, schema, ...(color ? { color } : {}), ...(badge ? { badge } : {}) }
 }
 
 const SEPARATOR = '|'

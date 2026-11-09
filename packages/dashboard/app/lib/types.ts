@@ -193,4 +193,5 @@ export interface PublicDatabase {
   name: string;
   schema: string;
   color?: DatabaseColor;
+  badge?: string;
 }

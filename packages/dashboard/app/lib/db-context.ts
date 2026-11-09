@@ -3,6 +3,11 @@ import type { DatabaseConfig } from './config.server'
 
 export interface DbContext {
   readonly databases: DatabaseConfig[]
+  /**
+   * Schemas an overlay keeps for its own work, which the switcher lists apart under Internal. They
+   * are never in `databases`, though one may be `currentDb`.
+   */
+  readonly internal?: DatabaseConfig[]
   readonly currentDb: DatabaseConfig
   readonly DB_URL: string
   readonly SCHEMA: string
