@@ -25,6 +25,11 @@ An alert that fires while its rule has no destination shows only in the Console.
 when the rule gets a destination later. Adding the first destination never sends a backlog of
 open alerts.
 
+The switch on each destination's row turns it off and on. Rules that send to a destination that's
+off still open alerts in the Console. An alert that fires while the destination is off isn't sent
+to it once it's on again. **Send test** still works on a destination that's off, to try it before
+turning it on.
+
 **Links in alerts.** Emails, webhooks and PagerDuty link each alert to its page
 when Pro knows the Console's public address. Pro builds that address from [`PGBOSS_DASHBOARD_SITE_URL`](../dashboard.md#reverse-proxy),
 or `siteUrl` for a [mounted handler](./mount.md), plus the base path. Without
