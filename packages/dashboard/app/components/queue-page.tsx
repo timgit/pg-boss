@@ -34,6 +34,10 @@ import { Count } from '~/components/ui/count'
  * optional, and without them the page is the free one.
  */
 export interface QueuePageExtensions {
+  /** In place of `Queue: <name>`, for a queue whose name doesn't say what it is. */
+  title?: ReactNode
+  /** Under the title. */
+  subtitle?: ReactNode
   /** In the header, on its own line under the queue actions and View metrics, such as a range switch. */
   toolbar?: ReactNode
   /** Between the header and the counts. */
@@ -50,7 +54,8 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
   return (
     <PageHeader
       parent={{ to: '/queues', label: 'Queues' }}
-      title={`Queue: ${queue.name}`}
+      title={extensions?.title ?? `Queue: ${queue.name}`}
+      subtitle={extensions?.subtitle}
       badge={isDeadLetter ? <DeadLetterBadge /> : undefined}
       action={
         <div className="flex flex-col items-end gap-2">
