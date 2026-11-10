@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useLocation, useNavigate, useParams, useRouteLoaderData, useSearchParams } from 'react-router'
 import { switchPathname } from '~/lib/database-switch'
 import { cn } from '~/lib/utils'
@@ -8,6 +9,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -56,6 +58,7 @@ export function DatabaseSwitcher () {
   const navigate = useNavigate()
   const location = useLocation()
   const routeParams = useParams()
+  const ids = useId()
 
   const databases = root?.databases ?? []
   const internal = root?.internal ?? []
@@ -97,41 +100,49 @@ export function DatabaseSwitcher () {
         <ChevronsUpDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[18rem]">
-        <DropdownMenuLabel className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Databases</DropdownMenuLabel>
-        {databases.map((db, k) => (
-          <DropdownMenuItem
-            key={db.id}
-            aria-current={db.id === current.id ? 'true' : undefined}
-            onClick={() => select(db.id)}
-            className="cursor-pointer gap-2.5 py-2"
-          >
-            <Dot db={db} index={k} />
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate font-medium">{db.name}</span>
-              <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{db.schema}</span>
-            </span>
-            {db.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
-          </DropdownMenuItem>
-        ))}
+        {/* Each section a group named by its heading, and each database a radio item: one is
+            the database every page reads, and a screen reader says which. */}
+        <DropdownMenuGroup aria-labelledby={`${ids}-databases`}>
+          <DropdownMenuLabel id={`${ids}-databases`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Databases</DropdownMenuLabel>
+          {databases.map((db, k) => (
+            <DropdownMenuItem
+              key={db.id}
+              role="menuitemradio"
+              aria-checked={db.id === current.id}
+              onClick={() => select(db.id)}
+              className="cursor-pointer gap-2.5 py-2"
+            >
+              <Dot db={db} index={k} />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium">{db.name}</span>
+                <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{db.schema}</span>
+              </span>
+              {db.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
         {internal.length > 0 && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Internal</DropdownMenuLabel>
-            {internal.map((db) => (
-              <DropdownMenuItem
-                key={db.id}
-                aria-current={db.id === current.id ? 'true' : undefined}
-                onClick={() => select(db.id)}
-                className="cursor-pointer gap-2.5 py-2"
-              >
-                <InternalMark />
-                <span className="flex min-w-0 flex-col">
-                  <Name db={db} />
-                  <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{db.schema}</span>
-                </span>
-                {db.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
-              </DropdownMenuItem>
-            ))}
+            <DropdownMenuGroup aria-labelledby={`${ids}-internal`}>
+              <DropdownMenuLabel id={`${ids}-internal`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Internal</DropdownMenuLabel>
+              {internal.map((db) => (
+                <DropdownMenuItem
+                  key={db.id}
+                  role="menuitemradio"
+                  aria-checked={db.id === current.id}
+                  onClick={() => select(db.id)}
+                  className="cursor-pointer gap-2.5 py-2"
+                >
+                  <InternalMark />
+                  <span className="flex min-w-0 flex-col">
+                    <Name db={db} />
+                    <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{db.schema}</span>
+                  </span>
+                  {db.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
           </>
         )}
         <DropdownMenuSeparator />
