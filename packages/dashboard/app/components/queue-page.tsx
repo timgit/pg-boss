@@ -58,8 +58,8 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
       subtitle={extensions?.subtitle}
       badge={isDeadLetter ? <DeadLetterBadge /> : undefined}
       action={
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <ProSlot name="queueActions" queue={{ name: queue.name, isDeadLetter }} />
             <Button
               variant="outline"

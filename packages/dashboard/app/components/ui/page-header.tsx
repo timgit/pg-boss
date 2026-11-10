@@ -12,11 +12,12 @@ interface PageHeaderProps {
 }
 
 // Route header — title + optional subtitle on the left, a primary action on
-// the right. Leads every console view.
+// the right. Leads every console view. On a phone the action goes under the title, which would
+// otherwise share the width with it and wrap a word to a line.
 export function PageHeader ({ title, subtitle, action, parent, badge }: PageHeaderProps) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-6">
-      <div>
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div className="min-w-0">
         {parent && <div className="mb-1.5 flex"><ParentLink {...parent} /></div>}
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
           <h1 className="text-2xl font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
