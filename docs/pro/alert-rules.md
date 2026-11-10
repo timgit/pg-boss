@@ -32,6 +32,17 @@ instance has been quiet. Jobs in a dead letter queue usually wait for a person.
 The check skips a queue that another queue names as its `deadLetter` until an
 instance has had a `work()` on that queue.
 
+A queue drained on a schedule looks unworked between runs. A cron job that calls
+`fetch()` every 15 minutes is one example. **Queue with no workers** and **Queue
+stalled or falling behind** each open an alert a few minutes into a gap while jobs wait. On
+those two rules, set a hold longer than the gap, or list the queue as an
+exception (see [Writing a rule](#writing-a-rule)).
+
+**An instance restarting in a loop** counts lives that ended without `stop()`.
+A script that starts pg-boss and exits without calling `stop()` ends that way
+too. A script run 3 times within an hour on one host, under one `instanceName` or
+with none, reads as a restart loop. Call `stop()` before the script exits.
+
 The other [instance](./instances.md) checks start off:
 
 - **An instance gone quiet**
