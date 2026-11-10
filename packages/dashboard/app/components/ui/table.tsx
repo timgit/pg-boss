@@ -52,7 +52,9 @@ interface TableCellProps {
 
 export function Table ({ children, className }: TableProps) {
   return (
-    <div className={cn('overflow-x-auto', className)}>
+    // Positioned, so an `sr-only` heading (absolute) stays inside the scroll box rather than
+    // widening the page past its right edge on a phone.
+    <div className={cn('relative overflow-x-auto', className)}>
       <table className="min-w-full border-collapse">
         {children}
       </table>
