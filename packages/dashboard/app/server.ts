@@ -257,11 +257,24 @@ export function createHonoApp ({
 
 // Set the path on the site URL rather than resolving it, so a request for `//other.host/`
 // keeps the site's host.
+//
+// The init is spelled out rather than passing `request` as it. @hono/node-server hands over a
+// request that is not a native one, and from Node 26 undici brand-checks each getter it reads
+// from an init, so `duplex`, which that request does not proxy, throws "Illegal invocation".
 function atSiteOrigin (request: Request, origin: string): Request {
   const { pathname, search } = new URL(request.url)
   const url = new URL(origin)
   url.pathname = pathname
   url.search = search
+  const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
+  // A streamed body needs `duplex`, which the DOM lib's RequestInit does not declare yet.
+  const init: RequestInit & { duplex: 'half' } = {
+    method: request.method,
+    headers: request.headers,
+    body: hasBody ? request.body : null,
+    duplex: 'half',
+    signal: request.signal,
+  }
 
-  return new Request(url, request)
+  return new Request(url, init)
 }

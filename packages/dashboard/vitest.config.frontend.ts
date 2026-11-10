@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
+    // Node 25+ defines its own global localStorage, which is undefined without
+    // --localstorage-file and hides jsdom's. Turn it off so the tests see jsdom's.
+    execArgv: ['--no-experimental-webstorage'],
     globals: true,
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/frontend/**/*.test.{ts,tsx}'],
