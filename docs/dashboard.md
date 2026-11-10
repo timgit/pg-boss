@@ -25,14 +25,14 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 
 ### Overview
 
-The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been canceled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the server's connection limit between pg-boss, other applications and what is free. The most recent warnings are under it.
+The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been cancelled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the server's connection limit between pg-boss, other applications and what is free. The most recent warnings are under it.
 
 ![Overview page](./images/dashboard-overview.webp){.light-only}
 ![Overview page](./images/dashboard-overview-dark.webp){.dark-only}
 
 ### Jobs
 
-Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The queue filter searches queue names as you type and lists the first 20 matches and says when more match. The state filter starts on unfinished (created, retry and active), and also offers all states or any single state. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, canceled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`). **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
+Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The queue filter searches queue names as you type and lists the first 20 matches and says when more match. The state filter starts on unfinished (created, retry and active), and also offers all states or any single state. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, cancelled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`). **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
 
 ![Jobs page](./images/dashboard-jobs.webp){.light-only}
 ![Jobs page](./images/dashboard-jobs-dark.webp){.dark-only}
@@ -48,7 +48,7 @@ The timeline shows the times the job's row keeps. Earlier attempts appear only a
 
 #### Job actions
 
-A failed job has **Retry job**, a canceled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. Each calls pg-boss's own [`retry()`, `cancel()` or `resume()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes. The dashboard doesn't record who made them.
+A failed job has **Retry job**, a cancelled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. Each calls pg-boss's own [`retry()`, `cancel()` or `resume()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes. The dashboard doesn't record who made them.
 
 The dashboard's copy of `pg-boss` must be on the database's schema version, because pg-boss makes the change. On any other version, pages still read and the page says why the change was refused. Set `PGBOSS_DASHBOARD_READ_ONLY=true` to hide the buttons and refuse every change.
 

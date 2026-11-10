@@ -63,8 +63,8 @@ If a worker is still claiming a job when you call `stop()`, the job's handler ru
     The same timeout bounds a [BAM](#getbamstatus) command that is still running. `stop()` waits for the command first and starts the handlers' timeout after it. A stop that waits on both can take up to twice `timeout`. With `graceful: false` the command is ended at once. The outcome depends on the kind of command:
 
     - A concurrent index build or drop on PostgreSQL keeps running on the server after its connection is closed. Its row stays `in_progress` until the build ends. The next instance with `migrate` enabled then marks the row completed, or rebuilds the index if the build failed.
-    - Any other command, such as a data migration, is canceled and rolls back. Its row is marked `failed`. The next instance with `migrate` enabled runs the command again.
-    - On CockroachDB the connection is closed. A schema change keeps running as a CockroachDB job, while any other statement is canceled. The row is marked `failed` and the command runs again.
+    - Any other command, such as a data migration, is cancelled and rolls back. Its row is marked `failed`. The next instance with `migrate` enabled runs the command again.
+    - On CockroachDB the connection is closed. A schema change keeps running as a CockroachDB job, while any other statement is cancelled. The row is marked `failed` and the command runs again.
 
     With a custom [`db`](./constructor.md#db) adapter, pg-boss has no connection to close. It cancels every command on PostgreSQL and waits for the command on CockroachDB. To cancel, the connecting role must be allowed to cancel the command's backend. If it isn't, `stop()` emits one `error` and waits for the command.
 

@@ -100,7 +100,7 @@ what to empty picks the call:
 | - | - | - |
 | Everything | Every job, active jobs too | `deleteAllJobs()` |
 | Queued jobs | Created and retry jobs, none started | `deleteQueuedJobs()` |
-| Finished jobs | Completed, canceled and failed jobs | `deleteStoredJobs()` |
+| Finished jobs | Completed, cancelled and failed jobs | `deleteStoredJobs()` |
 
 A queue's page offers **Purge** to users who can delete jobs. Purging needs
 `job:delete`, as deleting does. The count before confirming reads at most 1,000

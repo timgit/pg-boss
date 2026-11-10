@@ -6,7 +6,7 @@ The registry decides which versions the [license key](./install.md#install) may 
 
 ## Cancellation
 
-A subscription renews until it's canceled. A canceled subscription lasts until the end of the period
+A subscription renews until it's cancelled. A cancelled subscription lasts until the end of the period
 already paid for. From then on, the registry accepts the license key only for the versions the table
 below allows. A deploy that has to download any other version fails. Pro keeps running wherever it's
 already installed.

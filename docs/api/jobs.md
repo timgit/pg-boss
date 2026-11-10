@@ -420,7 +420,7 @@ const flow = await boss.flow([
 const loadJobId = flow.load
 ```
 
-Dependent jobs are created in a `blocked` state. `fetch()` skips them until all their parent jobs have completed. If a parent job fails or is canceled, the child stays blocked. You can `cancel` or `fail` the blocked child yourself.
+Dependent jobs are created in a `blocked` state. `fetch()` skips them until all their parent jobs have completed. If a parent job fails or is cancelled, the child stays blocked. You can `cancel` or `fail` the blocked child yourself.
 
 A dependent job with `startAfter` can be fetched only once all its dependencies have completed and `startAfter` has passed. When its last dependency resolves, its `startAfter` moves up to that moment unless it's already later. `startAfter` then reads as the time the job could first run. The job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from that time.
 
@@ -691,7 +691,7 @@ await boss.deleteQueuedJobs('email-send')
 
 ### `deleteStoredJobs(name)`
 
-Deletes all jobs in a queue in the completed, failed, and canceled states, and resolves to how many
+Deletes all jobs in a queue in the completed, failed, and cancelled states, and resolves to how many
 it deleted. Deletes in batches, as `deleteQueuedJobs()` does.
 
 ```js
@@ -714,7 +714,7 @@ await boss.deleteAllJobs('email-send')
 await boss.deleteAllJobs()
 ```
 
-## Canceling, resuming, and retrying jobs
+## Cancelling, resuming, and retrying jobs
 
 ### `cancel(name, id, options)`
 
@@ -728,7 +728,7 @@ await boss.cancel('email-send', jobId)
 
 Cancels a set of pending or active jobs.
 
-With an array of ids, the call can partly succeed, because whether each job is canceled depends on its state. It's a best-effort operation.
+With an array of ids, the call can partly succeed, because whether each job is cancelled depends on its state. It's a best-effort operation.
 
 ```js
 await boss.cancel('email-send', [jobId1, jobId2])
@@ -736,7 +736,7 @@ await boss.cancel('email-send', [jobId1, jobId2])
 
 ### `resume(name, id, options)`
 
-Resumes a canceled job. Its `startAfter` moves up to the time of the resume unless the current value is already later. The job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from that `startAfter`.
+Resumes a cancelled job. Its `startAfter` moves up to the time of the resume unless the current value is already later. The job's wait in [`getQueueStats()`](./queues.md#getqueuestats-name-options) counts from that `startAfter`.
 
 ```js
 await boss.resume('email-send', jobId)
@@ -744,7 +744,7 @@ await boss.resume('email-send', jobId)
 
 ### `resume(name, [ids], options)`
 
-Resumes a set of canceled jobs.
+Resumes a set of cancelled jobs.
 
 ```js
 await boss.resume('email-send', [jobId1, jobId2])

@@ -27,7 +27,7 @@ Profile name the area there instead.
 | Instances, migrations and warnings | The audit log, which names each entry's database and filters by it |
 | Alerts and alert rules, and the bell | Alert destinations, which every database's rules share |
 | Status and Operations | Databases and SSO |
-| Sending, retrying, canceling and deleting jobs, and queue and schedule changes | Profile |
+| Sending, retrying, cancelling and deleting jobs, and queue and schedule changes | Profile |
 | The API at `/pro/api/v1/<database>` | Service accounts and their tokens |
 
 A role is granted for one database or for all databases. The same user can be an

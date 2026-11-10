@@ -181,7 +181,7 @@ behind `upsert()` by key. If [`stop()`](api/ops#stop-options) times out during a
 pg-boss closes the connection waiting on it and marks the row failed. CockroachDB finishes the build
 on its own. An attempt that runs before the build finishes marks the row failed again and emits a
 `bam` event but no `error` event. The first attempt after the build finishes completes the row. A
-command that isn't a schema change, such as a data migration, is canceled when its connection
+command that isn't a schema change, such as a data migration, is cancelled when its connection
 closes and then runs again.
 If the instance crashes instead, its BAM row is not marked done for up to 24 hours. The commands
 queued behind it wait that long.
