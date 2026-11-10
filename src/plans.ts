@@ -3025,7 +3025,7 @@ export function resumeJobs (schema: string, table: string) {
         state = '${JOB_STATES.created}',
         upsert_by_key = NULL,
         start_after = GREATEST(j.start_after, ${schema}.job_now()),
-        keep_until = GREATEST(j.start_after, ${schema}.job_now()) + (j.keep_until - j.start_after)
+        keep_until = GREATEST(j.start_after, ${schema}.job_now()) + ${retentionWindow('j.keep_until', 'j.start_after')}
       FROM resumable r
       WHERE j.name = $1
         AND j.id = r.id
@@ -3328,6 +3328,13 @@ function settledCountAndIds () {
   return "SELECT COUNT(*), COALESCE(array_agg(id), '{}'::uuid[]) AS ids FROM results"
 }
 
+// A job's retention window, keep_until - start_after, as a number of seconds. Every statement that
+// moves start_after adds this to the new value. The plain difference is justified into days, and a
+// day added to a timestamptz in a session time zone with DST is 23 or 25 hours long.
+function retentionWindow (keepUntil: string, startAfter: string): string {
+  return `(extract(epoch from (${keepUntil} - ${startAfter})) * interval '1s')`
+}
+
 // The CTE chain shared by failJobs(), expireJobs() and failJobsByIdWithOutputs(): delete the matched jobs and
 // re-insert them as retry (when retries remain) or failed (+ dead letter). `where` selects the rows
 // to fail and `output` is the SQL expression stored on each re-inserted job. Returned without the
@@ -3422,7 +3429,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         deletion_seconds,
         created_on,
         ${completedOn} as completed_on,
-        r.next_start_after + (keep_until - start_after) as keep_until,
+        r.next_start_after + ${retentionWindow('keep_until', 'start_after')} as keep_until,
         policy,
         ${output},
         dead_letter,
@@ -3788,7 +3795,7 @@ export function insertRetryJob (schema: string, table: string): string {
       source_name, source_id, source_created_on, source_retry_count, source_output, source_root_id, trace_context
     ) VALUES (
       $1, $2, $3, $4::text::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-      $11::timestamptz + ($21::timestamptz - $37::timestamptz), $22,
+      $11::timestamptz + ${retentionWindow('$21::timestamptz', '$37::timestamptz')}, $22,
       $23::text::jsonb, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34::text::jsonb, $35, $36::text::jsonb
     ) ON CONFLICT DO NOTHING
     RETURNING id
@@ -4168,7 +4175,7 @@ export function retryJobs (schema: string, table: string) {
         retry_limit = retry_limit + 1,
         completed_on = NULL,
         start_after = GREATEST(start_after, ${schema}.job_now()),
-        keep_until = GREATEST(start_after, ${schema}.job_now()) + (keep_until - start_after)
+        keep_until = GREATEST(start_after, ${schema}.job_now()) + ${retentionWindow('keep_until', 'start_after')}
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.failed}'
@@ -4242,7 +4249,7 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
             WHEN (o.data -> 'retentionSeconds') IS NOT NULL
               THEN (${resolvedStartAfter}) + ((o.data->>'retentionSeconds')::int * interval '1s')
             WHEN (o.data -> 'startAfter') IS NOT NULL
-              THEN (${resolvedStartAfter}) + (job.keep_until - job.start_after)
+              THEN (${resolvedStartAfter}) + ${retentionWindow('job.keep_until', 'job.start_after')}
             ELSE job.keep_until END,
           expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, job.expire_seconds),
           deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, job.deletion_seconds),
