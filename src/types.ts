@@ -1376,6 +1376,18 @@ export type ScheduleKind = 'cron' | 'rrule'
 /** What a schedule does about occurrences that came due while no cron pass ran. */
 export type ScheduleMissedPolicy = 'skip' | 'once'
 
+/**
+ * A queue's subscription to an event, as returned by `getSubscriptions()`.
+ * @see https://pgboss.io/api/pubsub#getsubscriptions-event-options
+ */
+export interface Subscription {
+  event: string;
+  /** The queue that receives a job when the event is published. */
+  name: string;
+  createdOn: Date;
+  updatedOn: Date;
+}
+
 export interface Schedule {
   name: string;
   key: string;

@@ -517,6 +517,12 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.unsubscribe(event, name)
   }
 
+  async getSubscriptions (event?: string, options?: types.ListOptions<Pick<types.Subscription, 'event' | 'name'>>): Promise<types.Subscription[]> {
+    const limit = Attorney.assertListLimit('getSubscriptions', options?.limit)
+    Attorney.assertListAfterRow('getSubscriptions', options?.after, ['event', 'name'])
+    return this.#manager.getSubscriptions(event, limit, options?.after)
+  }
+
   publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     return this.#manager.publish(event, data, options)
   }
@@ -827,6 +833,7 @@ export type {
   ReindexOptions,
   Request,
   Schedule,
+  Subscription,
   ScheduleKind,
   ScheduleOptions,
   SchedulingOptions,
