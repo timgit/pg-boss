@@ -56,7 +56,9 @@ The other [instance](./instances.md) checks start off:
 
 No rule sends a notification until it has a [destination](./destinations.md).
 Alerts from a rule with no destination still open and appear on the [Alerts](./alerts.md) page. A destination
-set later gets only the alerts that fire after it is set. A default
+set later gets only the alerts that fire after it is set. Turning on a rule
+that has no destination asks where to send its alerts, and offers a destination
+that is on. A default
 rule can be edited and turned off,
 but never deleted. **Reset to default** puts back its original definition.
 A database added to `DATABASE_URL` later gets its default rules on the
