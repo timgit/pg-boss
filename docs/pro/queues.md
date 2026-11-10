@@ -1,6 +1,6 @@
 # Queues
 
-Pro shows the free dashboard's queue pages with its own additions beside them.
+Pro shows the dashboard's queue pages with its own additions beside them.
 
 ## Health
 
@@ -22,7 +22,7 @@ The queue list shows each queue's rates, health, time to drain and workers, with
 
 ### Table view
 
-The table is the free dashboard's [queue list](../dashboard.md#queues), ten queues to a page. Pro adds each queue's health, arrival and finishing rates, time to drain and busy slots to it.
+The table is the dashboard's [queue list](../dashboard.md#queues), ten queues to a page. Pro adds each queue's health, arrival and finishing rates, time to drain and busy slots to it.
 
 A slot holds one job. Each `work()` call has `localConcurrency × batchSize` slots, the most jobs it can have active at once. A queue's slots are that product added up over the live instances working the queue. Busy slots are the jobs those instances had active at their last heartbeats. Every slot busy means more workers would add throughput.
 
@@ -69,7 +69,7 @@ The sidebar lists each `work()` call on the queue, with its instance and its bus
 ![The Workers card on a queue's page](../images/pro/queue-workers.webp){.light-only width=384}
 ![The Workers card on a queue's page](../images/pro/queue-workers-dark.webp){.dark-only width=384}
 
-The backlog chart is the Waiting chart from the free [metrics page](../dashboard.md#queue-metrics), with ready, blocked and deferred jobs stacked and active jobs drawn over them. **View metrics** and the page's counts open this chart. Because Pro has one backlog chart, two charts on different ranges can't disagree.
+The backlog chart is the Waiting chart from the dashboard's [metrics page](../dashboard.md#queue-metrics), with ready, blocked and deferred jobs stacked and active jobs drawn over them. **View metrics** and the page's counts open this chart. Because Pro has one backlog chart, two charts on different ranges can't disagree.
 
 Under the charts, a row of changes marks what users did through the Pro Console (from the audit log) and what the instances working the queue did. An instance mark shows when the instance started, stopped, went quiet, or started on a new pg-boss version.
 

@@ -24,4 +24,4 @@ app.all('/admin/queues/*', serve)
 - A host that calls the handler through `@hono/node-server`'s `getRequestListener`, as the [Express example](../dashboard.md#mounting-inside-an-existing-application) does, needs no `clientIp`. Pro reads the connection as it does standalone, with [`PGBOSS_PRO_TRUSTED_PROXIES`](./environment.md).
 - Call `close()` when the server shuts down. The standalone server handles `SIGTERM` itself; a mounted handler leaves signals to the host application.
 
-The handler takes the same options as the [free dashboard's](../dashboard.md#mounting-inside-an-existing-application).
+The handler takes the same options as the [dashboard's](../dashboard.md#mounting-inside-an-existing-application).

@@ -31,7 +31,7 @@ With the `.npmrc` in place, install Pro:
 npm install @pg-boss/pro
 ```
 
-The second line points the whole `@pg-boss` scope at the private registry. The free packages, `@pg-boss/dashboard` and `@pg-boss/proxy`, keep resolving from npmjs, because the registry redirects anything that isn't Pro.
+The second line points the whole `@pg-boss` scope at the private registry. The `@pg-boss/dashboard` and `@pg-boss/proxy` packages keep resolving from npmjs, because the registry redirects anything that isn't Pro.
 
 In CI, keep the token out of the file. The same `.npmrc` works on a laptop and in a pipeline, because npm substitutes the variable when it reads the file:
 
@@ -83,7 +83,7 @@ Pro uses two schemas of its own, both separate from the application's pg-boss sc
 
 Pro needs no database of its own. It creates and migrates both schemas on startup in the first database in `DATABASE_URL`, unless `PGBOSS_PRO_DATABASE_URL` names another. `PGBOSS_PRO_SCHEMA` renames them both, because the second name is the first with `_queue` added. [Environment variables](./environment.md) lists every variable.
 
-As in the free dashboard, `DATABASE_URL` takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
+As in the dashboard, `DATABASE_URL` takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
 
 ## Docker
 
