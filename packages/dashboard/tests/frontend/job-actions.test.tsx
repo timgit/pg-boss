@@ -17,7 +17,7 @@ describe('JobActions', () => {
     expect(screen.queryByRole('button', { name: /Cancel job/ })).toBeNull()
   })
 
-  it('offers resume on a canceled job', () => {
+  it('offers resume on a cancelled job', () => {
     renderFor('cancelled')
     expect(screen.getByRole('button', { name: /Resume job/ })).toBeTruthy()
   })

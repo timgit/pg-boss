@@ -37,7 +37,7 @@ describe('the job page action', () => {
     await createTestQueue('test-queue')
     const jobId = await sendTestJob('test-queue', {})
 
-    expect(await act('test-queue', jobId!, 'cancel')).toEqual({ success: true, message: 'Job canceled' })
+    expect(await act('test-queue', jobId!, 'cancel')).toEqual({ success: true, message: 'Job cancelled' })
     expect(await stateOf('test-queue', jobId!)).toBe('cancelled')
 
     expect(await act('test-queue', jobId!, 'resume')).toEqual({ success: true, message: 'Job resumed' })

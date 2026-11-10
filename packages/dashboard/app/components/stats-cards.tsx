@@ -86,7 +86,7 @@ export function CountsCard ({ cells, label, caption }: { cells: CountCell[], lab
  */
 export function StatsCards ({ stats, footers = {} }: StatsCardsProps) {
   const blocked = Math.max(0, stats.totalQueued - stats.totalReady - stats.totalDeferred)
-  // Total counts the completed and canceled jobs still kept as well as the live ones.
+  // Total counts the completed and cancelled jobs still kept as well as the live ones.
   const finished = Math.max(0, stats.totalJobs - stats.totalQueued - stats.totalActive - stats.totalFailed)
   const footer = (key: StatKey) => (footers[key] ? [footers[key]] : [])
 
@@ -110,7 +110,7 @@ export function StatsCards ({ stats, footers = {} }: StatsCardsProps) {
           key: 'totalJobs',
           label: 'Total Jobs',
           value: stats.totalJobs,
-          lines: ['stored across queues', ...(finished > 0 ? [<><Count value={finished} /> completed or canceled</>] : []), ...footer('totalJobs')],
+          lines: ['stored across queues', ...(finished > 0 ? [<><Count value={finished} /> completed or cancelled</>] : []), ...footer('totalJobs')],
         },
       ]}
     />

@@ -96,7 +96,7 @@ export function retention (job: JobTimes): { label: string, at: Date | null, det
     const completedOn = toDate(job.completedOn)
     if (!completedOn) return null
     if (!job.deleteAfterSeconds) return { label: 'Kept', at: null, detail: 'Never deleted automatically' }
-    const verb = job.state === 'failed' ? 'failing' : job.state === 'cancelled' ? 'being canceled' : 'completing'
+    const verb = job.state === 'failed' ? 'failing' : job.state === 'cancelled' ? 'being cancelled' : 'completing'
     return {
       label: 'Deleted',
       at: new Date(completedOn.getTime() + job.deleteAfterSeconds * 1000),
@@ -172,7 +172,7 @@ export function buildTimeline (job: JobTimes, now: Date): TimelineItem[] {
     items.push({ key: 'finishes', label: 'Finishes', at: expiry, detail: expiry ? 'or it expires' : null, tone: 'pending' })
   } else if (isFinalState(job.state)) {
     const ran = startedOn && completedOn ? formatDuration(completedOn.getTime() - startedOn.getTime()) : null
-    const label = job.state === 'completed' ? 'Completed' : job.state === 'failed' ? 'Failed' : 'Canceled'
+    const label = job.state === 'completed' ? 'Completed' : job.state === 'failed' ? 'Failed' : 'Cancelled'
     items.push({
       key: 'finished',
       label,
@@ -230,7 +230,7 @@ export function statusLine (job: JobTimes, now: Date, fmt: (d: Date) => string):
       parts.push(completedOn ? `Failed ${timeAgo(completedOn, now)} ${attemptText}` : `Failed ${attemptText}`)
       break
     case 'cancelled':
-      parts.push(completedOn ? `Canceled ${timeAgo(completedOn, now)}` : 'Canceled')
+      parts.push(completedOn ? `Cancelled ${timeAgo(completedOn, now)}` : 'Cancelled')
       break
   }
 

@@ -37,7 +37,7 @@ describe("StatsCards", () => {
 
     expect(screen.getByText(line(/^of 150 queued$/))).toBeInTheDocument();
     expect(screen.getByText(line(/^40 deferred for later · 10 blocked$/))).toBeInTheDocument();
-    expect(screen.getByText(line(/^818 completed or canceled$/))).toBeInTheDocument();
+    expect(screen.getByText(line(/^818 completed or cancelled$/))).toBeInTheDocument();
   });
 
   it("puts an overlay's line under the cell it names", () => {
@@ -61,6 +61,6 @@ describe("StatsCards", () => {
 
     expect(screen.getAllByText("0").length).toBeGreaterThanOrEqual(4);
     expect(screen.getByText("none deferred")).toBeInTheDocument();
-    expect(screen.queryByText(/completed or canceled/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/completed or cancelled/)).not.toBeInTheDocument();
   });
 });

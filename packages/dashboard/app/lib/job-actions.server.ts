@@ -3,14 +3,14 @@ import type { JobActionResult, JobIntent } from './job-actions'
 
 const DONE: Record<JobIntent, string> = {
   retry: 'Job queued for retry',
-  cancel: 'Job canceled',
+  cancel: 'Job cancelled',
   resume: 'Job resumed',
 }
 
 const UNCHANGED: Record<JobIntent, string> = {
   retry: 'Job could not be retried (only failed jobs can be retried)',
-  cancel: 'Job could not be canceled (it may already be completed or canceled)',
-  resume: 'Job could not be resumed (only canceled jobs can be resumed)',
+  cancel: 'Job could not be cancelled (it may already be completed or cancelled)',
+  resume: 'Job could not be resumed (only cancelled jobs can be resumed)',
 }
 
 /**

@@ -74,7 +74,7 @@ describe('retention', () => {
 
   it('names the way a failed or cancelled job finished', () => {
     expect(retention(job({ state: 'failed', completedOn: at(-30) }))!.detail).toBe('7 days after failing')
-    expect(retention(job({ state: 'cancelled', completedOn: at(-30) }))!.detail).toBe('7 days after being canceled')
+    expect(retention(job({ state: 'cancelled', completedOn: at(-30) }))!.detail).toBe('7 days after being cancelled')
   })
 
   it('keeps a finished job when deleteAfterSeconds is 0', () => {

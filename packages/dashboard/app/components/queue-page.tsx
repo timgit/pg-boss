@@ -88,7 +88,7 @@ export function QueueCounts ({ queue, activeLines = ['processing now'] }: { queu
   const activeHref = `${metricsPath(queue.name)}#active`
   const warningSize = queue.warningQueueSize ?? 0
   const overWarning = warningSize > 0 && queue.queuedCount > warningSize
-  // Total counts the completed and canceled jobs still kept as well as the live ones.
+  // Total counts the completed and cancelled jobs still kept as well as the live ones.
   const finished = Math.max(0, queue.totalCount - queue.queuedCount - queue.activeCount - queue.failedCount)
 
   return (
@@ -125,7 +125,7 @@ export function QueueCounts ({ queue, activeLines = ['processing now'] }: { queu
           label: 'Total Jobs',
           value: queue.totalCount,
           to: `${metricsPath(queue.name)}?total=1#active`,
-          lines: ['stored in this queue', ...(finished > 0 ? [<><Count value={finished} /> completed or canceled</>] : [])],
+          lines: ['stored in this queue', ...(finished > 0 ? [<><Count value={finished} /> completed or cancelled</>] : [])],
         },
       ]}
     />

@@ -5,7 +5,7 @@ import { ConfirmDialog } from '~/components/ui/confirm-dialog'
 import type { JobActionResult } from '~/lib/job-actions'
 
 /**
- * The free job page's buttons: retry a failed job, resume a canceled one, cancel one that hasn't
+ * The free job page's buttons: retry a failed job, resume a cancelled one, cancel one that hasn't
  * finished. Each posts to the job page's own action.
  */
 export function JobActions ({ id, state }: { id: string, state: string }) {
