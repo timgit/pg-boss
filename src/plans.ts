@@ -2634,6 +2634,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     'j.id',
     singletonFetch ? 'j.singleton_key' : '',
     hasGroupConcurrency ? 'j.group_id, j.group_tier' : '',
+    // group_ranking picks jobs within a group, so it needs the order of next
+    hasGroupConcurrency ? 'j.priority, j.created_on' : '',
     hasActiveGroupCounts ? `${activeGroupCountExpression} as active_cnt` : ''
   ].filter(Boolean).join(', ')
 
@@ -2759,7 +2761,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
-        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}${hasActiveGroupCounts ? 'active_cnt, ' : ''}
+        SELECT id, ${hasGroupConcurrency ? 'priority, created_on, group_id, group_tier, ' : ''}${hasActiveGroupCounts ? 'active_cnt, ' : ''}
           row_number() OVER (PARTITION BY singleton_key) as singleton_rn
         FROM next
       )`
@@ -2772,7 +2774,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
           , t.group_id
           , t.group_tier
           ${singletonFetch ? ', singleton_rn' : ''}
-          , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.id) as group_rn
+          , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.priority desc, t.created_on) as group_rn
           , ${hasActiveGroupCounts ? 't.active_cnt' : '0'} as active_cnt
         FROM ${singletonFetch ? 'singleton_ranking' : 'next'} t
         ${singletonFetch ? 'WHERE singleton_rn = 1' : ''}
