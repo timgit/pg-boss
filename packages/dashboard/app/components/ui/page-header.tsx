@@ -29,7 +29,8 @@ export function PageHeader ({ title, subtitle, action, parent, badge }: PageHead
           <p className="mt-1 text-sm text-[var(--text-tertiary)]">{subtitle}</p>
         )}
       </div>
-      {action}
+      {/* Beside the title, the action keeps its width and the title's column wraps instead. */}
+      {action && <div className="sm:shrink-0">{action}</div>}
     </div>
   )
 }
