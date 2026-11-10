@@ -113,7 +113,7 @@ The dashboard is configured via environment variables:
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
 | `PGBOSS_DASHBOARD_READ_ONLY` | Set to `1` to disable every mutating action (see [Read-only mode](#read-only-mode)) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
-| `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
+| `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). `0` leaves the timeout to the database (see [Connection poolers](#connection-poolers)). Requires a restart to change. | `60000` |
 | `PGBOSS_DASHBOARD_SITE_URL` | The public URL the dashboard is served at, as `https://host[:port]`. Needed behind a proxy that ends HTTPS (see [Reverse Proxy](#reverse-proxy)) | - |
 
 ### Basic Authentication
@@ -250,6 +250,14 @@ While it's set, actions work only from that site. Unset it to use the dashboard 
 ### Connection poolers
 
 The dashboard applies the `PGBOSS_DASHBOARD_QUERY_TIMEOUT` value with `SET statement_timeout` when it opens each connection. Behind a transaction pooler, such as PgBouncer in transaction mode or Supavisor on port 6543, the setting stays on the server connection after the dashboard's statement ends. A pg-boss worker or any other client that runs on that server connection later keeps the dashboard's timeout, which is 60 seconds by default. The server cancels any statement of that client's that takes longer.
+
+Set `PGBOSS_DASHBOARD_QUERY_TIMEOUT=0` to keep the dashboard from setting a timeout. The database's own `statement_timeout` then applies. The dashboard waits for each query until the database ends it. To bound the dashboard's queries from the database, give the dashboard its own role and set the timeout on that role:
+
+```sql
+ALTER ROLE pgboss_dashboard SET statement_timeout = '60s';
+```
+
+Postgres applies a role's setting only to that role's sessions. A pooler keeps separate server connections for each role.
 
 Behind RDS Proxy, the `SET` pins each dashboard connection to one database connection. The dashboard's pool holds at most 10 connections and closes idle ones.
 
