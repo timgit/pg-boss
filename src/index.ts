@@ -561,7 +561,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.complete(name, id, data, options)
   }
 
-  fail (name: string, id: string | string[] | types.JobAttempt | types.JobAttempt[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  fail (name: string, id: string | string[] | types.JobAttempt | types.JobAttempt[], data?: unknown, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.fail(name, id, data, options)
   }
 

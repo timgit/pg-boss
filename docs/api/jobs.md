@@ -818,6 +818,8 @@ Marks an active job as failed.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 
+`data` is stored in the job's output and accepts any value, so a caught error can be passed as it is. An `Error` keeps its message and stack, a plain object is stored as it is, and any other value is stored as `{ value }`.
+
 ```js
 const [job] = await boss.fetch('email-send')
 

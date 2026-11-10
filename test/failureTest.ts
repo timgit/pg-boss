@@ -117,6 +117,24 @@ describe('failure', function () {
     expect((job.output as { value: string }).value).toBe(failPayload)
   })
 
+  it('fail() accepts a caught value of unknown type and wraps a non-object in value prop', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const jobId = await ctx.boss.send(ctx.schema)
+    assertTruthy(jobId)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    assertTruthy(job)
+
+    const caught: unknown = 'smtp outage'
+    const result = await ctx.boss.fail(ctx.schema, job, caught)
+    expect(result.affected).toBe(1)
+
+    const failed = await ctx.boss.getJobById(ctx.schema, jobId)
+    assertTruthy(failed)
+    expect(failed.output).toEqual({ value: 'smtp outage' })
+  })
+
   it('failure via Promise reject() should pass object payload', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const something = 'clever'
