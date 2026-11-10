@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.38.0",
+  "version": "12.38.2",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -35,7 +35,7 @@
     "@types/luxon": "^3.7.6",
     "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
-    "@vitest/coverage-v8": "^4.1.2",
+    "@vitest/coverage-v8": "^4.1.12",
     "cli-testlab": "^6.0.1",
     "cross-env": "^10.1.0",
     "drizzle-orm": "^1.0.0-rc.5-ab785fc",
@@ -49,7 +49,7 @@
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.3.4",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.12"
   },
   "scripts": {
     "build": "npm run clean && tsc --project tsconfig.build.json",
@@ -67,6 +67,7 @@
     "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
     "test:pglite": "cross-env DB_TYPE=pglite npm test",
     "test:bun": "tsc --noEmit -p tsconfig.bun.json && bun test test/bun",
+    "test:types-dist": "npm run build && tsc -p test/types-dist/tsconfig.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "cover": "npm test -- --coverage",

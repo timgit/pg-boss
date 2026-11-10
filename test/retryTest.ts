@@ -196,4 +196,43 @@ describe('retries', function () {
     expect(retried.rows[0].state).toBe('retry')
     expect(retried.rows[0].completed_on).toBeNull()
   })
+
+  it('should keep a job waiting for its retry past the original retention', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retentionSeconds: 600, retryLimit: 1, retryDelay: 300 })
+    assertTruthy(jobId)
+
+    await clock.tick(540_000)
+    await ctx.boss.fetch(ctx.schema)
+    await clock.tick(60_000)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    await clock.tick(60_000)
+    await ctx.boss.supervise(ctx.schema)
+
+    await clock.tick(240_000)
+    const [job] = await ctx.boss.fetch(ctx.schema)
+
+    expect(job?.id).toBe(jobId)
+  })
+
+  it('manual retry keeps the job past the retention window of its first run', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retentionSeconds: 600, retryLimit: 0 })
+    assertTruthy(jobId)
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    await clock.tick(3_600_000)
+    await ctx.boss.retry(ctx.schema, jobId)
+    await clock.tick(60_000)
+    await ctx.boss.supervise(ctx.schema)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job?.id).toBe(jobId)
+  })
 })

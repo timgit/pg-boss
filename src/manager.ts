@@ -1691,7 +1691,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   async #publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     const sql = plans.getQueuesForEvent(this.config.schema)
-    const { rows } = await this.db.executeSql(sql, [event])
+    const { rows } = await this.assertDb(options ?? {}).executeSql(sql, [event])
 
     const results = await Promise.allSettled(rows.map(({ name }) => this.send(name, data, options)))
 
@@ -2277,7 +2277,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.#telemetry.receive(name, () => this.#fetch<T>(name, options), job => this.#traceContexts.get(job))
   }
 
-  async #fetch<T> (name: string, options: types.FetchOptions): Promise<types.Job<T>[]> {
+  async #fetch<T> (name: string, options: types.FetchOptions, attempt = 1): Promise<types.Job<T>[]> {
     this.#warnDeprecatedFetchOptions(options)
 
     const db = this.assertDb(options)
@@ -2309,7 +2309,38 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (err?.code !== '23505') throw err
     }
 
-    const rows = result?.rows || []
+    let rows = result?.rows || []
+
+    // The fetch statement cannot see a concurrent claim until it commits. This count runs after
+    // ours committed, so of two racing fetches at least the later count sees both and gives back,
+    // before any handler runs.
+    if (options.groupConcurrency != null && rows.some(row => row.groupId)) {
+      const config: types.GroupConcurrencyConfig = typeof options.groupConcurrency === 'number' ? { default: options.groupConcurrency } : options.groupConcurrency
+      const { rows: counts } = await db.executeSql(plans.getActiveGroupCounts(this.config.schema, table), [name, rows.map(row => row.groupId).filter(Boolean)])
+      const active = new Map(counts.map(row => [row.group_id, Number(row.count)]))
+      const excessIds: string[] = []
+
+      // From the end of the batch, so where rows come back in claim order the first-ranked are kept.
+      for (const row of [...rows].reverse()) {
+        const count = active.get(row.groupId) ?? 0
+        if (count > (config.tiers?.[row.groupTier] ?? config.default)) {
+          excessIds.push(row.id)
+          active.set(row.groupId, count - 1)
+        }
+      }
+
+      if (excessIds.length > 0) {
+        const givenBack = await this.#giveBack(name, excessIds, db)
+        rows = rows.filter(row => !givenBack.has(row.id))
+
+        // Fetches that raced can all give back. A random pause before trying again lets one win.
+        // Not inside the caller's db: the jobs just given back are its own, so it would claim them again.
+        if (rows.length === 0 && attempt < 3 && !options.db) {
+          await delay(Math.random() * 50)
+          return this.#fetch(name, options, attempt + 1)
+        }
+      }
+    }
 
     for (const row of rows) {
       // A db adapter may hand jsonb back unparsed.
@@ -2321,6 +2352,35 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Even a minimal fetch (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds and
     // heartbeatSeconds, so normalize regardless of includeMetadata.
     return this.#numericJobFields(rows) as types.Job<T>[]
+  }
+
+  // Returns the ids that went back to created. A policy index can refuse a job its way back (a
+  // stately key whose created slot filled after the claim), and one refusal fails the whole
+  // statement, so on 23505 each id is tried alone and only the refused ones stay active and run.
+  // Inside a caller's transaction the first 23505 aborts it (25P02), and everything left runs.
+  async #giveBack (name: string, ids: string[], db: types.IDatabase): Promise<Set<string>> {
+    try {
+      await this.restore(name, ids, { db })
+      return new Set(ids)
+    } catch (err: any) {
+      if (err?.code !== '23505') throw err
+    }
+
+    const givenBack = new Set<string>()
+
+    if (ids.length === 1) return givenBack
+
+    for (const id of ids) {
+      try {
+        await this.restore(name, id, { db })
+        givenBack.add(id)
+      } catch (err: any) {
+        if (err?.code === '25P02') break
+        if (err?.code !== '23505') throw err
+      }
+    }
+
+    return givenBack
   }
 
   // The id argument of the calls that settle or refresh a claim. Jobs passed as { id, retryCount }
@@ -2618,7 +2678,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, null, keepUntil, job.policy,
           output, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, sourceOutput, job.source_root_id, traceContext
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, sourceOutput, job.source_root_id, traceContext,
+          startAfterColumn
         ])
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
@@ -2635,7 +2696,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
           job.deletion_seconds, createdOn, new Date(this.config.clock.now()), keepUntil, job.policy,
           output, job.dead_letter,
           null, job.heartbeat_seconds, job.blocked, job.blocking, job.pending_dependencies,
-          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, sourceOutput, job.source_root_id, traceContext
+          job.source_name, job.source_id, sourceCreatedOn, job.source_retry_count, sourceOutput, job.source_root_id, traceContext,
+          startAfterColumn
         ])
 
         // Insert to dead letter queue if failed and has dead_letter configured

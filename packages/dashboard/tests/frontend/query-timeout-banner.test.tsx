@@ -12,6 +12,12 @@ describe('QueryTimeoutBanner', () => {
     expect(alert).toHaveTextContent(/narrowing your filters/i)
   })
 
+  it('names the database\'s limit when the dashboard sets none', () => {
+    render(<QueryTimeoutBanner timeoutMs={0} />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent("exceeded the database's query limit")
+  })
+
   it('reflects a custom timeout value', () => {
     render(<QueryTimeoutBanner timeoutMs={5000} />)
 

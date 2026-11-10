@@ -13,8 +13,13 @@ const DEFAULT_QUERY_TIMEOUT_MS = 60_000
 // (e.g. network partition), so it sits above statement_timeout.
 const CLIENT_TIMEOUT_HEADROOM_MS = 5_000
 
+// 0 leaves the timeout to the database: the dashboard sends no SET, which a transaction pooler would
+// keep on the server connection for the next client, and sets no client-side backstop, which would
+// cut off a query the database still allows.
 export function getQueryTimeoutMs (): number {
-  const raw = Number.parseInt(process.env.PGBOSS_DASHBOARD_QUERY_TIMEOUT ?? '', 10)
+  const value = process.env.PGBOSS_DASHBOARD_QUERY_TIMEOUT?.trim()
+  if (value === '0') return 0
+  const raw = Number.parseInt(value ?? '', 10)
   return Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_QUERY_TIMEOUT_MS
 }
 
@@ -39,8 +44,12 @@ export function getPool (connectionString: string): pg.Pool {
     pool = new Pool({
       connectionString,
       max: 10,
-      statement_timeout: timeoutMs,
-      query_timeout: timeoutMs + CLIENT_TIMEOUT_HEADROOM_MS,
+      ...(timeoutMs > 0 && {
+        query_timeout: timeoutMs + CLIENT_TIMEOUT_HEADROOM_MS,
+        onConnect: async (client: pg.ClientBase) => {
+          await client.query(`SET statement_timeout = ${timeoutMs}`)
+        },
+      }),
     })
 
     // Handle pool errors to prevent unhandled rejections

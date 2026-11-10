@@ -140,6 +140,9 @@ describe('db.server', () => {
 
       vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', '30000')
       expect(getQueryTimeoutMs()).toBe(30000)
+
+      vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', '0')
+      expect(getQueryTimeoutMs()).toBe(0)
     })
 
     it('isQueryTimeoutError matches statement_timeout and client read timeout errors', async () => {
@@ -165,6 +168,44 @@ describe('db.server', () => {
       expect(isQueryTimeoutError(err)).toBe(true)
 
       await getPool(cs).end()
+    })
+
+    it('sets statement_timeout on the session instead of as a startup parameter', async () => {
+      vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', '12345')
+      const { getPool } = await import('~/lib/db.server')
+      const cs = ctx.connectionString + '?application_name=session_timeout_test'
+      const pool = getPool(cs)
+
+      // pg sends a statement_timeout pool option in the startup packet, which some proxies like RDS Proxy reject
+      expect((pool.options as { statement_timeout?: unknown }).statement_timeout).toBeUndefined()
+
+      const client = await pool.connect()
+      try {
+        const { rows } = await client.query('SHOW statement_timeout')
+        expect(rows[0].statement_timeout).toBe('12345ms')
+      } finally {
+        client.release()
+        await pool.end()
+      }
+    })
+
+    it('sets no timeout of its own with PGBOSS_DASHBOARD_QUERY_TIMEOUT=0', async () => {
+      vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', '0')
+      const { getPool } = await import('~/lib/db.server')
+      const cs = ctx.connectionString + '?application_name=no_timeout_test'
+      const pool = getPool(cs)
+
+      expect((pool.options as { query_timeout?: unknown }).query_timeout).toBeUndefined()
+
+      const client = await pool.connect()
+      try {
+        // reset_val is the value the session connected with, so a SET would leave setting different.
+        const { rows: [row] } = await client.query("SELECT setting, reset_val FROM pg_settings WHERE name = 'statement_timeout'")
+        expect(row.setting).toBe(row.reset_val)
+      } finally {
+        client.release()
+        await pool.end()
+      }
     })
   })
 

@@ -27,7 +27,8 @@ const statements: Record<Statement, string> = {
 
 function setup (handlersFor: (clock: TestClock) => Partial<Record<Statement, Handler>> = () => ({})) {
   const clock = new TestClock()
-  const handlers = handlersFor(clock)
+  // A registration returns the row's started_on, which every heartbeat after it sends.
+  const handlers = { register: async () => ({ rows: [{ startedOn: new Date() }] }), ...handlersFor(clock) }
   const calls: Statement[] = []
   const db: types.IDatabase = {
     async executeSql (text: string, values?: unknown[]) {
@@ -56,19 +57,32 @@ function setup (handlersFor: (clock: TestClock) => Partial<Record<Statement, Han
 }
 
 describe('registrar', function () {
-  it('emits a failed registration and still starts its heartbeat, which puts the row back', async function () {
+  it('emits a failed registration, registers again on the next beat, and beats after that', async function () {
+    let registrations = 0
     const { registrar, clock, errors, count } = setup(() => ({
-      register: async () => { throw new Error('register boom') }
+      register: async () => {
+        if (++registrations === 1) throw new Error('register boom')
+        return { rows: [{ startedOn: new Date() }] }
+      }
     }))
 
     await registrar.start()
     expect(errors.map(e => e.message)).toEqual(['register boom'])
 
     // A beat samples the process before it writes, so the statement goes out after the tick returns.
+    // The heartbeat cannot insert the row without the started_on a registration returns (#1004).
+    await clock.tick(HEARTBEAT_SECONDS * 1000)
+    await helper.until(() => count('prune') === 1)
+    expect(count('register')).toBe(2)
+    expect(count('countCrashRestarts')).toBe(1)
+    expect(count('heartbeat')).toBe(0)
+
     await clock.tick(HEARTBEAT_SECONDS * 1000)
     await helper.until(() => count('heartbeat') === 1)
+    expect(count('register')).toBe(2)
 
     await registrar.stop()
+    expect(errors).toHaveLength(1)
   })
 
   it('does not stack a heartbeat on one still running, and emits one that fails', async function () {

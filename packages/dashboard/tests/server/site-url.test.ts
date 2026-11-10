@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { once } from 'node:events'
+import type { AddressInfo } from 'node:net'
+import { serve } from '@hono/node-server'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from '~/server'
 import { createDashboardHandler } from '~/handler'
@@ -122,6 +125,29 @@ describe('PGBOSS_DASHBOARD_SITE_URL', () => {
       vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', value)
 
       expect(() => app()).toThrow(`PGBOSS_DASHBOARD_SITE_URL "${value}" is not a site URL`)
+    }
+  })
+
+  // `app.request()` passes the app a native Request. The standalone server runs behind
+  // @hono/node-server, whose requests are not native, so serve the app over HTTP as it does.
+  it('serves pages and runs a proxied action through the node server', async () => {
+    vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
+    const server = serve({ fetch: app().fetch, port: 0, hostname: '127.0.0.1' })
+    await once(server, 'listening')
+
+    try {
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
+      const post = (origin: string) => fetch(url, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'intent=retry',
+      })
+
+      expect((await fetch(url)).status).toBe(200)
+      expect((await post('https://pgboss.example.com')).status).toBe(200)
+      expect((await post('https://evil.example.net')).status).toBe(400)
+    } finally {
+      server.close()
     }
   })
 

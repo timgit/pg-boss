@@ -36,8 +36,9 @@ const RECORDED_WORK_OPTIONS = [
 // Keeps this PgBoss object's row in the instance table: registered at start(), refreshed on its own
 // heartbeat timer whether or not this instance supervises (an instance with supervise off is exactly
 // the kind people lose track of), and marked stopped by a graceful stop(). Nothing on the job path
-// waits for it. A failed write is emitted as an error and the next beat tries again, and since a beat
-// is an upsert, it also restores a row a failed registration or the retention prune left missing.
+// waits for it. A failed write is emitted as an error and the next beat tries again. A beat registers
+// again while no registration has succeeded, since the heartbeat needs the started_on a registration
+// returns. Since a beat is an upsert, it also restores a row the retention prune left missing.
 class Registrar extends EventEmitter implements types.EventsMixin {
   readonly id: string
   #db: types.IDatabase
@@ -72,15 +73,7 @@ class Registrar extends EventEmitter implements types.EventsMixin {
     this.#nurse.start()
 
     try {
-      const { rows } = await this.#db.executeSql(plans.registerInstance(this.#config.schema), await this.#values())
-      this.#startedOn = rows[0]?.startedOn ?? null
-
-      // Counted before the pruning, which keeps the earliest rows' counts only if they are already right.
-      await this.#countCrashRestarts()
-
-      // A crash-looping process registers once per life, so this is where its dead rows are bounded.
-      await this.#db.executeSql(plans.pruneInstanceLives(this.#config.schema, plans.INSTANCE_DEAD_KEPT_PER_NAME),
-        [this.id, this.#config.instanceName ?? null, os.hostname()])
+      await this.#register()
     } catch (err) {
       this.emit(events.error, err)
     }
@@ -160,13 +153,29 @@ class Registrar extends EventEmitter implements types.EventsMixin {
     }, Math.max(1000, at - clock.now() + 1000))
   }
 
+  async #register () {
+    const { rows } = await this.#db.executeSql(plans.registerInstance(this.#config.schema), await this.#values())
+    this.#startedOn = rows[0]?.startedOn ?? null
+
+    // Counted before the pruning, which keeps the earliest rows' counts only if they are already right.
+    await this.#countCrashRestarts()
+
+    // A crash-looping process registers once per life, so this is where its dead rows are bounded.
+    await this.#db.executeSql(plans.pruneInstanceLives(this.#config.schema, plans.INSTANCE_DEAD_KEPT_PER_NAME),
+      [this.id, this.#config.instanceName ?? null, os.hostname()])
+  }
+
   #beat () {
     // One beat at a time: a slow one is not stacked on, the next tick simply finds it running.
     if (this.#beating) return
 
     this.#beating = (async () => {
       try {
-        await this.#db.executeSql(plans.heartbeatInstance(this.#config.schema), [...await this.#values(), this.#startedOn])
+        if (this.#startedOn === null) {
+          await this.#register()
+        } else {
+          await this.#db.executeSql(plans.heartbeatInstance(this.#config.schema), [...await this.#values(), this.#startedOn])
+        }
       } catch (err) {
         this.emit(events.error, err)
       } finally {

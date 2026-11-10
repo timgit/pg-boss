@@ -519,6 +519,11 @@ describe('queueStats', function () {
      * stamps instead.
      */
     async function monitorPass (queue: string, throughput = true, window: plans.DeltaWindowOptions = { lag: "interval '0'" }) {
+      // PGlite's now() ticks in whole milliseconds, so a job the test finished just before this
+      // pass can share the pass's timestamp. It then sits on the window's open end and counts in
+      // the pass after. Waiting 2 ms puts the pass after everything the test wrote.
+      if (helper.isPglite) await new Promise(resolve => setTimeout(resolve, 2))
+
       const db = await getDb()
       const schema = ctx.bossConfig.schema
       const { rows: [{ table_name: table }] } = await db.executeSql(

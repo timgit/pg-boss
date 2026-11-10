@@ -149,7 +149,7 @@ Actual detection time is `heartbeatSeconds` plus up to the longer of [`monitorIn
 
 * **retentionSeconds**, number
 
-  How many seconds a job can stay in the created or retry state before pg-boss deletes it. Default: 14 days. Must be >=1.
+  How many seconds a job can stay in the created or retry state before pg-boss deletes it, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. Default: 14 days. Must be >=1.
 
 * **deleteAfterSeconds**, int
 

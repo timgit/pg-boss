@@ -201,8 +201,7 @@ By default, a worker fetches 1 job every 2 seconds.
 
   The `group` option on `send()` puts a job in a group. `groupConcurrency` doesn't limit jobs without a group.
 
-  > [!WARNING]
-  > pg-boss enforces `groupConcurrency` across all nodes by counting active jobs in the database. When several workers fetch at the same moment, though, a group can briefly go slightly over its limit, because fetching uses optimistic locking.
+  Concurrent fetches can briefly claim past the limit. Each fetch counts its groups again after claiming and gives the extra jobs back before any handler runs. The exception is `fetch()` with `db` inside your own transaction: other fetches cannot see its claim until that transaction commits, so the group can exceed the limit.
 
   ```js
   // Limit each tenant to 2 concurrent jobs globally across all nodes
