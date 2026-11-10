@@ -1,5 +1,6 @@
 import { useLocation, useNavigate, useParams, useRouteLoaderData, useSearchParams } from 'react-router'
 import { switchPathname } from '~/lib/database-switch'
+import { cn } from '~/lib/utils'
 import { Check, ChevronsUpDown, Layers } from 'lucide-react'
 import type { PublicDatabase } from '~/lib/types'
 import { DATABASE_COLORS, databaseColor } from '~/lib/database-colors'
@@ -23,11 +24,11 @@ function Dot ({ db, index }: { db: PublicDatabase, index: number }) {
 }
 
 /** An overlay's own schema: a tile in place of a configured database's dot, so the two never read alike. */
-function InternalMark () {
+function InternalMark ({ className }: { className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] text-[var(--text-link)]"
+      className={cn('inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] text-[var(--text-link)]', className)}
       style={{ background: 'color-mix(in srgb, var(--primary-500) 12%, transparent)' }}
     >
       <Layers className="h-3 w-3" />
@@ -66,7 +67,8 @@ export function DatabaseSwitcher () {
   const index = Math.max(0, databases.findIndex((db) => db.id === current.id))
   const label = (
     <>
-      {isInternal ? <InternalMark /> : <Dot db={current} index={index} />}
+      {/* On a phone a badge marks an internal database alone, leaving its name the room. */}
+      {isInternal ? <InternalMark className={current.badge ? 'max-sm:hidden' : undefined} /> : <Dot db={current} index={index} />}
       <span className="min-w-0 max-w-[14rem] text-[var(--text-primary)] max-sm:max-w-[9rem]"><Name db={current} /></span>
     </>
   )
@@ -89,7 +91,7 @@ export function DatabaseSwitcher () {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`Database: ${current.name}. Switch database`}
-        className="-ml-2 inline-flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-[var(--text-tertiary)] hover:bg-[var(--surface-hover)] data-popup-open:bg-[var(--surface-hover)]"
+        className="-ml-2 inline-flex h-8 min-w-0 cursor-pointer items-center gap-2 max-sm:gap-1.5 rounded-md px-2 text-sm text-[var(--text-tertiary)] hover:bg-[var(--surface-hover)] data-popup-open:bg-[var(--surface-hover)]"
       >
         {label}
         <ChevronsUpDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
