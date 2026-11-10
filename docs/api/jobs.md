@@ -62,7 +62,7 @@ Creates a new job and returns the job id.
 
 * **retentionSeconds**, number
 
-  Default: 14 days. How many seconds a job may be in created or retry state before it's deleted. Must be >=1
+  Default: 14 days. How many seconds a job may be in created or retry state before it's deleted, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. Must be >=1
 
 * **deleteAfterSeconds**, int
 
@@ -818,7 +818,7 @@ Marks an active job as failed.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 
-`data` is stored in the job's output and accepts any value, so a caught error can be passed as it is. An `Error` keeps its message and stack, a plain object is stored as it is, and any other value is stored as `{ value }`.
+`data` is stored as the job's output and accepts a value of any type, such as the error a `catch` block receives. An `Error` is stored with its name, message and stack. A plain object is stored as it is. An array, a string or a number is stored as `{ value }`. `null`, `undefined` or a function leaves the output empty.
 
 ```js
 const [job] = await boss.fetch('email-send')

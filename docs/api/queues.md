@@ -149,7 +149,7 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 
 * **retentionSeconds**, number
 
-  Default: 14 days. How many seconds a job may be in created or retry state before it's deleted. Must be >=1
+  Default: 14 days. How many seconds a job may be in created or retry state before it's deleted, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. Must be >=1
 
 * **deleteAfterSeconds**, int
 

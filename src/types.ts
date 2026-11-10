@@ -754,8 +754,8 @@ export interface QueueOptions {
    */
   expireInSeconds?: number;
   /**
-   * How many seconds a job may be in created or retry state before it's
-   * deleted. Must be >=1. The default is 14 days.
+   * How many seconds a job may be in created or retry state before it's deleted, counted from
+   * when it may start and again at each retry. Must be >=1. The default is 14 days.
    * @default 1209600
    */
   retentionSeconds?: number;
