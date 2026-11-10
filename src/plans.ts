@@ -3003,7 +3003,9 @@ export function cancelJobs (schema: string, table: string, fenced?: boolean) {
 // monitor's histograms and ready_oldest_seconds) counts from when it could run again rather than
 // from when it was first sent. A start_after still in the future is kept. It also loses upsert_by_key,
 // here and in restoreJobs, so it never collides in job_i13 with a newer job upserted by the same key,
-// and queues beside it.
+// and queues beside it. keep_until moves by the same amount as start_after, as in failJobsBody, so
+// the deletion sweep doesn't remove a resumed job whose first retention window ended while it was
+// cancelled.
 //
 // "retained" is how many of the resumed jobs the queue's retained_count held, read from the
 // completed_on each had before the update, which the caller takes off it with reduceRetainedCount.
@@ -3022,7 +3024,8 @@ export function resumeJobs (schema: string, table: string) {
       SET completed_on = NULL,
         state = '${JOB_STATES.created}',
         upsert_by_key = NULL,
-        start_after = GREATEST(j.start_after, ${schema}.job_now())
+        start_after = GREATEST(j.start_after, ${schema}.job_now()),
+        keep_until = GREATEST(j.start_after, ${schema}.job_now()) + (j.keep_until - j.start_after)
       FROM resumable r
       WHERE j.name = $1
         AND j.id = r.id
@@ -4156,7 +4159,7 @@ export function reduceRetainedCount (schema: string): string {
   `
 }
 
-// start_after moves up to now, as in resumeJobs.
+// start_after moves up to now, as in resumeJobs, and keep_until moves with it.
 export function retryJobs (schema: string, table: string) {
   return `
     WITH results as (
@@ -4164,7 +4167,8 @@ export function retryJobs (schema: string, table: string) {
       SET state = '${JOB_STATES.retry}',
         retry_limit = retry_limit + 1,
         completed_on = NULL,
-        start_after = GREATEST(start_after, ${schema}.job_now())
+        start_after = GREATEST(start_after, ${schema}.job_now()),
+        keep_until = GREATEST(start_after, ${schema}.job_now()) + (keep_until - start_after)
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.failed}'

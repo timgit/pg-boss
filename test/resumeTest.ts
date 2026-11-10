@@ -59,6 +59,23 @@ describe('cancel', function () {
     expect(stillAhead.startAfter.getTime()).toBe(future.startAfter.getTime())
   })
 
+  it('should keep a resumed job past the retention window it had when cancelled', async function () {
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retentionSeconds: 600 })
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId)
+
+    await clock.tick(3_600_000)
+    await ctx.boss.resume(ctx.schema, jobId)
+    await clock.tick(60_000)
+    await ctx.boss.supervise(ctx.schema)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job?.id).toBe(jobId)
+  })
+
   helper.itPglite('should cancel and resume a pending job with custom connection', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
