@@ -247,6 +247,12 @@ Every request then takes this scheme and host, so actions and redirects match wh
 
 While it's set, actions work only from that site. Unset it to use the dashboard directly, for example at `http://localhost:3000`.
 
+### Connection poolers
+
+The dashboard applies the `PGBOSS_DASHBOARD_QUERY_TIMEOUT` value with `SET statement_timeout` when it opens each connection. Behind a transaction pooler, such as PgBouncer in transaction mode or Supavisor on port 6543, the setting stays on the server connection after the dashboard's statement ends. A pg-boss worker or any other client that runs on that server connection later keeps the dashboard's timeout, which is 60 seconds by default. The server cancels any statement of that client's that takes longer.
+
+Behind RDS Proxy, the `SET` pins each dashboard connection to one database connection. The dashboard's pool holds at most 10 connections and closes idle ones.
+
 ### Serving under a sub-path
 
 By default the dashboard is served from the root path (`/`). To serve it under a sub-path (for example behind a reverse proxy at `https://example.com/pgboss/`), set `PGBOSS_DASHBOARD_BASE_PATH` when you start it:
