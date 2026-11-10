@@ -38,10 +38,11 @@ stalled or falling behind** each open an alert a few minutes into a gap while jo
 those two rules, set a hold longer than the gap, or list the queue as an
 exception (see [Writing a rule](#writing-a-rule)).
 
-**An instance restarting in a loop** counts lives that ended without `stop()`.
-A script that starts pg-boss and exits without calling `stop()` ends that way
-too. A script run 3 times within an hour on one host, under one `instanceName` or
-with none, reads as a restart loop. Call `stop()` before the script exits.
+**An instance restarting in a loop** counts the instances that ended without a
+call to `stop()`, such as a process that crashed. A script that starts pg-boss
+and exits without calling `stop()` counts the same way. A script run 3 times
+within an hour on one host, under one `instanceName` or with none, reads as a
+restart loop. Call `stop()` before the script exits.
 
 The other [instance](./instances.md) checks start off:
 
