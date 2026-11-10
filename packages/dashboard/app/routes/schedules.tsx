@@ -134,11 +134,11 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
                       <TableCell className="font-mono text-xs text-[var(--text-secondary)]">
                         {schedule.key}
                       </TableCell>
-                      <TableCell className="pgb-num text-[var(--text-primary)]">
-                        <span className="flex items-center gap-2">
-                          <span className="truncate max-w-[22rem]" title={schedule.cron}>{schedule.cron}</span>
-                          {schedule.kind === 'rrule' && <Badge variant="gray" size="sm">rrule</Badge>}
-                        </span>
+                      {/* A share of the width, the expression filling it and cut short only when the
+                          column is narrower than the text. On a phone, where the table scrolls
+                          sideways, the column keeps room for most of a rule. */}
+                      <TableCell className="pgb-num w-[30%] min-w-[24rem] max-w-0 text-[var(--text-primary)]">
+                        <span className="block truncate" title={schedule.cron}>{schedule.cron}</span>
                       </TableCell>
                       <TableCell className="text-[var(--text-secondary)]">
                         {schedule.description}
