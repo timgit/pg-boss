@@ -16,7 +16,7 @@ function Checkbox ({ className, ...props }: CheckboxPrimitive.Root.Props) {
       data-slot="checkbox"
       data-no-row-nav=""
       className={cn(
-        'group relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border-strong)] bg-[var(--surface-card)] text-white shadow-xs outline-none transition-colors',
+        'group relative flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-[4px] border border-[var(--text-tertiary)] bg-[var(--surface-card)] text-white shadow-xs outline-none transition-colors',
         'data-checked:border-[var(--primary-600)] data-checked:bg-[var(--primary-600)] data-indeterminate:border-[var(--primary-600)] data-indeterminate:bg-[var(--primary-600)]',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]',
         'data-disabled:cursor-not-allowed data-disabled:opacity-50',
