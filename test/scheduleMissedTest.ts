@@ -12,8 +12,9 @@ const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
 
 // A daily schedule, so a gap holds a countable number of occurrences and the due window holds none:
-// every job a test sees is one the catch-up sent.
-const DAILY = '0 3 * * *'
+// every job a test sees is one the catch-up sent. Its hour is twelve away from the hour the file
+// loads in, so no run of the suite starts close enough to an occurrence to see a real one.
+const DAILY = `0 ${(new Date().getUTCHours() + 12) % 24} * * *`
 
 /**
  * A Timekeeper over a database that answers the clock query and records every statement, which is
