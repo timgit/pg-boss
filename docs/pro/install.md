@@ -26,6 +26,7 @@ The project's `.npmrc` names the variable `PGBOSS_PRO_LICENSE` in place of the l
 Set `PGBOSS_PRO_LICENSE` to the license key on every machine and CI job that installs or updates Pro. Then install Pro:
 
 ```bash
+PGBOSS_PRO_LICENSE="<your license key>" \
 npm install @pg-boss/pro
 ```
 
