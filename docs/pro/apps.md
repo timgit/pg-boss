@@ -15,8 +15,8 @@ at the start of the top bar. With more than one app, a menu there switches betwe
 **Settings › Apps** is visible only to [global admins](./roles.md#global-admin). A new install has
 no apps, and its first global admin is sent to this page. **Add app** asks for:
 
-- **Name**, such as Production or Billing. The app's id comes from its first name, lowercased with
-  dashes (`production`), and never changes.
+- **Name**, such as Production or Billing. Pro makes the app's id from the name it is first given,
+  such as `production` for Production. The id never changes.
 - **Connection**, as one connection string or as separate fields for host, port, database, user,
   password and SSL mode. Connect as the role that owns the pg-boss schema. See
   [app permissions](./install.md#app-permissions).
@@ -39,8 +39,8 @@ rule and history row, because they all refer to the app's id.
 
 ## Connection changes
 
-**Change connection** in an app's menu replaces the stored connection, password and all, as after a
-password rotation or a move to another host. The app keeps its id and everything Pro keeps about it.
+**Change connection** in an app's menu replaces the stored connection and its password, such as after
+a password rotation or a move to another host. The app's id, rules and history stay.
 
 ## Removal
 

@@ -24,4 +24,4 @@ The dashboard's names for three of these settings work in Pro too, for an instal
 
 `PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` do nothing in Pro, which has its own accounts. `PGBOSS_DASHBOARD_READ_ONLY` does nothing either, since roles decide who may change jobs. When any of the three is set, Pro logs on startup that the variable is ignored.
 
-`DATABASE_URL` and `PGBOSS_SCHEMA` do nothing in Pro either, and Pro logs the same when they're set. A global admin adds the apps Pro monitors under **Settings › Apps**. See [Apps](./apps.md).
+`DATABASE_URL` and `PGBOSS_SCHEMA` do nothing in Pro either. Pro logs that they're ignored when they're set. A global admin adds the apps Pro monitors under **Settings › Apps**. See [Apps](./apps.md).
