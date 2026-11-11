@@ -42,6 +42,11 @@ rule and history row, because they all refer to the app's id.
 **Change connection** in an app's menu replaces the stored connection and its password, such as after
 a password rotation or a move to another host. The app's id, rules and history stay.
 
+An app whose connection was saved under an earlier `PGBOSS_PRO_SECRET_KEY` shows **Connection can't be
+decrypted** in the list, and a banner on every page names it to global admins. Pro leaves the app out of
+every page, alert rule and metric until a global admin enters its connection again with **Change
+connection**, or Pro restarts with the earlier key.
+
 ## Removal
 
 **Remove** in an app's menu stops monitoring the app and deletes everything Pro keeps about it: its
