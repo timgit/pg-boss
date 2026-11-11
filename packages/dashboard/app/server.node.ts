@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
-import { serverOverlayOf } from './lib/server-overlay'
+import { applySettingAliases, serverOverlayOf } from './lib/server-overlay'
 import { resolveBasePath } from './lib/base-path'
 
 /**
@@ -35,6 +35,13 @@ const pkg = manifest()
 const buildModulePath = './server/index.js'
 const build = (await import(buildModulePath)) as unknown as ServerBuild
 
+// The overlay comes from the build, so it shares the routes' modules. It is the
+// empty stub in every build but a Pro one, so this is the free dashboard
+// unchanged: an object with no hooks on it. Its setting names apply before any
+// setting below is read.
+const overlay = serverOverlayOf(build)
+applySettingAliases(overlay)
+
 const port = Number(process.env.PORT) || 3000
 const hostname = process.env.HOST || '0.0.0.0'
 
@@ -44,16 +51,13 @@ const basePath = process.env.PGBOSS_DASHBOARD_BASE_PATH || undefined
 // Relative to this file, not the working directory, so the server can be started from anywhere.
 const clientRoot = fileURLToPath(new URL('./client', import.meta.url))
 
-// The overlay comes from the build, so it shares the routes' modules. It is the
-// empty stub in every build but a Pro one, so this is the free dashboard
-// unchanged: an object with no hooks on it.
 const app = createHonoApp({
   build,
   mode: 'production',
   serveStaticAssets: true,
   clientRoot,
   basePath,
-  overlay: serverOverlayOf(build),
+  overlay,
 })
 
 serve({ fetch: app.fetch, port, hostname }, (info) => {

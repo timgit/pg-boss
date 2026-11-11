@@ -188,4 +188,12 @@ export interface ProServerOverlay {
    * Running first would mean the free defaults silently overwrote the narrowing.
    */
   loadContext?: (c: Context, context: RouterContextProvider) => void
+
+  /**
+   * The overlay's own names for settings the dashboard reads, each mapped to the dashboard's name,
+   * such as `{ PGBOSS_PRO_SITE_URL: 'PGBOSS_DASHBOARD_SITE_URL' }`. `applySettingAliases` puts a set
+   * alias in place of the dashboard's name before anything reads it, so a Pro install is configured
+   * with Pro's names, and the dashboard's names still work for one moved from the dashboard.
+   */
+  settingAliases?: Record<string, string>
 }

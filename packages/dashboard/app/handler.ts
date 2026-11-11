@@ -4,7 +4,7 @@ import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
 import { toDatabaseConfig, toSiteOrigin, type DatabaseInput } from './lib/config.server'
 import { withBasePath } from './lib/runtime-base-path'
-import { serverOverlayOf } from './lib/server-overlay'
+import { applySettingAliases, serverOverlayOf } from './lib/server-overlay'
 
 export type { DatabaseInput }
 
@@ -126,6 +126,9 @@ export function createDashboardHandler (
     // Non-literal so esbuild and tsc leave it as a runtime import, as in server.node.ts.
     const buildModulePath = './server/index.js'
     const build = (await import(buildModulePath)) as unknown as ServerBuild
+    const overlay = serverOverlayOf(build)
+    // Before any pool opens: the query timeout is read from the environment, under Pro's name too.
+    applySettingAliases(overlay)
 
     return createHonoApp({
       build,
@@ -146,7 +149,7 @@ export function createDashboardHandler (
       // mounted dashboard that authenticates and one that does not.
       // A Pro overlay owns authentication, so `auth: false` above costs it
       // nothing: `createHonoApp` takes the overlay branch either way.
-      overlay: serverOverlayOf(build),
+      overlay,
     })
   }
 

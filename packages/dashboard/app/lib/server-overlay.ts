@@ -21,3 +21,22 @@ export function serverOverlayOf (build: ServerBuild): ProServerOverlay {
 
   return serverOverlay
 }
+
+/**
+ * Apply the overlay's names for the dashboard's settings: each alias that is set takes the place
+ * of the dashboard's name in the environment. Called by every entry before it reads a setting. A
+ * free build declares no aliases, so this changes nothing there.
+ */
+export function applySettingAliases (overlay: ProServerOverlay, env: NodeJS.ProcessEnv = process.env): void {
+  for (const [alias, name] of Object.entries(overlay.settingAliases ?? {})) {
+    const value = env[alias]
+
+    if (value === undefined || value === '') continue
+
+    if (env[name] && env[name] !== value) {
+      console.warn(`${alias} and ${name} are both set, to different values. Using ${alias}.`)
+    }
+
+    env[name] = value
+  }
+}

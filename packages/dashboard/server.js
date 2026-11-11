@@ -27,7 +27,7 @@ const vite = await createViteServer({
 // compile step.
 const ssrRunner = vite.environments.ssr.runner
 const { createHonoApp } = await ssrRunner.import('/app/server.ts')
-const { serverOverlayOf } = await ssrRunner.import('/app/lib/server-overlay.ts')
+const { applySettingAliases, serverOverlayOf } = await ssrRunner.import('/app/lib/server-overlay.ts')
 
 const serverBuild = () => ssrRunner.import('virtual:react-router/server-build')
 
@@ -36,10 +36,13 @@ const serverBuild = () => ssrRunner.import('virtual:react-router/server-build')
 // that production does not: no overlay middleware, no overlay auth. A Pro feature
 // living in that half would be undevelopable locally, which is how it ends up
 // only ever exercised by a release.
+const overlay = serverOverlayOf(await serverBuild())
+applySettingAliases(overlay)
+
 const app = createHonoApp({
   mode: 'development',
   serveStaticAssets: false,
-  overlay: serverOverlayOf(await serverBuild()),
+  overlay,
   // Re-fetch the server build per request so route edits are picked up via HMR.
   build: serverBuild,
 })
