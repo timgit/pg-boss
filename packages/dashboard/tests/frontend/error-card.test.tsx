@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { ErrorCard } from "~/components/error-card";
+import { MissingPgBossContext } from "~/lib/missing-pgboss";
+import type { ReactNode } from "react";
 
 describe("ErrorCard", () => {
   it("renders title and default message", () => {
@@ -113,6 +115,31 @@ describe("ErrorCard", () => {
         screen.getByText("Please check your database connection and try again.")
       ).toBeInTheDocument();
       expect(screen.queryByText(/ECONNREFUSED/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("on a database with no pg-boss schema", () => {
+    function renderMissing(card: ReactNode) {
+      render(
+        <MemoryRouter>
+          <MissingPgBossContext.Provider value={{ name: "Staging", schema: "jobs" }}>{card}</MissingPgBossContext.Provider>
+        </MemoryRouter>
+      );
+    }
+
+    it("says pg-boss isn't installed instead of blaming the connection", () => {
+      renderMissing(<ErrorCard title="Error loading queues" />);
+
+      expect(screen.getByText("pg-boss isn't installed in this database")).toBeInTheDocument();
+      expect(screen.getByText(/no pg-boss schema named jobs in Staging/)).toBeInTheDocument();
+      expect(screen.queryByText("Please check your database connection and try again.")).not.toBeInTheDocument();
+    });
+
+    it("still lets the server's own explanation win", () => {
+      renderMissing(<ErrorCard title="Error" error={{ status: 404, statusText: "Queue not found", data: "No queue named billing.", internal: false }} />);
+
+      expect(screen.getByText("Queue not found")).toBeInTheDocument();
+      expect(screen.getByText("No queue named billing.")).toBeInTheDocument();
     });
   });
 });

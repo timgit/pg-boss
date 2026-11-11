@@ -233,6 +233,27 @@ function quoteSqlString (value: string): string {
     : `'${value.replace(/'/g, "''")}'`
 }
 
+// Whether pg-boss is installed in (db, schema): its version table is there. Null when the database
+// can't be asked, so a failed connection keeps its own message. Read at most every 30 seconds per
+// (db, schema), because the application's pg-boss installs the schema when it first starts.
+const installedCache = new Map<string, { at: number, installed: Promise<boolean | null> }>()
+const INSTALLED_RECHECK_MS = 30_000
+
+export function isPgBossInstalled (dbUrl: string, schema: string, now = Date.now()): Promise<boolean | null> {
+  const key = `${dbUrl}::${schema}`
+  const hit = installedCache.get(key)
+  if (hit && now - hit.at < INSTALLED_RECHECK_MS) return hit.installed
+
+  // An unquoted name in the configuration is folded to lower case by Postgres.
+  const installed = queryOne<{ installed: boolean }>(dbUrl, `
+    SELECT EXISTS (
+      SELECT 1 FROM pg_tables WHERE schemaname IN ($1::text, lower($1::text)) AND tablename = 'version'
+    ) as "installed"
+  `, [schema]).then((row) => row?.installed ?? null, () => null)
+  installedCache.set(key, { at: now, installed })
+  return installed
+}
+
 // Whether queue_stats has the wait and run time columns (schema v44, pg-boss 12.36), cached per
 // (db, schema). Unlike the probes below, a missing answer is only kept for five minutes: a database
 // is upgraded under a running dashboard when its application deploys, and the stats pages should

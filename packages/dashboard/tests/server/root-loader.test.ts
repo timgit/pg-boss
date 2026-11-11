@@ -94,6 +94,7 @@ describe('root loader', () => {
       databases: [],
       internal: [],
       currentDb: undefined,
+      pgbossMissing: false,
     })
   })
 

@@ -1,4 +1,6 @@
+import { useContext } from 'react'
 import { isRouteErrorResponse } from 'react-router'
+import { MissingPgBossContext } from '~/lib/missing-pgboss'
 import { DbLink } from './db-link'
 import { Card, CardContent } from './ui/card'
 
@@ -27,11 +29,15 @@ export function ErrorCard ({
 }: ErrorCardProps) {
   const response = isRouteErrorResponse(error) ? error : undefined
   const body = typeof response?.data === 'string' ? response.data.trim() : ''
+  const missing = useContext(MissingPgBossContext)
 
   // A loader that simply threw has no server-authored text, so the caller's copy
-  // stands. Only a real message displaces it.
-  const heading = response?.statusText || title
-  const detail = body || message
+  // stands. Only a real message displaces it. On a database with no pg-boss schema,
+  // the reads failed for that reason, not the connection.
+  const heading = response?.statusText || (missing ? 'pg-boss isn\'t installed in this database' : title)
+  const detail = body || (missing
+    ? `There's no pg-boss schema named ${missing.schema} in ${missing.name}. The application's pg-boss creates it when it first starts, or pg-boss's CLI can create it.`
+    : message)
 
   return (
     <div className="p-6">
@@ -52,3 +58,4 @@ export function ErrorCard ({
     </div>
   )
 }
+

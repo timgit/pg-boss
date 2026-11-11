@@ -3,6 +3,8 @@ import pg from 'pg'
 import {
   ctx,
   getBoss,
+  getTestSchema,
+  getTestConnectionString,
   createTestQueue,
   sendTestJob,
   insertTestWarning,
@@ -35,6 +37,7 @@ import {
   getScheduleCount,
   getSchedule,
   clearScheduleColumnsCache,
+  isPgBossInstalled,
 } from '~/lib/queries.server'
 
 // A page wide enough to hold every row a test writes.
@@ -1231,5 +1234,20 @@ describe('Schedule Queries', () => {
 
       clearScheduleColumnsCache()
     })
+  })
+})
+
+describe('isPgBossInstalled', () => {
+  it('finds the schema pg-boss installed, and says when one is missing', async () => {
+    expect(await isPgBossInstalled(getTestConnectionString(), getTestSchema())).toBe(true)
+    expect(await isPgBossInstalled(getTestConnectionString(), `${getTestSchema()}_missing`)).toBe(false)
+  })
+
+  it('reads a name the configuration capitalized as Postgres stores it', async () => {
+    expect(await isPgBossInstalled(getTestConnectionString(), getTestSchema().toUpperCase())).toBe(true)
+  })
+
+  it('says nothing when the database cannot be asked', async () => {
+    expect(await isPgBossInstalled('postgres://nobody:nothing@127.0.0.1:1/none', 'pgboss')).toBeNull()
   })
 })

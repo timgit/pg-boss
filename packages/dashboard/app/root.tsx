@@ -5,6 +5,7 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
+  useLoaderData,
   useMatches,
 } from "react-router";
 import type { Route } from "./+types/root";
@@ -21,6 +22,8 @@ import { cn } from "~/lib/utils";
 import { showsDatabase } from "~/lib/page-scope";
 import { dbContext } from "~/lib/db-context";
 import { toPublicDatabase } from "~/lib/config.server";
+import { isPgBossInstalled } from "~/lib/queries.server";
+import { MissingPgBossContext } from "~/lib/missing-pgboss";
 import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
 import markWhite from "~/assets/pg-boss-mark-white.svg?raw";
 import { BRAND_COBALT, COLOR_HEX, DEFAULT_COLOR_THEME } from "~/lib/favicon";
@@ -146,6 +149,9 @@ export async function loader({ context }: Route.LoaderArgs) {
     databases: databases.map(toPublicDatabase),
     internal: internal.map(toPublicDatabase),
     currentDb: currentDb ? toPublicDatabase(currentDb) : currentDb,
+    // For the error card: a page that failed on a database with no pg-boss schema says so, rather
+    // than blaming the connection.
+    pgbossMissing: currentDb ? (await isPgBossInstalled(currentDb.url, currentDb.schema)) === false : false,
   };
 }
 
@@ -176,7 +182,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  const { pgbossMissing, currentDb } = useLoaderData<typeof loader>();
+
+  return (
+    <MissingPgBossContext.Provider value={pgbossMissing && currentDb ? currentDb : null}>
+      <Outlet />
+    </MissingPgBossContext.Provider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
