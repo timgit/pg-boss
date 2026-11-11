@@ -25,11 +25,20 @@ Put both lines in the `.npmrc` of the project that installs Pro:
 @pg-boss:registry=https://npm.pgboss.io
 ```
 
+npm can write both lines for you, from the project's directory:
+
+```bash
+npm config set --location=project @pg-boss:registry https://npm.pgboss.io
+npm config set --location=project //npm.pgboss.io/:_authToken <your license key>
+```
+
 With the `.npmrc` in place, install Pro:
 
 ```bash
 npm install @pg-boss/pro
 ```
+
+In a project of its own, `npm pkg set scripts.start=pg-boss-pro` lets `npm start` run it.
 
 The second line points the whole `@pg-boss` scope at the private registry. The `@pg-boss/dashboard` and `@pg-boss/proxy` packages keep resolving from npmjs, because the registry redirects anything that isn't Pro.
 
@@ -40,7 +49,7 @@ In CI, keep the token out of the file. The same `.npmrc` works on a laptop and i
 @pg-boss:registry=https://npm.pgboss.io
 ```
 
-## Database install
+## Database permissions
 
 Pro connects to each database in `DATABASE_URL`, and keeps its own tables in the store database (`PGBOSS_PRO_DATABASE_URL`, the first database by default). See [environment variables](./environment.md).
 
@@ -61,8 +70,20 @@ GRANT pg_read_all_stats TO leastprivuser;
 
 `DATABASE_URL` names the database the application's pg-boss uses. On startup, Pro installs pg-boss's schema in each database that has none, as pg-boss's own `start()` does. Pro also runs on a new database. It installs only into a schema that's missing or empty. A schema that holds other tables, such as an application's after a typo in `PGBOSS_SCHEMA`, is left alone, and so is one whose name an existing pg-boss install uses with other capitals. Pro logs why. `PGBOSS_PRO_INSTALL_SCHEMA=false` turns the install off.
 
+Pro also needs a key to encrypt the secrets it stores, such as webhook URLs, PagerDuty keys and the
+outgoing email password. Generate the key once and keep it with the application's other secrets:
+
 ```bash
-DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-pro
+openssl rand -base64 32
+```
+
+Set it on every start. A different key means entering those secrets again. Without one, Pro starts
+and logs a warning, and the screens that store secrets refuse to save. See [secrets](./administration.md#secrets).
+
+```bash
+DATABASE_URL="postgres://user:password@localhost:5432/mydb" \
+PGBOSS_PRO_SECRET_KEY="<your secret key>" \
+npx pg-boss-pro
 ```
 
 On first run there are no accounts. Pro prints a setup link to its log:
@@ -85,9 +106,37 @@ Pro needs no database of its own. It creates and migrates both schemas on startu
 
 As in the dashboard, `DATABASE_URL` takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
 
+## First alert
+
+Pro starts every database with [default rules](./alert-rules.md#default-rules), and six of them are
+on. Their alerts show in the Console from the start. To have them sent:
+
+1. Add a destination under **Settings › Destinations**: an email list, a webhook or PagerDuty. Pro
+   offers to send the rules that are on to it.
+2. For an email destination, set up **Outgoing email** on the same page, with an SMTP server or a
+   Resend API key.
+3. Press **Send test** on the destination's row. It sends a sample alert that fires and then resolves.
+
+Webhook and PagerDuty destinations and outgoing email store secrets, and need `PGBOSS_PRO_SECRET_KEY`. See [destinations](./destinations.md).
+
+## Before production
+
+- Set `PGBOSS_PRO_SECRET_KEY`, as in [Run](#run).
+- Set `PGBOSS_DASHBOARD_SITE_URL` to the Console's public address. Without it, emails, webhooks and
+  PagerDuty carry no link to the alert. Behind a proxy that ends HTTPS, actions need it too. See
+  [reverse proxy](../dashboard.md#reverse-proxy).
+- Behind a reverse proxy on another host, set `PGBOSS_PRO_TRUSTED_PROXIES` to its address. Pro then
+  reads each client's address from `X-Forwarded-For`, for sign-in limits and the
+  [audit log](./audit-log.md#address).
+- With several instances behind a load balancer, set `PGBOSS_PRO_SETUP_TOKEN` before the first
+  start. The setup link then works on every instance.
+- Point the load balancer's health check at `/healthz`, after the base path when one is set. It
+  answers 200 once Pro's own schema is ready, and 503 until then. It needs no sign-in.
+
 ## Docker
 
-With the CI form of `.npmrc` above, pass the license key as a build secret so that no image layer keeps it:
+With the CI form of `.npmrc` above, pass the license key as a build secret so that no image layer keeps it.
+The image copies `package-lock.json`. Run `npm install` in the project once before the first build:
 
 ```dockerfile
 FROM node:22-alpine
@@ -97,11 +146,21 @@ RUN --mount=type=secret,id=pgboss_pro_token \
     PGBOSS_PRO_TOKEN="$(cat /run/secrets/pgboss_pro_token)" npm ci
 ENV PORT=3000
 EXPOSE 3000
+HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
 CMD ["npx", "pg-boss-pro"]
 ```
 
 ```bash
 PGBOSS_PRO_TOKEN=<your license key> docker build --secret id=pgboss_pro_token,env=PGBOSS_PRO_TOKEN -t pgboss-pro .
+```
+
+Pass the settings when the container starts, not when the image is built:
+
+```bash
+docker run -p 3000:3000 \
+  -e DATABASE_URL="postgres://user:password@db:5432/mydb" \
+  -e PGBOSS_PRO_SECRET_KEY="<your secret key>" \
+  pgboss-pro
 ```
 
 ## Upgrading

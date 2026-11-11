@@ -18,6 +18,7 @@ app.all('/admin/queues.data', serve)
 app.all('/admin/queues/*', serve)
 ```
 
+- The example is a Hono app served by `@hono/node-server`, which the application installs to serve it. `getConnInfo` comes from that same package.
 - Route `<basePath>.data` as well as `<basePath>/*`. The `.data` route sits next to the mount path, outside `<basePath>/*`. Without it, the Home link returns 404.
 - Pro authenticates on this path exactly as it does standalone. Pro's accounts apply whatever else the application does in front of the route.
 - Pass each request's address as `clientIp`, as above. Pro limits failed sign-ins per address and records the address in the [audit log](./audit-log.md#address). Without an address, failures are limited per account only, and Pro warns once on stderr. Behind a proxy, pass the address your server's own proxy setting resolves.
