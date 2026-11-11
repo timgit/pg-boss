@@ -118,23 +118,29 @@ function throttleSlot (instant: Date): string {
 
 /**
  * The occurrence before an interval's cursor, passing over the second instant of a local time the
- * clocks went back over.
+ * clocks went back over, unless the expression keeps running through that hour.
  *
  * Walking forwards, cron-parser runs a repeated hour once unless the expression names every hour,
  * so `30 1 * * *` in America/New_York sends at the first 01:30 on the night the clocks go back and
  * `0 * * * *` stays hourly. Walking backwards it answers with both instants, an hour apart and so
  * in throttle slots of their own, and a pass reading backwards would send the daily job twice. This
- * reads backwards the way the forward walk, and previewSchedule() with it, reads forwards. A rule
- * gets the same answer from rrule-temporal, which resolves a repeated local time to its first
- * instant.
+ * reads backwards the way the forward walk, and previewSchedule() with it, reads forwards, and
+ * `FREQ=DAILY;BYHOUR=1;BYMINUTE=30` gets the same answer from rrule-temporal, which resolves a
+ * repeated local time to its first instant.
+ *
+ * An expression naming multiple minutes across multiple hours is a run rather than a time of day,
+ * and passing over the repeated hour would leave `0,15,30,45 0-3 * * *` sending nothing for an hour
+ * and a quarter. It reads both instants, as a `FREQ=MINUTELY` rule does, and previewSchedule(),
+ * walking forwards, can list fewer than the pass sends.
  */
 function previousOccurrence (interval: CronExpression, tz: string): Date {
-  const everyHour = interval.fields.hour.values.length === 24
+  const { hour, minute } = interval.fields
+  const keepsRepeatedHour = hour.values.length === 24 || (hour.values.length > 1 && minute.values.length > 1)
 
   for (;;) {
     const occurrence = interval.prev().toDate()
 
-    if (everyHour || !repeatsLocalTime(occurrence, tz)) {
+    if (keepsRepeatedHour || !repeatsLocalTime(occurrence, tz)) {
       return occurrence
     }
   }

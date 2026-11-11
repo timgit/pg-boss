@@ -310,4 +310,52 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await until(async () => counts.insertDone === counts.inserts - 1)
     expect(await slotsFiled(ctx.boss)).toEqual(['05:30'])
   })
+
+  /**
+   * Passes over both 01:30s of the night New York goes back, as the test above walks them, for an
+   * expression holding that minute, answering with the slots filed. `sendsBetween` says whether
+   * it also holds the second 01:00, which the pass arriving at 01:29:45 EST reads.
+   */
+  async function slotsOverRepeatedHour (expression: string, sendsSecond: boolean, sendsBetween = false): Promise<string[]> {
+    const start = Date.parse('2026-11-01T05:29:45Z')
+    const clock = new TestClock(start)
+    ctx.boss = await startScheduling(clock)
+
+    await until(async () => await lastPass(ctx.boss!) === start)
+
+    await ctx.boss.schedule(ctx.schema, expression, null, { tz: 'America/New_York' })
+
+    await passAt(clock, ctx.boss, start + 30 * SECOND)
+    await passAt(clock, ctx.boss, start + 3600 * SECOND, sendsBetween)
+    await passAt(clock, ctx.boss, start + 3630 * SECOND, sendsSecond)
+    await passAt(clock, ctx.boss, start + 3660 * SECOND, sendsSecond)
+
+    const counts = passes.get(ctx.boss)!
+    await until(async () => counts.insertDone === counts.inserts - 1)
+
+    return await slotsFiled(ctx.boss)
+  }
+
+  it('keeps sending through the repeated hour for multiple minutes across multiple hours', async function () {
+    const expression = '*/30 0-3 * * *'
+
+    expect(await slotsOverRepeatedHour(expression, true, true)).toEqual(['05:30', '06:00', '06:30'])
+
+    // previewSchedule() walks forwards past the repeated hour, so it lists less than the passes sent.
+    const listed = ctx.boss!.previewSchedule(expression, { tz: 'America/New_York', from: new Date('2026-11-01T05:29:45Z'), count: 2 })
+
+    expect(listed.map(d => d.toISOString())).toEqual(['2026-11-01T05:30:00.000Z', '2026-11-01T07:00:00.000Z'])
+  })
+
+  it('keeps sending through the repeated hour for an expression naming every hour', async function () {
+    expect(await slotsOverRepeatedHour('30 * * * *', true)).toEqual(['05:30', '06:30'])
+  })
+
+  it('sends a repeated local time once for multiple minutes in one hour', async function () {
+    expect(await slotsOverRepeatedHour('0,30 1 * * *', false)).toEqual(['05:30'])
+  })
+
+  it('sends a repeated local time once for one minute across multiple hours', async function () {
+    expect(await slotsOverRepeatedHour('30 0-3 * * *', false)).toEqual(['05:30'])
+  })
 })

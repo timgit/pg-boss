@@ -137,8 +137,10 @@ Schedules a job to be sent to the specified queue based on a cron expression or 
   rejected by `schedule()`, so a typo cannot be stored and then fail on the cron pass.
 
   When the clocks go back, a cron expression sends a repeated local time once, at its first
-  instant, unless it names every hour. So `30 1 * * *` sends once that night and `0 * * * *` stays
-  hourly. This is what `previewSchedule()` lists.
+  instant, unless it names every hour or multiple minutes across multiple hours. So `30 1 * * *`
+  and `0,30 1 * * *` send once that night, `0 * * * *` stays hourly and `*/5 0-3 * * *` keeps
+  sending every five minutes through the repeated hour. A schedule can send more that night than
+  `previewSchedule()` lists.
 
 * **key**
   

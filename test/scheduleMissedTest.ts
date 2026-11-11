@@ -153,6 +153,19 @@ describe('schedule missed', function () {
     expect(slots(inserted)).toEqual([slotOf(minute - MINUTE), slotOf(minute)])
   })
 
+  it('catches up on the second instant of a repeated hour an expression keeps running through', async function () {
+    const tk = makeTk()
+
+    // 01:45:30 EST on 2026-11-01, an hour after the clocks went back in New York.
+    const now = Date.parse('2026-11-01T06:45:30Z')
+
+    const inserted = await pass(tk, now, new Date(now - 3 * 60 * MINUTE), [
+      row('*/30 0-3 * * *', 'once', { timezone: 'America/New_York' })
+    ])
+
+    expect(slots(inserted)).toEqual([slotOf(Date.parse('2026-11-01T06:30:00Z'))])
+  })
+
   it('reads a recurrence rule backwards over the gap', async function () {
     const tk = makeTk()
 
