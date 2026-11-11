@@ -23,6 +23,8 @@ import { VPButton } from 'vitepress/theme'
 
 pg-boss Pro is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users make changes such as creating queues and jobs or modifying schedules, as their [role](./roles.md) allows. Every change is recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds enhanced health monitoring and a configurable rules engine, which can alert whoever is on call by email, webhook or a paging service. An alert catches a stalled queue before it turns into an outage.
 
+Pro monitors one or more apps, added in the Pro Console. An app is one pg-boss schema in one database, such as the pg-boss an application uses in production.
+
 Pro is built and supported by the author of pg-boss. Upgrading from the [dashboard](../dashboard.md) is a change of package name, from `@pg-boss/dashboard` to `@pg-boss/pro`, plus a [database of Pro's own](./install.md#database-setup) for its accounts, rules and alerts. Changes work on a database that runs the pg-boss schema the Pro release is built for. On another schema, pages still open and changes are off. See [pg-boss versions](./versions.md).
 
 ![The Pro overview](../images/pro/overview.webp){.light-only}
@@ -63,7 +65,7 @@ Pro is built and supported by the author of pg-boss. Upgrading from the [dashboa
 
 ## Features
 
-Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro API and metrics are set per app, each one pg-boss schema in one database.
+Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro API and metrics are set per app.
 
 | Feature | Dashboard | Pro |
 | - | :-: | :-: |

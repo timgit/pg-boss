@@ -1,5 +1,7 @@
 # Install and run
 
+Pro monitors one or more pg-boss apps. An app is one pg-boss schema in one database, such as the pg-boss an application uses in production. Apps are added in the Pro Console once Pro is running (see [First app](#first-app)).
+
 ## Requirements
 
 - Node.js 22.12 or later.
