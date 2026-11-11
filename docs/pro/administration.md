@@ -17,17 +17,16 @@ Pro prunes its own store once a minute.
 
 Pro encrypts each app's connection, SMTP passwords, API keys, webhook URLs, signing secrets and
 Authorization headers, PagerDuty integration keys and the OIDC client secret
-before it stores them. The encryption key comes from `PGBOSS_PRO_SECRET_KEY`:
+before it stores them. 
 
-```bash
-PGBOSS_PRO_SECRET_KEY="$(openssl rand -base64 32)"
-```
+The encryption key should be in the `PGBOSS_PRO_SECRET_KEY` environment variable, and it has to be at least 32 characters. Without the key, Pro logs an error at startup and serves no pages. Pro never writes a secret in the clear and never sends a stored secret back to the browser. In the browser, a secret is masked as bullets in place of the stored value. Saving a form with the bullets untouched keeps the stored secret.
 
-The key must be at least 32 characters, since a shorter key can be guessed from a copy of the
-database. Without the key, Pro logs why at startup and serves no pages.
-Pro never writes a secret in the clear, and never sends a stored secret back to
-the browser. The fields show bullets. Saving without touching them keeps
-what's there, unless what the secret is sent to changed: a webhook's host, the
-SMTP server or user, or the SSO issuer or client id. Pro then asks for the secret
-again. A stored secret only ever goes where it was entered for. Losing the key means re-entering those secrets, each app's connection among them. Nothing else
-is lost.
+Pro sends a stored secret only to the server it was entered for. Pro asks for the secret again when
+one of these changes:
+
+- a webhook's host
+- the SMTP server or user
+- the SSO issuer or client id
+
+Without the key it was encrypted with, Pro can't read a stored secret. After a lost key, enter every
+secret again, including each app's connection.
