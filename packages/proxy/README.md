@@ -10,7 +10,7 @@ All background processing (supervision, scheduling, migrations) is disabled by d
 
 ```bash
 npm install @pg-boss/proxy
-DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-proxy
+DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx @pg-boss/proxy
 ```
 
 Then visit:

@@ -2,7 +2,7 @@
 
 ## Default rules
 
-Every database starts with one rule for each check Pro can run. Six are on:
+Every database starts with one rule for each check Pro can run. Five are on:
 
 - **Queue stalled or falling behind**: the queue's health verdict, read from its
   throughput.
@@ -12,8 +12,6 @@ Every database starts with one rule for each check Pro can run. Six are on:
 - **An operation failed**: an operation that failed, or a redrive that left
   collisions.
 - **pg-boss warnings**: every warning type pg-boss records.
-- **An instance restarting in a loop**: instances with one name on one host ended
-  without `stop()` 3 times within an hour.
 
 **Queue with no workers** judges by what leaves the queue, whoever takes it.
 A queue drained with `fetch()` and `complete()` counts as worked. A job active at
@@ -38,14 +36,9 @@ stalled or falling behind** each open an alert a few minutes into a gap while jo
 those two rules, set a hold longer than the gap, or list the queue as an
 exception (see [Writing a rule](#writing-a-rule)).
 
-**An instance restarting in a loop** counts the instances that ended without a
-call to `stop()`, such as a process that crashed. A script that starts pg-boss
-and exits without calling `stop()` counts the same way. A script run 3 times
-within an hour on one host, under one `instanceName` or with none, reads as a
-restart loop. Call `stop()` before the script exits.
+The [instance](./instances.md) checks start off:
 
-The other [instance](./instances.md) checks start off:
-
+- **An instance restarting in a loop**
 - **An instance gone quiet**
 - **More than one pg-boss version live**
 - **Instances with different shared options**
@@ -53,6 +46,17 @@ The other [instance](./instances.md) checks start off:
 - **An instance blocking its event loop**
 - **An instance hitting its CPU limit**
 - **An instance near its memory limit**
+
+**An instance restarting in a loop** counts the restarts of instances with one
+name on one host, 3 within an hour by default. A restart is an instance that ended
+without a call to `stop()`, such as a process that crashed, followed by a new
+start with that name on that host. Instances that ran at the same time count as
+one restart. A deploy that ends several workers sharing a name counts once. A
+paused VM or a laptop asleep isn't a restart. Its instances miss their
+heartbeats, but nothing starts in their place. A script that starts pg-boss and
+exits without calling `stop()` restarts the same way as a crash. A script run 3
+times within an hour on one host, under one `instanceName` or with none, reads
+as a restart loop. Call `stop()` before the script exits.
 
 No rule sends a notification until it has a [destination](./destinations.md).
 Alerts from a rule with no destination still open and appear on the [Alerts](./alerts.md) page. A destination

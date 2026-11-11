@@ -3,50 +3,28 @@
 ## Requirements
 
 - Node.js 22.12 or later.
-- Postgres, with a database for Pro and the databases of the pg-boss applications it monitors. Pro reads a pg-boss schema from version 44 (pg-boss 12.36) on, and makes changes only on the schema of the pg-boss it's built with. See [pg-boss versions](./versions.md).
+- A Postgres database for Pro.
+- pg-boss 12.36 or later in each database Pro monitors. See [pg-boss versions](./versions.md).
 - A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
 ## Install
 
-Pro is served from a private registry, not from npmjs. The license key is the only credential the registry needs. The key is shown on the purchases page of the Polar account that bought the subscription.
+Pro is installed from a private registry, not from npmjs. The license key is the only credential the registry needs. The key is shown on the purchases page of the Polar account that bought the subscription.
 
-To run Pro as its own server, create a project for it:
+To run Pro as its own server, create a project for it and point npm at Pro's registry:
 
 ```bash
 npm init -y
-```
-
-To [mount Pro](./mount.md) in an existing application, install it in that application's project.
-
-Put both lines in the `.npmrc` of the project that installs Pro:
-
-```
-//npm.pgboss.io/:_authToken=<your license key>
-@pg-boss:registry=https://npm.pgboss.io
-```
-
-npm can write both lines for you, from the project's directory:
-
-```bash
+npm config set --location=project //npm.pgboss.io/:_authToken '${PGBOSS_PRO_LICENSE}'
 npm config set --location=project @pg-boss:registry https://npm.pgboss.io
-npm config set --location=project //npm.pgboss.io/:_authToken <your license key>
 ```
 
-With the `.npmrc` in place, install Pro:
+The project's `.npmrc` names the variable `PGBOSS_PRO_LICENSE` in place of the license key. The file holds no secret and can be committed. The registry line points the whole `@pg-boss` scope at the private registry. The `@pg-boss/dashboard` and `@pg-boss/proxy` packages keep resolving from npmjs, because the registry redirects anything that isn't Pro.
+
+Set `PGBOSS_PRO_LICENSE` to the license key on every machine and CI job that installs or updates Pro. Then install Pro:
 
 ```bash
 npm install @pg-boss/pro
-```
-
-In a project of its own, `npm pkg set scripts.start=pg-boss-pro` lets `npm start` run it.
-
-The second line points the whole `@pg-boss` scope at the private registry. The `@pg-boss/dashboard` and `@pg-boss/proxy` packages keep resolving from npmjs, because the registry redirects anything that isn't Pro.
-
-In CI, keep the token out of the file. The same `.npmrc` works on a laptop and in a pipeline, because npm substitutes the variable when it reads the file:
-
-```
-//npm.pgboss.io/:_authToken=${PGBOSS_PRO_TOKEN}
-@pg-boss:registry=https://npm.pgboss.io
 ```
 
 ## Databases
@@ -54,7 +32,7 @@ In CI, keep the token out of the file. The same `.npmrc` works on a laptop and i
 Pro connects to two kinds of database:
 
 - The `PGBOSS_PRO_DB_` settings name Pro's own database, which holds its accounts, rules, alerts and audit log.
-- `DATABASE_URL` names the databases Pro monitors, each one the database an application's pg-boss uses. As in the dashboard, it takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
+- `DATABASE_URL` names the databases Pro monitors. As in the dashboard, it takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
 
 Create a database for Pro, owned by the role Pro connects to it as:
 
@@ -76,30 +54,27 @@ Point Pro at it with `PGBOSS_PRO_DB_HOST` and `PGBOSS_PRO_DB_PASSWORD`. The othe
 
 `PGBOSS_PRO_DB_CONNECTION_STRING` replaces them all, for a host that gives out a connection string. See [environment variables](./environment.md).
 
-Pro keeps its tables in `public`. The pg-boss that runs Pro's alert evaluator and sends its notifications keeps its job tables in `pgboss`, as an application's pg-boss does. As the owner, the role can create both and migrate them after an upgrade. Other roles can't read Pro's tables unless they're granted access. Restoring an application's database leaves Pro's rules, alerts and audit log as they were. Dropping Pro's database removes Pro.
-
-Pro refuses a database in `DATABASE_URL` as its own. On first start, it also refuses a `public` or `pgboss` that already holds tables, other than an extension's. Pro logs the reason at startup and answers every request with it until the setting is fixed.
+Pro keeps its tables in `public`. The pg-boss that runs Pro's alert evaluator and sends its notifications keeps its job tables in `pgboss`, as an application's pg-boss does. As the owner, the role can create both and migrate them after an upgrade.
 
 ## Database permissions
 
-In each monitored database's pg-boss schema, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Connect as the role that owns pg-boss's schema. Grants on its tables aren't enough. Creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner. Pro doesn't migrate pg-boss's schema.
+In each monitored database's pg-boss schema, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Pro is configured to observe only, so it won't supervise, run scheduled jobs, or migrate any monitored database. 
 
-Installing pg-boss's schema needs the CREATE privilege on the database, even into an empty schema that already exists. With `PGBOSS_PRO_INSTALL_SCHEMA=false`, Pro installs nothing there and needs no CREATE for pg-boss.
+In order to use all of Pro's features, you should connect as the role that owns pg-boss's schema to avoid any permission issues. For example, creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner.
 
 Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state. For that role, the connection counts by state can read low.
 
 The following is a sample script that grants these permissions in a monitored database:
 
 ```sql
-GRANT CREATE ON DATABASE mydb TO leastprivuser;
 GRANT pg_read_all_stats TO leastprivuser;
 ```
 
 ## Run
 
-On startup, Pro installs pg-boss's schema in each monitored database that has none, as pg-boss's own `start()` does. Pro also runs on a new database. It installs only into a schema that's missing or empty. A schema that holds other tables, such as an application's after a typo in `PGBOSS_SCHEMA`, is left alone, and so is one whose name an existing pg-boss install uses with other capitals. Pro logs why. `PGBOSS_PRO_INSTALL_SCHEMA=false` turns the install off.
+Pro doesn't install pg-boss in a monitored database. The application's pg-boss creates its schema when it first starts. pg-boss's [CLI](../cli.md) can also create the schema ahead of time. Until then, the Console says pg-boss isn't installed in that database.
 
-Pro also needs a key to encrypt the secrets it stores, such as webhook URLs, PagerDuty keys and the
+Pro needs a key to encrypt the secrets it stores, such as webhook URLs, PagerDuty keys and the
 outgoing email password. Generate the key once and keep it with the application's other secrets:
 
 ```bash
@@ -114,7 +89,7 @@ PGBOSS_PRO_DB_HOST="localhost" \
 PGBOSS_PRO_DB_PASSWORD="<password>" \
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" \
 PGBOSS_PRO_SECRET_KEY="<your secret key>" \
-npx pg-boss-pro
+npx @pg-boss/pro
 ```
 
 On first run there are no accounts. Pro prints a setup link to its log:
@@ -130,7 +105,7 @@ Open the setup link (for example `http://localhost:3000/setup?token=…`) and cr
 
 ## First alert
 
-Pro starts every database with [default rules](./alert-rules.md#default-rules). Six of them are
+Pro starts every database with [default rules](./alert-rules.md#default-rules). Five of them are
 on. Their alerts show in the Console from the start. To have them sent:
 
 1. Add a destination under **Settings › Destinations**: an email list, a webhook or PagerDuty. Pro
@@ -158,23 +133,23 @@ Webhook and PagerDuty destinations and outgoing email store secrets and need `PG
 
 ## Docker
 
-With the CI form of `.npmrc` above, pass the license key as a build secret so that no image layer keeps it.
+With the `.npmrc` above, pass the license key as a build secret so that no image layer keeps it.
 The image copies `package-lock.json`. Run `npm install` in the project once before the first build:
 
 ```dockerfile
 FROM node:22-alpine
 WORKDIR /app
 COPY .npmrc package.json package-lock.json ./
-RUN --mount=type=secret,id=pgboss_pro_token \
-    PGBOSS_PRO_TOKEN="$(cat /run/secrets/pgboss_pro_token)" npm ci
+RUN --mount=type=secret,id=pgboss_pro_license \
+    PGBOSS_PRO_LICENSE="$(cat /run/secrets/pgboss_pro_license)" npm ci
 ENV PORT=3000
 EXPOSE 3000
 HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
-CMD ["npx", "pg-boss-pro"]
+CMD ["./node_modules/.bin/pg-boss-pro"]
 ```
 
 ```bash
-PGBOSS_PRO_TOKEN=<your license key> docker build --secret id=pgboss_pro_token,env=PGBOSS_PRO_TOKEN -t pgboss-pro .
+PGBOSS_PRO_LICENSE=<your license key> docker build --secret id=pgboss_pro_license,env=PGBOSS_PRO_LICENSE -t pgboss-pro .
 ```
 
 Pass the settings when the container starts, not when the image is built:

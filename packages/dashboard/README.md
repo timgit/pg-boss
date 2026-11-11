@@ -8,7 +8,7 @@ A web dashboard for [pg-boss](https://github.com/timgit/pg-boss) job queues: bro
 
 ```bash
 npm install @pg-boss/dashboard
-DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard
+DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx @pg-boss/dashboard
 ```
 
 Open http://localhost:3000 in your browser.

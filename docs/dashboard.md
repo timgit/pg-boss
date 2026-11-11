@@ -156,7 +156,7 @@ npm install @pg-boss/dashboard
 To try the dashboard against a local database, run it with npx:
 
 ```bash
-DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard
+DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx @pg-boss/dashboard
 ```
 
 Open `http://localhost:3000` in your browser.
@@ -186,7 +186,7 @@ To protect the dashboard with basic authentication, set `PGBOSS_DASHBOARD_AUTH_U
 PGBOSS_DASHBOARD_AUTH_USERNAME=admin \
 PGBOSS_DASHBOARD_AUTH_PASSWORD=secret \
 DATABASE_URL="postgres://localhost/mydb" \
-npx pg-boss-dashboard
+npx @pg-boss/dashboard
 ```
 
 Set both variables or neither. If only one is set, the dashboard throws an error on startup.
@@ -196,13 +196,13 @@ Set both variables or neither. If only one is set, the dashboard throws an error
 To monitor multiple pg-boss instances, separate connection strings with a pipe (`|`):
 
 ```bash
-DATABASE_URL="postgres://host1/db1|postgres://host2/db2" npx pg-boss-dashboard
+DATABASE_URL="postgres://host1/db1|postgres://host2/db2" npx @pg-boss/dashboard
 ```
 
 You can name each database so you can tell them apart in the UI:
 
 ```bash
-DATABASE_URL="Production=postgres://prod/db|Staging=postgres://stage/db" npx pg-boss-dashboard
+DATABASE_URL="Production=postgres://prod/db|Staging=postgres://stage/db" npx @pg-boss/dashboard
 ```
 
 If your databases use different schemas, list them in the same order, separated by pipes:
@@ -210,7 +210,7 @@ If your databases use different schemas, list them in the same order, separated 
 ```bash
 DATABASE_URL="postgres://host1/db1|postgres://host2/db2" \
 PGBOSS_SCHEMA="pgboss|jobs" \
-npx pg-boss-dashboard
+npx @pg-boss/dashboard
 ```
 
 Two unnamed entries for the same database, such as one database under two schemas, would share a name. The later entry shows its schema, as in `app (jobs)`. Name each entry to choose what shows instead.
@@ -254,7 +254,7 @@ services:
   dashboard:
     image: node:24
     working_dir: /app
-    command: sh -c "npm install -g @pg-boss/dashboard && pg-boss-dashboard"
+    command: sh -c "npm install -g @pg-boss/dashboard && exec pg-boss-dashboard"
     environment:
       DATABASE_URL: postgres://user:pass@db:5432/mydb
       PGBOSS_SCHEMA: pgboss
@@ -287,7 +287,7 @@ server {
 Behind this proxy, pages load but every action fails with a 400 until you set the site URL. The browser sends `Origin: https://pgboss.example.com`. The dashboard sees a request for `http://pgboss.example.com`, because the proxy forwards plain HTTP. React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch. Set `PGBOSS_DASHBOARD_SITE_URL` to the URL your browser uses:
 
 ```bash
-PGBOSS_DASHBOARD_SITE_URL=https://pgboss.example.com npx pg-boss-dashboard
+PGBOSS_DASHBOARD_SITE_URL=https://pgboss.example.com npx @pg-boss/dashboard
 ```
 
 Every request then takes this scheme and host so that actions and redirects match what the browser sees. Give the origin only. A sub-path goes in `PGBOSS_DASHBOARD_BASE_PATH`. The dashboard stops at startup on a value with a path, a query or credentials.
@@ -313,7 +313,7 @@ Behind RDS Proxy, the `SET` pins each dashboard connection to one database conne
 By default the dashboard serves from the root path (`/`). To serve it under a sub-path (for example behind a reverse proxy at `https://example.com/pgboss/`), set `PGBOSS_DASHBOARD_BASE_PATH` when you start it:
 
 ```bash
-PGBOSS_DASHBOARD_BASE_PATH=/pgboss npx pg-boss-dashboard
+PGBOSS_DASHBOARD_BASE_PATH=/pgboss npx @pg-boss/dashboard
 ```
 
 Assets, in-app navigation, and action redirects all stay under the prefix. The published npm package needs no rebuild, because the base path is a runtime setting. Have the reverse proxy forward the prefix unchanged, without stripping it. Match `/pgboss` with no trailing slash, because the home page fetches its data at `/pgboss.data`.
@@ -425,8 +425,11 @@ The dashboard shows a warning type written by a newer pg-boss core under its raw
 ### "Error loading dashboard"
 
 - Check that `DATABASE_URL` is correct and the database is reachable
-- Ensure the pg-boss schema exists (run pg-boss at least once to create it)
 - Check PostgreSQL logs for connection errors
+
+### "pg-boss isn't installed in this database"
+
+The database has no pg-boss schema with the name in `PGBOSS_SCHEMA` (`pgboss` by default). The application's pg-boss creates the schema when it first starts. The [CLI](./cli.md) can also create it ahead of time. The dashboard doesn't install pg-boss.
 
 ### Missing warnings
 

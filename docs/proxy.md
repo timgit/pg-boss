@@ -17,7 +17,7 @@ By default the proxy is stateless. It only opens a database connection and serve
 
 ```bash
 npm install @pg-boss/proxy
-DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-proxy
+DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx @pg-boss/proxy
 ```
 
 Then visit:
@@ -482,7 +482,7 @@ services:
   proxy:
     image: node:24
     working_dir: /app
-    command: sh -c "npm install -g @pg-boss/proxy && pg-boss-proxy"
+    command: sh -c "npm install -g @pg-boss/proxy && exec pg-boss-proxy"
     environment:
       DATABASE_URL: postgres://user:pass@db:5432/mydb
       PORT: 3000
