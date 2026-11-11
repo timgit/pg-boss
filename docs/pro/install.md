@@ -110,7 +110,7 @@ After setup, Pro opens **Settings › Apps**. Press **Add app** and enter a name
 
 ## First alert
 
-Pro starts every app with [default rules](./alert-rules.md#default-rules). Five of them are
+Pro starts every app with [default rules](./alert-rules.md#default-rules). Six of them are
 on. Their alerts show in the Pro Console from the start. To have them sent:
 
 1. Add a destination under **Settings › Destinations**: an email list, a webhook or PagerDuty. Pro
