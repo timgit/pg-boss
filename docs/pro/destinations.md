@@ -40,7 +40,7 @@ to it once it's on again. **Send test** still works on a destination that's off,
 turning it on.
 
 **Links in alerts.** Emails, webhooks and PagerDuty link each alert to its page
-when Pro knows the Console's public address. Pro builds that address from [`PGBOSS_DASHBOARD_SITE_URL`](../dashboard.md#reverse-proxy),
+when Pro knows the Console's public address. Pro builds that address from [`PGBOSS_PRO_SITE_URL`](./environment.md),
 or `siteUrl` for a [mounted handler](./mount.md), plus the base path. Without
 that address, the notifications carry no link. The page shows which address the links use.
 

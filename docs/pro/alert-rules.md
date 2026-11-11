@@ -208,7 +208,7 @@ that point at them.
   `persistQueueStats` keeps (pg-boss 12.35 or later). Waits and run times need
   pg-boss 12.36, and so do the instance checks, which read pg-boss's instance registry.
 - The evaluator runs once a minute as a pg-boss job in the `pgboss` schema of
-  [Pro's database](./install.md#databases). A pass holds a Postgres advisory lock
+  [Pro's database](./install.md#database-setup). A pass holds a Postgres advisory lock
   on Pro's database while it runs. Pro replicas run one pass at a time between them, and the pass queues each
   notification once to its destination's [send queue](./destinations.md#send-queues).
   A minute whose job finds the lock taken skips its pass. A pooler in front of

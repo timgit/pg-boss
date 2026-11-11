@@ -27,44 +27,54 @@ Set `PGBOSS_PRO_LICENSE` to the license key on every machine and CI job that ins
 npm install @pg-boss/pro
 ```
 
-## Databases
+## Database setup
 
-Pro connects to two kinds of database:
-
-- The `PGBOSS_PRO_DB_` settings name Pro's own database, which holds its accounts, rules, alerts and audit log.
-- `DATABASE_URL` names the databases Pro monitors. As in the dashboard, it takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
-
-Create a database for Pro, owned by the role Pro connects to it as:
+Pro keeps its accounts, rules, alerts and audit log in a database of its own. Create it, owned by the role Pro connects to it as:
 
 ```sql
 CREATE ROLE pgboss_pro LOGIN PASSWORD '<password>';
 CREATE DATABASE pgboss_pro OWNER pgboss_pro;
 ```
 
-Point Pro at it with `PGBOSS_PRO_DB_HOST` and `PGBOSS_PRO_DB_PASSWORD`. The other settings default to the role and database above:
+Pro uses pg-boss internally to run its alert evaluator and send notifications. Pro's own tables go in `public` and pg-boss's in `pgboss`. As the owner, the role can create both and migrate them after an upgrade.
+
+## Configuration
+
+Pro reads these settings at startup:
+
+| Variable | Needed | What |
+| - | - | - |
+| `PGBOSS_PRO_DB_HOST` | Always | The host of Pro's database. |
+| `PGBOSS_PRO_DB_PASSWORD` | Always | The password of the role Pro connects to its database as. |
+| `DATABASE_URL` | Always | The databases Pro monitors. As in the dashboard, several are separated by `\|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md). |
+| `PGBOSS_PRO_SECRET_KEY` | Always | Encrypts the secrets Pro stores, such as webhook URLs, PagerDuty keys and the outgoing email password. Generate it once with `openssl rand -base64 32`. Pro needs at least 32 characters. |
+| `PGBOSS_PRO_SITE_URL` | In production | The Console's public address. Without it, emails, webhooks and PagerDuty carry no link to the alert. Behind a proxy that ends HTTPS, actions need it too. See [reverse proxy](../dashboard.md#reverse-proxy). |
+| `PGBOSS_PRO_TRUSTED_PROXIES` | Behind a reverse proxy on another host | The proxy's address. Pro then reads each client's address from `X-Forwarded-For`, for sign-in limits and the [audit log](./audit-log.md#address). |
+| `PGBOSS_PRO_SETUP_TOKEN` | With several instances behind a load balancer | One setup token the instances share, set before the first start. The setup link then works on every instance. |
+
+Keep the secret key with the application's other secrets and set it on every start. A different key means entering those secrets again. Without one, Pro starts
+and logs a warning. The screens that store secrets then refuse to save. See [secrets](./administration.md#secrets).
+
+The other settings for Pro's database default to the role and database above:
 
 | Setting | Default |
 | - | - |
-| `PGBOSS_PRO_DB_HOST` | required |
 | `PGBOSS_PRO_DB_PORT` | `5432` |
 | `PGBOSS_PRO_DB_DATABASE` | `pgboss_pro` |
 | `PGBOSS_PRO_DB_USER` | `pgboss_pro` |
-| `PGBOSS_PRO_DB_PASSWORD` | |
 | `PGBOSS_PRO_DB_SSLMODE` | |
 
-`PGBOSS_PRO_DB_CONNECTION_STRING` replaces them all, for a host that gives out a connection string. See [environment variables](./environment.md).
+`PGBOSS_PRO_DB_CONNECTION_STRING` replaces them all, for a host that gives out a connection string. [Environment variables](./environment.md) lists every variable.
 
-Pro keeps its tables in `public`. The pg-boss that runs Pro's alert evaluator and sends its notifications keeps its job tables in `pgboss`, as an application's pg-boss does. As the owner, the role can create both and migrate them after an upgrade.
+## Monitored database permissions
 
-## Database permissions
+In each monitored database's pg-boss schema, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Pro doesn't install pg-boss in a monitored database, supervise it, run its schedules or migrate it.
 
-In each monitored database's pg-boss schema, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Pro is configured to observe only, so it won't supervise, run scheduled jobs, or migrate any monitored database. 
+The application's pg-boss creates its schema when it first starts. pg-boss's [CLI](../cli.md) can also create the schema ahead of time. Until then, the Console says pg-boss isn't installed in that database.
 
-In order to use all of Pro's features, you should connect as the role that owns pg-boss's schema to avoid any permission issues. For example, creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner.
+Connect as the role that owns pg-boss's schema, because some of Pro's changes need the owner. Creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner.
 
-Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state. For that role, the connection counts by state can read low.
-
-The following is a sample script that grants these permissions in a monitored database:
+Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state. For that role, the connection counts by state can read low. The following script grants `pg_read_all_stats` to the role Pro connects as:
 
 ```sql
 GRANT pg_read_all_stats TO leastprivuser;
@@ -72,17 +82,7 @@ GRANT pg_read_all_stats TO leastprivuser;
 
 ## Run
 
-Pro doesn't install pg-boss in a monitored database. The application's pg-boss creates its schema when it first starts. pg-boss's [CLI](../cli.md) can also create the schema ahead of time. Until then, the Console says pg-boss isn't installed in that database.
-
-Pro needs a key to encrypt the secrets it stores, such as webhook URLs, PagerDuty keys and the
-outgoing email password. Generate the key once and keep it with the application's other secrets:
-
-```bash
-openssl rand -base64 32
-```
-
-Set it on every start. A different key means entering those secrets again. Without one, Pro starts
-and logs a warning. The screens that store secrets then refuse to save. See [secrets](./administration.md#secrets).
+Start Pro with the settings above:
 
 ```bash
 PGBOSS_PRO_DB_HOST="localhost" \
@@ -115,21 +115,6 @@ on. Their alerts show in the Console from the start. To have them sent:
 3. Press **Send test** on the destination's row. It sends a sample alert that fires and then resolves.
 
 Webhook and PagerDuty destinations and outgoing email store secrets and need `PGBOSS_PRO_SECRET_KEY`. See [destinations](./destinations.md).
-
-## Before production
-
-- Set `PGBOSS_PRO_SECRET_KEY`, as in [Run](#run).
-- Back up Pro's database and keep a copy of the secret key apart from it. See [Backup](#backup).
-- Set `PGBOSS_DASHBOARD_SITE_URL` to the Console's public address. Without it, emails, webhooks and
-  PagerDuty carry no link to the alert. Behind a proxy that ends HTTPS, actions need it too. See
-  [reverse proxy](../dashboard.md#reverse-proxy).
-- Behind a reverse proxy on another host, set `PGBOSS_PRO_TRUSTED_PROXIES` to its address. Pro then
-  reads each client's address from `X-Forwarded-For`, for sign-in limits and the
-  [audit log](./audit-log.md#address).
-- With several instances behind a load balancer, set `PGBOSS_PRO_SETUP_TOKEN` before the first
-  start. The setup link then works on every instance.
-- Point the load balancer's health check at `/healthz`, after the base path when one is set. It
-  answers 200 once Pro's own schema is ready and 503 until then. It needs no sign-in.
 
 ## Docker
 
@@ -175,18 +160,18 @@ The backup holds Pro's accounts, rules, alerts, audit log and the notifications 
 
 ## Upgrading
 
+Pro doesn't check for new releases itself. To see whether one is available, run this in the project that installs Pro:
+
+```bash
+npm outdated @pg-boss/pro
+```
+
+To upgrade Pro, run `npm update` in the same project:
+
 ```bash
 npm update @pg-boss/pro
 ```
 
+At startup, Pro logs its version. The [release notes](./releases.md) list what each release changes.
+
 Each Pro release is built with one pg-boss release, and installs that release whatever version the application runs. When the application moves to a pg-boss release with a new schema version, upgrade Pro with it. See [pg-boss versions](./versions.md).
-
-## Database uninstall
-
-To remove Pro, drop its database:
-
-```sql
-DROP DATABASE pgboss_pro;
-```
-
-Dropping it deletes Pro's accounts, rules, alerts and audit log. The monitored databases and their jobs stay as they are.

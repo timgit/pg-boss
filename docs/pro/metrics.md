@@ -42,3 +42,9 @@ scrape_configs:
     static_configs:
       - targets: ['console.example.com']
 ```
+
+## Health check
+
+`/healthz` answers 200 with `ok` once Pro has reached its database and brought its tables up to date. Until then it answers 503. It needs no sign-in. Pro doesn't check the database again for each probe after that. Under a base path, the endpoint moves under it too, as in `/pgboss/healthz`.
+
+Point a load balancer's or an orchestrator's health check at `/healthz`. The image in [Docker](./install.md#docker) uses it for its `HEALTHCHECK`.
