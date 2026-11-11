@@ -9,8 +9,11 @@ import { applySettingAliases, serverOverlayOf } from './lib/server-overlay'
 export type { DatabaseInput }
 
 export interface CreateDashboardHandlerOptions {
-  /** The first one is selected by default. */
-  databases: DatabaseInput[];
+  /**
+   * The first one is selected by default. Required by the dashboard. pg-boss Pro leaves it out: its
+   * apps are added in the Pro Console.
+   */
+  databases?: DatabaseInput[];
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
   /**
@@ -72,11 +75,14 @@ const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
 export function createDashboardHandler (
   { databases, basePath, siteUrl, auth = false }: CreateDashboardHandlerOptions
 ): DashboardHandler {
-  if (databases.length === 0) {
+  // An empty list is a mistake now. A missing one is a Pro build's, whose apps are kept in its own
+  // database; the build says which once it loads, and a free one without databases refuses then.
+  if (databases?.length === 0) {
     throw new Error('createDashboardHandler() needs at least one database')
   }
 
-  const configs = databases.map(toDatabaseConfig)
+  const configs = (databases ?? []).map(toDatabaseConfig)
+
   const duplicate = configs.find((config, index) => configs.findIndex(other => other.id === config.id) !== index)
 
   if (duplicate) {
@@ -127,6 +133,10 @@ export function createDashboardHandler (
     const buildModulePath = './server/index.js'
     const build = (await import(buildModulePath)) as unknown as ServerBuild
     const overlay = serverOverlayOf(build)
+
+    if (configs.length === 0 && !overlay.ownsAuth) {
+      throw new Error('createDashboardHandler() needs at least one database')
+    }
     // Before any pool opens: the query timeout is read from the environment, under Pro's name too.
     applySettingAliases(overlay)
 

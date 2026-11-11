@@ -7,8 +7,12 @@ describe('createDashboardHandler', () => {
     vi.restoreAllMocks()
   })
 
-  it('needs at least one database', () => {
+  it('needs at least one database when it is given a list', () => {
     expect(() => createDashboardHandler({ databases: [] })).toThrow('needs at least one database')
+  })
+
+  it('takes no list at creation, for a Pro build that keeps its apps itself', () => {
+    expect(() => createDashboardHandler({})).not.toThrow()
   })
 
   it('refuses two databases that would share an id', () => {

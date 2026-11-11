@@ -7,8 +7,11 @@ export interface DatabaseInput {
 }
 
 export interface CreateDashboardHandlerOptions {
-  /** The first one is selected by default. */
-  databases: DatabaseInput[];
+  /**
+   * The first one is selected by default. Required by the dashboard. pg-boss Pro leaves it out: its
+   * apps are added in the Pro Console.
+   */
+  databases?: DatabaseInput[];
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
   /**
