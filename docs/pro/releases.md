@@ -4,9 +4,15 @@
 
 The first release of pg-boss Pro, on pg-boss 12.38 and dashboard 2.0.
 
+- Pro keeps its accounts, rules, alerts and audit log in a database of its own. A global admin adds the [apps](./apps.md) Pro monitors in the Pro Console, each one pg-boss schema in one database.
 - Alert rules decide what is an alert: thresholds on a queue's counts, rates and waits, the built-in checks, pg-boss warnings and failed operations. Each rule is scoped to queues by name or pattern and edited in a builder or as JSON. Pro keeps every version of a rule, and every alert names its version.
 - Alerts reach email, PagerDuty, or a webhook in Prometheus Alertmanager's format, with a link to the alert's page. Pro tells the destination when the alert closes.
 - The Pro API for scripts, CI and workers: pg-boss's own methods on each app, behind API tokens that belong to service accounts with roles like a person's, and Prometheus metrics.
 - Each release states the pg-boss schemas it supports. On any other schema the Pro Console keeps showing everything and turns changes off.
 - Accounts, groups and roles per app, single sign-on, and an audit log of every change.
 - Operations over every job a filter matches, health and throughput on every queue, ninety days of status, and the instances working each queue.
+
+### Upgrading from the dashboard
+
+- Pro's links name the app with `?app=` where the dashboard's name the database with `?db=`. A link saved from the dashboard opens its page in Pro on the app last viewed.
+- `DATABASE_URL` and `PGBOSS_SCHEMA` do nothing in Pro. Add each database the dashboard showed as an app under **Settings › Apps**. See [Install and run](./install.md).
