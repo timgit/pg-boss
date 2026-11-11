@@ -9,8 +9,13 @@
 | `PGBOSS_DASHBOARD_BASE_PATH` | `/` | Serve under a prefix, such as `/pgboss`. Changing it needs no rebuild, because Pro reads it at startup. |
 | `PGBOSS_DASHBOARD_SITE_URL` | | The public address, as `https://host[:port]`, for a Console behind a proxy that ends HTTPS. Links in alerts use it with the base path. Without it, alerts carry no link. The API examples on a service account's page fall back to the address the page was opened at. See [reverse proxy](../dashboard.md#reverse-proxy). |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | `60000` | A statement timeout in milliseconds, for the pages' reads and for the connections the alert evaluator and Operations open. |
-| `PGBOSS_PRO_DATABASE_URL` | the first database | Where Pro keeps its own tables. |
-| `PGBOSS_PRO_SCHEMA` | `pgboss_pro` | The schema for them, 57 characters at most. Pro creates and migrates the schema on startup. The alert evaluator's pg-boss creates `<schema>_queue` beside it. Pro refuses to start when either schema is a configured database's pg-boss schema in the same database. |
+| `PGBOSS_PRO_DB_HOST` | | Required unless `PGBOSS_PRO_DB_CONNECTION_STRING` is set. The host of Pro's own database, where Pro keeps its tables in `public` and its alert evaluator's pg-boss in `pgboss`. Pro refuses a database in `DATABASE_URL`. See [Databases](./install.md#databases). |
+| `PGBOSS_PRO_DB_PORT` | `5432` | The port of Pro's database. |
+| `PGBOSS_PRO_DB_DATABASE` | `pgboss_pro` | The name of Pro's database. |
+| `PGBOSS_PRO_DB_USER` | `pgboss_pro` | The role Pro connects to its database as, which should own the database. |
+| `PGBOSS_PRO_DB_PASSWORD` | | The role's password. |
+| `PGBOSS_PRO_DB_SSLMODE` | | The `sslmode` for Pro's database: `disable`, `prefer`, `require`, `verify-ca`, `verify-full` or `no-verify`, read as node-postgres reads it in a connection string. |
+| `PGBOSS_PRO_DB_CONNECTION_STRING` | | A connection string for Pro's database, such as `postgres://pgboss_pro:password@host:5432/pgboss_pro?sslmode=require`. It replaces the other `PGBOSS_PRO_DB_` settings. Use it for a host that gives out a connection string, or for SSL options beyond `sslmode`. |
 | `PGBOSS_PRO_SECRET_KEY` | | Encrypts stored secrets: email passwords and keys, webhook URLs, secrets and Authorization headers, PagerDuty keys, the SSO client secret. See [secrets](./administration.md#secrets). |
 | `PGBOSS_PRO_INSTALL_SCHEMA` | `true` | `false` stops Pro from installing pg-boss's schema in a configured database that has none. See [Run](./install.md#run). |
 | `PGBOSS_PRO_SETUP_TOKEN` | | The token `/setup` asks for on a new install, 32 characters at least, such as the output of `openssl rand -base64 32`. Setup refuses every token while a shorter one is set. Without it, each process makes its own and prints the link to its log. Set it when several instances share a load balancer. |

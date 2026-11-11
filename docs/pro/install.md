@@ -3,7 +3,7 @@
 ## Requirements
 
 - Node.js 22.12 or later.
-- A Postgres database. Pro reads a pg-boss schema from version 44 (pg-boss 12.36) on, and makes changes only on the schema of the pg-boss it's built with. See [pg-boss versions](./versions.md).
+- Postgres, with a database for Pro and the databases of the pg-boss applications it monitors. Pro reads a pg-boss schema from version 44 (pg-boss 12.36) on, and makes changes only on the schema of the pg-boss it's built with. See [pg-boss versions](./versions.md).
 - A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
 ## Install
@@ -49,17 +49,46 @@ In CI, keep the token out of the file. The same `.npmrc` works on a laptop and i
 @pg-boss:registry=https://npm.pgboss.io
 ```
 
+## Databases
+
+Pro connects to two kinds of database:
+
+- The `PGBOSS_PRO_DB_` settings name Pro's own database, which holds its accounts, rules, alerts and audit log.
+- `DATABASE_URL` names the databases Pro monitors, each one the database an application's pg-boss uses. As in the dashboard, it takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
+
+Create a database for Pro, owned by the role Pro connects to it as:
+
+```sql
+CREATE ROLE pgboss_pro LOGIN PASSWORD '<password>';
+CREATE DATABASE pgboss_pro OWNER pgboss_pro;
+```
+
+Point Pro at it with `PGBOSS_PRO_DB_HOST` and `PGBOSS_PRO_DB_PASSWORD`. The other settings default to the role and database above:
+
+| Setting | Default |
+| - | - |
+| `PGBOSS_PRO_DB_HOST` | required |
+| `PGBOSS_PRO_DB_PORT` | `5432` |
+| `PGBOSS_PRO_DB_DATABASE` | `pgboss_pro` |
+| `PGBOSS_PRO_DB_USER` | `pgboss_pro` |
+| `PGBOSS_PRO_DB_PASSWORD` | |
+| `PGBOSS_PRO_DB_SSLMODE` | |
+
+`PGBOSS_PRO_DB_CONNECTION_STRING` replaces them all, for a host that gives out a connection string. See [environment variables](./environment.md).
+
+Pro keeps its tables in `public`. The pg-boss that runs Pro's alert evaluator and sends its notifications keeps its job tables in `pgboss`, as an application's pg-boss does. As the owner, the role can create both and migrate them after an upgrade. Other roles can't read Pro's tables unless they're granted access. Restoring an application's database leaves Pro's rules, alerts and audit log as they were. Dropping Pro's database removes Pro.
+
+Pro refuses a database in `DATABASE_URL` as its own. On first start, it also refuses a `public` or `pgboss` that already holds tables, other than an extension's. Pro logs the reason at startup and answers every request with it until the setting is fixed.
+
 ## Database permissions
 
-Pro connects to each database in `DATABASE_URL`, and keeps its own tables in the store database (`PGBOSS_PRO_DATABASE_URL`, the first database by default). See [environment variables](./environment.md).
+In each monitored database's pg-boss schema, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Connect as the role that owns pg-boss's schema. Grants on its tables aren't enough. Creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner. Pro doesn't migrate pg-boss's schema.
 
-In pg-boss's schema, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Connect as the role the application's pg-boss uses, or a role with the same privileges on that schema. Installing pg-boss's schema in a database that has none needs the CREATE privilege there. Pro doesn't migrate pg-boss's schema.
-
-In the store database, the role needs the [CREATE](https://www.postgresql.org/docs/current/sql-grant.html) privilege to create Pro's `pgboss_pro` and `pgboss_pro_queue` schemas on first start. Pro migrates them on startup after an upgrade, which needs the role that owns them.
+Installing pg-boss's schema needs the CREATE privilege on the database, even into an empty schema that already exists. With `PGBOSS_PRO_INSTALL_SCHEMA=false`, Pro installs nothing there and needs no CREATE for pg-boss.
 
 Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state. For that role, the connection counts by state can read low.
 
-The following is a sample script that grants these permissions:
+The following is a sample script that grants these permissions in a monitored database:
 
 ```sql
 GRANT CREATE ON DATABASE mydb TO leastprivuser;
@@ -68,7 +97,7 @@ GRANT pg_read_all_stats TO leastprivuser;
 
 ## Run
 
-`DATABASE_URL` names the database the application's pg-boss uses. On startup, Pro installs pg-boss's schema in each database that has none, as pg-boss's own `start()` does. Pro also runs on a new database. It installs only into a schema that's missing or empty. A schema that holds other tables, such as an application's after a typo in `PGBOSS_SCHEMA`, is left alone, and so is one whose name an existing pg-boss install uses with other capitals. Pro logs why. `PGBOSS_PRO_INSTALL_SCHEMA=false` turns the install off.
+On startup, Pro installs pg-boss's schema in each monitored database that has none, as pg-boss's own `start()` does. Pro also runs on a new database. It installs only into a schema that's missing or empty. A schema that holds other tables, such as an application's after a typo in `PGBOSS_SCHEMA`, is left alone, and so is one whose name an existing pg-boss install uses with other capitals. Pro logs why. `PGBOSS_PRO_INSTALL_SCHEMA=false` turns the install off.
 
 Pro also needs a key to encrypt the secrets it stores, such as webhook URLs, PagerDuty keys and the
 outgoing email password. Generate the key once and keep it with the application's other secrets:
@@ -78,9 +107,11 @@ openssl rand -base64 32
 ```
 
 Set it on every start. A different key means entering those secrets again. Without one, Pro starts
-and logs a warning, and the screens that store secrets refuse to save. See [secrets](./administration.md#secrets).
+and logs a warning. The screens that store secrets then refuse to save. See [secrets](./administration.md#secrets).
 
 ```bash
+PGBOSS_PRO_DB_HOST="localhost" \
+PGBOSS_PRO_DB_PASSWORD="<password>" \
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" \
 PGBOSS_PRO_SECRET_KEY="<your secret key>" \
 npx pg-boss-pro
@@ -97,18 +128,9 @@ Open the setup link (for example `http://localhost:3000/setup?token=…`) and cr
 ![Creating the first global administrator](../images/pro/setup.webp){.light-only}
 ![Creating the first global administrator](../images/pro/setup-dark.webp){.dark-only}
 
-Pro uses two schemas of its own, both separate from the application's pg-boss schema:
-
-- `pgboss_pro` holds Pro's tables, such as accounts, rules, alerts and the audit log.
-- `pgboss_pro_queue` holds the job tables of the pg-boss that runs the alert evaluator.
-
-Pro needs no database of its own. It creates and migrates both schemas on startup in the first database in `DATABASE_URL`, unless `PGBOSS_PRO_DATABASE_URL` names another. `PGBOSS_PRO_SCHEMA` renames them both, because the second name is the first with `_queue` added. [Environment variables](./environment.md) lists every variable.
-
-As in the dashboard, `DATABASE_URL` takes several databases separated by `|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md).
-
 ## First alert
 
-Pro starts every database with [default rules](./alert-rules.md#default-rules), and six of them are
+Pro starts every database with [default rules](./alert-rules.md#default-rules). Six of them are
 on. Their alerts show in the Console from the start. To have them sent:
 
 1. Add a destination under **Settings › Destinations**: an email list, a webhook or PagerDuty. Pro
@@ -117,11 +139,12 @@ on. Their alerts show in the Console from the start. To have them sent:
    Resend API key.
 3. Press **Send test** on the destination's row. It sends a sample alert that fires and then resolves.
 
-Webhook and PagerDuty destinations and outgoing email store secrets, and need `PGBOSS_PRO_SECRET_KEY`. See [destinations](./destinations.md).
+Webhook and PagerDuty destinations and outgoing email store secrets and need `PGBOSS_PRO_SECRET_KEY`. See [destinations](./destinations.md).
 
 ## Before production
 
 - Set `PGBOSS_PRO_SECRET_KEY`, as in [Run](#run).
+- Back up Pro's database and keep a copy of the secret key apart from it. See [Backup](#backup).
 - Set `PGBOSS_DASHBOARD_SITE_URL` to the Console's public address. Without it, emails, webhooks and
   PagerDuty carry no link to the alert. Behind a proxy that ends HTTPS, actions need it too. See
   [reverse proxy](../dashboard.md#reverse-proxy).
@@ -131,7 +154,7 @@ Webhook and PagerDuty destinations and outgoing email store secrets, and need `P
 - With several instances behind a load balancer, set `PGBOSS_PRO_SETUP_TOKEN` before the first
   start. The setup link then works on every instance.
 - Point the load balancer's health check at `/healthz`, after the base path when one is set. It
-  answers 200 once Pro's own schema is ready, and 503 until then. It needs no sign-in.
+  answers 200 once Pro's own schema is ready and 503 until then. It needs no sign-in.
 
 ## Docker
 
@@ -158,10 +181,22 @@ Pass the settings when the container starts, not when the image is built:
 
 ```bash
 docker run -p 3000:3000 \
+  -e PGBOSS_PRO_DB_HOST="db" \
+  -e PGBOSS_PRO_DB_PASSWORD="<password>" \
   -e DATABASE_URL="postgres://user:password@db:5432/mydb" \
   -e PGBOSS_PRO_SECRET_KEY="<your secret key>" \
   pgboss-pro
 ```
+
+## Backup
+
+Back up Pro's database like any other, with `pg_dump` or the host's snapshots:
+
+```bash
+pg_dump --format=custom --file=pgboss_pro.dump --host=localhost --username=pgboss_pro pgboss_pro
+```
+
+The backup holds Pro's accounts, rules, alerts, audit log and the notifications waiting to send. It doesn't hold `PGBOSS_PRO_SECRET_KEY`. Keep a copy of the key too, stored apart from the backup. Restored with another key, Pro keeps everything except the stored secrets, which need entering again. See [secrets](./administration.md#secrets).
 
 ## Upgrading
 
@@ -173,11 +208,10 @@ Each Pro release is built with one pg-boss release, and installs that release wh
 
 ## Database uninstall
 
-To remove Pro from a database, drop its two schemas:
+To remove Pro, drop its database:
 
 ```sql
-DROP SCHEMA pgboss_pro CASCADE;
-DROP SCHEMA pgboss_pro_queue CASCADE;
+DROP DATABASE pgboss_pro;
 ```
 
-If you set `PGBOSS_PRO_SCHEMA`, use its value and the same name with `_queue` added. Dropping the schemas deletes Pro's accounts, rules, alerts and audit log. pg-boss's schema and the application's jobs stay.
+Dropping it deletes Pro's accounts, rules, alerts and audit log. The monitored databases and their jobs stay as they are.

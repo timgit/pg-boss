@@ -36,9 +36,8 @@ viewed for 30 days. A page that names no database, such as Settings, leads back 
 
 ## Pro queues
 
-Pro runs its own background work on pg-boss queues in `pgboss_pro_queue`, a schema beside Pro's
-tables in its store database. With `PGBOSS_PRO_SCHEMA` set, the schema is that name with `_queue`
-added. A global admin finds them as **Pro queues** under **Internal** at the end of the database
+Pro runs its own background work on pg-boss queues in the `pgboss` schema of
+[Pro's database](./install.md#databases). A global admin finds them as **Pro queues** under **Internal** at the end of the database
 menu. They aren't a database in `DATABASE_URL`. A banner on each of their pages says which
 database holds them.
 

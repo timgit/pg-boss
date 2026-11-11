@@ -203,9 +203,9 @@ that point at them.
 - The health check and the per-minute rates in thresholds read the stats
   `persistQueueStats` keeps (pg-boss 12.35 or later). Waits and run times need
   pg-boss 12.36, and so do the instance checks, which read pg-boss's instance registry.
-- The evaluator runs once a minute as a pg-boss job in a `<schema>_queue` schema
-  of its own. A pass holds a Postgres advisory lock on Pro's store while it
-  runs. Pro replicas run one pass at a time between them, and the pass queues each
+- The evaluator runs once a minute as a pg-boss job in the `pgboss` schema of
+  [Pro's database](./install.md#databases). A pass holds a Postgres advisory lock
+  on Pro's database while it runs. Pro replicas run one pass at a time between them, and the pass queues each
   notification once to its destination's [send queue](./destinations.md#send-queues).
   A minute whose job finds the lock taken skips its pass. A pooler in front of
   the store must not be in transaction mode, because the lock needs a session
