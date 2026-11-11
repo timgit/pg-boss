@@ -1,12 +1,10 @@
 # Install and run
 
-Pro monitors one or more pg-boss apps. An app is one pg-boss schema in one database, such as the pg-boss an application uses in production. Apps are added in the Pro Console once Pro is running (see [First app](#first-app)).
-
 ## Requirements
 
 - Node.js 22.12 or later.
 - A Postgres database for Pro.
-- pg-boss 12.36 or later in each app Pro monitors. See [pg-boss versions](./versions.md).
+- pg-boss 12.36 or later in each app Pro monitors. An app is one pg-boss schema in one database, added in the Pro Console once Pro is running. See [Apps](./apps.md) and [pg-boss versions](./versions.md).
 - A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
 ## Install
