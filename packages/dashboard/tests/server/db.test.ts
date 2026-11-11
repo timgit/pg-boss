@@ -36,6 +36,16 @@ describe('db.server', () => {
       await pool2.end()
     })
 
+    it('gives up opening a connection after 10 seconds', async () => {
+      const { getPool, CONNECT_TIMEOUT_MS } = await import('~/lib/db.server')
+      const cs = ctx.connectionString + '?application_name=connect_timeout_test'
+
+      expect(CONNECT_TIMEOUT_MS).toBe(10_000)
+      expect(getPool(cs).options.connectionTimeoutMillis).toBe(CONNECT_TIMEOUT_MS)
+
+      await getPool(cs).end()
+    })
+
     it('throws when shutting down', async () => {
       const { getPool, closeAllPools } = await import('~/lib/db.server')
 

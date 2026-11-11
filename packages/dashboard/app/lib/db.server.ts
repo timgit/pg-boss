@@ -13,6 +13,10 @@ const DEFAULT_QUERY_TIMEOUT_MS = 60_000
 // (e.g. network partition), so it sits above statement_timeout.
 const CLIENT_TIMEOUT_HEADROOM_MS = 5_000
 
+// How long opening a connection may take. Without it, a host that drops packets holds a page until
+// the operating system gives up on the connection, which can take minutes.
+export const CONNECT_TIMEOUT_MS = 10_000
+
 // 0 leaves the timeout to the database: the dashboard sends no SET, which a transaction pooler would
 // keep on the server connection for the next client, and sets no client-side backstop, which would
 // cut off a query the database still allows.
@@ -44,6 +48,7 @@ export function getPool (connectionString: string): pg.Pool {
     pool = new Pool({
       connectionString,
       max: 10,
+      connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
       ...(timeoutMs > 0 && {
         query_timeout: timeoutMs + CLIENT_TIMEOUT_HEADROOM_MS,
         onConnect: async (client: pg.ClientBase) => {

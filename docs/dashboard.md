@@ -426,6 +426,7 @@ The dashboard shows a warning type written by a newer pg-boss core under its raw
 
 - Check that `DATABASE_URL` is correct and the database is reachable
 - Check PostgreSQL logs for connection errors
+- The dashboard waits up to 10 seconds to open a connection. A firewall that drops the traffic to the database makes each page show this error after those 10 seconds.
 
 ### "pg-boss isn't installed in this database"
 
