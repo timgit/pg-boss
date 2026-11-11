@@ -31,6 +31,9 @@ Each rule sends to one destination, chosen on the rule's page. When a new destin
 while rules that are on have none, Pro offers to send those rules to it. Accepting gives every one
 of them the new destination. **Not now** leaves them as they are.
 
+![The offer to send the rules that are on to a new destination](../images/pro/destination-routing.webp){.light-only}
+![The offer to send the rules that are on to a new destination](../images/pro/destination-routing-dark.webp){.dark-only}
+
 The switch on each destination's row turns it off and on. Rules that send to a destination that's
 off still open alerts in the Console. An alert that fires while the destination is off isn't sent
 to it once it's on again. **Send test** still works on a destination that's off, to try it before
