@@ -4,7 +4,7 @@
 
 - Node.js 22.12 or later.
 - A Postgres database for Pro.
-- pg-boss 12.36 or later in each database Pro monitors. See [pg-boss versions](./versions.md).
+- pg-boss 12.36 or later in each app Pro monitors. See [pg-boss versions](./versions.md).
 - A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
 ## Install
@@ -46,14 +46,14 @@ Pro reads these settings at startup:
 | - | - | - |
 | `PGBOSS_PRO_DB_HOST` | Always | The host of Pro's database. |
 | `PGBOSS_PRO_DB_PASSWORD` | Always | The password of the role Pro connects to its database as. |
-| `DATABASE_URL` | Always | The databases Pro monitors. As in the dashboard, several are separated by `\|`, each with an optional name (`Production=postgres://…`). See [databases](./databases.md). |
-| `PGBOSS_PRO_SECRET_KEY` | Always | Encrypts the secrets Pro stores, such as webhook URLs, PagerDuty keys and the outgoing email password. Generate it once with `openssl rand -base64 32`. Pro needs at least 32 characters. |
-| `PGBOSS_PRO_SITE_URL` | In production | The Console's public address. Without it, emails, webhooks and PagerDuty carry no link to the alert. Behind a proxy that ends HTTPS, actions need it too. See [reverse proxy](../dashboard.md#reverse-proxy). |
-| `PGBOSS_PRO_TRUSTED_PROXIES` | Behind a reverse proxy on another host | The proxy's address. Pro then reads each client's address from `X-Forwarded-For`, for sign-in limits and the [audit log](./audit-log.md#address). |
+| `PGBOSS_PRO_SECRET_KEY` | Always | Encrypts the secrets Pro stores, such as each app's connection, webhook URLs, PagerDuty keys and the outgoing email password. Generate it once with `openssl rand -base64 32`. Pro needs at least 32 characters. |
+| `PGBOSS_PRO_SITE_URL` | In production | The public address of the Pro Console and Pro API. Without it, emails, webhooks and PagerDuty carry no link to the alert. Behind a reverse proxy that ends HTTPS, actions need it too. See [reverse proxy](../dashboard.md#reverse-proxy). |
+| `PGBOSS_PRO_TRUSTED_PROXIES` | Behind a reverse proxy on another host | The reverse proxy's address. Pro then reads each client's address from `X-Forwarded-For`, for sign-in limits and the [audit log](./audit-log.md#address). |
 | `PGBOSS_PRO_SETUP_TOKEN` | With several instances behind a load balancer | One setup token the instances share, set before the first start. The setup link then works on every instance. |
 
-Keep the secret key with the application's other secrets and set it on every start. A different key means entering those secrets again. Without one, Pro starts
-and logs a warning. The screens that store secrets then refuse to save. See [secrets](./administration.md#secrets).
+Keep the secret key with the application's other secrets and set it on every start. A different key means entering those secrets again, each app's connection among them. Without a key, Pro logs why at startup and serves no pages. See [secrets](./administration.md#secrets).
+
+Pro doesn't read `DATABASE_URL` or `PGBOSS_SCHEMA`. The apps Pro monitors are added in the Pro Console. See [Apps](./apps.md).
 
 The other settings for Pro's database default to the role and database above:
 
@@ -66,11 +66,11 @@ The other settings for Pro's database default to the role and database above:
 
 `PGBOSS_PRO_DB_CONNECTION_STRING` replaces them all, for a host that gives out a connection string. [Environment variables](./environment.md) lists every variable.
 
-## Monitored database permissions
+## App permissions
 
-In each monitored database's pg-boss schema, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Pro doesn't install pg-boss in a monitored database, supervise it, run its schedules or migrate it.
+In each app's pg-boss schema, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Pro doesn't install pg-boss in an app's database, supervise it, run its schedules or migrate it.
 
-The application's pg-boss creates its schema when it first starts. pg-boss's [CLI](../cli.md) can also create the schema ahead of time. Until then, the Console says pg-boss isn't installed in that database.
+The application's pg-boss creates its schema when it first starts. pg-boss's [CLI](../cli.md) can also create the schema ahead of time. Until then, the Pro Console says pg-boss isn't installed in the app's database.
 
 Connect as the role that owns pg-boss's schema, because some of Pro's changes need the owner. Creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner.
 
@@ -87,7 +87,6 @@ Start Pro with the settings above:
 ```bash
 PGBOSS_PRO_DB_HOST="localhost" \
 PGBOSS_PRO_DB_PASSWORD="<password>" \
-DATABASE_URL="postgres://user:password@localhost:5432/mydb" \
 PGBOSS_PRO_SECRET_KEY="<your secret key>" \
 npx @pg-boss/pro
 ```
@@ -103,10 +102,14 @@ Open the setup link (for example `http://localhost:3000/setup?token=…`) and cr
 ![Creating the first global administrator](../images/pro/setup.webp){.light-only}
 ![Creating the first global administrator](../images/pro/setup-dark.webp){.dark-only}
 
+## First app
+
+After setup, Pro opens **Settings › Apps**. Press **Add app** and enter a name, the connection to the database the application's pg-boss uses, and its pg-boss schema. **Test connection** checks the connection before you add the app. Add one app for each pg-boss Pro monitors, such as Production and Staging. See [Apps](./apps.md).
+
 ## First alert
 
-Pro starts every database with [default rules](./alert-rules.md#default-rules). Five of them are
-on. Their alerts show in the Console from the start. To have them sent:
+Pro starts every app with [default rules](./alert-rules.md#default-rules). Five of them are
+on. Their alerts show in the Pro Console from the start. To have them sent:
 
 1. Add a destination under **Settings › Destinations**: an email list, a webhook or PagerDuty. Pro
    offers to send the rules that are on to it.
@@ -114,7 +117,7 @@ on. Their alerts show in the Console from the start. To have them sent:
    Resend API key.
 3. Press **Send test** on the destination's row. It sends a sample alert that fires and then resolves.
 
-Webhook and PagerDuty destinations and outgoing email store secrets and need `PGBOSS_PRO_SECRET_KEY`. See [destinations](./destinations.md).
+See [destinations](./destinations.md) for each kind.
 
 ## Docker
 
@@ -143,7 +146,6 @@ Pass the settings when the container starts, not when the image is built:
 docker run -p 3000:3000 \
   -e PGBOSS_PRO_DB_HOST="db" \
   -e PGBOSS_PRO_DB_PASSWORD="<password>" \
-  -e DATABASE_URL="postgres://user:password@db:5432/mydb" \
   -e PGBOSS_PRO_SECRET_KEY="<your secret key>" \
   pgboss-pro
 ```
@@ -156,7 +158,7 @@ Back up Pro's database like any other, with `pg_dump` or the host's snapshots:
 pg_dump --format=custom --file=pgboss_pro.dump --host=localhost --username=pgboss_pro pgboss_pro
 ```
 
-The backup holds Pro's accounts, rules, alerts, audit log and the notifications waiting to send. It doesn't hold `PGBOSS_PRO_SECRET_KEY`. Keep a copy of the key too, stored apart from the backup. Restored with another key, Pro keeps everything except the stored secrets, which need entering again. See [secrets](./administration.md#secrets).
+The backup holds Pro's apps, accounts, rules, alerts, audit log and the notifications waiting to send. It doesn't hold `PGBOSS_PRO_SECRET_KEY`. Keep a copy of the key too, stored apart from the backup. Restored with another key, Pro keeps everything except the stored secrets, which need entering again. See [secrets](./administration.md#secrets).
 
 ## Upgrading
 

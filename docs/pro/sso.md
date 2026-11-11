@@ -28,7 +28,7 @@ under **Accounts**. That setting needs the email domains that get an account. Pr
 matches each domain exactly. The domain `example.com` doesn't admit `mail.example.com`. Without that limit,
 anyone with a mailbox at a provider with public sign-up, such as Google or Auth0,
 would get an account. A new account starts as viewer or operator on
-all databases, or with no role until a global admin assigns it a role, but never
+all apps, or with no role until a global admin assigns it a role, but never
 as admin.
 
 The first sign-in through the provider links the account to that person's id at

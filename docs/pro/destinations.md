@@ -1,7 +1,7 @@
 # Destinations
 
 Destinations live under **Settings › Destinations** and are shared by the rules of every
-database. A destination is an email, a webhook, or PagerDuty. **Send
+app. A destination is an email, a webhook, or PagerDuty. **Send
 test** sends a sample alert that fires and then resolves, to show the
 receiver handling both.
 
@@ -23,7 +23,7 @@ the resolve, while the event stays open in Pro. A resolve goes once, and only
 to the destinations the fire went to. A send that fails is tried again by its
 [send queue](#send-queues).
 
-An alert that fires while its rule has no destination shows only in the Console. It isn't sent
+An alert that fires while its rule has no destination shows only in the Pro Console. It isn't sent
 when the rule gets a destination later. Adding the first destination never sends a backlog of
 open alerts.
 
@@ -35,18 +35,18 @@ of them the new destination. **Not now** leaves them as they are.
 ![The offer to send the rules that are on to a new destination](../images/pro/destination-routing-dark.webp){.dark-only}
 
 The switch on each destination's row turns it off and on. Rules that send to a destination that's
-off still open alerts in the Console. An alert that fires while the destination is off isn't sent
+off still open alerts in the Pro Console. An alert that fires while the destination is off isn't sent
 to it once it's on again. **Send test** still works on a destination that's off, to try it before
 turning it on.
 
 **Links in alerts.** Emails, webhooks and PagerDuty link each alert to its page
-when Pro knows the Console's public address. Pro builds that address from [`PGBOSS_PRO_SITE_URL`](./environment.md),
+when Pro knows the Pro Console's public address. Pro builds that address from [`PGBOSS_PRO_SITE_URL`](./environment.md),
 or `siteUrl` for a [mounted handler](./mount.md), plus the base path. Without
 that address, the notifications carry no link. The page shows which address the links use.
 
 ## Send queues
 
-Each destination has a pg-boss queue of its own among [Pro queues](./databases.md#pro-queues). The
+Each destination has a pg-boss queue of its own among [Pro queues](./apps.md#pro-queues). The
 evaluator queues every fire and resolve to it, and every Pro replica sends from it. A destination
 gets one send at a time, which keeps a slow or rate-limited destination from holding up any other's.
 
@@ -111,8 +111,8 @@ receive Pro's alerts with no relay:
     "labels": {
       "alertname": "Queue stalled or falling behind",
       "severity": "critical",
-      "database": "pgboss",
-      "database_name": "Production",
+      "app": "production",
+      "app_name": "Production",
       "queue": "payments",
       "kind": "stalled",
       "rule_id": "…",
@@ -167,9 +167,9 @@ receive Pro's alerts with no relay:
 Pro posts to PagerDuty's Events API v2 with the integration key of an Events API
 v2 integration on the service to page. Each alert triggers one incident,
 which PagerDuty deduplicates by the alert's id. Pro resolves the incident when the alert closes. The
-incident's summary is the alert's title, its source is the database's name, and
+incident's summary is the alert's title, its source is the app's name, and
 its severity is `critical` or `warning`. Its details hold the alert's why, rule
-and data, with a link to the alert once the Console's address is set. Pro stores
+and data, with a link to the alert once the Pro Console's address is set. Pro stores
 the key encrypted, and records a key PagerDuty refuses as a failed delivery.
 
 Secrets need `PGBOSS_PRO_SECRET_KEY`. See [Secrets](./administration.md#secrets).

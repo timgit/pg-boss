@@ -1,27 +1,27 @@
 # Metrics
 
-`/metrics` serves Prometheus metrics for the databases an [API token](./api-tokens.md)'s service account can see. No metric counts the job table. The metrics come only from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
+`/metrics` serves Prometheus metrics for the apps an [API token](./api-tokens.md)'s service account can see. No metric counts the job table. The metrics come only from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
 
 Pro's queue health, Status page and alerts don't need `/metrics`. The endpoint is for a team that already
 collects metrics with Prometheus, or with another tool that reads the Prometheus format.
 
 | Metric | Labels | What |
 | - | - | - |
-| `pgboss_database_up` | `database` | 1, or 0 when the database could not be read. |
-| `pgboss_queue_jobs` | `database`, `queue`, `state` | Jobs by state: ready, active, deferred, queued, blocked, failed, total. |
-| `pgboss_queue_arrived_per_minute` | `database`, `queue` | Jobs created per minute over the last hour. |
-| `pgboss_queue_finished_per_minute` | `database`, `queue` | Jobs completed or failed per minute over the last hour. |
-| `pgboss_queue_wait_seconds` | `database`, `queue`, `quantile` | Time from ready to started over the last hour, at 0.5, 0.95 and 0.99. |
-| `pgboss_queue_run_seconds` | `database`, `queue`, `quantile` | Time from started to finished over the last hour. |
-| `pgboss_queue_health` | `database`, `queue`, `verdict` | 1 for the queue's verdict: ok, recovering, absorbing, behind or stalled. |
-| `pgboss_alerts_open` | `database`, `severity`, `acknowledged` | Open alerts. |
-| `pgboss_instance_live` | `database`, `instance`, `name`, `host` | 1 while an instance is live, 0 once it has gone quiet. |
-| `pgboss_instance_pool_connections` | `database`, `instance`, `name`, `host`, `state` | Its pool at the last heartbeat: total, idle, waiting. |
-| `pgboss_instance_cpu_cores` | `database`, `instance`, `name`, `host` | CPU cores its process used. |
-| `pgboss_instance_memory_bytes` | `database`, `instance`, `name`, `host` | Its process's resident memory. |
+| `pgboss_app_up` | `app` | 1, or 0 when the app's database could not be read. |
+| `pgboss_queue_jobs` | `app`, `queue`, `state` | Jobs by state: ready, active, deferred, queued, blocked, failed, total. |
+| `pgboss_queue_arrived_per_minute` | `app`, `queue` | Jobs created per minute over the last hour. |
+| `pgboss_queue_finished_per_minute` | `app`, `queue` | Jobs completed or failed per minute over the last hour. |
+| `pgboss_queue_wait_seconds` | `app`, `queue`, `quantile` | Time from ready to started over the last hour, at 0.5, 0.95 and 0.99. |
+| `pgboss_queue_run_seconds` | `app`, `queue`, `quantile` | Time from started to finished over the last hour. |
+| `pgboss_queue_health` | `app`, `queue`, `verdict` | 1 for the queue's verdict: ok, recovering, absorbing, behind or stalled. |
+| `pgboss_alerts_open` | `app`, `severity`, `acknowledged` | Open alerts. |
+| `pgboss_instance_live` | `app`, `instance`, `name`, `host` | 1 while an instance is live, 0 once it has gone quiet. |
+| `pgboss_instance_pool_connections` | `app`, `instance`, `name`, `host`, `state` | Its pool at the last heartbeat: total, idle, waiting. |
+| `pgboss_instance_cpu_cores` | `app`, `instance`, `name`, `host` | CPU cores its process used. |
+| `pgboss_instance_memory_bytes` | `app`, `instance`, `name`, `host` | Its process's resident memory. |
 
-A service account that is a [global admin](./roles.md#global-admin) also gets [Pro's own queues](./databases.md#pro-queues),
-as the database menu shows them only to a global admin. They come under `database="pro_queues"`:
+A service account that is a [global admin](./roles.md#global-admin) also gets [Pro's own queues](./apps.md#pro-queues),
+as the app menu shows them only to a global admin. They come under `app="pro_queues"`:
 the alert evaluator's queue and a send queue for each destination. The metrics of a send queue
 carry a `destination` label with the destination's name. Pro's queues have no `pgboss_alerts_open`.
 A viewer's token, as below, leaves them out.

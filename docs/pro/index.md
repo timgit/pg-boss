@@ -57,20 +57,20 @@ Pro is built and supported by the author of pg-boss. Upgrading from the [dashboa
   <figure>
     <img class="light-only" src="../images/pro/tile-group.webp" :data-zoom-src="group" alt="A group and its roles">
     <img class="dark-only" src="../images/pro/tile-group-dark.webp" :data-zoom-src="groupDark" alt="A group and its roles">
-    <figcaption><a href="/pro/accounts#groups">Groups and roles</a>Accounts and groups, with roles per database.</figcaption>
+    <figcaption><a href="/pro/accounts#groups">Groups and roles</a>Accounts and groups, with roles per app.</figcaption>
   </figure>
 </div>
 
 ## Features
 
-Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro API and metrics are set per connected database.
+Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro API and metrics are set per app, each one pg-boss schema in one database.
 
 | Feature | Dashboard | Pro |
 | - | :-: | :-: |
 | Overview and queues, with each queue's status and its counts over time | ✓ | ✓ |
 | Jobs, filtered by state, queue and payload, with each job's details | ✓ | ✓ |
 | Schedules, subscriptions and warnings | ✓ | ✓ |
-| [Multiple connected databases or schemas](./databases.md), such as Production and Staging | ✓ | ✓ |
+| [Several apps](./apps.md), such as Production and Staging, added in the Pro Console | ✓ | ✓ |
 | [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
 | [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, instances restarting, gone quiet or at a limit, and failed operations, each with its own thresholds and [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
 | Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |
@@ -80,7 +80,7 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 | [Create and delete queues and schedules](./changes.md) | | ✓ |
 | [Retry, cancel and resume a job](./changes.md) | ✓ | ✓, by role and in the audit log |
 | Sign-in | One username and password shared by every user, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
-| [Groups](./accounts.md), with [roles](./roles.md) per database | | ✓ |
+| [Groups](./accounts.md), with [roles](./roles.md) per app | | ✓ |
 | [Single sign-on](./sso.md) through an existing OpenID Connect provider | | ✓ |
 | An [audit log](./audit-log.md) of every change | | ✓ |
 | The [Pro API](./api.md), through which a deploy script, a CI job or a worker in another language sends, fetches, completes and retries jobs without a Node.js client | | ✓ |
@@ -92,7 +92,7 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 
 ## Pricing
 
-Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or databases. A subscription includes every new version and support. When an annual subscription ends, or a monthly subscription ends after 12 months or more, the organization keeps the right to install and use every version released until then. See [Cancellation](./license.md#cancellation).
+Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or apps. A subscription includes every new version and support. When an annual subscription ends, or a monthly subscription ends after 12 months or more, the organization keeps the right to install and use every version released until then. See [Cancellation](./license.md#cancellation).
 
 Pro is sold through Polar, which takes the payment and shows the license key on its purchases page.
 

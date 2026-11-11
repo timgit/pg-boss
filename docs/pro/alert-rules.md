@@ -2,7 +2,7 @@
 
 ## Default rules
 
-Every database starts with one rule for each check Pro can run. Five are on:
+Every app starts with one rule for each check Pro can run. Five are on:
 
 - **Queue stalled or falling behind**: the queue's health verdict, read from its
   throughput.
@@ -65,8 +65,7 @@ that has no destination asks where to send its alerts, and offers a destination
 that is on. A default
 rule can be edited and turned off,
 but never deleted. **Reset to default** puts back its original definition.
-A database added to `DATABASE_URL` later gets its default rules on the
-evaluator's next pass.
+An app added later gets its default rules on the evaluator's next pass.
 
 ![The rules list](../images/pro/alert-rules.webp){.light-only}
 ![The rules list](../images/pro/alert-rules-dark.webp){.dark-only}
@@ -128,7 +127,7 @@ seconds). On `waitP95Seconds`, `"value": 600` is ten minutes.
 ```json
 {
   "kind": "threshold",
-  "database": "production",
+  "app": "production",
   "queues": { "match": "glob", "values": ["billing-*"], "except": ["billing-dlq"] },
   "when": {
     "match": "all",
@@ -216,7 +215,7 @@ that point at them.
   of its own. In transaction mode, the send queues also lose LISTEN/NOTIFY and find
   new sends by polling every 10 seconds.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
-  the Console, and tries again each minute until it runs. When Pro is mounted in a host
+  the Pro Console, and tries again each minute until it runs. When Pro is mounted in a host
   application, the evaluator starts on the first request the handler serves.
 - On SIGTERM or SIGINT, or when a host application calls the handler's
   `close()`, a pass in progress gets up to 20 seconds to finish before the

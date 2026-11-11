@@ -1,6 +1,6 @@
 # Jobs and queues
 
-The dashboard can retry, cancel or resume one job, and records nothing about who did. Pro adds the changes below. It checks each change against the user's [role](./roles.md) on the database and records the change in the [audit log](./audit-log.md) before making it through pg-boss itself. If Pro can't record a change, it doesn't make it.
+The dashboard can retry, cancel or resume one job, and records nothing about who did. Pro adds the changes below. It checks each change against the user's [role](./roles.md) on the app and records the change in the [audit log](./audit-log.md) before making it through pg-boss itself. If Pro can't record a change, it doesn't make it.
 
 ![A failed job's page, with its actions](../images/pro/job.webp){.light-only}
 ![A failed job's page, with its actions](../images/pro/job-dark.webp){.dark-only}
@@ -16,4 +16,4 @@ The dashboard can retry, cancel or resume one job, and records nothing about who
 
 For many jobs at once, use [Operations](./operations.md).
 
-On a database whose pg-boss schema isn't the schema this Pro is built for, these controls are gone and a banner shows why. See [pg-boss versions](./versions.md).
+On an app whose pg-boss schema isn't the schema this Pro is built for, these controls are gone and a banner shows why. See [pg-boss versions](./versions.md).
