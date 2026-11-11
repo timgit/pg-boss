@@ -28,6 +28,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '~/components/ui/sidebar'
+import { term } from '~/lib/terms'
 
 const navigation = [
   { name: 'Overview', href: '/', icon: HomeIcon },
@@ -259,11 +260,11 @@ export function AppSidebar () {
   const [searchParams] = useSearchParams()
   const { setOpenMobile, state } = useSidebar()
 
-  const dbParam = searchParams.get('db')
+  const dbParam = searchParams.get(term.param)
 
   const buildHref = (path: string) => {
     if (!dbParam) return path
-    return `${path}?db=${dbParam}`
+    return `${path}?${term.param}=${dbParam}`
   }
 
   return (

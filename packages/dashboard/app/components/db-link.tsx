@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router";
 import type { ComponentProps } from "react";
 import { cn } from "~/lib/utils";
+import { term } from "~/lib/terms";
 
 type LinkProps = ComponentProps<typeof Link>;
 type To = LinkProps["to"];
@@ -10,8 +11,8 @@ type To = LinkProps["to"];
 export function resolveDbHref(to: To, dbParam: string | null): string {
   if (typeof to === "string") {
     const url = new URL(to, "http://localhost");
-    if (dbParam && !url.searchParams.has("db")) {
-      url.searchParams.set("db", dbParam);
+    if (dbParam && !url.searchParams.has(term.param)) {
+      url.searchParams.set(term.param, dbParam);
     }
     return url.pathname + url.search + url.hash;
   } else if (typeof to === "object" && to !== null) {
@@ -21,8 +22,8 @@ export function resolveDbHref(to: To, dbParam: string | null): string {
     const hash = to.hash || "";
 
     const params = new URLSearchParams(existingSearch.replace(/^\?/, ""));
-    if (dbParam && !params.has("db")) {
-      params.set("db", dbParam);
+    if (dbParam && !params.has(term.param)) {
+      params.set(term.param, dbParam);
     }
     const search = params.toString();
     return pathname + (search ? `?${search}` : "") + hash;
@@ -33,7 +34,7 @@ export function resolveDbHref(to: To, dbParam: string | null): string {
 // Hook form of resolveDbHref, reading the current db param from the URL.
 export function useDbHref(to: To): string {
   const [searchParams] = useSearchParams();
-  return resolveDbHref(to, searchParams.get("db"));
+  return resolveDbHref(to, searchParams.get(term.param));
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
+import { term } from '~/lib/terms'
 
 interface RootLoaderData {
   databases: PublicDatabase[]
@@ -82,18 +83,18 @@ export function DatabaseSwitcher () {
   const select = (id: string) => {
     const pathname = switchPathname(location.pathname, routeParams)
     const next = new URLSearchParams(pathname === location.pathname ? params : undefined)
-    next.set('db', id)
+    next.set(term.param, id)
     navigate({ pathname, search: `?${next.toString()}` })
   }
 
   if (databases.length + internal.length <= 1) {
-    return <span className="inline-flex h-8 min-w-0 items-center gap-2 text-sm" title="Database">{label}</span>
+    return <span className="inline-flex h-8 min-w-0 items-center gap-2 text-sm" title={term.One}>{label}</span>
   }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={`Database: ${current.name}. Switch database`}
+        aria-label={`${term.One}: ${current.name}. Switch ${term.one}`}
         className="-ml-2 inline-flex h-8 min-w-0 cursor-pointer items-center gap-2 max-sm:gap-1.5 rounded-md px-2 text-sm text-[var(--text-tertiary)] hover:bg-[var(--surface-hover)] data-popup-open:bg-[var(--surface-hover)]"
       >
         {label}
@@ -103,7 +104,7 @@ export function DatabaseSwitcher () {
         {/* Each section a group named by its heading, and each database a radio item: one is
             the database every page reads, and a screen reader says which. */}
         <DropdownMenuGroup aria-labelledby={`${ids}-databases`}>
-          <DropdownMenuLabel id={`${ids}-databases`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Databases</DropdownMenuLabel>
+          <DropdownMenuLabel id={`${ids}-databases`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">{term.Many}</DropdownMenuLabel>
           {databases.map((db, k) => (
             <DropdownMenuItem
               key={db.id}
@@ -146,7 +147,7 @@ export function DatabaseSwitcher () {
           </>
         )}
         <DropdownMenuSeparator />
-        <p className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]">Each database has its own queues, jobs and history.</p>
+        <p className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]">Each {term.one} has its own queues, jobs and history.</p>
       </DropdownMenuContent>
     </DropdownMenu>
   )

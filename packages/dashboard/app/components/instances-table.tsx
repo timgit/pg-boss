@@ -21,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~
 import { DbLink } from '~/components/db-link'
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '~/components/ui/popover'
 import { cn } from '~/lib/utils'
+import { term } from '~/lib/terms'
 
 // Heartbeats land every 30 seconds by default, so a registry read once goes stale within a minute.
 const REFRESH_MS = 15_000
@@ -214,7 +215,7 @@ function AboutList ({ children }: { children: ReactNode }) {
 
 /** What the list says when no row is shown. */
 export function emptyMessage (total: number, filters: InstanceFilters): string {
-  if (total === 0) return 'No instance has registered in this database yet.'
+  if (total === 0) return `No instance has registered in this ${term.one} yet.`
   if (filters.buckets.size === 0) return 'Turn on a status above.'
   return 'No instances match. Clear the filter or turn on another status.'
 }
