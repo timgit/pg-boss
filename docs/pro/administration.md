@@ -28,5 +28,27 @@ one of these changes:
 - the SMTP server or user
 - the SSO issuer or client id
 
-Without the key it was encrypted with, Pro can't read a stored secret. After a lost key, enter every
-secret again, including each app's connection.
+### Key changes
+
+Without the key it was encrypted with, Pro can't read a stored secret. Pro reads one key, and
+changing the key means entering every secret again.
+
+The first time Pro starts with a key, it stores a check value encrypted with that key. Each start
+decrypts the check value. When that fails, Pro tries to decrypt every stored secret and reports only
+the secrets that fail. Pro logs them, and every global admin sees a banner on each page that lists
+them and where to enter them again:
+
+- each app's connection, in Settings › Apps
+- each destination's secrets and the outgoing email's password or API key, in Settings › Destinations
+- the SSO client secret, in Settings › SSO
+
+Settings › Apps and Settings › Destinations mark each secret that doesn't decrypt. Until it's
+entered again, Pro doesn't monitor the app, and the destination can't send. A delivery that fails
+for that reason names the secret and isn't retried. SSO sign-in fails until the client secret is
+entered again, and password sign-in keeps working. Restarting Pro with the earlier key also brings
+the secrets back.
+
+A check value that fails while every stored secret decrypts is stored again with the current key,
+and Pro reports nothing. After each save in Settings › Apps, Destinations or SSO, Pro tries every
+stored secret again. Once every stored secret decrypts, Pro stores the check value again with the
+current key and the banner goes.
