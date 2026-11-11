@@ -57,7 +57,7 @@ needs Bun 1.4.0 or later). See [Bun](#bun-driver).
 
 ## Compatibility flags
 
-The table lists what each behavior does differently from stock PostgreSQL, and the internal flag it
+The table lists each behavior's difference from stock PostgreSQL and the internal flag it
 maps to in the source.
 
 | Capability | Effect | Trade-off | Flag |
@@ -199,7 +199,7 @@ The [CLI](cli#migrate) runs the same builds directly after the migration.
   A `heartbeatSeconds` that appears after `work()` has checked the queue gets past that check. The
   setting can come from the job itself, or from the queue through `updateQueue()` or a
   `createQueue()` that `work()` ran ahead of. Each batch that carries the setting then fails before
-  its transaction opens. The error names where the setting came from.
+  its transaction opens. The error names the setting's source.
 - When something takes the claim away mid-handler and the handler then settles the job itself
   through `tx`, that settle comes back as a raw `40001` retry error instead of `affected: 0`. The
   transaction rolls back either way, which keeps the handler's writes from landing beside a job

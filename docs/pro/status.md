@@ -9,7 +9,7 @@ The **Status** page is laid out like a public status page and shows how each que
 
 Pro's alert evaluator runs a pass once a minute. Each pass adds the time since the previous run to the verdict the queue was last given. A queue too quiet or too new to judge isn't recorded for that time.
 
-When more than 3 minutes go by without a pass, as when Pro was stopped, the next pass replays the gap a minute at a time from the stats pg-boss kept. Each minute is judged as the evaluator would have judged it live. Time pg-boss has no stats for stays unrecorded. The first pass against an app replays as far back as those stats go. History starts with the stats pg-boss already holds (a week by default). Pro deletes history older than ninety days. The page header says when the last pass finished.
+When more than 3 minutes go by without a pass, as when Pro was stopped, the next pass replays the gap a minute at a time from the stats pg-boss kept. Each minute is judged as the evaluator would have judged it live. Time pg-boss has no stats for stays unrecorded. The first pass against an app replays as far back as those stats go. History starts with the stats pg-boss already holds (a week by default). Pro deletes history older than ninety days. The page header shows the time the last pass finished.
 
 ## Days
 

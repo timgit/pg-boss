@@ -8,7 +8,7 @@ queue and a [purge](#purge) that empties a queue.
 Describe the set: queues, state, how long ago the jobs were created, how many
 times they have been retried, and fields their `data` must contain. When a user
 presses **Preview**, the page counts the set up to 1,000 (more shows as 1,000+). The page then describes
-what will happen in one sentence and shows how the matches split across queues and a few of the
+the operation in one sentence and shows the matches per queue and a few of the
 actual jobs. Any change to the filter after the preview sets the count aside until the next preview.
 The queue picker searches queue names as you type. After a preview, the picker lists the queues with matching
 jobs first and shows each queue's count, with the most matches at the top.

@@ -36,7 +36,7 @@ CREATE ROLE pgboss_pro LOGIN PASSWORD '<password>';
 CREATE DATABASE pgboss_pro OWNER pgboss_pro;
 ```
 
-Pro uses pg-boss internally to run its alert evaluator and send notifications. Pro's own tables go in `public` and pg-boss's in `pgboss`. As the owner, the role can create both and migrate them after an upgrade.
+Pro uses pg-boss internally to run its alert evaluator and send notifications. Pro's own tables go in `public` and pg-boss uses its default schema `pgboss`. Running Pro as the db owner role will have the permissions to create the required database storage and run any migrations after a future upgrade.
 
 ## Configuration
 
@@ -46,12 +46,12 @@ Pro reads these settings at startup:
 | - | - | - |
 | `PGBOSS_PRO_DB_HOST` | Always | The host of Pro's database. |
 | `PGBOSS_PRO_DB_PASSWORD` | Always | The password of the role Pro connects to its database as. |
-| `PGBOSS_PRO_SECRET_KEY` | Always | Encrypts the secrets Pro stores, such as each app's connection, webhook URLs, PagerDuty keys and the outgoing email password. Generate it once with `openssl rand -base64 32`. Pro needs at least 32 characters. |
+| `PGBOSS_PRO_SECRET_KEY` | Always | The encryption secret key. This is used to encrypt secrets such as each app's connection settings, webhook URLs, and email password. This should be at least 32 characters. You can generate one with `openssl rand -base64 32`. |
 | `PGBOSS_PRO_SITE_URL` | In production | The public address of the Pro Console and Pro API. Without it, emails, webhooks and PagerDuty carry no link to the alert. Behind a reverse proxy that ends HTTPS, actions need it too. See [reverse proxy](../dashboard.md#reverse-proxy). |
 | `PGBOSS_PRO_TRUSTED_PROXIES` | Behind a reverse proxy on another host | The reverse proxy's address. Pro then reads each client's address from `X-Forwarded-For`, for sign-in limits and the [audit log](./audit-log.md#address). |
 | `PGBOSS_PRO_SETUP_TOKEN` | With several instances behind a load balancer | One setup token the instances share, set before the first start. The setup link then works on every instance. |
 
-Keep the secret key with the application's other secrets and set it on every start. A different key means entering those secrets again, each app's connection among them. Without a key, Pro logs why at startup and serves no pages. See [secrets](./administration.md#secrets).
+Store the encryption secret key in another secret store. Rotating the secret key requires re-entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error at startup and serves no pages. See [secrets](./administration.md#secrets).
 
 Pro doesn't read `DATABASE_URL` or `PGBOSS_SCHEMA`. The apps Pro monitors are added in the Pro Console. See [Apps](./apps.md).
 

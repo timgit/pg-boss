@@ -620,7 +620,7 @@ such a job runs it again on its own without resuming the original flow.
 The destination can refuse a re-created copy because its `short`, `stately` or
 `exclusive` policy already holds a job with the same `singletonKey` (or an earlier job in the
 same batch does). The job isn't lost. It stays in the dead letter queue in the `failed` state.
-Its `output` records why (`reason: 'redrive_conflict'`, plus the `destination`, `policy`,
+Its `output` records the reason (`reason: 'redrive_conflict'`, plus the `destination`, `policy`,
 `singletonKey` and a `message`). Once the job it collided with has finished, retry the refused
 job to make it a redrive candidate again. Otherwise the dead letter queue's `deleteAfterSeconds`
 removes it like any other failed job.

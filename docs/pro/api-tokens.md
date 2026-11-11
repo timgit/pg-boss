@@ -33,7 +33,7 @@ expires within 14 days.
 
 ## Tokens
 
-A token is `pgbp_` followed by 43 characters. Pro shows it once, at creation. Pro keeps only its hash and its first characters, to tell tokens apart. Each token expires after 30, 90 or 365 days or never. Any token can be revoked. Pro records when and where a token was last used, at most once a minute.
+A token is `pgbp_` followed by 43 characters. Pro shows it once, at creation. Pro keeps only its hash and its first characters, to tell tokens apart. Each token expires after 30, 90 or 365 days or never. Any token can be revoked. Pro records the time and address of a token's last use, at most once a minute.
 
 A client sends the token in an `Authorization: Bearer` header:
 
@@ -45,4 +45,4 @@ Tokens work only on the Pro API and [`/metrics`](./metrics.md). The Pro Console'
 
 ## Audit
 
-The [audit log](./audit-log.md) records what a token changes under its service account's name, with the token that did it. After a leaked token is revoked, the log shows what it did. The calls a producer or worker makes at volume (sending, fetching, completing and failing jobs) are recorded only when the service account is set to record them.
+The [audit log](./audit-log.md) records each change a token makes under its service account's name, with the token that made it. After a leaked token is revoked, the log shows every change it made. The calls a producer or worker makes at volume (sending, fetching, completing and failing jobs) are recorded only when the service account is set to record them.

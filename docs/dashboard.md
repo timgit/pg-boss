@@ -25,21 +25,21 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 
 ### Overview
 
-The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been cancelled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the server's connection limit between pg-boss, other applications and what is free. The most recent warnings are under it.
+The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been cancelled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the server's connection limit between pg-boss, other applications and the connections still free. The most recent warnings are under it.
 
 ![Overview page](./images/dashboard-overview.webp){.light-only}
 ![Overview page](./images/dashboard-overview-dark.webp){.dark-only}
 
 ### Jobs
 
-Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The queue filter searches queue names as you type and lists the first 20 matches and says when more match. The state filter starts on unfinished (created, retry and active), and also offers all states or any single state. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, cancelled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`). **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
+Recently created jobs across all queues. Filter by job ID, queue, state and minimum retry count. The queue filter searches queue names as you type and lists the first 20 matches, with a note when more match. The state filter starts on unfinished (created, retry and active), and also offers all states or any single state. The advanced filters match on keys inside the job's `data` or `output` JSON. The list shows the newest created jobs first, or the newest finished first when you filter by completed, cancelled or failed. **Manage view** adds custom columns from job fields (for example `data.tenantId`). **Copy link** copies a URL with the current filters and columns. Clicking a job opens its detail page.
 
 ![Jobs page](./images/dashboard-jobs.webp){.light-only}
 ![Jobs page](./images/dashboard-jobs-dark.webp){.dark-only}
 
 ### Job detail
 
-One job: its state, what it's waiting for or why it stopped, and its data and output. A failed job leads with its error and the attempt it failed on. A sidebar beside the error shows the job's timeline, retries and configuration. A running job shows how long it has been running, its heartbeat, and a countdown to its expiration. The page picks up a new state without a reload. A completed job opens on its output.
+One job: its state, the reason it's waiting or stopped, and its data and output. A failed job leads with its error and the attempt it failed on. A sidebar beside the error shows the job's timeline, retries and configuration. A running job shows how long it has been running, its heartbeat, and a countdown to its expiration. The page picks up a new state without a reload. A completed job opens on its output.
 
 ![A failed job's page](./images/dashboard-job.webp){.light-only}
 ![A failed job's page](./images/dashboard-job-dark.webp){.dark-only}
@@ -50,9 +50,9 @@ The timeline shows the times the job's row keeps. Earlier attempts appear only a
 
 A failed job has **Retry job**, a cancelled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. Each calls pg-boss's own [`retry()`, `cancel()` or `resume()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes. The dashboard doesn't record who made them.
 
-The dashboard's copy of `pg-boss` must be on the database's schema version, because pg-boss makes the change. On any other version, pages still read and the page says why the change was refused. Set `PGBOSS_DASHBOARD_READ_ONLY=true` to hide the buttons and refuse every change.
+The dashboard's copy of `pg-boss` must be on the database's schema version, because pg-boss makes the change. On any other version, pages still read. A refused change shows the reason on the page. Set `PGBOSS_DASHBOARD_READ_ONLY=true` to hide the buttons and refuse every change.
 
-A job copied into a dead letter queue shows why it's there (taken from the original job's output) and a lineage chain from the first job to this job. The job records only the first job (the root) and the job it was copied from (the source). Any hops between them show as a gap. Select the root or the source to see that job's timeline. The dashboard reads the timeline from that job's row while the row still exists, or from what was copied onto this job after the row is deleted. A root redriven into a different queue shows as not found, because the dashboard looks up the root in the queue a redrive returns jobs to.
+A job copied into a dead letter queue shows the reason it's there (taken from the original job's output) and a lineage chain from the first job to this job. The job records only the first job (the root) and the job it was copied from (the source). Any hops between them show as a gap. Select the root or the source to see that job's timeline. The dashboard reads the timeline from that job's row while the row still exists, or from what was copied onto this job after the row is deleted. A root redriven into a different queue shows as not found, because the dashboard looks up the root in the queue a redrive returns jobs to.
 
 ### Queues
 
@@ -87,7 +87,7 @@ Schedules registered with `boss.schedule()`. The list shows the target queue, op
 
 ### Subscriptions
 
-Events registered with [`boss.subscribe()`](./api/pubsub.md). Each row is an event with every queue subscribed to it. Sort by event, queue count or when a queue last subscribed. A queue's page shows how many events it is subscribed to and links to this page filtered to those events.
+Events registered with [`boss.subscribe()`](./api/pubsub.md). Each row is an event with every queue subscribed to it. Sort by event, queue count or the time a queue last subscribed. A queue's page shows how many events it is subscribed to and links to this page filtered to those events.
 
 ![Subscriptions page](./images/dashboard-subscriptions.webp){.light-only}
 ![Subscriptions page](./images/dashboard-subscriptions-dark.webp){.dark-only}
@@ -107,7 +107,7 @@ Three tiles sit above the list:
 
 ### Migrations
 
-Status of boss async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. The page lists each command's version, target table and status, and filters by status. Each command's page shows the SQL that was (or will be) executed, any error message, and when the command was queued, started and ended.
+Status of boss async migrations (BAM), the schema changes such as concurrent index builds that pg-boss runs outside the install transaction. The page lists each command's version, target table and status, and filters by status. Each command's page shows the SQL that was (or will be) executed, any error message, and the times the command was queued, started and ended.
 
 ![Migrations page](./images/dashboard-migrations.webp){.light-only}
 ![Migrations page](./images/dashboard-migrations-dark.webp){.dark-only}
@@ -127,7 +127,7 @@ Every warning pg-boss emitted while [`persistWarnings`](#enabling-warning-persis
 
 ### Matching pg-boss versions
 
-Dashboard 2.x reads a database on pg-boss schema version 32 or later (pg-boss 12.21 or later). Its version doesn't have to match the pg-boss your application runs. 2.0 has been run against every schema from 32 to 46 (pg-boss 12.38). Pages show what a newer schema stores, such as the count of jobs blocked by a flow parent from schema 44, and leave it out on an older schema.
+Dashboard 2.x reads a database on pg-boss schema version 32 or later (pg-boss 12.21 or later). Its version doesn't have to match the pg-boss your application runs. 2.0 has been run against every schema from 32 to 46 (pg-boss 12.38). Pages show the data a newer schema stores, such as the count of jobs blocked by a flow parent from schema 44, and leave that data out on an older schema.
 
 The dashboard does not migrate your schema. It doesn't appear in [`getInstances()`](./api/ops.md#getinstances-options), because it starts no pg-boss instance of its own.
 

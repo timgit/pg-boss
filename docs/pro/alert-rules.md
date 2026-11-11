@@ -24,7 +24,7 @@ because the count is net. A consumer slower than arrivals doesn't lower it. If p
 hasn't refreshed the queue's counts in its last three passes, the check skips the
 queue until the monitor refreshes them.
 
-The alert says which pg-boss instances have a `work()` on the queue. When no
+The alert names the pg-boss instances that have a `work()` on the queue. When no
 live instance has a `work()` on the queue, the alert names the last instance that did and how long that
 instance has been quiet. Jobs in a dead letter queue usually wait for a person.
 The check skips a queue that another queue names as its `deadLetter` until an
@@ -61,7 +61,7 @@ as a restart loop. Call `stop()` before the script exits.
 No rule sends a notification until it has a [destination](./destinations.md).
 Alerts from a rule with no destination still open and appear on the [Alerts](./alerts.md) page. A destination
 set later gets only the alerts that fire after it is set. Turning on a rule
-that has no destination asks where to send its alerts, and offers a destination
+that has no destination asks for a destination for its alerts, and offers a destination
 that is on. A default
 rule can be edited and turned off,
 but never deleted. **Reset to default** puts back its original definition.

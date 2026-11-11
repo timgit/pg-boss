@@ -68,7 +68,7 @@ Allowed policy values:
 
 * **deadLetter**, string
 
-  When a job fails after all its retries, pg-boss copies its payload into the queue named here. The copy is a job on the dead letter queue and runs under *that* queue's configuration. Its retry, retention, expiration, and heartbeat settings come from the dead letter queue. Ordering weight and group concurrency limits still apply, because the copy keeps the original job's `priority`, `singletonKey`, and `group`. The dead-lettered job also records where it came from in the `sourceName`, `sourceId`, `sourceCreatedOn`, `sourceRetryCount`, and `sourceOutput` fields. Its `sourceRootId` field names the first job in the chain and survives any number of redrives. See [`redrive()`](jobs#redrive-name-options).
+  When a job fails after all its retries, pg-boss copies its payload into the queue named here. The copy is a job on the dead letter queue and runs under *that* queue's configuration. Its retry, retention, expiration, and heartbeat settings come from the dead letter queue. Ordering weight and group concurrency limits still apply, because the copy keeps the original job's `priority`, `singletonKey`, and `group`. The dead-lettered job also records its source in the `sourceName`, `sourceId`, `sourceCreatedOn`, `sourceRetryCount`, and `sourceOutput` fields. Its `sourceRootId` field names the first job in the chain and survives any number of redrives. See [`redrive()`](jobs#redrive-name-options).
 
 * **warningQueueSize**, int
 

@@ -16,4 +16,4 @@ The dashboard can retry, cancel or resume one job, and records nothing about who
 
 For many jobs at once, use [Operations](./operations.md).
 
-On an app whose pg-boss schema isn't the schema this Pro is built for, these controls are gone and a banner shows why. See [pg-boss versions](./versions.md).
+On an app whose pg-boss schema isn't the schema this Pro is built for, these controls are gone and a banner names the app's schema version and the version this Pro is built for. See [pg-boss versions](./versions.md).

@@ -285,7 +285,7 @@ The check takes one measurement and reports two [`warning`](./events.md#warning)
 | `xmin_horizon` | vacuum runs and reclaims nothing | find and release whatever is pinning the horizon |
 | `autovacuum_disabled` | nothing is vacuuming the table at all | turn autovacuum back on, or vacuum on a schedule that keeps up |
 
-A pinned horizon is the precondition behind most reports of a Postgres queue degrading over time. The queue's own counters can't show it. A backlog caused by too few workers looks exactly like a backlog caused by vacuum reclaiming nothing. The check measures the damage directly. It reads `pg_stat_user_tables` for pg-boss's own job tables across two supervise passes. The first pass after a horizon is pinned doesn't warn. [Warning types](./events.md#warning-types) lists what each type fires on and what it carries.
+A pinned horizon is the precondition behind most reports of a Postgres queue degrading over time. The queue's own counters can't show it. A backlog caused by too few workers looks exactly like a backlog caused by vacuum reclaiming nothing. The check measures the damage directly. It reads `pg_stat_user_tables` for pg-boss's own job tables across two supervise passes. The first pass after a horizon is pinned doesn't warn. [Warning types](./events.md#warning-types) lists each type's trigger and payload.
 
 This option has no threshold to tune. A table qualifies at the point Postgres itself would vacuum it, which is `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor × n_live_tup`. The check reads per-table storage parameters before cluster settings. The autovacuum settings set the sensitivity. To watch one queue more or less closely, set them per table:
 
