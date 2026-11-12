@@ -31,7 +31,7 @@ describe("DbLink", () => {
 
   it("preserves db param from current URL", () => {
     vi.mocked(useSearchParams).mockReturnValue([
-      new URLSearchParams("db=production"),
+      new URLSearchParams("schema=production"),
       vi.fn(),
     ]);
 
@@ -41,7 +41,7 @@ describe("DbLink", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/queues?db=production");
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/queues?schema=production");
   });
 
   it("does not add db param if not present in current URL", () => {
@@ -56,7 +56,7 @@ describe("DbLink", () => {
 
   it("preserves existing query params in target URL", () => {
     vi.mocked(useSearchParams).mockReturnValue([
-      new URLSearchParams("db=staging"),
+      new URLSearchParams("schema=staging"),
       vi.fn(),
     ]);
 
@@ -68,28 +68,28 @@ describe("DbLink", () => {
 
     const href = screen.getByRole("link").getAttribute("href");
     expect(href).toContain("page=2");
-    expect(href).toContain("db=staging");
+    expect(href).toContain("schema=staging");
   });
 
   it("does not duplicate db param if already in target URL", () => {
     vi.mocked(useSearchParams).mockReturnValue([
-      new URLSearchParams("db=production"),
+      new URLSearchParams("schema=production"),
       vi.fn(),
     ]);
 
     render(
       <MemoryRouter>
-        <DbLink to="/queues?db=other">Link</DbLink>
+        <DbLink to="/queues?schema=other">Link</DbLink>
       </MemoryRouter>
     );
 
     // Should keep the target URL's db param, not add another
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/queues?db=other");
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/queues?schema=other");
   });
 
   it("keeps the target's hash after the db param", () => {
     vi.mocked(useSearchParams).mockReturnValue([
-      new URLSearchParams("db=mydb"),
+      new URLSearchParams("schema=mydb"),
       vi.fn(),
     ]);
 
@@ -99,12 +99,12 @@ describe("DbLink", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/queues/q/metrics?total=1&db=mydb#active");
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/queues/q/metrics?total=1&schema=mydb#active");
   });
 
   it("handles object form of to prop", () => {
     vi.mocked(useSearchParams).mockReturnValue([
-      new URLSearchParams("db=mydb"),
+      new URLSearchParams("schema=mydb"),
       vi.fn(),
     ]);
 
@@ -117,6 +117,6 @@ describe("DbLink", () => {
     const href = screen.getByRole("link").getAttribute("href");
     expect(href).toContain("/queues");
     expect(href).toContain("state=active");
-    expect(href).toContain("db=mydb");
+    expect(href).toContain("schema=mydb");
   });
 });

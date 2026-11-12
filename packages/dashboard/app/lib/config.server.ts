@@ -1,9 +1,8 @@
 import type { PublicDatabase } from './types'
 import type { DatabaseColor } from './database-colors'
 
-// Multi-database configuration support
-// Format: "name1=postgres://host1/db1|name2=postgres://host2/db2"
-// Or simply: "postgres://host1/db1|postgres://host2/db2" (names derived from database)
+// Each `DATABASE_URL` entry is one schema: "Production=postgres://host/db?schema=jobs|postgres://host2/db2".
+// The name before `=` and `?schema=` are both optional.
 
 export interface DatabaseConfig {
   id: string;      // URL-safe identifier
@@ -35,37 +34,64 @@ export function splitEnvList (value: string, separator: string): string[] {
 }
 
 /**
- * Parse DATABASE_URL and PGBOSS_SCHEMA environment variables
- * into a list of database configurations.
+ * Parse DATABASE_URL into a list of schemas: entries split on `|`, each an optional `Name=` and a
+ * connection string with an optional `?schema=`.
  */
 export function parseDatabaseConfig (): DatabaseConfig[] {
   const dbUrlEnv = process.env.DATABASE_URL || 'postgres://localhost/pgboss'
-  const schemaEnv = process.env.PGBOSS_SCHEMA || DEFAULT_SCHEMA
 
-  const urlParts = splitEnvList(dbUrlEnv, SEPARATOR)
-  const schemaParts = splitEnvList(schemaEnv, SEPARATOR)
-
-  return distinctIds(urlParts.map((part, index) => {
+  return distinctIds(splitEnvList(dbUrlEnv, SEPARATOR).map((part, index) => {
     // Check for "name=url" format
     const equalsIndex = part.indexOf('=')
 
     // Only treat as name=url if = comes before :// (to avoid matching postgres://user:pass@)
     const protocolIndex = part.indexOf('://')
-    if (equalsIndex > 0 && (protocolIndex === -1 || equalsIndex < protocolIndex)) {
-      return toDatabaseConfig({
-        name: part.substring(0, equalsIndex).trim(),
-        url: part.substring(equalsIndex + 1).trim(),
-        schema: schemaParts[index],
-      }, index)
-    }
+    const named = equalsIndex > 0 && (protocolIndex === -1 || equalsIndex < protocolIndex)
+    const name = named ? part.substring(0, equalsIndex).trim() : undefined
+    const { url, schema } = takeSchema(named ? part.substring(equalsIndex + 1).trim() : part)
 
-    return toDatabaseConfig({ url: part, schema: schemaParts[index] }, index)
+    return toDatabaseConfig({ name, url, schema }, index)
   }))
 }
 
 /**
- * Tell apart two entries that would share an id, as one database monitored under two schemas
- * does when neither is named. The first keeps its id; a later one takes its schema into its id and
+ * Take `schema` out of a connection string's query, because libpq refuses a parameter it doesn't
+ * know. The other parameters, such as `sslmode`, stay as written.
+ */
+export function takeSchema (connection: string): { url: string, schema?: string } {
+  const query = connection.indexOf('?')
+  if (query === -1) return { url: connection }
+
+  let schema: string | undefined
+  const rest = connection.slice(query + 1).split('&').filter((pair) => {
+    if (!pair.startsWith('schema=')) return true
+    schema = decodeURIComponent(pair.slice('schema='.length)) || undefined
+    return false
+  })
+  const base = connection.slice(0, query)
+
+  return { url: rest.length > 0 ? `${base}?${rest.join('&')}` : base, schema }
+}
+
+/**
+ * Stop at startup when `PGBOSS_SCHEMA` is set. The dashboard reads each schema from its entry in
+ * `DATABASE_URL`, and ignoring the variable would open a setup's `jobs` schema as `pgboss`.
+ */
+export function refuseSchemaVariable (): void {
+  const value = process.env.PGBOSS_SCHEMA?.trim()
+  if (!value) return
+
+  const example = /^[A-Za-z_][A-Za-z0-9_]*$/.test(value) ? value : 'jobs'
+
+  throw new Error(
+    "The dashboard doesn't read PGBOSS_SCHEMA. Unset it and name each schema on its connection string " +
+    `in DATABASE_URL, as in DATABASE_URL=postgres://host/db?schema=${example}.`
+  )
+}
+
+/**
+ * Tell apart two entries that would share an id, as two schemas in one database do when neither
+ * is named. The first keeps its id; a later one takes its schema into its id and
  * name. Shared, an id would scope a role to both and leave the second unreachable from the switcher.
  */
 function distinctIds (configs: DatabaseConfig[]): DatabaseConfig[] {
@@ -93,7 +119,7 @@ export interface DatabaseInput {
 
 /** Shared by the environment parser above and by `createDashboardHandler()`. */
 export function toDatabaseConfig ({ url, name, schema }: DatabaseInput, index: number): DatabaseConfig {
-  const displayName = name || extractDatabaseName(url) || `Database ${index + 1}`
+  const displayName = name || extractDatabaseName(url) || `Schema ${index + 1}`
 
   return {
     id: generateId(displayName, index),
@@ -127,7 +153,7 @@ function generateId (name: string, index: number): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-  return sanitized || `db-${index}`
+  return sanitized || `schema-${index}`
 }
 
 /**

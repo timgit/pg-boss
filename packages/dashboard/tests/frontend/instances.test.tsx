@@ -203,7 +203,7 @@ describe('InstancesTable', () => {
   it('says when nothing has registered', () => {
     renderTable([])
 
-    expect(screen.getByText('No instance has registered in this database yet.')).toBeInTheDocument()
+    expect(screen.getByText('No instance has registered in this schema yet.')).toBeInTheDocument()
   })
 })
 

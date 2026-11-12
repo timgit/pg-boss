@@ -12,14 +12,14 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 - **Queue Metrics**: Chart a queue's counts over time from its recorded history
 - **Schedules**: Each schedule with its queue, expression and next occurrence
 - **Subscriptions**: Each event and the queues subscribed to it
-- **Instances**: The pg-boss instances registered in the database, with their workers and options
+- **Instances**: The pg-boss instances registered in the schema, with their workers and options
 - **Migrations**: The async migration commands, such as index builds, and their status
 - **Job List**: View jobs with state and queue filtering
 - **Job Details**: View full job payloads, output data, and metadata
 - **Warning History**: Browse the warnings pg-boss emitted earlier, when `persistWarnings` is enabled
 - **Multi-Schema Support**: Monitor multiple pg-boss instances from a single dashboard
 - **Mobile Responsive**: Full functionality on mobile devices with collapsible sidebar
-- **Shareable URLs**: A shared URL opens the same database and filters
+- **Shareable URLs**: A shared URL opens the same schema and filters
 
 ## Pages
 
@@ -50,7 +50,7 @@ The timeline shows the times the job's row keeps. Earlier attempts appear only a
 
 A failed job has **Retry job**, a cancelled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. Each calls pg-boss's own [`retry()`, `cancel()` or `resume()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes. The dashboard doesn't record who made them.
 
-The dashboard's copy of `pg-boss` must be on the database's schema version, because pg-boss makes the change. On any other version, pages still read. A refused change shows the reason on the page. Set `PGBOSS_DASHBOARD_READ_ONLY=true` to hide the buttons and refuse every change.
+The dashboard's copy of `pg-boss` must be on the schema's version, because pg-boss makes the change. On any other version, pages still read. A refused change shows the reason on the page. Set `PGBOSS_DASHBOARD_READ_ONLY=true` to hide the buttons and refuse every change.
 
 A job copied into a dead letter queue shows the reason it's there (taken from the original job's output) and a lineage chain from the first job to this job. The job records only the first job (the root) and the job it was copied from (the source). Any hops between them show as a gap. Select the root or the source to see that job's timeline. The dashboard reads the timeline from that job's row while the row still exists, or from what was copied onto this job after the row is deleted. A root redriven into a different queue shows as not found, because the dashboard looks up the root in the queue a redrive returns jobs to.
 
@@ -94,7 +94,7 @@ Events registered with [`boss.subscribe()`](./api/pubsub.md). Each row is an eve
 
 ### Instances
 
-Every pg-boss instance registered in the database's [instance registry](./api/ops.md#getinstances-options). Each row shows an instance's status (live, quiet or stopped), the pg-boss version it runs, which of `supervise` and `schedule` it has on, and the queues it works. Filter by status, or by **Recent** for the instances that started, stopped or went quiet in the last 24 hours. An instance's page shows its pool, CPU, memory and event loop at its last heartbeat against the limits it read. Its workers and options follow, with non-default options listed first. Beside those cards, a process card shows the instance's id, connection name, start and last heartbeat, the connections Postgres has open under that name now, and any crash restarts (instances with the same name on the same host that ended without `stop()` in a row before this instance started). The registry needs pg-boss 12.36 or later (schema 44). On an older schema the page says so.
+Every pg-boss instance registered in the schema's [instance registry](./api/ops.md#getinstances-options). Each row shows an instance's status (live, quiet or stopped), the pg-boss version it runs, which of `supervise` and `schedule` it has on, and the queues it works. Filter by status, or by **Recent** for the instances that started, stopped or went quiet in the last 24 hours. An instance's page shows its pool, CPU, memory and event loop at its last heartbeat against the limits it read. Its workers and options follow, with non-default options listed first. Beside those cards, a process card shows the instance's id, connection name, start and last heartbeat, the connections Postgres has open under that name now, and any crash restarts (instances with the same name on the same host that ended without `stop()` in a row before this instance started). The registry needs pg-boss 12.36 or later (schema 44). On an older schema the page says so.
 
 Three tiles sit above the list:
 
@@ -167,8 +167,7 @@ Configure the dashboard with environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string(s) | `postgres://localhost/pgboss` |
-| `PGBOSS_SCHEMA` | pg-boss schema name(s) | `pgboss` |
+| `DATABASE_URL` | PostgreSQL connection string(s), each naming its pg-boss schema with `?schema=` (see [Multiple schemas](#multiple-schemas)) | `postgres://localhost/pgboss` |
 | `PORT` | Server port | `3000` |
 | `HOST` | Interface to listen on | `0.0.0.0` |
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
@@ -191,31 +190,33 @@ npx @pg-boss/dashboard
 
 Set both variables or neither. If only one is set, the dashboard throws an error on startup.
 
-### Multi-database configuration
+### Multiple schemas
 
-To monitor multiple pg-boss instances, separate connection strings with a pipe (`|`):
-
-```bash
-DATABASE_URL="postgres://host1/db1|postgres://host2/db2" npx @pg-boss/dashboard
-```
-
-You can name each database so you can tell them apart in the UI:
+Each entry in `DATABASE_URL` is one pg-boss schema. Name the schema on the connection string with `?schema=`. An entry without it reads the `pgboss` schema:
 
 ```bash
-DATABASE_URL="Production=postgres://prod/db|Staging=postgres://stage/db" npx @pg-boss/dashboard
+DATABASE_URL="postgres://localhost/mydb?schema=jobs" npx @pg-boss/dashboard
 ```
 
-If your databases use different schemas, list them in the same order, separated by pipes:
+The dashboard takes `schema` off the connection string before it connects. Other parameters, such as `sslmode`, reach Postgres as written.
+
+To monitor more than one schema, separate the entries with a pipe (`|`):
 
 ```bash
-DATABASE_URL="postgres://host1/db1|postgres://host2/db2" \
-PGBOSS_SCHEMA="pgboss|jobs" \
-npx @pg-boss/dashboard
+DATABASE_URL="postgres://host1/db1|postgres://host2/db2?schema=jobs" npx @pg-boss/dashboard
 ```
 
-Two unnamed entries for the same database, such as one database under two schemas, would share a name. The later entry shows its schema, as in `app (jobs)`. Name each entry to choose what shows instead.
+You can name each entry so you can tell them apart in the UI. An entry without a name is named after the database in its connection string:
 
-The top bar on every page starts with the name of the database being shown, and a colored dot that marks its place in the configuration. When you configure more than one database, the name opens a menu to switch between them. Switching keeps you on the same page. From a page about one item, such as a queue or a job, switching opens the list that page sits under instead (Queues, for both), since the other database may not have that item. A shared link opens the same database, because the URL's `db` query parameter holds the selected database (a URL without it opens the first database).
+```bash
+DATABASE_URL="Production=postgres://prod/db?schema=jobs|Staging=postgres://stage/db" npx @pg-boss/dashboard
+```
+
+Two unnamed entries for the same database, such as two schemas in one database, would share a name. The later entry shows its schema, as in `app (jobs)`. Name each entry to choose what shows instead.
+
+The dashboard doesn't read `PGBOSS_SCHEMA`. When the variable is set, the dashboard stops at startup with a message showing the `?schema=` form. The pg-boss [CLI](./cli.md) reads `PGBOSS_SCHEMA`. In an environment shared with the CLI, unset the variable for the dashboard.
+
+The top bar on every page starts with the name of the schema being shown, and a colored dot that marks its place in the configuration. When you configure more than one schema, the name opens a menu to switch between them. Switching keeps you on the same page. From a page about one item, such as a queue or a job, switching opens the list that page sits under instead (Queues, for both), since the other schema may not have that item. A shared link opens the same schema, because the URL's `schema` query parameter holds the selected schema (a URL without it opens the first schema). A link from dashboard 1.x, which names the schema with `db`, opens at the same URL with `schema` in its place.
 
 ## Production deployment
 
@@ -256,8 +257,7 @@ services:
     working_dir: /app
     command: sh -c "npm install -g @pg-boss/dashboard && exec pg-boss-dashboard"
     environment:
-      DATABASE_URL: postgres://user:pass@db:5432/mydb
-      PGBOSS_SCHEMA: pgboss
+      DATABASE_URL: postgres://user:pass@db:5432/mydb?schema=pgboss
       PORT: 3000
     ports:
       - "3000:3000"
@@ -382,7 +382,7 @@ When you mount the handler:
 - **Route the home page's data request too.** React Router fetches it at `<basePath>.data`, which sits beside the mount path instead of under it. With only a `/admin/queues/*` pattern, the Home link shows a 404 because the pattern misses that request. Anything else outside the base path gets a plain 404 from the handler.
 - **Call `close()` when your server shuts down.** The standalone server exits on `SIGTERM`/`SIGINT`. The handler leaves signals to you. `await dashboard.close()` ends its database pools. A closed handler answers 503.
 - **Behind a reverse proxy, pass the public URL.** React Router rejects a form submission whose `Origin` doesn't match the request URL. When your server sees an internal address such as `http://127.0.0.1:3000`, pages render but every action fails with a 400. Pass `siteUrl: 'https://admin.example.com'`, which works like [`PGBOSS_DASHBOARD_SITE_URL`](#reverse-proxy), or pass the handler a `Request` with the public URL.
-- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` and `PGBOSS_DASHBOARD_READ_ONLY` apply. `DATABASE_URL`, `PGBOSS_SCHEMA`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_SITE_URL` don't, because the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`. If `PGBOSS_DASHBOARD_AUTH_*` or `PGBOSS_DASHBOARD_SITE_URL` is set while the matching option is off, the dashboard says so when you construct the handler.
+- **Environment variables.** `PGBOSS_DASHBOARD_QUERY_TIMEOUT` and `PGBOSS_DASHBOARD_READ_ONLY` apply. `DATABASE_URL`, `PORT`, `HOST`, `PGBOSS_DASHBOARD_BASE_PATH` and `PGBOSS_DASHBOARD_SITE_URL` don't, because the options replace them. `PGBOSS_DASHBOARD_AUTH_*` is off unless you pass `auth: true`. If `PGBOSS_DASHBOARD_AUTH_*` or `PGBOSS_DASHBOARD_SITE_URL` is set while the matching option is off, the dashboard says so when you construct the handler.
 
 ## Enabling warning persistence
 
@@ -428,9 +428,9 @@ The dashboard shows a warning type written by a newer pg-boss core under its raw
 - Check PostgreSQL logs for connection errors
 - The dashboard waits up to 10 seconds to open a connection. A firewall that drops the traffic to the database makes each page show this error after those 10 seconds.
 
-### "pg-boss isn't installed in this database"
+### "pg-boss isn't installed in this schema"
 
-The database has no pg-boss schema with the name in `PGBOSS_SCHEMA` (`pgboss` by default). The application's pg-boss creates the schema when it first starts. The [CLI](./cli.md) can also create it ahead of time. The dashboard doesn't install pg-boss.
+The database has no pg-boss schema with the name in the entry's `?schema=` (`pgboss` without one). The application's pg-boss creates the schema when it first starts. The [CLI](./cli.md) can also create it ahead of time. The dashboard doesn't install pg-boss.
 
 ### Missing warnings
 

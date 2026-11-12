@@ -43,7 +43,6 @@ import {
   jobListSortColumn,
   type JobStateFilter,
 } from '~/lib/utils'
-import { term } from '~/lib/terms'
 import type { TitleHandle } from '~/lib/page-title'
 import { PAGE_SIZE } from '~/lib/pagination'
 
@@ -220,14 +219,14 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
 
   const setQueryParams = (params: URLSearchParams) => {
     const current = new URLSearchParams(window.location.search)
-    if (current.has(term.param)) params.set(term.param, current.get(term.param)!)
+    if (current.has('schema')) params.set('schema', current.get('schema')!)
     setSearchParams(params)
   }
 
   const getShareUrl = (columns: JobColumn[]) => {
     const params = buildParams(filters, columns)
     const current = new URLSearchParams(window.location.search)
-    if (current.has(term.param)) params.set(term.param, current.get(term.param)!)
+    if (current.has('schema')) params.set('schema', current.get('schema')!)
     return `${window.location.origin}${window.location.pathname}?${params.toString()}`
   }
 

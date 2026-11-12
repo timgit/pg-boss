@@ -42,10 +42,10 @@ describe("Pagination primitives", () => {
 
   it("links through the router, keeping the selected database", () => {
     // tests/setup.ts mocks useSearchParams, which is where DbLink reads the database from.
-    vi.mocked(useSearchParams).mockReturnValueOnce([new URLSearchParams("db=orders"), vi.fn()]);
-    renderInRouter(<PaginationLink to="/jobs?page=2">2</PaginationLink>, "/jobs?db=orders");
+    vi.mocked(useSearchParams).mockReturnValueOnce([new URLSearchParams("schema=orders"), vi.fn()]);
+    renderInRouter(<PaginationLink to="/jobs?page=2">2</PaginationLink>, "/jobs?schema=orders");
 
-    expect(screen.getByRole("link", { name: "2" })).toHaveAttribute("href", "/jobs?page=2&db=orders");
+    expect(screen.getByRole("link", { name: "2" })).toHaveAttribute("href", "/jobs?page=2&schema=orders");
   });
 
   it("renders a control with nowhere to go as disabled, not as a link", () => {

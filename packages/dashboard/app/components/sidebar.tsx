@@ -28,7 +28,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '~/components/ui/sidebar'
-import { term } from '~/lib/terms'
 
 const navigation = [
   { name: 'Overview', href: '/', icon: HomeIcon },
@@ -114,7 +113,7 @@ function MigrationsIcon ({ className }: { className?: string }) {
   Losing NavLink's `isActive` render prop in the trade, the match is asked for directly.
   `useMatch` is the same matcher NavLink uses, with `end` set the same way, so the two
   cannot drift; it is a hook, which is why this is a component rather than inline JSX.
-  The href carries the `?db=` param but the match is asked about the path alone —
+  The href carries the `?schema=` param but the match is asked about the path alone —
   NavLink ignores the search string when matching, and so must this.
 */
 function NavItem ({
@@ -260,11 +259,11 @@ export function AppSidebar () {
   const [searchParams] = useSearchParams()
   const { setOpenMobile, state } = useSidebar()
 
-  const dbParam = searchParams.get(term.param)
+  const dbParam = searchParams.get('schema')
 
   const buildHref = (path: string) => {
     if (!dbParam) return path
-    return `${path}?${term.param}=${dbParam}`
+    return `${path}?schema=${dbParam}`
   }
 
   return (

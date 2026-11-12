@@ -48,7 +48,7 @@ export async function runJobAction (
       if (error instanceof Error && /requires migrations/.test(error.message)) {
         return {
           success: false,
-          message: "This dashboard's pg-boss is built for another schema version than this database's. Run the dashboard with the pg-boss version your application uses.",
+          message: "This schema is on a different version than the dashboard's pg-boss is built for. Run the dashboard with the pg-boss version your application uses.",
         }
       }
       throw error

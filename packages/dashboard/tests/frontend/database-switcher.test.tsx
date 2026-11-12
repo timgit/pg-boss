@@ -31,55 +31,55 @@ describe('DatabaseSwitcher', () => {
   })
 
   it('names the current database on a menu button when there are several', () => {
-    renderAt('/queues', '?db=reporting', [main, reporting], reporting)
+    renderAt('/queues', '?schema=reporting', [main, reporting], reporting)
 
-    expect(screen.getByRole('button', { name: 'Database: reporting. Switch database' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Schema: reporting. Switch schema' })).toBeInTheDocument()
   })
 
   it('switches database on the same list page, keeping its other parameters', async () => {
     const navigate = renderAt('/jobs', '?state=failed', [main, reporting], main)
 
-    fireEvent.click(screen.getByRole('button', { name: /Switch database/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Switch schema/ }))
     fireEvent.click(await screen.findByText('pgboss_reporting_dev'))
 
-    expect(navigate).toHaveBeenCalledWith({ pathname: '/jobs', search: '?state=failed&db=reporting' })
+    expect(navigate).toHaveBeenCalledWith({ pathname: '/jobs', search: '?state=failed&schema=reporting' })
   })
 
   it('leaves a page about one item for its list, since the other database may not have it', async () => {
     const navigate = renderAt('/queues/emails/jobs/0b1c', '?tab=output', [main, reporting], main, '/queues/:name/jobs/:jobId')
 
-    fireEvent.click(screen.getByRole('button', { name: /Switch database/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Switch schema/ }))
     fireEvent.click(await screen.findByText('pgboss_reporting_dev'))
 
-    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '?db=reporting' })
+    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '?schema=reporting' })
   })
 
   it('names the first database too when switching back, so a remembered cookie cannot win', async () => {
-    const navigate = renderAt('/queues', '?db=reporting', [main, reporting], reporting)
+    const navigate = renderAt('/queues', '?schema=reporting', [main, reporting], reporting)
 
-    fireEvent.click(screen.getByRole('button', { name: /Switch database/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Switch schema/ }))
     fireEvent.click(await screen.findByText('pgboss_dev'))
 
-    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '?db=pgboss' })
+    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '?schema=pgboss' })
   })
 
   it('lists an overlay\'s own schema under Internal, apart from the configured databases', async () => {
     const navigate = renderAt('/queues', '', [main], main, '/queues', [own])
 
-    fireEvent.click(screen.getByRole('button', { name: /Switch database/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Switch schema/ }))
 
     expect(await screen.findByText('Internal')).toBeInTheDocument()
     expect(screen.getByText('Pro')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('pgboss_pro_queue'))
 
-    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '?db=pro_queues' })
+    expect(navigate).toHaveBeenCalledWith({ pathname: '/queues', search: '?schema=pro_queues' })
   })
 
   it('names an internal schema on the button, with its badge, when it is the one in view', () => {
-    renderAt('/queues', '?db=pro_queues', [main], own, '/queues', [own])
+    renderAt('/queues', '?schema=pro_queues', [main], own, '/queues', [own])
 
-    const button = screen.getByRole('button', { name: 'Database: Pro queues. Switch database' })
+    const button = screen.getByRole('button', { name: 'Schema: Pro queues. Switch schema' })
 
     expect(button).toHaveTextContent('Pro queues')
     expect(button).toHaveTextContent('Pro')
@@ -88,7 +88,7 @@ describe('DatabaseSwitcher', () => {
   it('shows no Internal section when the overlay keeps no schema of its own', async () => {
     renderAt('/queues', '', [main, reporting], main)
 
-    fireEvent.click(screen.getByRole('button', { name: /Switch database/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Switch schema/ }))
 
     await screen.findByText('pgboss_reporting_dev')
     expect(screen.queryByText('Internal')).not.toBeInTheDocument()

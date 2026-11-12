@@ -42,8 +42,8 @@
     "types"
   ],
   "scripts": {
-    "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev node server.js",
-    "dev:auth": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev PGBOSS_DASHBOARD_AUTH_USERNAME=admin PGBOSS_DASHBOARD_AUTH_PASSWORD=admin node server.js",
+    "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss?schema=pgboss_dev node server.js",
+    "dev:auth": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss?schema=pgboss_dev PGBOSS_DASHBOARD_AUTH_USERNAME=admin PGBOSS_DASHBOARD_AUTH_PASSWORD=admin node server.js",
     "dev:init-db": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev tsx scripts/init-dev-db.ts",
     "dev:fleet": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev tsx scripts/dev-fleet.ts",
     "dev:instances": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev tsx scripts/dev-instances.ts",

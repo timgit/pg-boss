@@ -14,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
-import { term } from '~/lib/terms'
 
 interface RootLoaderData {
   databases: PublicDatabase[]
@@ -77,24 +76,24 @@ export function DatabaseSwitcher () {
     </>
   )
 
-  // Named even for the first database: without `?db=` a remembered `pgboss_db` cookie would win, and
-  // switching back to the first would land on the database just left. Links elsewhere stay short.
+  // Named even for the first schema: without `?schema=` a remembered `pgboss_db` cookie would win, and
+  // switching back to the first would land on the schema just left. Links elsewhere stay short.
   // A page about one item lands on its list instead, with none of the item's own query string.
   const select = (id: string) => {
     const pathname = switchPathname(location.pathname, routeParams)
     const next = new URLSearchParams(pathname === location.pathname ? params : undefined)
-    next.set(term.param, id)
+    next.set('schema', id)
     navigate({ pathname, search: `?${next.toString()}` })
   }
 
   if (databases.length + internal.length <= 1) {
-    return <span className="inline-flex h-8 min-w-0 items-center gap-2 text-sm" title={term.One}>{label}</span>
+    return <span className="inline-flex h-8 min-w-0 items-center gap-2 text-sm" title="Schema">{label}</span>
   }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={`${term.One}: ${current.name}. Switch ${term.one}`}
+        aria-label={`Schema: ${current.name}. Switch schema`}
         className="-ml-2 inline-flex h-8 min-w-0 cursor-pointer items-center gap-2 max-sm:gap-1.5 rounded-md px-2 text-sm text-[var(--text-tertiary)] hover:bg-[var(--surface-hover)] data-popup-open:bg-[var(--surface-hover)]"
       >
         {label}
@@ -104,7 +103,7 @@ export function DatabaseSwitcher () {
         {/* Each section a group named by its heading, and each database a radio item: one is
             the database every page reads, and a screen reader says which. */}
         <DropdownMenuGroup aria-labelledby={`${ids}-databases`}>
-          <DropdownMenuLabel id={`${ids}-databases`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">{term.Many}</DropdownMenuLabel>
+          <DropdownMenuLabel id={`${ids}-databases`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Schemas</DropdownMenuLabel>
           {databases.map((db, k) => (
             <DropdownMenuItem
               key={db.id}
@@ -147,7 +146,7 @@ export function DatabaseSwitcher () {
           </>
         )}
         <DropdownMenuSeparator />
-        <p className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]">Each {term.one} has its own queues, jobs and history.</p>
+        <p className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]">Each schema has its own queues, jobs and history.</p>
       </DropdownMenuContent>
     </DropdownMenu>
   )

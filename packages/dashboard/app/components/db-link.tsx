@@ -1,18 +1,17 @@
 import { Link, useSearchParams } from "react-router";
 import type { ComponentProps } from "react";
 import { cn } from "~/lib/utils";
-import { term } from "~/lib/terms";
 
 type LinkProps = ComponentProps<typeof Link>;
 type To = LinkProps["to"];
 
-// Resolve a router `to` into an href string that preserves the active database selection (the `db`
+// Resolve a router `to` into an href string that preserves the active schema selection (the `schema`
 // query param). Pure so it can be reused by both DbLink and row-level navigation.
 export function resolveDbHref(to: To, dbParam: string | null): string {
   if (typeof to === "string") {
     const url = new URL(to, "http://localhost");
-    if (dbParam && !url.searchParams.has(term.param)) {
-      url.searchParams.set(term.param, dbParam);
+    if (dbParam && !url.searchParams.has("schema")) {
+      url.searchParams.set("schema", dbParam);
     }
     return url.pathname + url.search + url.hash;
   } else if (typeof to === "object" && to !== null) {
@@ -22,8 +21,8 @@ export function resolveDbHref(to: To, dbParam: string | null): string {
     const hash = to.hash || "";
 
     const params = new URLSearchParams(existingSearch.replace(/^\?/, ""));
-    if (dbParam && !params.has(term.param)) {
-      params.set(term.param, dbParam);
+    if (dbParam && !params.has("schema")) {
+      params.set("schema", dbParam);
     }
     const search = params.toString();
     return pathname + (search ? `?${search}` : "") + hash;
@@ -31,14 +30,14 @@ export function resolveDbHref(to: To, dbParam: string | null): string {
   return String(to);
 }
 
-// Hook form of resolveDbHref, reading the current db param from the URL.
+// Hook form of resolveDbHref, reading the current schema param from the URL.
 export function useDbHref(to: To): string {
   const [searchParams] = useSearchParams();
-  return resolveDbHref(to, searchParams.get(term.param));
+  return resolveDbHref(to, searchParams.get("schema"));
 }
 
 /**
- * A Link component that preserves the current database selection (db query param)
+ * A Link component that preserves the current schema selection (schema query param)
  * when navigating to other pages in the dashboard.
  */
 export function DbLink({ to, children, className, ...props }: LinkProps) {

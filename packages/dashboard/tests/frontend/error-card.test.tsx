@@ -130,7 +130,7 @@ describe("ErrorCard", () => {
     it("says pg-boss isn't installed instead of blaming the connection", () => {
       renderMissing(<ErrorCard title="Error loading queues" />);
 
-      expect(screen.getByText("pg-boss isn't installed in this database")).toBeInTheDocument();
+      expect(screen.getByText("pg-boss isn't installed in this schema")).toBeInTheDocument();
       expect(screen.getByText(/no pg-boss schema named jobs in Staging/)).toBeInTheDocument();
       expect(screen.queryByText("Please check your database connection and try again.")).not.toBeInTheDocument();
     });

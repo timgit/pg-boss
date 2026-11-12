@@ -4,15 +4,15 @@ import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'r
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { configureReadOnly, isReadOnly } from './lib/read-only.server'
-import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
+import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, refuseSchemaVariable, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay, ProSite } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 import { stripBasePrefix } from './lib/base-path'
 
 // Resolve the per-request load context the loaders/actions rely on. The selected
-// database comes from the `?db=` query param or the `pgboss_db` cookie, falling back
-// to the first configured database. With `v8_middleware` on, loaders read these
+// schema comes from the `?schema=` query param or the `pgboss_db` cookie, falling back
+// to the first configured schema. With `v8_middleware` on, loaders read these
 // values via `context.get(dbContext)`.
 //
 // Exported for the tests, which assert the overlay hook runs last. Nothing else
@@ -23,7 +23,7 @@ export function getLoadContext (
   overlay: ProServerOverlay | null = null
 ): RouterContextProvider {
   const url = new URL(c.req.url)
-  const dbId = url.searchParams.get('db') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
+  const dbId = url.searchParams.get('schema') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
   const currentDb = findDatabaseById(databases, dbId) || databases[0]
 
   const context = new RouterContextProvider()
@@ -58,7 +58,7 @@ export interface CreateHonoAppOptions {
   serveStaticAssets?: boolean;
   /** Where the built client assets live. Defaults to `./build/client`, relative to the cwd. */
   clientRoot?: string;
-  /** Defaults to the databases described by DATABASE_URL / PGBOSS_SCHEMA. */
+  /** Defaults to the schemas described by DATABASE_URL. */
   databases?: DatabaseConfig[];
   /** Overrides the base path baked into the build. Production builds only. */
   basePath?: string;
@@ -95,6 +95,9 @@ export function createHonoApp ({
   siteUrl,
   overlay,
 }: CreateHonoAppOptions): Hono {
+  // Pro adds its schemas in the Pro Console and says at startup that the variable does nothing there.
+  if (databases === undefined && !overlay?.ownsAuth) refuseSchemaVariable()
+
   const app = new Hono()
   const siteOrigin = siteUrl === undefined ? parseSiteUrl() : siteUrl === null ? undefined : toSiteOrigin(siteUrl, 'siteUrl')
   const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)
@@ -234,6 +237,26 @@ export function createHonoApp ({
     // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
     app.use('*', serveStatic({ root: clientRoot, rewriteRequestPath }))
   }
+
+  // Dashboard 1.x named the schema in `?db=`. A page opened from one of its links moves to the
+  // same URL with `?schema=`, so the address bar shows the link to share. Single-fetch `.data`
+  // requests come from this build's own links, which already say `schema`.
+  app.get('*', async (c, next) => {
+    const url = new URL(c.req.url)
+    if (!url.searchParams.has('db') || url.pathname.endsWith('.data')) return next()
+
+    const params = new URLSearchParams()
+    for (const [key, value] of url.searchParams) {
+      if (key === 'db') {
+        if (!url.searchParams.has('schema') && !params.has('schema')) params.append('schema', value)
+      } else {
+        params.append(key, value)
+      }
+    }
+    const search = params.toString()
+
+    return c.redirect(`${url.pathname}${search ? `?${search}` : ''}`, 301)
+  })
 
   const productionHandler = typeof build === 'function' ? undefined : createRequestHandler(build, mode)
 

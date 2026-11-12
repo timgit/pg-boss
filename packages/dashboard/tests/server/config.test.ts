@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { parseDatabaseConfig, parseSiteUrl, toDatabaseConfig } from '~/lib/config.server'
+import { parseDatabaseConfig, parseSiteUrl, refuseSchemaVariable, takeSchema, toDatabaseConfig } from '~/lib/config.server'
 
 describe('toDatabaseConfig', () => {
   it('names the database after the connection string and defaults the schema', () => {
@@ -21,7 +21,7 @@ describe('toDatabaseConfig', () => {
   })
 
   it('falls back to a positional name when the connection string has no database', () => {
-    expect(toDatabaseConfig({ url: 'postgres://host/' }, 1).name).toBe('Database 2')
+    expect(toDatabaseConfig({ url: 'postgres://host/' }, 1).name).toBe('Schema 2')
   })
 })
 
@@ -37,25 +37,78 @@ describe('parseDatabaseConfig', () => {
     process.env = { ...originalEnv }
   })
 
-  it('reads named and unnamed databases with their schemas', () => {
-    process.env.DATABASE_URL = 'Prod=postgres://user:p=ss@host/a|postgres://host/b'
-    process.env.PGBOSS_SCHEMA = 'one|two'
+  it('reads named and unnamed entries with the schema on each connection string', () => {
+    process.env.DATABASE_URL = 'Prod=postgres://user:p=ss@host/a?schema=one|postgres://host/b?sslmode=require&schema=two|postgres://host/c'
 
     expect(parseDatabaseConfig()).toEqual([
       { id: 'prod', name: 'Prod', url: 'postgres://user:p=ss@host/a', schema: 'one' },
-      { id: 'b', name: 'b', url: 'postgres://host/b', schema: 'two' },
+      { id: 'b', name: 'b', url: 'postgres://host/b?sslmode=require', schema: 'two' },
+      { id: 'c', name: 'c', url: 'postgres://host/c', schema: 'pgboss' },
     ])
   })
 
-  it('tells apart one database under two schemas, keeping the first id as it was', () => {
-    process.env.DATABASE_URL = 'postgres://host/app|postgres://host/app|postgres://other/app'
-    process.env.PGBOSS_SCHEMA = 'pgboss|jobs|jobs'
+  it('ignores PGBOSS_SCHEMA, which createHonoApp refuses', () => {
+    process.env.DATABASE_URL = 'postgres://host/a'
+    process.env.PGBOSS_SCHEMA = 'jobs'
+
+    expect(parseDatabaseConfig()[0].schema).toBe('pgboss')
+  })
+
+  it('tells apart two schemas in one database, keeping the first id as it was', () => {
+    process.env.DATABASE_URL = 'postgres://host/app|postgres://host/app?schema=jobs|postgres://other/app?schema=jobs'
 
     expect(parseDatabaseConfig().map(({ id, name }) => ({ id, name }))).toEqual([
       { id: 'app', name: 'app' },
       { id: 'app-jobs', name: 'app (jobs)' },
       { id: 'app-jobs-3', name: 'app (jobs)' },
     ])
+  })
+})
+
+describe('takeSchema', () => {
+  it('takes schema out of the query and keeps the other parameters as written', () => {
+    expect(takeSchema('postgres://h/db?schema=jobs')).toEqual({ url: 'postgres://h/db', schema: 'jobs' })
+    expect(takeSchema('postgres://h/db?sslmode=require&schema=jobs&sslrootcert=/etc/ca.pem')).toEqual({
+      url: 'postgres://h/db?sslmode=require&sslrootcert=/etc/ca.pem',
+      schema: 'jobs',
+    })
+    expect(takeSchema('postgres://h/db?schema=my%5Fjobs')).toEqual({ url: 'postgres://h/db', schema: 'my_jobs' })
+  })
+
+  it('leaves a connection string without schema alone', () => {
+    expect(takeSchema('postgres://h/db')).toEqual({ url: 'postgres://h/db' })
+    expect(takeSchema('postgres://h/db?sslmode=require')).toEqual({ url: 'postgres://h/db?sslmode=require', schema: undefined })
+  })
+
+  it('treats an empty schema as unset', () => {
+    expect(takeSchema('postgres://h/db?schema=')).toEqual({ url: 'postgres://h/db', schema: undefined })
+  })
+})
+
+describe('refuseSchemaVariable', () => {
+  const originalEnv = { ...process.env }
+
+  afterEach(() => {
+    process.env = { ...originalEnv }
+  })
+
+  it('does nothing when PGBOSS_SCHEMA is unset or blank', () => {
+    delete process.env.PGBOSS_SCHEMA
+    expect(() => refuseSchemaVariable()).not.toThrow()
+    process.env.PGBOSS_SCHEMA = ' '
+    expect(() => refuseSchemaVariable()).not.toThrow()
+  })
+
+  it('stops with the new form, using the schema it was given', () => {
+    process.env.PGBOSS_SCHEMA = 'orders'
+    expect(() => refuseSchemaVariable()).toThrow("The dashboard doesn't read PGBOSS_SCHEMA. Unset it and name each schema on its connection string in DATABASE_URL, as in DATABASE_URL=postgres://host/db?schema=orders.")
+  })
+
+  it('stops on a pgboss value too, and on a list', () => {
+    process.env.PGBOSS_SCHEMA = 'pgboss'
+    expect(() => refuseSchemaVariable()).toThrow('?schema=pgboss.')
+    process.env.PGBOSS_SCHEMA = 'one|two'
+    expect(() => refuseSchemaVariable()).toThrow('?schema=jobs.')
   })
 })
 
