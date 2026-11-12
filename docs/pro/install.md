@@ -112,8 +112,7 @@ on. Their alerts show in the Pro Console from the start. To have them sent:
 
 1. Add a destination under **Settings › Destinations**: an email list, a webhook or PagerDuty. Pro
    offers to send the rules that are on to it.
-2. For an email destination, set up **Outgoing email** on the same page, with an SMTP server or a
-   Resend API key.
+2. For an email destination, set up **Settings › Email** with an SMTP server or a Resend API key.
 3. Press **Send test** on the destination's row. It sends a sample alert that fires and then resolves.
 
 See [destinations](./destinations.md) for each kind.

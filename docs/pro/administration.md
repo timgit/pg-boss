@@ -39,10 +39,11 @@ the secrets that fail. Pro logs them, and every global admin sees a banner on ea
 them and where to enter them again:
 
 - each schema's connection, in Settings › Schemas
-- each destination's secrets and the outgoing email's password or API key, in Settings › Destinations
+- each destination's secrets, in Settings › Destinations
+- the email server's password or API key, in Settings › Email
 - the SSO client secret, in Settings › SSO
 
-Settings › Schemas and Settings › Destinations mark each secret that doesn't decrypt. Until it's
+Settings › Schemas, Settings › Destinations and Settings › Email mark each secret that doesn't decrypt. Until it's
 entered again, Pro doesn't monitor the schema, and the destination can't send. A delivery that fails
 for that reason names the secret and isn't retried. SSO sign-in fails until the client secret is
 entered again, and password sign-in keeps working. Restarting Pro with the earlier key also brings

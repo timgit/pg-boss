@@ -1,7 +1,8 @@
 # Destinations
 
 Destinations live under **Settings › Destinations** and are shared by the rules of every
-schema. A destination is an email, a webhook, or PagerDuty. **Send
+schema. A destination is a webhook, PagerDuty, or an email list. The tabs over the list keep one
+kind, each with its count. **Send
 test** sends a sample alert that fires and then resolves, to show the
 receiver handling both.
 
@@ -65,13 +66,19 @@ deletes its queue and any sends still waiting in it.
 Pro queues each resolve once per fire, under a job id made from the alert and the fire. A finished
 send is kept for 8 days, which stops the evaluator from queuing the same resolve again.
 
-Every email destination sends through the one email account in **Outgoing email**. Two email
+Every email destination sends through the one email server under **Settings › Email**. Two email
 destinations can still send at the same time. Resend answers a burst over its rate limit with 429, which
 Pro retries like any other failure.
 
 ## Email
 
-Email goes out through SMTP or Resend. Both are configured on the same page. Changing the
+Email is optional. Its server has a page of its own, **Settings › Email**, under Destinations, and
+nothing about email shows on the Destinations page until an email destination exists. Until the
+server is set up, an email destination shows **Waiting for Settings › Email** and its switch can't
+be turned on.
+
+Email goes out through SMTP or Resend. **Send test** on the Email page sends one message to your
+own address through the saved settings. Changing the
 SMTP host, port, user or TLS setting needs the password entered again. Pro
 requires STARTTLS unless the connection is TLS from the start or the server is
 on this machine. The password and messages never cross the network in the
