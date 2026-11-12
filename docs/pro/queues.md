@@ -62,7 +62,7 @@ A refresh or a change of range recolors each queue where it is. The order change
 
 ## Queue detail
 
-A queue's page adds its arrival and finishing rates, p95 wait and run times against the previous period, time to drain, and its health with the reasons for it. Its charts share one time axis: throughput, backlog, wait time and run time. The throughput chart shades **Arrivals ahead** where more arrived than finished.
+A queue's page adds its arrival and finishing rates, p95 wait and run times against the previous period, time to drain, and its health with the reasons for it. One chart panel switches between **Throughput**, **Backlog**, **Wait time** and **Run time**. The throughput chart shades **Arrivals ahead** where more arrived than finished.
 
 The sidebar lists each `work()` call on the queue, with its instance and its busy slots, from the [instance registry](./instances.md). A pill beside the instance names the first of the instance's own checks that fails (event loop, then CPU, then memory, as on the [instances page](./instances.md)), or reads **Healthy** when every check passes. An instance started with `registerInstance: false`, or on a pg-boss version before 12.36, can work the queue without appearing there.
 

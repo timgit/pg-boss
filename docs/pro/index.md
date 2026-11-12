@@ -72,7 +72,8 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 | Overview and queues, with each queue's status and its counts over time | ✓ | ✓ |
 | Jobs, filtered by state, queue and payload, with each job's details | ✓ | ✓ |
 | Schedules, subscriptions and warnings | ✓ | ✓ |
-| [Several schemas](./schemas.md), such as Production and Staging, added in the Pro Console | ✓ | ✓ |
+| Several schemas, such as Production and Staging | ✓ | ✓ |
+| [Schemas added and edited in the Pro Console](./schemas.md) | | ✓ |
 | [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
 | [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, instances restarting, gone quiet or at a limit, and failed operations, each with its own thresholds and [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
 | Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |

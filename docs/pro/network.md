@@ -12,7 +12,8 @@ set up, Pro talks only to its Postgres database.
 | `npm install` | at install or upgrade | `npm.pgboss.io`, the configured registry |
 | A webhook alert | only once a webhook destination exists, when a rule sending to it fires or its alert closes, or a user sends a test | the URL on that destination |
 | A PagerDuty alert | only once a PagerDuty destination exists, at the same moments | `events.pagerduty.com` |
-| An email alert | only once an email destination exists, at the same moments | the configured SMTP server, or `api.resend.com` |
+| An email alert | only once an email destination exists, at the same moments, or when a global admin presses **Send test** under **Settings › Email** | the configured SMTP server, or `api.resend.com` |
+| A schema's database | only once a schema is added, when a page, the alert evaluator or an operation reads or changes it | the host in that schema's connection |
 | Single sign-on | when a user signs in or presses **Test connection** | the provider's issuer, token and key endpoints |
 
 Alert deliveries carry no job payloads, only what the alert is about: the rule

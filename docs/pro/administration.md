@@ -8,7 +8,7 @@ Pro prunes its own store once a minute.
   page's queue health history for 90 days. A running operation stays however old
   it is.
 - Pro keeps the audit log forever unless a global admin sets a number of days
-  under **Settings → Audit log**. The shortest is 30 days. Within a minute of
+  under **Settings › Audit log**. The shortest is 30 days. Within a minute of
   saving, Pro starts deleting older entries at up to 50,000 a minute. Deleted
   entries can't be recovered. The audit log records the change to this setting
   too.
@@ -50,6 +50,6 @@ entered again, and password sign-in keeps working. Restarting Pro with the earli
 the secrets back.
 
 A check value that fails while every stored secret decrypts is stored again with the current key,
-and Pro reports nothing. After each save in Settings › Schemas, Destinations or SSO, Pro tries every
+and Pro reports nothing. After each save in Settings › Schemas, Destinations, Email or SSO, Pro tries every
 stored secret again. Once every stored secret decrypts, Pro stores the check value again with the
 current key and the banner goes.

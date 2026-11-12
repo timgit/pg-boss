@@ -5,7 +5,8 @@ production. Pro monitors each schema added under **Settings › Schemas** and re
 from its environment.
 
 The Pro Console shows one schema at a time. Every page about a schema shows its name and a colored
-dot at the start of the top bar. With more than one schema, a menu there switches between them.
+dot at the start of the top bar. With more than one schema to choose from, a menu there switches
+between them. For a global admin, [Pro's own queues](#pro-queues) are one more choice.
 
 ![The schemas page](../images/pro/schemas.webp){.light-only}
 ![The schemas page](../images/pro/schemas-dark.webp){.dark-only}
@@ -84,7 +85,7 @@ names no schema, such as Settings, leads back to it.
 
 Pro runs its own background work on pg-boss queues in the `pgboss` schema of
 [Pro's database](./install.md#database-setup). A global admin finds them as **Pro queues** under
-**Internal** at the end of the schema menu. They aren't one of the schemas added under **Settings ›
+**Internal** in the schema menu, after the schemas and before **Add schema**. They aren't one of the schemas added under **Settings ›
 Schemas**. A banner on each of their pages says which database holds them.
 
 - `pgboss-pro-alerts` runs the alert evaluator once a minute.

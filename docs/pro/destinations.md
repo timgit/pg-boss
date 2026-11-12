@@ -3,8 +3,8 @@
 Destinations live under **Settings › Destinations** and are shared by the rules of every
 schema. A destination is a webhook, PagerDuty, or an email list. The tabs over the list keep one
 kind, each with its count. **Send
-test** sends a sample alert that fires and then resolves, to show the
-receiver handling both.
+test** sends a webhook or PagerDuty destination a sample alert that fires and then resolves, to show
+the receiver handling both. An email destination gets one message.
 
 Each destination's row shows its last delivery: when it went and whether it was
 sent. For a failed delivery, the row also shows the receiver's response and how many deliveries failed in a row.
@@ -72,8 +72,8 @@ Pro retries like any other failure.
 
 ## Email
 
-Email is optional. Its server has a page of its own, **Settings › Email**, under Destinations, and
-nothing about email shows on the Destinations page until an email destination exists. Until the
+Email is optional. Its server has a page of its own, **Settings › Email**, under Destinations. The
+Destinations page says nothing about the server until an email destination exists. Until the
 server is set up, an email destination shows **Waiting for Settings › Email** and its switch can't
 be turned on.
 

@@ -35,9 +35,10 @@ Each method needs a capability, which the service account gets from its role on 
 | `400` | A request the method can't take, such as a `minutes` value the acknowledge call doesn't offer. |
 | `401` | No token, or a token that is unknown, expired, revoked, or whose service account is disabled. |
 | `403` | The token's role doesn't include the method, or Pro refuses the method. |
-| `404` | No schema by that id, or a schema the service account has no role on. |
+| `404` | No schema by that id, a schema the service account has no role on, or an alert that doesn't exist or is on such a schema. |
 | `409` | The schema's pg-boss version isn't the version this Pro makes changes on (see [pg-boss versions](./versions.md)), or the alert to acknowledge is closed or already acknowledged. |
 | `429` | Only an invalid token, after too many from this address. |
+| `503` | Pro couldn't record the call in the audit log, or couldn't start pg-boss for the schema. The call made no change. |
 
 ## Audit
 

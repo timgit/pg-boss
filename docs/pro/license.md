@@ -42,8 +42,8 @@ Nothing is owed for the time between.
 
 An organization can also receive Pro without a purchase, for example as a pg-boss sponsor or for a
 trial. An access grant comes with a registry token, which takes the license key's place in the
-[install steps](./install.md#install). The grant lasts until the token expires or is revoked. The
-conditions sent with the token apply for the whole grant.
+[install steps](./install.md#install). The grant lasts until the token expires or is revoked, and it
+can be revoked at any time. The conditions sent with the token can also change.
 
 When an access grant ends, the registry refuses the token for every version. Time under an access
 grant doesn't count toward the 12 months in the table above. The right to use the installed versions

@@ -59,8 +59,7 @@ Pro always refuses two changes, and says so:
   disabling or deletion, because nobody would be left to undo it
 - a global admin disabling or deleting their own account (another global admin can do that)
 
-Pro sends no invitation email, because it runs inside the organization's network and may have
-no mail credentials. A global admin sends the invitation link, or sets the
+Pro sends no invitation email, even with **Settings › Email** set up. A global admin sends the invitation link, or sets the
 first password and hands it over. The person then changes it
 from **Profile** in the account menu at the top right. That page needs no role.
 It shows the signed-in account and its roles, and takes the current
