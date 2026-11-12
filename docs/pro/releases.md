@@ -15,4 +15,4 @@ The first release of pg-boss Pro, on pg-boss 12.38 and dashboard 2.0.
 ### Upgrading from the dashboard
 
 - Pro's links name the schema with `?schema=`, as the dashboard's links do. Pro opens a link saved from dashboard 1.x at the same URL with `db` renamed `schema`.
-- `DATABASE_URL` and `PGBOSS_SCHEMA` do nothing in Pro. Add each schema the dashboard showed under **Settings › Schemas**. See [Install and run](./install.md).
+- `DATABASE_URL` does nothing in Pro. Add each schema the dashboard showed under **Settings › Schemas**. See [Install and run](./install.md).

@@ -52,7 +52,7 @@ Pro reads these settings at startup:
 
 Store the encryption key in another secret store. Rotating the secret key requires re-entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error at startup and serves no pages. See [secrets](./administration.md#secrets).
 
-Pro doesn't read `DATABASE_URL` or `PGBOSS_SCHEMA`, which the dashboard reads. The schemas Pro monitors are added in the Pro Console. See [Schemas](./schemas.md).
+Pro doesn't read `DATABASE_URL`, which the dashboard reads. The schemas Pro monitors are added in the Pro Console. See [Schemas](./schemas.md).
 
 The other settings for Pro's database default to the role and database above:
 
