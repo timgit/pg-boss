@@ -37,3 +37,15 @@ pg-boss release and still retries, cancels and resumes a job.
 
 An organization that subscribes again can install new versions, starting from the current release.
 Nothing is owed for the time between.
+
+## Access grants
+
+An organization can also receive Pro without a purchase, for example as a pg-boss sponsor or for a
+trial. An access grant comes with a registry token, which takes the license key's place in the
+[install steps](./install.md#install). The grant lasts until the token expires or is revoked. The
+conditions sent with the token apply for the whole grant.
+
+When an access grant ends, the registry refuses the token for every version. Time under an access
+grant doesn't count toward the 12 months in the table above. The right to use the installed versions
+ends with the grant, as it does for a monthly subscription under 12 months. See section 2 of
+`LICENSE`.
