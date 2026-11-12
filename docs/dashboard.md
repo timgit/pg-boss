@@ -163,19 +163,67 @@ Open `http://localhost:3000` in your browser.
 
 ## Configuration
 
-Configure the dashboard with environment variables:
+### Environment variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string(s), each naming its pg-boss schema with `?schema=` (see [Multiple schemas](#multiple-schemas)) | `postgres://localhost/pgboss` |
-| `PORT` | Server port | `3000` |
-| `HOST` | Interface to listen on | `0.0.0.0` |
-| `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
-| `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
-| `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
-| `PGBOSS_DASHBOARD_READ_ONLY` | `true` or `1` turns off retry, cancel and resume on a job's page (see [Job actions](#job-actions)) | - |
-| `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). `0` leaves the timeout to the database (see [Connection poolers](#connection-poolers)). Requires a restart to change. | `60000` |
-| `PGBOSS_DASHBOARD_SITE_URL` | The public URL the dashboard is served at, as `https://host[:port]`. Needed behind a proxy that ends HTTPS (see [Reverse proxy](#reverse-proxy)) | - |
+Configure the dashboard with these environment variables.
+
+| Variable | Default |
+| - | - |
+| [`DATABASE_URL`](#database-url) | `postgres://localhost/pgboss` |
+| [`PORT`](#port) | `3000` |
+| [`HOST`](#host) | `0.0.0.0` |
+| [`PGBOSS_DASHBOARD_AUTH_USERNAME`](#pgboss-dashboard-auth-username) | |
+| [`PGBOSS_DASHBOARD_AUTH_PASSWORD`](#pgboss-dashboard-auth-password) | |
+| [`PGBOSS_DASHBOARD_BASE_PATH`](#pgboss-dashboard-base-path) | `/` |
+| [`PGBOSS_DASHBOARD_READ_ONLY`](#pgboss-dashboard-read-only) | |
+| [`PGBOSS_DASHBOARD_QUERY_TIMEOUT`](#pgboss-dashboard-query-timeout) | `60000` |
+| [`PGBOSS_DASHBOARD_SITE_URL`](#pgboss-dashboard-site-url) | |
+
+#### `DATABASE_URL`
+
+PostgreSQL connection strings, each naming its pg-boss schema with `?schema=`. See [Multiple schemas](#multiple-schemas).
+
+Default: `postgres://localhost/pgboss`
+
+#### `PORT`
+
+The port the server listens on.
+
+Default: `3000`
+
+#### `HOST`
+
+The interface to listen on.
+
+Default: `0.0.0.0`
+
+#### `PGBOSS_DASHBOARD_AUTH_USERNAME`
+
+The basic auth username. Optional. See [Basic authentication](#basic-authentication).
+
+#### `PGBOSS_DASHBOARD_AUTH_PASSWORD`
+
+The basic auth password. Optional. See [Basic authentication](#basic-authentication).
+
+#### `PGBOSS_DASHBOARD_BASE_PATH`
+
+The sub-path to serve the dashboard under, such as `/pgboss`. See [Serving under a sub-path](#serving-under-a-sub-path).
+
+Default: `/`
+
+#### `PGBOSS_DASHBOARD_READ_ONLY`
+
+`true` or `1` turns off retry, cancel and resume on a job's page. See [Job actions](#job-actions).
+
+#### `PGBOSS_DASHBOARD_QUERY_TIMEOUT`
+
+The maximum milliseconds a dashboard query runs before the server cancels it (`statement_timeout`). `0` leaves the timeout to the database. A change takes a restart. See [Connection poolers](#connection-poolers).
+
+Default: `60000`
+
+#### `PGBOSS_DASHBOARD_SITE_URL`
+
+The public URL the dashboard is served at, as `https://host[:port]`. It's needed behind a proxy that ends HTTPS. See [Reverse proxy](#reverse-proxy).
 
 ### Basic authentication
 
