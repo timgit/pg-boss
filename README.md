@@ -75,7 +75,7 @@ See the [proxy documentation](https://pgboss.io/proxy) for details.
 
 ## Pro 🚀
 
-[pg-boss Pro](https://pgboss.io/pro/) is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Console, users send, retry and delete jobs, create queues and schedules, and run batch operations across queues. Each user makes only the changes their role allows. Every change is recorded in the audit log. Scripts, CI jobs and other systems call pg-boss's methods through the API using an API token. Pro also adds single sign-on, Prometheus metrics, queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service. Pro is built and supported by the author of pg-boss and sold as a yearly or monthly subscription. Subscriptions and sponsorship pay for the maintenance of pg-boss.
+[pg-boss Pro](https://pgboss.io/pro/) is built and supported by the author of pg-boss for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users send, retry and delete jobs, create queues and schedules, run batch operations across queues and make other changes their role allows, with every change recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds single sign-on, Prometheus metrics, queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service. Pro is sold as a yearly or monthly subscription. Subscriptions and sponsorship pay for the maintenance of pg-boss.
 
 ## Sponsors
 
