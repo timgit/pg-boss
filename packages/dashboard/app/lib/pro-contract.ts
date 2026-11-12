@@ -86,6 +86,13 @@ export interface ProSlots {
   topbarStart?: ComponentType
 
   /**
+   * At the end of the database switcher's menu, for actions on the list itself, such as adding a
+   * schema. Its component renders menu items and the separator above them, since it may render
+   * nothing for some viewers.
+   */
+  schemaMenuEnd?: ComponentType
+
+  /**
    * In the topbar, at the far right, after the theme toggle.
    *
    * For controls that belong to the viewer rather than the page, such as

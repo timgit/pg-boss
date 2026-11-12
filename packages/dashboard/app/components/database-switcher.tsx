@@ -4,6 +4,7 @@ import { switchPathname } from '~/lib/database-switch'
 import { cn } from '~/lib/utils'
 import { Check, ChevronsUpDown, Layers } from 'lucide-react'
 import type { PublicDatabase } from '~/lib/types'
+import { ProSlot } from '~/components/pro-slot'
 import { DATABASE_COLORS, databaseColor } from '~/lib/database-colors'
 import {
   DropdownMenu,
@@ -147,6 +148,7 @@ export function DatabaseSwitcher () {
         )}
         <DropdownMenuSeparator />
         <p className="px-2 py-1.5 text-xs text-[var(--text-tertiary)]">Each schema has its own queues, jobs and history.</p>
+        <ProSlot name="schemaMenuEnd" />
       </DropdownMenuContent>
     </DropdownMenu>
   )

@@ -150,6 +150,15 @@ describe('pro overlay', () => {
       expect(screen.getByTestId('pro-account')).toBeInTheDocument()
     })
 
+    it('renders the schema menu slot the overlay fills', async () => {
+      mockOverlay({ nav: [], slots: { schemaMenuEnd: DemoTrail } })
+
+      const { ProSlot } = await import('~/components/pro-slot')
+      render(<ProSlot name="schemaMenuEnd" />)
+
+      expect(screen.getByTestId('pro-trail')).toBeInTheDocument()
+    })
+
     it('renders nothing for the topbar end slot when only the start is filled', async () => {
       mockOverlay({ nav: [], slots: { topbarStart: DemoTrail } })
 
