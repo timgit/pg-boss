@@ -200,60 +200,304 @@ const { app, boss } = await createProxyService({
 })
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `options` | `ConstructorOptions` | - | PgBoss constructor options |
-| `prefix` | `string` | `/api` | URL prefix for all API routes |
-| `port` | `number` | `3000` | Listening port |
-| `hostname` | `string` | `localhost` | Listening hostname |
-| `env` | `Record<string, string>` | `process.env` | Environment variables |
-| `middleware` | `MiddlewareHandler \| MiddlewareHandler[]` | - | Hono middleware to apply to API routes |
-| `authorize` | `(context, method) => AuthorizeResult` | - | Decides each API request with the pg-boss method it calls. See [Authorizing Each Call](#authorizing-each-call) |
-| `requestLogger` | `boolean` | `true` | Enable/disable default request logging middleware |
-| `logFormat` | `'text' \| 'json'` | `text` | Log output format |
-| `exposeErrors` | `boolean` | `false` | Return actual error messages to clients |
-| `bodyLimit` | `number` | `1048576` (1MB) | Max request body size in bytes |
-| `routes.allow` | `string[]` | all | List of pg-boss methods to expose |
-| `routes.deny` | `string[]` | none | List of pg-boss methods to exclude |
-| `pages.root` | `boolean` | `true` | Enable/disable the root page (`/`) |
-| `pages.docs` | `boolean` | `true` | Enable/disable Swagger docs (`/docs`) |
-| `pages.openapi` | `boolean` | `true` | Enable/disable OpenAPI spec (`/openapi.json`) |
-| `auth.username` | `string` | - | Basic auth username |
-| `auth.password` | `string` | - | Basic auth password |
-| `cors.origin` | `string` | - | CORS allowed origins |
-| `cors.methods` | `string` | `GET,POST,PUT,DELETE,PATCH,OPTIONS` | CORS allowed methods |
-| `cors.headers` | `string` | `Content-Type,Authorization` | CORS allowed headers |
+| Option | Default |
+| - | - |
+| [`options`](#options) | |
+| [`prefix`](#prefix) | `/api` |
+| [`port`](#port) | `3000` |
+| [`hostname`](#hostname) | `localhost` |
+| [`env`](#env) | `process.env` |
+| [`middleware`](#middleware) | |
+| [`authorize`](#authorize) | |
+| [`requestLogger`](#requestlogger) | `true` |
+| [`logFormat`](#logformat) | `text` |
+| [`exposeErrors`](#exposeerrors) | `false` |
+| [`bodyLimit`](#bodylimit) | `1048576` (1MB) |
+| [`routes.allow`](#routes-allow) | all |
+| [`routes.deny`](#routes-deny) | none |
+| [`pages.root`](#pages-root) | `true` |
+| [`pages.docs`](#pages-docs) | `true` |
+| [`pages.openapi`](#pages-openapi) | `true` |
+| [`auth.username`](#auth-username) | |
+| [`auth.password`](#auth-password) | |
+| [`cors.origin`](#cors-origin) | |
+| [`cors.methods`](#cors-methods) | `GET,POST,PUT,DELETE,PATCH,OPTIONS` |
+| [`cors.headers`](#cors-headers) | `Content-Type,Authorization` |
+
+#### `options`
+
+`ConstructorOptions`
+
+The PgBoss constructor options. See [PgBoss constructor options](#pgboss-constructor-options).
+
+#### `prefix`
+
+`string`, defaults to `/api`
+
+The URL prefix for all API routes.
+
+#### `port`
+
+`number`, defaults to `3000`
+
+The listening port.
+
+#### `hostname`
+
+`string`, defaults to `localhost`
+
+The listening hostname.
+
+#### `env`
+
+`Record<string, string>`, defaults to `process.env`
+
+The environment variables the proxy reads. See [Environment variables](#environment-variables).
+
+#### `middleware`
+
+`MiddlewareHandler | MiddlewareHandler[]`
+
+Hono middleware to apply to API routes. See [Custom middleware](#custom-middleware).
+
+#### `authorize`
+
+`(context, method) => AuthorizeResult`
+
+Decides each API request with the pg-boss method it calls. See [Authorizing each call](#authorizing-each-call).
+
+#### `requestLogger`
+
+`boolean`, defaults to `true`
+
+Turns the default request logging middleware on or off.
+
+#### `logFormat`
+
+`'text' | 'json'`, defaults to `text`
+
+The log output format.
+
+#### `exposeErrors`
+
+`boolean`, defaults to `false`
+
+Returns actual error messages to clients.
+
+#### `bodyLimit`
+
+`number`, defaults to `1048576` (1MB)
+
+The maximum request body size in bytes.
+
+#### `routes.allow`
+
+`string[]`, defaults to all
+
+The pg-boss methods to expose. See [Route filtering](#route-filtering).
+
+#### `routes.deny`
+
+`string[]`, defaults to none
+
+The pg-boss methods to exclude. See [Route filtering](#route-filtering).
+
+#### `pages.root`
+
+`boolean`, defaults to `true`
+
+Turns the root page (`/`) on or off. See [Disabling pages](#disabling-pages).
+
+#### `pages.docs`
+
+`boolean`, defaults to `true`
+
+Turns the Swagger docs (`/docs`) on or off.
+
+#### `pages.openapi`
+
+`boolean`, defaults to `true`
+
+Turns the OpenAPI spec (`/openapi.json`) on or off.
+
+#### `auth.username`
+
+`string`
+
+The basic auth username. See [Authentication](#authentication).
+
+#### `auth.password`
+
+`string`
+
+The basic auth password.
+
+#### `cors.origin`
+
+`string`
+
+The CORS allowed origins. See [CORS](#cors).
+
+#### `cors.methods`
+
+`string`, defaults to `GET,POST,PUT,DELETE,PATCH,OPTIONS`
+
+The CORS allowed methods.
+
+#### `cors.headers`
+
+`string`, defaults to `Content-Type,Authorization`
+
+The CORS allowed headers.
 
 ### Environment variables
 
-The proxy also reads these environment variables:
+The proxy also reads these environment variables.
 
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | - | PostgreSQL connection string |
-| `PORT` | `3000` | Listening port |
-| `HOST` | `localhost` | Listening hostname |
-| `PGBOSS_PROXY_INSTANCE_NAME` | `pg-boss-proxy` | Name in the instance registry, used when `instanceName` is not passed |
-| `PGBOSS_PROXY_PREFIX` | `/api` | URL prefix for API routes |
-| `PGBOSS_PROXY_REQUEST_LOGGER` | `true` | Enable request logging |
-| `PGBOSS_PROXY_LOG_FORMAT` | `text` | Log format: `text` or `json` |
-| `PGBOSS_PROXY_EXPOSE_ERRORS` | `false` | Return actual error messages to clients |
-| `PGBOSS_PROXY_BODY_LIMIT` | `1048576` | Max request body size in bytes |
-| `PGBOSS_PROXY_ROUTES_ALLOW` | all | Comma-separated list of routes to expose |
-| `PGBOSS_PROXY_ROUTES_DENY` | none | Comma-separated list of routes to exclude |
-| `PGBOSS_PROXY_PAGE_ROOT` | `true` | Enable root page |
-| `PGBOSS_PROXY_PAGE_DOCS` | `true` | Enable Swagger docs |
-| `PGBOSS_PROXY_PAGE_OPENAPI` | `true` | Enable OpenAPI spec |
-| **Authentication** | | |
-| `PGBOSS_PROXY_AUTH_USERNAME` | - | Basic auth username (must be set with password) |
-| `PGBOSS_PROXY_AUTH_PASSWORD` | - | Basic auth password (must be set with username) |
-| **CORS** | | |
-| `PGBOSS_PROXY_CORS_ORIGIN` | - | CORS allowed origins (comma-separated or `*`) |
-| `PGBOSS_PROXY_CORS_METHODS` | `GET,POST,PUT,DELETE,PATCH,OPTIONS` | CORS allowed methods |
-| `PGBOSS_PROXY_CORS_HEADERS` | `Content-Type,Authorization` | CORS allowed headers |
-| `PGBOSS_PROXY_CORS_EXPOSE_HEADERS` | - | CORS exposed headers |
-| `PGBOSS_PROXY_CORS_CREDENTIALS` | `false` | CORS allow credentials |
-| `PGBOSS_PROXY_CORS_MAX_AGE` | - | CORS preflight cache duration (seconds) |
+| Variable | Default |
+| - | - |
+| [`DATABASE_URL`](#database-url) | |
+| [`PORT`](#env-port) | `3000` |
+| [`HOST`](#env-host) | `localhost` |
+| [`PGBOSS_PROXY_INSTANCE_NAME`](#pgboss-proxy-instance-name) | `pg-boss-proxy` |
+| [`PGBOSS_PROXY_PREFIX`](#pgboss-proxy-prefix) | `/api` |
+| [`PGBOSS_PROXY_REQUEST_LOGGER`](#pgboss-proxy-request-logger) | `true` |
+| [`PGBOSS_PROXY_LOG_FORMAT`](#pgboss-proxy-log-format) | `text` |
+| [`PGBOSS_PROXY_EXPOSE_ERRORS`](#pgboss-proxy-expose-errors) | `false` |
+| [`PGBOSS_PROXY_BODY_LIMIT`](#pgboss-proxy-body-limit) | `1048576` |
+| [`PGBOSS_PROXY_ROUTES_ALLOW`](#pgboss-proxy-routes-allow) | all |
+| [`PGBOSS_PROXY_ROUTES_DENY`](#pgboss-proxy-routes-deny) | none |
+| [`PGBOSS_PROXY_PAGE_ROOT`](#pgboss-proxy-page-root) | `true` |
+| [`PGBOSS_PROXY_PAGE_DOCS`](#pgboss-proxy-page-docs) | `true` |
+| [`PGBOSS_PROXY_PAGE_OPENAPI`](#pgboss-proxy-page-openapi) | `true` |
+| [`PGBOSS_PROXY_AUTH_USERNAME`](#pgboss-proxy-auth-username) | |
+| [`PGBOSS_PROXY_AUTH_PASSWORD`](#pgboss-proxy-auth-password) | |
+| [`PGBOSS_PROXY_CORS_ORIGIN`](#pgboss-proxy-cors-origin) | |
+| [`PGBOSS_PROXY_CORS_METHODS`](#pgboss-proxy-cors-methods) | `GET,POST,PUT,DELETE,PATCH,OPTIONS` |
+| [`PGBOSS_PROXY_CORS_HEADERS`](#pgboss-proxy-cors-headers) | `Content-Type,Authorization` |
+| [`PGBOSS_PROXY_CORS_EXPOSE_HEADERS`](#pgboss-proxy-cors-expose-headers) | |
+| [`PGBOSS_PROXY_CORS_CREDENTIALS`](#pgboss-proxy-cors-credentials) | `false` |
+| [`PGBOSS_PROXY_CORS_MAX_AGE`](#pgboss-proxy-cors-max-age) | |
+
+#### `DATABASE_URL`
+
+The PostgreSQL connection string.
+
+#### `PORT` {#env-port}
+
+The listening port.
+
+Default: `3000`
+
+#### `HOST` {#env-host}
+
+The listening hostname.
+
+Default: `localhost`
+
+#### `PGBOSS_PROXY_INSTANCE_NAME`
+
+The name in the instance registry, used when `instanceName` is not passed.
+
+Default: `pg-boss-proxy`
+
+#### `PGBOSS_PROXY_PREFIX`
+
+The URL prefix for API routes.
+
+Default: `/api`
+
+#### `PGBOSS_PROXY_REQUEST_LOGGER`
+
+Turns request logging on or off.
+
+Default: `true`
+
+#### `PGBOSS_PROXY_LOG_FORMAT`
+
+The log format, `text` or `json`.
+
+Default: `text`
+
+#### `PGBOSS_PROXY_EXPOSE_ERRORS`
+
+Returns actual error messages to clients.
+
+Default: `false`
+
+#### `PGBOSS_PROXY_BODY_LIMIT`
+
+The maximum request body size in bytes.
+
+Default: `1048576`
+
+#### `PGBOSS_PROXY_ROUTES_ALLOW`
+
+A comma-separated list of routes to expose.
+
+Default: all
+
+#### `PGBOSS_PROXY_ROUTES_DENY`
+
+A comma-separated list of routes to exclude.
+
+Default: none
+
+#### `PGBOSS_PROXY_PAGE_ROOT`
+
+Turns the root page on or off.
+
+Default: `true`
+
+#### `PGBOSS_PROXY_PAGE_DOCS`
+
+Turns the Swagger docs on or off.
+
+Default: `true`
+
+#### `PGBOSS_PROXY_PAGE_OPENAPI`
+
+Turns the OpenAPI spec on or off.
+
+Default: `true`
+
+#### `PGBOSS_PROXY_AUTH_USERNAME`
+
+The basic auth username. It must be set with `PGBOSS_PROXY_AUTH_PASSWORD`.
+
+#### `PGBOSS_PROXY_AUTH_PASSWORD`
+
+The basic auth password. It must be set with `PGBOSS_PROXY_AUTH_USERNAME`.
+
+#### `PGBOSS_PROXY_CORS_ORIGIN`
+
+The CORS allowed origins, comma-separated or `*`.
+
+#### `PGBOSS_PROXY_CORS_METHODS`
+
+The CORS allowed methods.
+
+Default: `GET,POST,PUT,DELETE,PATCH,OPTIONS`
+
+#### `PGBOSS_PROXY_CORS_HEADERS`
+
+The CORS allowed headers.
+
+Default: `Content-Type,Authorization`
+
+#### `PGBOSS_PROXY_CORS_EXPOSE_HEADERS`
+
+The CORS exposed headers.
+
+#### `PGBOSS_PROXY_CORS_CREDENTIALS`
+
+Allows credentials in CORS requests.
+
+Default: `false`
+
+#### `PGBOSS_PROXY_CORS_MAX_AGE`
+
+The CORS preflight cache duration in seconds.
 
 ### PgBoss constructor options
 
