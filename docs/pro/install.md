@@ -4,7 +4,7 @@
 
 - Node.js 22.12 or later.
 - A Postgres database for Pro.
-- pg-boss 12.36 or later in each schema Pro monitors. Each is one pg-boss schema in one database, added in the Pro Console once Pro is running. See [Schemas](./schemas.md) and [pg-boss versions](./versions.md).
+- pg-boss 12.36 or later in each schema Pro monitors. The schemas are added in the Pro Console once Pro is running. See [Schemas](./schemas.md) and [pg-boss versions](./versions.md).
 - A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
 ## Install

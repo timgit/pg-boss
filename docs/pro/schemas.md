@@ -1,7 +1,6 @@
 # Schemas
 
-A schema is one pg-boss schema in one database, such as the pg-boss an application uses in
-production. Pro monitors each schema added under **Settings › Schemas** and reads no list of schemas
+Pro monitors each pg-boss schema added under **Settings › Schemas** and reads no list of schemas
 from its environment.
 
 The Pro Console shows one schema at a time. Every page about a schema shows its name and a colored
