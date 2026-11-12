@@ -14,7 +14,8 @@ grant.
 
 The list holds people and [service accounts](./api-tokens.md) together. **All**,
 **People** and **Service accounts** narrow the list to one kind. **Add** creates
-a person or a service account. The search box keeps the accounts whose email, service account name or
+a person or a service account. A person is added on a page of its own, which then opens the new
+account's page. The search box keeps the accounts whose email, service account name or
 person's name holds the text. The counts on the tabs follow the search. **In group** keeps one
 group's members. **Role on** picks a schema. The list then shows each account with a role on that schema
 and the grant the role comes from. See [access by schema](./roles.md#access-by-schema).
