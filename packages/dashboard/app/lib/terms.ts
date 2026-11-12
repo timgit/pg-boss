@@ -18,5 +18,5 @@ export const term = {
   get many () { return pro() ? 'apps' : 'databases' },
   get One () { return pro() ? 'App' : 'Database' },
   get Many () { return pro() ? 'Apps' : 'Databases' },
-  get param () { return pro() ? 'app' : 'db' },
+  get param () { return pro() ? 'schema' : 'db' },
 }
