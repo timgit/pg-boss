@@ -6,14 +6,14 @@ Access comes from grants. A grant gives a person, a [group](./accounts.md#groups
 | - | - |
 | Viewer | Viewer users have read-only access. |
 | Operator | Operator users can retry, cancel, resume and send jobs, and acknowledge alerts. |
-| Admin | Admin users can delete jobs, and create and delete queues and schedules. An admin on all schemas is a [global admin](#global-admin). |
+| Admin | Admin users can delete jobs, and create and delete queues and schedules. An admin role covers one schema. Admin on all schemas is the [global admin](#global-admin) role. |
 | Worker | Only a service account can hold this role. A worker uses it to fetch, complete, fail and send jobs through the Pro API. |
 
 Grants read as the role followed by its scope, such as `Operator › All schemas` or `Viewer › Production`, where "Production" is a schema's name.
 
 ## Global admin
 
-An account with the admin role on all schemas is a global admin, whether the grant is its own or comes through a group. Only a global admin manages alert rules, accounts, groups, SSO, destinations and settings, and opens the [audit log](./audit-log.md). An admin on one schema can't, because an admin who manages accounts could widen their own grant. The accounts list and an account's page show a **Global admin** label beside the name. The first account, made at [setup](./install.md), is a global admin.
+An account with the admin role on all schemas is a global admin, whether the grant is its own or comes through a group. To make one, choose **Global admin** as the role, under **Pro administration**, when adding a person or granting a role to a person or a group. **Admin** always names one schema, so leaving the schema unset never makes a global admin. A service account can't be a global admin. Only a global admin manages alert rules, accounts, groups, SSO, destinations and settings, and opens the [audit log](./audit-log.md). An admin on one schema can't, because an admin who manages accounts could widen their own grant. The accounts list and an account's page show a **Global admin** label beside the name. The first account, made at [setup](./install.md), is a global admin.
 
 ## Access by schema
 
