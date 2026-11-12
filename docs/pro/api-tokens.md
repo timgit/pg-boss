@@ -31,6 +31,10 @@ expires within 14 days.
 ![A service account's page](../images/pro/service-account.webp){.light-only}
 ![A service account's page](../images/pro/service-account-dark.webp){.dark-only}
 
+## All tokens
+
+**Settings › API tokens** lists every service account's tokens in one table, for [global admins](./roles.md#global-admin). Each row shows the token's name and first characters, its service account and that account's roles, when it expires, when and from where it was last used, and who created it. The tabs hold the tokens that work (**Active**), the ones of those that expire within 14 days (**Expiring soon**), and the **Expired** and **Revoked** ones, each with its count. The search finds a token by its name, its first characters or its service account's name, which helps when a log or a leaked value shows only the start of a token. **Account** keeps one service account's tokens. **Revoke** stops a token at once, as on its account's page.
+
 ## Tokens
 
 A token is `pgbp_` followed by 43 characters. Pro shows it once, at creation. Pro keeps only its hash and its first characters, to tell tokens apart. Each token expires after 30, 90 or 365 days or never. Any token can be revoked. Pro records the time and address of a token's last use, at most once a minute.
