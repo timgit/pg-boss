@@ -37,12 +37,12 @@ still matches.
 - The operation runs in chunks beside the live queues and commits each chunk.
   A large operation doesn't hold locks for minutes. **Stop after this chunk**
   ends the operation there and keeps what's already done. The button shows to users whose role can
-  run the operation's verb on that app.
+  run the operation's verb on that schema.
 - The run needs the page open, because the page runs the operation by posting one
   chunk at a time. Leaving the page or closing the tab stops the operation after
   the chunk in progress. The page asks before the user leaves. The history shows a run whose page went
   away as stopped a minute after its last chunk.
-- One operation runs at a time in an app. The page refuses a second operation at
+- One operation runs at a time in a schema. The page refuses a second operation at
   confirm and names the operation already running.
 - The audit log records each operation when it starts, with who started it,
   the filter and the expected count. The log records the operation again when
@@ -52,7 +52,7 @@ still matches.
 
 The page saves a filter by name. A user can apply a saved filter again from the top of the page.
 **Operation history** in the page header lists
-every operation on the app from the last 90 days, newest first, and shows how
+every operation on the schema from the last 90 days, newest first, and shows how
 each operation ended. Filter it by action or by how the operations ended. For
 [global admins](./roles.md#global-admin), each row links to its entries in the audit log.
 

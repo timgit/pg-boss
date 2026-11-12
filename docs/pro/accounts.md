@@ -9,21 +9,21 @@ Pro authenticates each user with their own account. Users sign out from the acco
 
 Accounts live under **Settings › Accounts** in the sidebar. Only
 [global admins](./roles.md#global-admin) see the page. An admin on a single
-app doesn't get this screen, because from it they could widen their own
+schema doesn't get this screen, because from it they could widen their own
 grant.
 
 The list holds people and [service accounts](./api-tokens.md) together. **All**,
 **People** and **Service accounts** narrow the list to one kind. **Add** creates
 a person or a service account. The search box keeps the accounts whose email, service account name or
 person's name holds the text. The counts on the tabs follow the search. **In group** keeps one
-group's members. **Role on** picks an app. The list then shows each account with a role on that app
-and the grant the role comes from. See [access by app](./roles.md#access-by-app).
+group's members. **Role on** picks a schema. The list then shows each account with a role on that schema
+and the grant the role comes from. See [access by schema](./roles.md#access-by-schema).
 
 ![The accounts page](../images/pro/accounts.webp){.light-only}
 ![The accounts page](../images/pro/accounts-dark.webp){.dark-only}
 
 From there, add a person with a role. An account's page shows under its name the roles its direct grants and groups together
-give it on each app. **Role on** in the list shows which
+give it on each schema. **Role on** in the list shows which
 grant each role comes from. The **Activity** link after the date the account was added opens the
 [audit log](./audit-log.md) filtered to the account's actions. The page also shows:
 
@@ -70,9 +70,9 @@ every other session and keeps the current session.
 
 An account can hold a role directly or through a group. Groups
 live under **Settings › Groups**, where the search box keeps the groups whose name or
-description holds the text. Give a group a role on an app (or on all
-apps), and every member has that role. **Add people** adds members by searching for a name or address
-or by pasting a list of addresses. Where two roles apply to the same app, the person may do everything
+description holds the text. Give a group a role on a schema (or on all
+schemas), and every member has that role. **Add people** adds members by searching for a name or address
+or by pasting a list of addresses. Where two roles apply to the same schema, the person may do everything
 either allows, as [Roles](./roles.md) explains. A group's page lists its
 members ten at a time, with a search and a way to remove each member. **View in Accounts** opens the
 Accounts list filtered to the group, with each member's roles and last activity.

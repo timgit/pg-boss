@@ -16,7 +16,7 @@ set up, Pro talks only to its Postgres database.
 | Single sign-on | when a user signs in or presses **Test connection** | the provider's issuer, token and key endpoints |
 
 Alert deliveries carry no job payloads, only what the alert is about: the rule
-name, the warning type and message, the queue and app it names, and the
+name, the warning type and message, the queue and schema it names, and the
 time.
 
 ## Private addresses

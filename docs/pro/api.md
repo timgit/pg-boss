@@ -1,6 +1,6 @@
 # Pro API
 
-The Pro API serves pg-boss's own methods over HTTP with [`@pg-boss/proxy`](../proxy.md), at `/pro/api/v1/<app>` for each app. Every call needs an [API token](./api-tokens.md). `<app>` is the app's id, shown under **Settings › Apps**. Under a base path, the API is under it too: `/pgboss/pro/api/v1/…`.
+The Pro API serves pg-boss's own methods over HTTP with [`@pg-boss/proxy`](../proxy.md), at `/pro/api/v1/<schema>` for each schema. Every call needs an [API token](./api-tokens.md). `<schema>` is the schema's id, shown under **Settings › Schemas**. Under a base path, the API is under it too: `/pgboss/pro/api/v1/…`.
 
 ```bash
 curl -X POST https://console.example.com/pro/api/v1/pgboss/send \
@@ -13,11 +13,11 @@ Requests and responses use the proxy's format, `{ "ok": true, "result": … }` o
 
 ## Permissions
 
-Each method needs a capability, which the service account gets from its role on that app. Pro refuses any method not listed.
+Each method needs a capability, which the service account gets from its role on that schema. Pro refuses any method not listed.
 
 | Needs | Methods |
 | - | - |
-| Any role on the app | `getQueue`, `getQueues`, `getQueueStats`, `findJobs`, `getSchedule`, `getSchedules`, `getDependencies`, `getDependents`, `getBlockedKeys`, `previewRedrive`, `previewSchedule`, `schemaVersion`, `isInstalled`, `getBamStatus`, `meta` |
+| Any role on the schema | `getQueue`, `getQueues`, `getQueueStats`, `findJobs`, `getSchedule`, `getSchedules`, `getDependencies`, `getDependents`, `getBlockedKeys`, `previewRedrive`, `previewSchedule`, `schemaVersion`, `isInstalled`, `getBamStatus`, `meta` |
 | Send (operator, admin, worker) | `send`, `sendAfter`, `sendThrottled`, `sendDebounced`, `insert`, `upsert`, `update`, `flow` |
 | Work (worker) | `fetch`, `complete`, `fail`, `touch` |
 | Retry (operator, admin) | `retry`, `redrive` |
@@ -35,8 +35,8 @@ Each method needs a capability, which the service account gets from its role on 
 | `400` | A request the method can't take, such as a `minutes` value the acknowledge call doesn't offer. |
 | `401` | No token, or a token that is unknown, expired, revoked, or whose service account is disabled. |
 | `403` | The token's role doesn't include the method, or Pro refuses the method. |
-| `404` | No app by that id, or an app the service account has no role on. |
-| `409` | The app's pg-boss schema version isn't the version this Pro makes changes on (see [pg-boss versions](./versions.md)), or the alert to acknowledge is closed or already acknowledged. |
+| `404` | No schema by that id, or a schema the service account has no role on. |
+| `409` | The schema's pg-boss version isn't the version this Pro makes changes on (see [pg-boss versions](./versions.md)), or the alert to acknowledge is closed or already acknowledged. |
 | `429` | Only an invalid token, after too many from this address. |
 
 ## Audit
@@ -47,8 +47,8 @@ The [audit log](./audit-log.md) records each change, never a read, with the meth
 
 Beside pg-boss's methods, the Pro API serves Pro's own alerts:
 
-- `GET /pro/api/v1/alerts`: the open alerts on every app the service account can see, or on one app with `?app=<id>`. Each has its id, app, severity, title, why, when it opened, and who acknowledged it.
-- `POST /pro/api/v1/alerts/<id>/acknowledge`: takes the alert off the needs-attention list for every user, as an operator does in the Pro Console. Send `{ "minutes": 60 }`, `240` or `1440` to acknowledge it for that long, or nothing for as long as it stays open. Needs the operator or admin role on the alert's app.
+- `GET /pro/api/v1/alerts`: the open alerts on every schema the service account can see, or on one schema with `?schema=<id>`. Each has its id, schema, severity, title, why, when it opened, and who acknowledged it.
+- `POST /pro/api/v1/alerts/<id>/acknowledge`: takes the alert off the needs-attention list for every user, as an operator does in the Pro Console. Send `{ "minutes": 60 }`, `240` or `1440` to acknowledge it for that long, or nothing for as long as it stays open. Needs the operator or admin role on the alert's schema.
 
 ## Scaling
 

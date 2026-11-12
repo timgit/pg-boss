@@ -23,7 +23,7 @@ import { VPButton } from 'vitepress/theme'
 
 pg-boss Pro is built for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users make changes such as creating queues and jobs or modifying schedules, as their [role](./roles.md) allows. Every change is recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds enhanced health monitoring and a configurable rules engine, which can alert whoever is on call by email, webhook or a paging service. An alert catches a stalled queue before it turns into an outage.
 
-Pro monitors one or more apps, added in the Pro Console. An app is one pg-boss schema in one database, such as the pg-boss an application uses in production.
+Pro monitors one or more schemas, added in the Pro Console. Each is one pg-boss schema in one database, such as the pg-boss an application uses in production.
 
 Pro is built and supported by the author of pg-boss. Upgrading from the [dashboard](../dashboard.md) is a change of package name, from `@pg-boss/dashboard` to `@pg-boss/pro`, plus a [database of Pro's own](./install.md#database-setup) for its accounts, rules and alerts. Changes work on a database that runs the pg-boss schema the Pro release is built for. On another schema, pages still open and changes are off. See [pg-boss versions](./versions.md).
 
@@ -59,20 +59,20 @@ Pro is built and supported by the author of pg-boss. Upgrading from the [dashboa
   <figure>
     <img class="light-only" src="../images/pro/tile-group.webp" :data-zoom-src="group" alt="A group and its roles">
     <img class="dark-only" src="../images/pro/tile-group-dark.webp" :data-zoom-src="groupDark" alt="A group and its roles">
-    <figcaption><a href="/pro/accounts#groups">Groups and roles</a>Accounts and groups, with roles per app.</figcaption>
+    <figcaption><a href="/pro/accounts#groups">Groups and roles</a>Accounts and groups, with roles per schema.</figcaption>
   </figure>
 </div>
 
 ## Features
 
-Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro API and metrics are set per app.
+Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro API and metrics are set per schema.
 
 | Feature | Dashboard | Pro |
 | - | :-: | :-: |
 | Overview and queues, with each queue's status and its counts over time | ✓ | ✓ |
 | Jobs, filtered by state, queue and payload, with each job's details | ✓ | ✓ |
 | Schedules, subscriptions and warnings | ✓ | ✓ |
-| [Several apps](./apps.md), such as Production and Staging, added in the Pro Console | ✓ | ✓ |
+| [Several schemas](./schemas.md), such as Production and Staging, added in the Pro Console | ✓ | ✓ |
 | [Queue health](./queues.md#health) from throughput history, with wait and run times and time to drain | | ✓ |
 | [Alert rules](./alert-rules.md) for a queue stalled or falling behind, a queue with no workers, thresholds on a queue's counts, rates and waits, pg-boss warnings, instances restarting, gone quiet or at a limit, and failed operations, each with its own thresholds and [versions](./alert-rules.md#versions) to compare or restore | | ✓ |
 | Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |
@@ -82,7 +82,7 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 | [Create and delete queues and schedules](./changes.md) | | ✓ |
 | [Retry, cancel and resume a job](./changes.md) | ✓ | ✓, by role and in the audit log |
 | Sign-in | One username and password shared by every user, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
-| [Groups](./accounts.md), with [roles](./roles.md) per app | | ✓ |
+| [Groups](./accounts.md), with [roles](./roles.md) per schema | | ✓ |
 | [Single sign-on](./sso.md) through an existing OpenID Connect provider | | ✓ |
 | An [audit log](./audit-log.md) of every change | | ✓ |
 | The [Pro API](./api.md), through which a deploy script, a CI job or a worker in another language sends, fetches, completes and retries jobs without a Node.js client | | ✓ |
@@ -94,7 +94,7 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 
 ## Pricing
 
-Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or apps. A subscription includes every new version and support. When an annual subscription ends, or a monthly subscription ends after 12 months or more, the organization keeps the right to install and use every version released until then. See [Cancellation](./license.md#cancellation).
+Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or schemas. A subscription includes every new version and support. When an annual subscription ends, or a monthly subscription ends after 12 months or more, the organization keeps the right to install and use every version released until then. See [Cancellation](./license.md#cancellation).
 
 Pro is sold through Polar, which takes the payment and shows the license key on its purchases page.
 

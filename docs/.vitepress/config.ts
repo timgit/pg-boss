@@ -84,7 +84,7 @@ export default defineConfig({
         {
           text: 'Administration',
           items: [
-            { text: 'Apps', link: '/pro/apps' },
+            { text: 'Schemas', link: '/pro/schemas' },
             { text: 'Retention and secrets', link: '/pro/administration' },
             { text: 'License', link: '/pro/license' },
             { text: 'Network activity', link: '/pro/network' }

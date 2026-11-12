@@ -15,7 +15,7 @@ Pro prunes its own store once a minute.
 
 ## Secrets
 
-Pro encrypts each app's connection, SMTP passwords, API keys, webhook URLs, signing secrets and
+Pro encrypts each schema's connection, SMTP passwords, API keys, webhook URLs, signing secrets and
 Authorization headers, PagerDuty integration keys and the OIDC client secret
 before it stores them. 
 
@@ -38,17 +38,17 @@ decrypts the check value. When that fails, Pro tries to decrypt every stored sec
 the secrets that fail. Pro logs them, and every global admin sees a banner on each page that lists
 them and where to enter them again:
 
-- each app's connection, in Settings › Apps
+- each schema's connection, in Settings › Schemas
 - each destination's secrets and the outgoing email's password or API key, in Settings › Destinations
 - the SSO client secret, in Settings › SSO
 
-Settings › Apps and Settings › Destinations mark each secret that doesn't decrypt. Until it's
-entered again, Pro doesn't monitor the app, and the destination can't send. A delivery that fails
+Settings › Schemas and Settings › Destinations mark each secret that doesn't decrypt. Until it's
+entered again, Pro doesn't monitor the schema, and the destination can't send. A delivery that fails
 for that reason names the secret and isn't retried. SSO sign-in fails until the client secret is
 entered again, and password sign-in keeps working. Restarting Pro with the earlier key also brings
 the secrets back.
 
 A check value that fails while every stored secret decrypts is stored again with the current key,
-and Pro reports nothing. After each save in Settings › Apps, Destinations or SSO, Pro tries every
+and Pro reports nothing. After each save in Settings › Schemas, Destinations or SSO, Pro tries every
 stored secret again. Once every stored secret decrypts, Pro stores the check value again with the
 current key and the banner goes.

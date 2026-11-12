@@ -12,7 +12,7 @@ The column beside the sections has three cards:
 
 - **Uptime, 30 days** shows the [uptime](./status.md#uptime) of all queues together and a strip of the last 30 UTC days. Each day is colored by the most severe queue that day. A day opens the [Status](./status.md) page for that day.
 - **Instances** is the dashboard overview's [Instances card](../dashboard.md#overview), with a flag when more than one pg-boss version is live.
-- **Activity** shows the progress of up to three [operations](./operations.md) that are running or finished in the last day. The card also lists the five newest changes to this app from the [audit log](./audit-log.md).
+- **Activity** shows the progress of up to three [operations](./operations.md) that are running or finished in the last day. The card also lists the five newest changes to this schema from the [audit log](./audit-log.md).
 
 ![The overview](../images/pro/overview.webp){.light-only}
 ![The overview](../images/pro/overview-dark.webp){.dark-only}

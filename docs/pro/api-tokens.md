@@ -2,7 +2,7 @@
 
 A script, a CI job, a Prometheus scrape or a worker in another language reaches Pro with an API token. A token belongs to a **service account**, which is an account for a machine. The token keeps working when the person who set it up leaves.
 
-- A service account has [roles](./roles.md) on apps like a person: a viewer for a scrape, an operator on one app for a CI redrive, a worker for a worker.
+- A service account has [roles](./roles.md) on schemas like a person: a viewer for a scrape, an operator on one schema for a CI redrive, a worker for a worker.
 - It can't sign in to the Pro Console by password, SSO or invitation. It acts only through its tokens, and only on the [Pro API](./api.md) and `/metrics`.
 - Disabling it stops every one of its tokens at once.
 - It can have several tokens. To replace a token with no gap, create the new token, deploy it, then revoke the old token.
@@ -19,7 +19,7 @@ expires within 14 days.
 
 **Add service account** (or **Add** then **Service account** on the list of every account) takes a name, a description, and a first role. The service account's page then shows:
 
-- **Roles**: what its tokens may do, and on which apps. Grant and remove them here. A service
+- **Roles**: what its tokens may do, and on which schemas. Grant and remove them here. A service
   account can't join a group.
 - **API tokens**: each with its name, its first characters, who created it, when it expires and
   when it was last used. **Create token** asks for a name and an expiry and shows the token once, to

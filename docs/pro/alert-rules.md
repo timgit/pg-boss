@@ -2,7 +2,7 @@
 
 ## Default rules
 
-Every app starts with one rule for each check Pro can run. Six are on:
+Every schema starts with one rule for each check Pro can run. Six are on:
 
 - **Queue stalled or falling behind**: the queue's health verdict, read from its
   throughput.
@@ -12,17 +12,17 @@ Every app starts with one rule for each check Pro can run. Six are on:
 - **An operation failed**: an operation that failed, or a redrive that left
   collisions.
 - **pg-boss warnings**: every warning type pg-boss records.
-- **App unreachable**: Pro can't connect to the app's database.
+- **Schema unreachable**: Pro can't connect to the schema's database.
 
-**App unreachable** connects to the app's database at the start of each evaluator
+**Schema unreachable** connects to the schema's database at the start of each evaluator
 pass and runs `SELECT 1`, waiting up to 10 seconds for the connection. After 2
 minutes of failed passes, the rule opens a critical alert with the connection error.
-While Pro can't connect, the evaluator skips the app's other reads. The rules that
-read the app's database open no new alerts, and their open check and threshold
+While Pro can't connect, the evaluator skips the schema's other reads. The rules that
+read the schema open no new alerts, and their open check and threshold
 alerts stay open until Pro connects again. A database without pg-boss's schema
-still connects and doesn't count as unreachable. An app whose stored connection
-can't be decrypted isn't evaluated at all. Settings › Apps marks that app instead
-(see [Connection changes](./apps.md#connection-changes)).
+still connects and doesn't count as unreachable. A schema whose stored connection
+can't be decrypted isn't evaluated at all. Settings › Schemas marks that schema instead
+(see [Connection changes](./schemas.md#connection-changes)).
 
 **Queue with no workers** judges by what leaves the queue, whoever takes it.
 A queue drained with `fetch()` and `complete()` counts as worked. A job active at
@@ -76,7 +76,7 @@ that has no destination asks for a destination for its alerts, and offers a dest
 that is on. A default
 rule can be edited and turned off,
 but never deleted. **Reset to default** puts back its original definition.
-An app added later gets its default rules on the evaluator's next pass.
+A schema added later gets its default rules on the evaluator's next pass.
 
 ![The rules list](../images/pro/alert-rules.webp){.light-only}
 ![The rules list](../images/pro/alert-rules-dark.webp){.dark-only}
@@ -138,7 +138,7 @@ seconds). On `waitP95Seconds`, `"value": 600` is ten minutes.
 ```json
 {
   "kind": "threshold",
-  "app": "production",
+  "schema": "production",
   "queues": { "match": "glob", "values": ["billing-*"], "except": ["billing-dlq"] },
   "when": {
     "match": "all",
@@ -176,7 +176,7 @@ A check rule names its check by id:
 | `event-loop` | Blocking its event loop |
 | `cpu` | Hitting its CPU limit |
 | `memory` | Near its memory limit |
-| `unreachable` | App unreachable |
+| `unreachable` | Schema unreachable |
 
 ## Versions
 

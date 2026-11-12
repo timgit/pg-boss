@@ -1,6 +1,6 @@
 # Audit log
 
-The **Audit log** lists every change made through the Pro Console and the [Pro API](./api.md), newest first, except the job calls a service account isn't [set to record](./api-tokens.md). Each row shows the person or service account that made the change, the change itself, the app it was made in, and the time. Only [global admins](./roles.md#global-admin) see the page. An entry's page shows the state on either side of the change and the address it came from.
+The **Audit log** lists every change made through the Pro Console and the [Pro API](./api.md), newest first, except the job calls a service account isn't [set to record](./api-tokens.md). Each row shows the person or service account that made the change, the change itself, the schema it was made in, and the time. Only [global admins](./roles.md#global-admin) see the page. An entry's page shows the state on either side of the change and the address it came from.
 
 ![The audit log](../images/pro/audit-log.webp){.light-only}
 ![The audit log](../images/pro/audit-log-dark.webp){.dark-only}
@@ -10,7 +10,7 @@ Pro writes each change to the log in the same transaction as the change itself. 
 ![An audit entry](../images/pro/audit-entry.webp){.light-only}
 ![An audit entry](../images/pro/audit-entry-dark.webp){.dark-only}
 
-- Filter by **Who** made the change (a person or a service account), **What** kind of change it was (jobs and queues, alerts, accounts and tokens, groups, sign-ins, settings, Pro API calls, one or several), the **App** it was made in, and **When** (the last 24 hours, 7, 30 or 90 days). **No app** shows the changes that belong to no single app, such as accounts, groups and settings.
+- Filter by **Who** made the change (a person or a service account), **What** kind of change it was (jobs and queues, alerts, accounts and tokens, groups, sign-ins, settings, Pro API calls, one or several), the **Schema** it was made in, and **When** (the last 24 hours, 7, 30 or 90 days). **No schema** shows the changes that belong to no single schema, such as accounts, groups and settings.
 - Each filter in force shows as a chip under the filter row and can be removed on its own. A link from another page can also filter by what the entries are about (**About**) or by one exact action. Those filters show as chips too.
 - Each row names the change's subject, such as the account, group, rule or queues, and the address it came from.
 - **Export CSV** downloads the entries on screen, under the same filters.
