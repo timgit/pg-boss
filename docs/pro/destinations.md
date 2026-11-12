@@ -78,7 +78,13 @@ server is set up, an email destination shows **Waiting for Settings › Email** 
 be turned on.
 
 Email goes out through SMTP or Resend. **Send test** on the Email page sends one message to your
-own address through the saved settings. Changing the
+own address with the settings in the form, saved or not. Each person can send 5 tests in 15 minutes,
+and everyone together 20, before tests stop for 15 minutes.
+
+![The email server](../images/pro/email.webp){.light-only}
+![The email server](../images/pro/email-dark.webp){.dark-only}
+
+Changing the
 SMTP host, port, user or TLS setting needs the password entered again. Pro
 requires STARTTLS unless the connection is TLS from the start or the server is
 on this machine. The password and messages never cross the network in the
