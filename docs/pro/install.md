@@ -9,9 +9,7 @@
 
 ## Install
 
-Pro is installed from a private registry, not from npmjs. The license key is the only credential the registry needs. The key is shown on the purchases page of the Polar account that bought the subscription.
-
-To run Pro as its own server, create a project for it and point npm at Pro's registry:
+Pro is installed from a private registry, not from npmjs. To run Pro as its own server, create a project for it and point npm at Pro's registry:
 
 ```bash
 npm init -y
@@ -19,9 +17,9 @@ npm config set --location=project //npm.pgboss.io/:_authToken '${PGBOSS_PRO_LICE
 npm config set --location=project @pg-boss:registry https://npm.pgboss.io
 ```
 
-The project's `.npmrc` names the variable `PGBOSS_PRO_LICENSE` in place of the license key. The file holds no secret and can be committed. The registry line points the whole `@pg-boss` scope at the private registry. The `@pg-boss/dashboard` and `@pg-boss/proxy` packages keep resolving from npmjs, because the registry redirects anything that isn't Pro.
+The `npm config set` commands above creates a `.npmrc` file and refers to the environment variable `PGBOSS_PRO_LICENSE`, which is your license key. The license key is shown on the purchases page of the Polar account that bought the subscription.
 
-Set `PGBOSS_PRO_LICENSE` to the license key on every machine and CI job that installs or updates Pro. Then install Pro:
+Then, assign the environment variable and install:
 
 ```bash
 PGBOSS_PRO_LICENSE="<your license key>" \
@@ -47,14 +45,14 @@ Pro reads these settings at startup:
 | - | - | - |
 | `PGBOSS_PRO_DB_HOST` | Always | The host of Pro's database. |
 | `PGBOSS_PRO_DB_PASSWORD` | Always | The password of the role Pro connects to its database as. |
-| `PGBOSS_PRO_SECRET_KEY` | Always | The encryption secret key. This is used to encrypt secrets such as each app's connection settings, webhook URLs, and email password. This should be at least 32 characters. You can generate one with `openssl rand -base64 32`. |
+| `PGBOSS_PRO_SECRET_KEY` | Always | The encryption key. This is used to encrypt secrets such as each app's connection settings, webhook URLs, and email password. This should be at least 32 characters. You can generate one with `openssl rand -base64 32`. |
 | `PGBOSS_PRO_SITE_URL` | In production | The public address of the Pro Console and Pro API. Without it, emails, webhooks and PagerDuty carry no link to the alert. Behind a reverse proxy that ends HTTPS, actions need it too. See [reverse proxy](../dashboard.md#reverse-proxy). |
 | `PGBOSS_PRO_TRUSTED_PROXIES` | Behind a reverse proxy on another host | The reverse proxy's address. Pro then reads each client's address from `X-Forwarded-For`, for sign-in limits and the [audit log](./audit-log.md#address). |
 | `PGBOSS_PRO_SETUP_TOKEN` | With several instances behind a load balancer | One setup token the instances share, set before the first start. The setup link then works on every instance. |
 
-Store the encryption secret key in another secret store. Rotating the secret key requires re-entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error at startup and serves no pages. See [secrets](./administration.md#secrets).
+Store the encryption key in another secret store. Rotating the secret key requires re-entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error at startup and serves no pages. See [secrets](./administration.md#secrets).
 
-Pro doesn't read `DATABASE_URL` or `PGBOSS_SCHEMA`. The apps Pro monitors are added in the Pro Console. See [Apps](./apps.md).
+Pro doesn't read `DATABASE_URL` or `PGBOSS_SCHEMA` like the dashboard app. The apps Pro monitors are added in the Pro Console. See [Apps](./apps.md).
 
 The other settings for Pro's database default to the role and database above:
 
