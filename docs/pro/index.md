@@ -91,7 +91,20 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 
 ## Pricing
 
-Pro costs $1,000 a year or $100 a month for one organization, with no limit on users, installations or schemas. A subscription includes every new version and support. When an annual subscription ends, or a monthly subscription ends after 12 months or more, the organization keeps the right to install and use every version released until then. See [Cancellation](./license.md#cancellation).
+<div class="pro-plans">
+  <div class="pro-plan">
+    <div class="pro-plan-name">Annual</div>
+    <div class="pro-plan-price">$1,000 <span>a year</span></div>
+    <p>When the subscription ends, the organization keeps the right to install and use every version released until then.</p>
+  </div>
+  <div class="pro-plan">
+    <div class="pro-plan-name">Monthly</div>
+    <div class="pro-plan-price">$100 <span>a month</span></div>
+    <p>When the subscription ends after 12 months or more, the organization keeps the right to install and use every version released until then.</p>
+  </div>
+</div>
+
+Either plan covers one organization with no limit on users, installations or schemas. A subscription includes every new version and support. See [Cancellation](./license.md#cancellation).
 
 Pro is sold through Polar, which takes the payment and shows the license key on its purchases page.
 

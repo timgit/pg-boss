@@ -88,6 +88,57 @@ html:not(.dark) .vp-doc img.dark-only {
   }
 }
 
+/* The annual and monthly plans side by side under Pricing on the Pro page. */
+.pro-plans {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0 16px;
+}
+
+.pro-plan {
+  min-width: 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  padding: 20px 24px;
+  background: var(--vp-c-bg-soft);
+}
+
+.pro-plan-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-2);
+}
+
+.pro-plan-price {
+  margin-top: 4px;
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.pro-plan-price span {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc .pro-plan p {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--vp-c-text-2);
+}
+
+@media (max-width: 640px) {
+  .pro-plans {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* An opened image sits above the nav bar and the sidebar. */
 .medium-zoom-overlay,
 .medium-zoom-image--opened {
