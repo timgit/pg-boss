@@ -37,12 +37,18 @@ The matrix shows which PostgreSQL features each backend supports (✅). Where a 
 available (❌), pg-boss automatically switches to the compatible alternative. See the
 [compatibility flags](#compatibility-flags) below.
 
-| Database | Status | `backend` | SKIP LOCKED | Multi-mutation CTEs | Table partitioning | Deferrable constraints | Advisory locks | Covering indexes | Writes to a column it just added | LISTEN/NOTIFY |
-|----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| PostgreSQL | Tested | `postgres` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| CockroachDB | Tested | `cockroachdb` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Citus | Tested¹ | `citus` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| PGlite | Tested | `pglite` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅² |
+| | PostgreSQL | CockroachDB | Citus | PGlite |
+|-|:---:|:---:|:---:|:---:|
+| Status | Tested | Tested | Tested¹ | Tested |
+| `backend` | `postgres` | `cockroachdb` | `citus` | `pglite` |
+| SKIP LOCKED | ✅ | ❌ | ✅ | ✅ |
+| Multi-mutation CTEs | ✅ | ❌ | ✅ | ✅ |
+| Table partitioning | ✅ | ❌ | ✅ | ✅ |
+| Deferrable constraints | ✅ | ❌ | ✅ | ✅ |
+| Advisory locks | ✅ | ❌ | ✅ | ✅ |
+| Covering indexes | ✅ | ❌ | ✅ | ✅ |
+| Writes to a column it just added | ✅ | ❌ | ✅ | ✅ |
+| LISTEN/NOTIFY | ✅ | ❌ | ✅ | ✅² |
 
 ¹ In standard mode (coordinator-local table) Citus supports these features like plain PostgreSQL. A
 deliberately sharded job table would lose `SKIP LOCKED` compatibility and need the atomic-`UPDATE`
@@ -51,36 +57,124 @@ fetch instead. See [Citus](#tested-citus-compatible-in-standard-mode).
 ² Because PGlite is embedded single-connection PostgreSQL, LISTEN/NOTIFY works entirely in-process.
 `useListenNotify` works with no extra setup, because the `fromPglite` adapter wires it up automatically.
 
-Bun's `Bun.SQL` client has no row of its own, because it's a different *driver* for the same
+Bun's `Bun.SQL` client has no column of its own, because it's a different *driver* for the same
 PostgreSQL database. It runs on the `postgres` profile with every feature above (LISTEN/NOTIFY
 needs Bun 1.4.0 or later). See [Bun](#bun-driver).
 
 ## Compatibility flags
 
-The table lists each behavior's difference from stock PostgreSQL and the internal flag it
-maps to in the source.
-
-| Capability | Effect | Trade-off | Flag |
-|------------|--------|-----------|------|
-| Lock-free fetch | Fetch jobs with an atomic `UPDATE ... RETURNING` (plus a `state < 'active'` recheck) instead of `SELECT FOR UPDATE SKIP LOCKED`. | Under high contention some workers get empty results instead of skipping to unlocked rows. | `noSkipLocked` |
-| Split-statement writes | Run `complete`, `fail`, and supervisor expiry as split statements inside a transaction rather than a single multi-mutation CTE. | A few extra round-trips per command, which is negligible for normal workloads. | `noMultiMutationCte` |
-| Single shared table | Create the job table without `PARTITION BY LIST`. | Per-queue partitioning (`partition: true`) is unavailable; all jobs share one table. | `noTablePartitioning` |
-| Immediate constraints | Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. | Constraints check immediately rather than at commit (no effect on normal operation). | `noDeferrableConstraints` |
-| Lock-free schema setup | Disable `pg_advisory_xact_lock` (used to coordinate schema creation/migration). | Concurrent instances may occasionally repeat maintenance work, which costs time but leaves the results correct. | `noAdvisoryLocks` |
-| Plain indexes | Omit the `INCLUDE` clause on covering indexes. | Index-only scans during fetch are slightly less efficient. The difference is minimal for most workloads. | `noCoveringIndexes` |
-| Default-only column adds | Leave out the `UPDATE` that seeds a column the same migration added, for engines that refuse to write a column in the transaction that added it. | Rows carry the column's default until something rewrites them. For example, after v41 a schedule holding an RRULE reads as `cron` from `getSchedules()` until the next scheduling pass relabels it. | `noAddColumnBackfill` |
-| No transactional heartbeat | Refuse a [`transactional`](./api/workers.md#work-name-options-handler) worker on a queue with `heartbeatSeconds` set, for engines that will not let a transaction write a row another session wrote after it began. | The two cannot be combined on that engine; `expireInSeconds` is the liveness bound for a transactional worker there. | `noTransactionalHeartbeat` |
-| No LISTEN/NOTIFY | Leave out the `pg_notify` call on insert and the `useListenNotify` listener, for engines that don't implement LISTEN/NOTIFY. | Workers find jobs by polling. With `useListenNotify` set, `start()` emits a `listen_notify_unavailable` warning. | `noListenNotify` |
-| Timeout-only BAM reclaim | Reclaim a stuck `in_progress` [BAM](api/ops#getbamstatus) command on its timeout alone, for engines whose `pg_stat_progress_create_index` doesn't show whether an index build is still running. | A command whose instance died waits out the 24-hour timeout. BAM doesn't drop and rebuild an invalid index. | `noIndexProgressView` |
-| No index-bloat pass | Skip the [`reindex`](api/constructor#reindex) maintenance pass, detection included, for engines that store data outside PostgreSQL's heap and reject `REINDEX`. | No `index_bloat` warning, `getReindexCommands()` returns an empty list, and the CLI `reindex` command refuses to run. | `noReindex` |
-| No vacuum checks | Skip the [`monitorVacuum`](api/constructor#monitorvacuum) checks, for engines that reclaim rows with their own garbage collection instead of PostgreSQL's vacuum. | No `xmin_horizon`, `autovacuum_disabled` or `monitor_backoff` warning. | `noMonitorVacuum` |
-| Inline table indexes | Declare each table's primary key, indexes and constraints inside its `CREATE TABLE` on a fresh install, instead of as statements after it. | None. pg-boss uses inline indexes only after the server reports itself as CockroachDB, because the inline `INDEX` syntax is CockroachDB's. Migrations are unaffected. | `inlineTableIndexes` |
+Each capability below is a difference from stock PostgreSQL, with the internal flag it maps to in
+the source.
 
 Lock-free fetch, split-statement writes, the transactional-heartbeat refusal, the LISTEN/NOTIFY,
 BAM, index-bloat and vacuum changes are **runtime** behaviors; the other six are **schema** choices
 applied at install/migration time. CockroachDB needs all thirteen; other distributed engines need
 only a subset (see below). CockroachDB also needs text-encoded integers coerced back to numbers,
 which pg-boss keys on `backend === 'cockroachdb'` directly instead of on a flag (see below).
+
+### Lock-free fetch
+
+Flag: `noSkipLocked`
+
+Fetch jobs with an atomic `UPDATE ... RETURNING` (plus a `state < 'active'` recheck) instead of `SELECT FOR UPDATE SKIP LOCKED`.
+
+Trade-off: Under high contention some workers get empty results instead of skipping to unlocked rows.
+
+### Split-statement writes
+
+Flag: `noMultiMutationCte`
+
+Run `complete`, `fail`, and supervisor expiry as split statements inside a transaction rather than a single multi-mutation CTE.
+
+Trade-off: A few extra round-trips per command, which is negligible for normal workloads.
+
+### Single shared table
+
+Flag: `noTablePartitioning`
+
+Create the job table without `PARTITION BY LIST`.
+
+Trade-off: Per-queue partitioning (`partition: true`) is unavailable; all jobs share one table.
+
+### Immediate constraints
+
+Flag: `noDeferrableConstraints`
+
+Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys.
+
+Trade-off: Constraints check immediately rather than at commit (no effect on normal operation).
+
+### Lock-free schema setup
+
+Flag: `noAdvisoryLocks`
+
+Disable `pg_advisory_xact_lock` (used to coordinate schema creation/migration).
+
+Trade-off: Concurrent instances may occasionally repeat maintenance work, which costs time but leaves the results correct.
+
+### Plain indexes
+
+Flag: `noCoveringIndexes`
+
+Omit the `INCLUDE` clause on covering indexes.
+
+Trade-off: Index-only scans during fetch are slightly less efficient. The difference is minimal for most workloads.
+
+### Default-only column adds
+
+Flag: `noAddColumnBackfill`
+
+Leave out the `UPDATE` that seeds a column the same migration added, for engines that refuse to write a column in the transaction that added it.
+
+Trade-off: Rows carry the column's default until something rewrites them. For example, after v41 a schedule holding an RRULE reads as `cron` from `getSchedules()` until the next scheduling pass relabels it.
+
+### No transactional heartbeat
+
+Flag: `noTransactionalHeartbeat`
+
+Refuse a [`transactional`](./api/workers.md#work-name-options-handler) worker on a queue with `heartbeatSeconds` set, for engines that will not let a transaction write a row another session wrote after it began.
+
+Trade-off: The two cannot be combined on that engine; `expireInSeconds` is the liveness bound for a transactional worker there.
+
+### No LISTEN/NOTIFY
+
+Flag: `noListenNotify`
+
+Leave out the `pg_notify` call on insert and the `useListenNotify` listener, for engines that don't implement LISTEN/NOTIFY.
+
+Trade-off: Workers find jobs by polling. With `useListenNotify` set, `start()` emits a `listen_notify_unavailable` warning.
+
+### Timeout-only BAM reclaim
+
+Flag: `noIndexProgressView`
+
+Reclaim a stuck `in_progress` [BAM](api/ops#getbamstatus) command on its timeout alone, for engines whose `pg_stat_progress_create_index` doesn't show whether an index build is still running.
+
+Trade-off: A command whose instance died waits out the 24-hour timeout. BAM doesn't drop and rebuild an invalid index.
+
+### No index-bloat pass
+
+Flag: `noReindex`
+
+Skip the [`reindex`](api/constructor#reindex) maintenance pass, detection included, for engines that store data outside PostgreSQL's heap and reject `REINDEX`.
+
+Trade-off: No `index_bloat` warning, `getReindexCommands()` returns an empty list, and the CLI `reindex` command refuses to run.
+
+### No vacuum checks
+
+Flag: `noMonitorVacuum`
+
+Skip the [`monitorVacuum`](api/constructor#monitorvacuum) checks, for engines that reclaim rows with their own garbage collection instead of PostgreSQL's vacuum.
+
+Trade-off: No `xmin_horizon`, `autovacuum_disabled` or `monitor_backoff` warning.
+
+### Inline table indexes
+
+Flag: `inlineTableIndexes`
+
+Declare each table's primary key, indexes and constraints inside its `CREATE TABLE` on a fresh install, instead of as statements after it.
+
+Trade-off: None. pg-boss uses inline indexes only after the server reports itself as CockroachDB, because the inline `INDEX` syntax is CockroachDB's. Migrations are unaffected.
 
 ### Fetch and mutation strategies
 
