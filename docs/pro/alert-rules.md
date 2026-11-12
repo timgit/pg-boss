@@ -22,7 +22,7 @@ read the schema open no new alerts, and their open check and threshold
 alerts stay open until Pro connects again. A database without pg-boss's schema
 still connects and doesn't count as unreachable. A schema whose stored connection
 can't be decrypted isn't evaluated at all. Settings › Schemas marks that schema instead
-(see [Connection changes](./schemas.md#connection-changes)).
+(see [Editing a schema](./schemas.md#editing-a-schema)).
 
 **Queue with no workers** judges by what leaves the queue, whoever takes it.
 A queue drained with `fetch()` and `complete()` counts as worked. A job active at
