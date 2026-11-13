@@ -10,6 +10,12 @@ export default defineConfig({
   sitemap: {
     hostname: 'https://pgboss.io'
   },
+  // Pro pages are titled "<page> | pg-boss Pro". The Pro index heading is already "pg-boss Pro", so it takes no suffix.
+  transformPageData (pageData) {
+    if (pageData.relativePath.startsWith('pro/')) {
+      pageData.titleTemplate = pageData.relativePath === 'pro/index.md' ? false : ':title | pg-boss Pro'
+    }
+  },
   head: [
     ['meta', { name: 'theme-color', content: '#2f7cf6' }],
     ['script', {}, `(function(){

@@ -43,7 +43,7 @@ npm config set --location=project //npm.pgboss.io/:_authToken '${PGBOSS_PRO_LICE
 npm config set --location=project @pg-boss:registry https://npm.pgboss.io
 ```
 
-The `npm config set` commands above creates a `.npmrc` file and refers to the environment variable `PGBOSS_PRO_LICENSE`, which is your license key. The license key is shown on the purchases page of the Polar account that bought the subscription.
+The `npm config set` commands above create a `.npmrc` file and refer to the environment variable `PGBOSS_PRO_LICENSE`, which is your license key. The license key is shown on the purchases page of the Polar account that bought the subscription.
 
 Then, assign the environment variable and install:
 
@@ -63,7 +63,7 @@ CREATE ROLE pgboss_pro LOGIN PASSWORD '<password>';
 CREATE DATABASE pgboss_pro OWNER pgboss_pro;
 ```
 
-Pro uses pg-boss internally to run its alert evaluator and send notifications. Pro's own tables go in `public` and pg-boss uses its default schema `pgboss`. Running Pro as the db owner role will have the permissions to create the required database storage and run any migrations after a future upgrade.
+Pro uses pg-boss internally to run its alert evaluator and send notifications. Pro's own tables go in `public` and pg-boss uses its default schema `pgboss`. As the database's owner, the role has the permissions to create Pro's tables and run the migrations in later upgrades.
 
 ## Configuration
 
@@ -78,7 +78,7 @@ Pro reads these settings at startup:
 | `PGBOSS_PRO_TRUSTED_PROXIES` | Behind a reverse proxy on another host | The reverse proxy's address. Pro then reads each client's address from `X-Forwarded-For`, for sign-in limits and the [audit log](./audit-log.md#address). |
 | `PGBOSS_PRO_SETUP_TOKEN` | With several instances behind a load balancer | One setup token the instances share, set before the first start. The setup link then works on every instance. |
 
-Store the encryption key in another secret store. Rotating the secret key requires re-entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error at startup and serves no pages. See [secrets](./administration.md#secrets).
+Store the encryption key in another secret store. Rotating the secret key requires entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error at startup and serves no pages. See [secrets](./administration.md#secrets).
 
 Pro doesn't read `DATABASE_URL`, which the dashboard reads. The schemas Pro monitors are added in the Pro Console. See [Schemas](./schemas.md).
 
@@ -104,7 +104,7 @@ Connect as the role that owns pg-boss's schema, because some of Pro's changes ne
 Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state. For that role, the connection counts by state can read low. The following script grants `pg_read_all_stats` to the role Pro connects as:
 
 ```sql
-GRANT pg_read_all_stats TO leastprivuser;
+GRANT pg_read_all_stats TO <role>;
 ```
 
 ## Run
@@ -145,8 +145,10 @@ After setup, Pro opens **Settings › Schemas**. Press **Add schema** and enter 
 
 ## First alert
 
-Pro starts every schema with [default rules](./alert-rules.md#default-rules). Six of them are
-on. Their alerts show in the Pro Console from the start. To have them sent:
+Pro includes a rules engine that opens an alert when one of its rules finds a problem in a schema.
+Each schema starts with a set of [default rules](./alert-rules.md#default-rules), some of them
+turned on. Their alerts show in the Pro Console from the start. To have them sent by email, webhook
+or PagerDuty:
 
 1. Add a destination under **Settings › Destinations**: an email list, a webhook or PagerDuty. Pro
    offers to send the rules that are on to it.
