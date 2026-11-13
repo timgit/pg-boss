@@ -23,6 +23,7 @@ import { showsDatabase } from "~/lib/page-scope";
 import { dbContext } from "~/lib/db-context";
 import { toPublicDatabase } from "~/lib/config.server";
 import { isPgBossInstalled } from "~/lib/queries.server";
+import { isReadOnly } from "~/lib/read-only.server";
 import { MissingPgBossContext } from "~/lib/missing-pgboss";
 import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
 import markWhite from "~/assets/pg-boss-mark-white.svg?raw";
@@ -152,6 +153,8 @@ export async function loader({ context }: Route.LoaderArgs) {
     // For the error card: a page that failed on a database with no pg-boss schema says so, rather
     // than blaming the connection.
     pgbossMissing: currentDb ? (await isPgBossInstalled(currentDb.url, currentDb.schema)) === false : false,
+    // For the headers' Send job, which read-only mode leaves out.
+    readOnly: isReadOnly(),
   };
 }
 

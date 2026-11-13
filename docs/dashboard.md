@@ -1,6 +1,6 @@
 # Dashboard
 
-The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. The dashboard is read-only except for [retry, cancel and resume](#job-actions) on a job's detail page. The [pg-boss Pro Console](./pro/index.md) adds sending and deleting jobs, changing many jobs at once, and creating queues and schedules for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
+The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. The dashboard changes one job at a time: it [sends a job](#send-job), and [retries, cancels, resumes and deletes](#job-actions) a job from its detail page. The [pg-boss Pro Console](./pro/index.md) adds changing many jobs at once, and creating queues and schedules, for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
 
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting.webp){.light-only}
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting-dark.webp){.dark-only}
@@ -15,7 +15,8 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 - **Instances**: The pg-boss instances registered in the schema, with their workers and options
 - **Migrations**: The async migration commands, such as index builds, and their status
 - **Job List**: View jobs with state and queue filtering
-- **Job Details**: View full job payloads, output data, and metadata
+- **Job Details**: View full job payloads, output data, and metadata, and retry, cancel, resume or delete the job
+- **Send Job**: Send a job to a queue, with its data and options
 - **Warning History**: Browse the warnings pg-boss emitted earlier, when `persistWarnings` is enabled
 - **Multi-Schema Support**: Monitor multiple pg-boss instances from a single dashboard
 - **Mobile Responsive**: Full functionality on mobile devices with collapsible sidebar
@@ -48,9 +49,15 @@ The timeline shows the times the job's row keeps. Earlier attempts appear only a
 
 #### Job actions
 
-A failed job has **Retry job**, a cancelled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. Each calls pg-boss's own [`retry()`, `cancel()` or `resume()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes. The dashboard doesn't record who made them.
+A failed job has **Retry job**, a cancelled job has **Resume job**, and a job that hasn't finished has **Cancel job**, which asks first. A job that isn't active has **Delete**, which also asks first and then opens the job's queue. Each calls pg-boss's own [`retry()`, `cancel()`, `resume()` or `deleteJob()`](./api/jobs.md) on that one job. Anyone who can open the dashboard can make these changes. The dashboard doesn't record who made them.
 
 The dashboard's copy of `pg-boss` must be on the schema's version, because pg-boss makes the change. On any other version, pages still read. A refused change shows the reason on the page. Set `PGBOSS_DASHBOARD_READ_ONLY=true` to hide the buttons and refuse every change.
+
+### Send job
+
+**Send job** on the overview, the Jobs page and a queue's page opens a form that sends one job with pg-boss's own [`send()`](./api/jobs.md). Opened from a queue's page, the form starts on that queue. The queue field searches queue names as you type. The data is a JSON object. Priority, start after, singleton key, retry limit and expire in seconds are optional. An empty field leaves pg-boss's default, which for retry limit and expire in seconds is the queue's own setting. Start after takes an ISO 8601 date or a number of seconds.
+
+A sent job opens its queue's page. When the queue's policy or a singleton key keeps the job from being created, the form says so. Sending has the same version requirement as the job actions, and `PGBOSS_DASHBOARD_READ_ONLY=true` turns it off too.
 
 A job copied into a dead letter queue shows the reason it's there (taken from the original job's output) and a lineage chain from the first job to this job. The job records only the first job (the root) and the job it was copied from (the source). Any hops between them show as a gap. Select the root or the source to see that job's timeline. The dashboard reads the timeline from that job's row while the row still exists, or from what was copied onto this job after the row is deleted. A root redriven into a different queue shows as not found, because the dashboard looks up the root in the queue a redrive returns jobs to.
 
@@ -213,7 +220,7 @@ Default: `/`
 
 #### `PGBOSS_DASHBOARD_READ_ONLY`
 
-`true` or `1` turns off retry, cancel and resume on a job's page. See [Job actions](#job-actions).
+`true` or `1` turns off sending jobs, and retry, cancel, resume and delete on a job's page. See [Job actions](#job-actions) and [Send job](#send-job).
 
 #### `PGBOSS_DASHBOARD_QUERY_TIMEOUT`
 
@@ -237,6 +244,8 @@ npx @pg-boss/dashboard
 ```
 
 Set both variables or neither. If only one is set, the dashboard throws an error on startup.
+
+Without a credential or `PGBOSS_DASHBOARD_READ_ONLY`, the server logs a warning when it starts, because anyone who can reach the dashboard can send and change jobs. A [mounted dashboard](#mounting-inside-an-existing-application) doesn't warn, because its host handles authentication.
 
 ### Multiple schemas
 

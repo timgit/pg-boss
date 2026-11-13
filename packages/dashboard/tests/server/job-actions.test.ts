@@ -4,14 +4,14 @@ import { ctx, getBoss, createTestQueue, sendTestJob, fetchTestJob, failTestJob, 
 import { action } from '~/routes/queues.$name.jobs.$jobId'
 import { configureReadOnly, isReadOnly } from '~/lib/read-only.server'
 
-async function act (name: string, jobId: string, intent: string) {
+async function act (name: string, jobId: string, intent: string, search = '') {
   const body = new FormData()
   body.set('intent', intent)
 
   return action({
     params: { name, jobId },
     context: makeContext(ctx),
-    request: new Request(`http://localhost/queues/${name}/jobs/${jobId}`, { method: 'POST', body }),
+    request: new Request(`http://localhost/queues/${name}/jobs/${jobId}${search}`, { method: 'POST', body }),
   } as Parameters<typeof action>[0])
 }
 
@@ -55,13 +55,31 @@ describe('the job page action', () => {
     expect(await stateOf('test-queue', jobId!)).toBe('cancelled')
   })
 
-  it('refuses delete, which is Pro only', async () => {
+  it('deletes a job and goes on to its queue, keeping the schema in the link', async () => {
     await createTestQueue('test-queue')
     const jobId = await sendTestJob('test-queue', {})
 
-    const result = await act('test-queue', jobId!, 'delete')
+    const result = await act('test-queue', jobId!, 'delete', '?schema=reporting')
 
-    expect(result).toEqual({ success: false, message: 'Unknown action' })
+    expect(result).toBeInstanceOf(Response)
+    expect((result as Response).status).toBe(302)
+    expect((result as Response).headers.get('location')).toBe('/queues/test-queue?schema=reporting')
+    expect(await stateOf('test-queue', jobId!)).toBeUndefined()
+  })
+
+  it('says why when a delete found nothing', async () => {
+    await createTestQueue('test-queue')
+    const jobId = await sendTestJob('test-queue', {})
+    await getBoss().deleteJob('test-queue', jobId!)
+
+    expect(await act('test-queue', jobId!, 'delete')).toEqual({ success: false, message: 'Job could not be deleted (it may already be deleted)' })
+  })
+
+  it('refuses an intent it doesn\'t know', async () => {
+    await createTestQueue('test-queue')
+    const jobId = await sendTestJob('test-queue', {})
+
+    expect(await act('test-queue', jobId!, 'purge')).toEqual({ success: false, message: 'Unknown action' })
     expect(await stateOf('test-queue', jobId!)).toBe('created')
   })
 })

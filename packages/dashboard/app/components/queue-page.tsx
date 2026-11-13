@@ -7,6 +7,7 @@ import { PolicyBadge } from '~/components/policy-badge'
 import { ConfigCard, type ConfigRow } from '~/components/job-detail'
 import { CountsCard, strong } from '~/components/stats-cards'
 import { ProSlot, hasProSlot } from '~/components/pro-slot'
+import { SendJobButton } from '~/components/send-job-button'
 import { Sparkline } from '~/components/ui/sparkline'
 import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
@@ -60,7 +61,9 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
       action={
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <ProSlot name="queueActions" queue={{ name: queue.name, isDeadLetter }} />
+            {hasProSlot('queueActions')
+              ? <ProSlot name="queueActions" queue={{ name: queue.name, isDeadLetter }} />
+              : <SendJobButton queue={queue.name} />}
             <Button
               variant="outline"
               size="md"

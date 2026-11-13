@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router'
-import { ProSlot } from '~/components/pro-slot'
+import { PageActions } from '~/components/send-job-button'
 import type { Route } from './+types/jobs'
 import {
   getRecentJobs,
@@ -260,7 +260,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title="Jobs"
-        action={<ProSlot name="pageActions" page="jobs" />}
+        action={<PageActions page="jobs" />}
       />
 
       <JobsFilterBar

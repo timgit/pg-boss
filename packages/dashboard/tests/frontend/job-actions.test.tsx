@@ -30,11 +30,21 @@ describe('JobActions', () => {
     }
   })
 
-  it('offers nothing on a completed job, and never delete', () => {
-    const { container } = renderFor('completed')
-    expect(container.textContent).toBe('')
+  it('offers delete on every job that isn\'t running', () => {
+    for (const state of ['created', 'retry', 'completed', 'cancelled', 'failed']) {
+      const { unmount } = renderFor(state)
+      expect(screen.getByRole('button', { name: /Delete/ })).toBeTruthy()
+      unmount()
+    }
+  })
 
-    renderFor('failed')
+  it('offers no delete on an active job, which a worker still holds', () => {
+    renderFor('active')
     expect(screen.queryByRole('button', { name: /Delete/ })).toBeNull()
+  })
+
+  it('offers only delete on a completed job', () => {
+    renderFor('completed')
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Delete'])
   })
 })

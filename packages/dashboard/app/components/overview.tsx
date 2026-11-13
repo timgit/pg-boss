@@ -1,5 +1,5 @@
 import { DbLink } from '~/components/db-link'
-import { ProSlot } from '~/components/pro-slot'
+import { PageActions } from '~/components/send-job-button'
 import { StatsCards } from '~/components/stats-cards'
 import { InstancesCard } from '~/components/instances-summary'
 import { Card, CardHeader, CardTitle } from '~/components/ui/card'
@@ -63,7 +63,7 @@ export function OverviewHeader () {
   return (
     <PageHeader
       title="Overview"
-      action={<ProSlot name="pageActions" page="overview" />}
+      action={<PageActions page="overview" />}
     />
   )
 }

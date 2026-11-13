@@ -3,7 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'react-router'
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
-import { configureReadOnly, isReadOnly } from './lib/read-only.server'
+import { configureReadOnly, isReadOnly, openWritesWarning } from './lib/read-only.server'
 import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, refuseSchemaVariable, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay, ProSite } from './lib/pro-contract'
@@ -180,6 +180,10 @@ export function createHonoApp ({
     // After auth, so a refused change still needs the credential to provoke, and before the SSR
     // handler, so the one check covers every route action.
     configureReadOnly(app)
+
+    // Said once, at startup, and not by the dev server, which only maintainers run.
+    const open = mode === 'production' ? openWritesWarning(auth, configuredCredential) : null
+    if (open) console.warn(open)
   }
 
   if (serveStaticAssets) {

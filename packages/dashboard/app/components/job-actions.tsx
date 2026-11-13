@@ -1,23 +1,20 @@
 import { useFetcher } from 'react-router'
-import { Ban, Play, RotateCcw } from 'lucide-react'
+import { Ban, Play, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '~/components/ui/button'
 import { ConfirmDialog } from '~/components/ui/confirm-dialog'
-import type { JobActionResult } from '~/lib/job-actions'
+import { jobVerbs, type JobActionResult } from '~/lib/job-actions'
 
 /**
- * The free job page's buttons: retry a failed job, resume a cancelled one, cancel one that hasn't
- * finished. Each posts to the job page's own action.
+ * The job page's buttons: retry a failed job, resume a cancelled one, cancel one that hasn't
+ * finished, and delete one that isn't running. Each posts to the job page's own action.
  */
 export function JobActions ({ id, state }: { id: string, state: string }) {
   const fetcher = useFetcher<JobActionResult>()
   const busy = fetcher.state !== 'idle'
   const result = fetcher.data
+  const { retry, resume, cancel, remove } = jobVerbs(state)
 
-  const retry = state === 'failed'
-  const resume = state === 'cancelled'
-  const cancel = state === 'created' || state === 'retry' || state === 'active'
-
-  if (!retry && !resume && !cancel) {
+  if (!retry && !resume && !cancel && !remove) {
     return null
   }
 
@@ -51,6 +48,18 @@ export function JobActions ({ id, state }: { id: string, state: string }) {
           triggerVariant="outline"
           trigger={<span className="inline-flex items-center gap-2"><Ban className="h-4 w-4" aria-hidden="true" />Cancel job</span>}
           onConfirm={() => submit('cancel')}
+          disabled={busy}
+        />
+      )}
+      {remove && (
+        <ConfirmDialog
+          title="Delete Job"
+          description={`Are you sure you want to delete job ${id}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          confirmVariant="danger"
+          triggerVariant="ghost"
+          trigger={<span className="inline-flex items-center gap-2 text-[var(--state-failed-fg)]"><Trash2 className="h-4 w-4" aria-hidden="true" />Delete</span>}
+          onConfirm={() => submit('delete')}
           disabled={busy}
         />
       )}

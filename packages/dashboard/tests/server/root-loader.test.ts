@@ -95,7 +95,23 @@ describe('root loader', () => {
       internal: [],
       currentDb: undefined,
       pgbossMissing: false,
+      readOnly: false,
     })
+  })
+
+  it('says whether the dashboard is read-only, for the headers\' Send job', async () => {
+    const original = process.env.PGBOSS_DASHBOARD_READ_ONLY
+    const provider = new RouterContextProvider()
+    provider.set(dbContext, { databases: [], currentDb: undefined as never, DB_URL: ctx.connectionString, SCHEMA: ctx.schema })
+    const load = () => rootLoader({ request: new Request('http://localhost/'), context: provider, params: {} } as Parameters<typeof rootLoader>[0])
+
+    try {
+      process.env.PGBOSS_DASHBOARD_READ_ONLY = 'true'
+      expect((await load()).readOnly).toBe(true)
+    } finally {
+      if (original === undefined) delete process.env.PGBOSS_DASHBOARD_READ_ONLY
+      else process.env.PGBOSS_DASHBOARD_READ_ONLY = original
+    }
   })
 
   it('sends an overlay\'s own schemas apart from the databases, with their badge and never their connection string', async () => {

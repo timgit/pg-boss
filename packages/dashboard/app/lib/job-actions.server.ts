@@ -1,24 +1,23 @@
-import { PgBoss } from 'pg-boss'
 import type { JobActionResult, JobIntent } from './job-actions'
+import { SchemaVersionMismatch, withBoss } from './pg-boss.server'
 
 const DONE: Record<JobIntent, string> = {
   retry: 'Job queued for retry',
   cancel: 'Job cancelled',
   resume: 'Job resumed',
+  delete: 'Job deleted',
 }
 
 const UNCHANGED: Record<JobIntent, string> = {
   retry: 'Job could not be retried (only failed jobs can be retried)',
   cancel: 'Job could not be cancelled (it may already be completed or cancelled)',
   resume: 'Job could not be resumed (only cancelled jobs can be resumed)',
+  delete: 'Job could not be deleted (it may already be deleted)',
 }
 
 /**
- * Retries, cancels or resumes one job through pg-boss itself, never an UPDATE of the dashboard's
- * own: retry() adds an attempt to the limit and keeps started_on, so the attempt numbers stay right.
- *
- * An instance per change, started and stopped around the one call, so the dashboard keeps no
- * pg-boss running and leaves no row in the instance registry.
+ * Retries, cancels, resumes or deletes one job through pg-boss itself: retry() adds an attempt to
+ * the limit and keeps started_on, so the attempt numbers stay right.
  */
 export async function runJobAction (
   dbUrl: string,
@@ -27,45 +26,26 @@ export async function runJobAction (
   id: string,
   intent: JobIntent
 ): Promise<JobActionResult> {
-  const boss = new PgBoss({
-    connectionString: dbUrl,
-    schema,
-    migrate: false,
-    createSchema: false,
-    supervise: false,
-    schedule: false,
-    max: 1,
-    registerInstance: false,
-  })
-
-  boss.on('error', (error) => console.error('pg-boss dashboard: a pg-boss instance hit an error.', error))
+  let affected: number
 
   try {
-    try {
-      await boss.start()
-    } catch (error) {
-      // pg-boss refuses to start on any schema version but its own.
-      if (error instanceof Error && /requires migrations/.test(error.message)) {
-        return {
-          success: false,
-          message: "This schema is on a different version than the dashboard's pg-boss is built for. Run the dashboard with the pg-boss version your application uses.",
-        }
-      }
-      throw error
-    }
+    affected = await withBoss(dbUrl, schema, async (boss) => {
+      const response = intent === 'retry'
+        ? await boss.retry(name, id)
+        : intent === 'cancel'
+          ? await boss.cancel(name, id)
+          : intent === 'resume'
+            ? await boss.resume(name, id)
+            : await boss.deleteJob(name, id)
 
-    const response = intent === 'retry'
-      ? await boss.retry(name, id)
-      : intent === 'cancel'
-        ? await boss.cancel(name, id)
-        : await boss.resume(name, id)
-
-    const affected = (response as { affected: number }).affected
-
-    return affected > 0
-      ? { success: true, message: DONE[intent] }
-      : { success: false, message: UNCHANGED[intent] }
-  } finally {
-    await boss.stop({ graceful: false }).catch(() => {})
+      return (response as { affected: number }).affected
+    })
+  } catch (error) {
+    if (error instanceof SchemaVersionMismatch) return { success: false, message: error.message }
+    throw error
   }
+
+  return affected > 0
+    ? { success: true, message: DONE[intent] }
+    : { success: false, message: UNCHANGED[intent] }
 }

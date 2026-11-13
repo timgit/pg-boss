@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { useRevalidator } from 'react-router'
+import { redirect, useRevalidator } from 'react-router'
 import { DeadLetterBadge } from '~/components/dead-letter-badge'
 import { PolicyBadge } from '~/components/policy-badge'
-import { DbLink } from '~/components/db-link'
+import { DbLink, resolveDbHref } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
 import { ProSlot, hasProSlot } from '~/components/pro-slot'
 import { JobActions } from '~/components/job-actions'
@@ -72,8 +72,9 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
   }
 }
 
-// Retry, cancel or resume this one job. Read-only mode refuses the request before it gets here,
-// and under Pro the Console's own audited routes make these changes instead.
+// Retry, cancel, resume or delete this one job. Read-only mode refuses the request before it gets
+// here, and under Pro the Console's own audited routes make these changes instead. A deleted job's
+// page has nothing left to show, so a delete goes on to the job's queue, on the same schema.
 export async function action ({ params, request, context }: Route.ActionArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const intent = (await request.formData()).get('intent')
@@ -82,12 +83,19 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
     return { success: false, message: 'Unknown action' }
   }
 
+  let result
   try {
-    return await runJobAction(DB_URL, SCHEMA, params.name, params.jobId, intent)
+    result = await runJobAction(DB_URL, SCHEMA, params.name, params.jobId, intent)
   } catch (error) {
     console.error('pg-boss dashboard: a job action failed.', error)
     return { success: false, message: 'The database refused the change' }
   }
+
+  if (intent === 'delete' && result.success) {
+    return redirect(resolveDbHref(`/queues/${encodeURIComponent(params.name)}`, new URL(request.url).searchParams.get('schema')))
+  }
+
+  return result
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
