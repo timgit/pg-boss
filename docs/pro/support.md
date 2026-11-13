@@ -4,15 +4,15 @@ Support is by email at [support@pgboss.io](mailto:support@pgboss.io), from the a
 
 ## What support covers
 
-- Installing, configuring, upgrading and running the current Pro release in the setups these docs describe: [`npm init @pg-boss/pro`](./install.md#install), an [install by hand](./install.md#install-by-hand), [Docker and Docker Compose](./install.md#docker), and a reverse proxy in front.
-- Bugs in Pro, and Pro on the pg-boss schemas its release supports. See [pg-boss versions](./versions.md).
+- Installing, configuring, upgrading and running any Pro release in the setups these docs describe: [`npm init @pg-boss/pro`](./install.md#install), an [install by hand](./install.md#install-by-hand), [Docker and Docker Compose](./install.md#docker), and a reverse proxy in front.
+- Bugs in Pro, and Pro on the pg-boss schemas its release supports. See [pg-boss versions](./versions.md). A fix ships in a new Pro release.
 - Pro's side of single sign-on, email, webhooks, PagerDuty and the Pro API.
 
 ## What it doesn't cover
 
 - The application's own use of pg-boss: its workers, its queue design and its code.
 - Setups the docs don't describe, such as Pro mounted inside another application's server, or shown in a frame on another site.
-- Earlier releases, backports, custom development and on-call cover.
+- Backports to earlier releases, custom development and on-call cover.
 - Another system's own configuration: an identity provider, an SMTP server or relay, or a service that receives webhooks.
 
 ## Single sign-on
