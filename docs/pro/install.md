@@ -81,14 +81,25 @@ GRANT pg_read_all_stats TO leastprivuser;
 
 ## Run
 
-Start Pro with the settings above:
+Keep Pro's settings in a `.env` file in the project, where the secret key stays out of shell history and survives a restart. The following commands write the settings above to the file with a new secret key, and keep the file out of version control:
 
 ```bash
-PGBOSS_PRO_DB_HOST="localhost" \
-PGBOSS_PRO_DB_PASSWORD="<password>" \
-PGBOSS_PRO_SECRET_KEY="<your secret key>" \
-npx @pg-boss/pro
+echo "PGBOSS_PRO_DB_HOST=localhost" >> .env
+echo "PGBOSS_PRO_DB_PASSWORD=<password>" >> .env
+echo "PGBOSS_PRO_SECRET_KEY=$(openssl rand -base64 32)" >> .env
+echo ".env" >> .gitignore
 ```
+
+Keep a copy of the secret key in another secret store as well, because Pro's database backups don't hold it. See [Backup](#backup).
+
+To start Pro with the file, add a start script to the project and run it:
+
+```bash
+npm pkg set scripts.start="node --env-file=.env node_modules/@pg-boss/pro/bin/cli.js"
+npm start
+```
+
+A variable set in the environment takes precedence over the same variable in `.env`.
 
 On first run there are no accounts. Pro prints a setup link to its log:
 
