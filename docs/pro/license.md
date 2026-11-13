@@ -1,8 +1,9 @@
 # License
 
 An organization with a Pro subscription may install and use Pro, and download each new version,
-under the terms in [`LICENSE`](https://npm.pgboss.io/terms), which also ships in the package. Read it before buying. Pro
-checks no license at runtime.
+under the terms in [`LICENSE`](https://npm.pgboss.io/terms), which also ships in the package. Read it before buying. One
+subscription covers the organization that holds it and every company in which it holds more than
+half the voting interests. Pro checks no license at runtime.
 The registry decides which versions the [license key](./install.md#install) may install.
 
 ## Cancellation
