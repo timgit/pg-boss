@@ -123,8 +123,8 @@ Default: `false`
 
 ## Dashboard variables
 
-The dashboard's names for three of these settings do nothing in Pro: `PGBOSS_DASHBOARD_BASE_PATH`, `PGBOSS_DASHBOARD_SITE_URL` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT`. Set `PGBOSS_PRO_BASE_PATH`, `PGBOSS_PRO_SITE_URL` and `PGBOSS_PRO_QUERY_TIMEOUT` instead. When a dashboard name is set, Pro logs on startup that it does nothing.
+The dashboard's names for three of these settings do nothing in Pro: `PGBOSS_DASHBOARD_BASE_PATH`, `PGBOSS_DASHBOARD_SITE_URL` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT`. Set `PGBOSS_PRO_BASE_PATH`, `PGBOSS_PRO_SITE_URL` and `PGBOSS_PRO_QUERY_TIMEOUT` instead.
 
-`PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` do nothing in Pro, which has its own accounts. `PGBOSS_DASHBOARD_READ_ONLY` does nothing either, since roles decide who may change jobs. When any of the three is set, Pro logs on startup that the variable is ignored.
+`PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` do nothing in Pro, which has its own accounts. `PGBOSS_DASHBOARD_READ_ONLY` does nothing either, since roles decide who may change jobs.
 
 `DATABASE_URL` does nothing in Pro either. Pro logs that the variable is ignored when it's set. A global admin adds the schemas Pro monitors under **Settings › Schemas**. See [Schemas](./schemas.md).
