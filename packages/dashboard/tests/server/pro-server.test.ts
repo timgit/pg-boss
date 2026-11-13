@@ -120,7 +120,7 @@ describe('createHonoApp with an overlay', () => {
   })
 
   /** The precedence decision: the overlay's auth replaces the shared credential. */
-  it('skips Basic auth when the overlay owns authentication', async () => {
+  it('skips Basic auth, without a word, when the overlay owns authentication', async () => {
     process.env.PGBOSS_DASHBOARD_AUTH_USERNAME = 'admin'
     process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD = 'secret'
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -128,7 +128,7 @@ describe('createHonoApp with an overlay', () => {
     const res = await probe({ ...answersProbe, ownsAuth: true })
 
     expect(res.status).toBe(200)
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/PGBOSS_DASHBOARD_AUTH_\* ignored/))
+    expect(log).not.toHaveBeenCalled()
   })
 
   it('says nothing when there was no credential to ignore', async () => {

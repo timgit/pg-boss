@@ -3,7 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'react-router'
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
-import { configureReadOnly, isReadOnly, openWritesWarning } from './lib/read-only.server'
+import { configureReadOnly, openWritesWarning } from './lib/read-only.server'
 import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay, ProSite } from './lib/pro-contract'
@@ -123,11 +123,10 @@ export function createHonoApp ({
   // after the gate, or mounting Pro would quietly open a hole in a dashboard
   // that was password-protected the day before.
   //
-  // Whichever branch runs, a credential the operator configured is never
-  // discarded in silence. There are two ways to end up ignoring one — an overlay
-  // that authenticates instead, or a host that says it will — and both say so on
-  // stdout. An operator who set a password and is not being asked for one needs
-  // to hear that from us rather than discover it.
+  // A host that says it authenticates ignores a configured credential, and says so on stdout: an
+  // operator who set a password and is not being asked for one needs to hear that from us. Pro
+  // ignores PGBOSS_DASHBOARD_AUTH_* without a word, because the name already says the setting is
+  // the dashboard's.
   const configuredCredential = Boolean(
     process.env.PGBOSS_DASHBOARD_AUTH_USERNAME || process.env.PGBOSS_DASHBOARD_AUTH_PASSWORD
   )
@@ -140,22 +139,13 @@ export function createHonoApp ({
     // definition not authenticated yet.
     // `ownsAuth` without a `server` hook registers nothing, and this branch has
     // already skipped `configureAuth` — the result is a dashboard with no
-    // authentication at all that has just announced it is ignoring the operator's
-    // password. `server` is optional on the contract because an overlay may add
+    // authentication at all. `server` is optional on the contract because an overlay may add
     // routes without owning auth; claiming `ownsAuth` is what makes it required.
     if (!overlay.server) {
       throw new Error(
         'A Pro overlay that declares ownsAuth must provide a server() hook: it has ' +
         'replaced the built-in credential check and nothing else will authenticate.'
       )
-    }
-
-    if (configuredCredential) {
-      console.log('PGBOSS_DASHBOARD_AUTH_* ignored: the Pro overlay provides authentication.')
-    }
-
-    if (isReadOnly()) {
-      console.log('PGBOSS_DASHBOARD_READ_ONLY ignored: in the Pro overlay, roles decide who may change jobs.')
     }
 
     overlay.server(app, publicSite)

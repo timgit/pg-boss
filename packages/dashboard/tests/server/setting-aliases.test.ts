@@ -17,29 +17,21 @@ describe('applySettingAliases', () => {
     expect(env.PGBOSS_DASHBOARD_BASE_PATH).toBeUndefined()
   })
 
-  it('drops the dashboard name, with a warning, when only it is set', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  it('drops the dashboard name when only it is set', () => {
     const env: NodeJS.ProcessEnv = { PGBOSS_DASHBOARD_SITE_URL: 'https://old.example.com', PGBOSS_PRO_BASE_PATH: '' }
 
     applySettingAliases({ settingAliases: ALIASES }, env)
 
     expect(env.PGBOSS_DASHBOARD_SITE_URL).toBeUndefined()
     expect(env.PGBOSS_DASHBOARD_BASE_PATH).toBeUndefined()
-    expect(warn).toHaveBeenCalledWith('PGBOSS_DASHBOARD_SITE_URL does nothing here. Set PGBOSS_PRO_SITE_URL instead.')
   })
 
-  it('takes the alias when both are set, and warns once', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  it('takes the alias when both are set', () => {
     const env: NodeJS.ProcessEnv = { PGBOSS_PRO_SITE_URL: 'https://pro.example.com', PGBOSS_DASHBOARD_SITE_URL: 'https://old.example.com' }
 
     applySettingAliases({ settingAliases: ALIASES }, env)
 
     expect(env.PGBOSS_DASHBOARD_SITE_URL).toBe('https://pro.example.com')
-    expect(warn).toHaveBeenCalledTimes(1)
-
-    warn.mockClear()
-    applySettingAliases({ settingAliases: ALIASES }, env)
-    expect(warn).not.toHaveBeenCalled()
   })
 
   it('changes nothing for an overlay with no aliases, as in a build without Pro', () => {
