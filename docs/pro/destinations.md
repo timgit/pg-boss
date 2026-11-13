@@ -41,8 +41,8 @@ to it once it's on again. **Send test** still works on a destination that's off,
 turning it on.
 
 **Links in alerts.** Emails, webhooks and PagerDuty link each alert to its page
-when Pro knows the Pro Console's public address. Pro builds that address from [`PGBOSS_PRO_SITE_URL`](./environment.md#pgboss-pro-site-url),
-or `siteUrl` for a [mounted handler](./mount.md), plus the base path. Without
+when Pro knows the Pro Console's public address. Pro builds that address from [`PGBOSS_PRO_SITE_URL`](./environment.md#pgboss-pro-site-url)
+and the base path. Without
 that address, the notifications carry no link. The page shows the address the links use.
 
 ## Send queues

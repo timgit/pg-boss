@@ -56,7 +56,6 @@ export default defineConfig({
       '/pro/': [
         { text: 'Overview', link: '/pro/' },
         { text: 'Install and run', link: '/pro/install' },
-        { text: 'Mount in your application', link: '/pro/mount' },
         { text: 'pg-boss versions', link: '/pro/versions' },
         {
           text: 'Pro Console',

@@ -42,7 +42,7 @@ Default: `0.0.0.0`
 
 ### `PGBOSS_PRO_BASE_PATH`
 
-The path prefix Pro serves under, such as `/pgboss`. Changing it needs no rebuild, because Pro reads it at startup.
+The path prefix Pro serves under, such as `/pgboss`. Set it when a reverse proxy serves Pro under a path of an existing site. Changing it needs no rebuild, because Pro reads it at startup.
 
 Default: `/`
 

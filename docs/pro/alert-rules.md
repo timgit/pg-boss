@@ -227,10 +227,8 @@ that point at them.
   of its own. In transaction mode, the send queues also lose LISTEN/NOTIFY and find
   new sends by polling every 10 seconds.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
-  the Pro Console, and tries again each minute until it runs. When Pro is mounted in a host
-  application, the evaluator starts on the first request the handler serves.
-- On SIGTERM or SIGINT, or when a host application calls the handler's
-  `close()`, a pass in progress gets up to 20 seconds to finish before the
+  the Pro Console, and tries again each minute until it runs.
+- On SIGTERM or SIGINT, a pass in progress gets up to 20 seconds to finish before the
   database connections close. A replica that dies during a pass releases the lock
   with its connection. The next minute's pass then runs. pg-boss fails the
   dead pass's job about two minutes later, once the job's heartbeat stops.

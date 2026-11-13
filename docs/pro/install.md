@@ -33,9 +33,11 @@ npm init @pg-boss/pro -- pgboss-pro --yes --license "<your license key>" \
 
 `--admin-url` in place of `--database-url` creates the database. `--token-in-env` leaves the user's npm config alone and has the project's `.npmrc` read the license key from `PGBOSS_PRO_LICENSE`, as a CI runner needs. `npm init @pg-boss/pro -- --help` lists every option.
 
+Pro runs as its own server, apart from your application's. To serve it under a path of an existing site, such as `https://example.com/admin/queues`, put it behind that site's reverse proxy and set [`PGBOSS_PRO_BASE_PATH`](./environment.md#pgboss-pro-base-path) to the path.
+
 ## Install by hand
 
-To set up the project yourself, or to install Pro in an existing application's project for [Mount in your application](./mount.md), point npm at Pro's registry:
+To set up the project yourself, point npm at Pro's registry:
 
 ```bash
 npm init -y
