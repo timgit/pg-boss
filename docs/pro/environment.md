@@ -24,7 +24,6 @@ Pro reads its settings from the environment, and from a `.env` file in the direc
 | [`PGBOSS_PRO_SETUP_TOKEN`](#pgboss-pro-setup-token) | |
 | [`PGBOSS_PRO_TRUSTED_PROXIES`](#pgboss-pro-trusted-proxies) | loopback |
 | [`PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES`](#pgboss-pro-block-private-addresses) | `false` |
-| [`PGBOSS_PRO_FRAME_ANCESTORS`](#pgboss-pro-frame-ancestors) | `'self'` |
 
 ## Server
 
@@ -122,15 +121,9 @@ Default: loopback
 
 Default: `false`
 
-### `PGBOSS_PRO_FRAME_ANCESTORS`
-
-The pages allowed to show the Pro Console in a frame. The value is a CSP `frame-ancestors` source list, such as `'self' https://admin.example.com`. By default no other origin may frame the Pro Console.
-
-Default: `'self'`
-
 ## Dashboard variables
 
-The dashboard's names for three of these settings work in Pro too, for an install moved from the dashboard: `PGBOSS_DASHBOARD_BASE_PATH`, `PGBOSS_DASHBOARD_SITE_URL` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT`. When both names are set to different values, Pro uses its own and logs a warning.
+The dashboard's names for three of these settings do nothing in Pro: `PGBOSS_DASHBOARD_BASE_PATH`, `PGBOSS_DASHBOARD_SITE_URL` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT`. Set `PGBOSS_PRO_BASE_PATH`, `PGBOSS_PRO_SITE_URL` and `PGBOSS_PRO_QUERY_TIMEOUT` instead. When a dashboard name is set, Pro logs on startup that it does nothing.
 
 `PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` do nothing in Pro, which has its own accounts. `PGBOSS_DASHBOARD_READ_ONLY` does nothing either, since roles decide who may change jobs. When any of the three is set, Pro logs on startup that the variable is ignored.
 

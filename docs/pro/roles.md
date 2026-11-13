@@ -7,7 +7,6 @@ Access comes from grants. A grant gives a person, a [group](./accounts.md#groups
 | Viewer | Viewer users have read-only access. |
 | Operator | Operator users can retry, cancel, resume and send jobs, and acknowledge alerts. |
 | Admin | Admin users can delete jobs, and create and delete queues and schedules. An admin role covers one schema. Admin on all schemas is the [global admin](#global-admin) role. |
-| Worker | Only a service account can hold this role. A worker uses it to fetch, complete, fail and send jobs through the Pro API. |
 
 Grants read as the role followed by its scope, such as `Operator › All schemas` or `Viewer › Production`, where "Production" is a schema's name.
 

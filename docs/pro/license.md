@@ -1,7 +1,8 @@
 # License
 
 An organization with a Pro subscription may install and use Pro, and download each new version,
-under the terms in the `LICENSE` file that ships in the package. Pro checks no license at runtime.
+under the terms in [`LICENSE`](https://npm.pgboss.io/terms), which also ships in the package. Read it before buying. Pro
+checks no license at runtime.
 The registry decides which versions the [license key](./install.md#install) may install.
 
 ## Cancellation
@@ -22,7 +23,7 @@ What an organization may still install and use depends on its plan and how long 
 
 On a monthly subscription under 12 months, Pro keeps running only so that a lapse never takes a
 dashboard away without warning. Running past the end gives no right to keep using Pro. See section 2
-of `LICENSE`.
+of [`LICENSE`](https://npm.pgboss.io/terms).
 
 ### Upgrading pg-boss after the subscription ends
 
@@ -48,4 +49,4 @@ be revoked at any time. The conditions sent with the license key can also change
 When an access grant ends, the registry refuses its license key for every version. Time under an
 access grant doesn't count toward the 12 months in the table above. The right to use the installed versions
 ends with the grant, as it does for a monthly subscription under 12 months. See section 2 of
-`LICENSE`.
+[`LICENSE`](https://npm.pgboss.io/terms).

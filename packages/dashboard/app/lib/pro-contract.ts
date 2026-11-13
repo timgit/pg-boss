@@ -198,9 +198,9 @@ export interface ProServerOverlay {
 
   /**
    * The overlay's own names for settings the dashboard reads, each mapped to the dashboard's name,
-   * such as `{ PGBOSS_PRO_SITE_URL: 'PGBOSS_DASHBOARD_SITE_URL' }`. `applySettingAliases` puts a set
-   * alias in place of the dashboard's name before anything reads it, so a Pro install is configured
-   * with Pro's names, and the dashboard's names still work for one moved from the dashboard.
+   * such as `{ PGBOSS_PRO_SITE_URL: 'PGBOSS_DASHBOARD_SITE_URL' }`. `applySettingAliases` puts the
+   * overlay's value under the dashboard's name before anything reads it, and drops a value set
+   * under the dashboard's name, so a Pro install is configured with Pro's names alone.
    */
   settingAliases?: Record<string, string>
 }

@@ -1,8 +1,8 @@
 # API tokens and service accounts
 
-A script, a CI job, a Prometheus scrape or a worker in another language reaches Pro with an API token. A token belongs to a **service account**, which is an account for a machine. The token keeps working when the person who set it up leaves.
+A script, a CI job, a Prometheus scrape or a service in another language reaches Pro with an API token. A token belongs to a **service account**, which is an account for a machine. The token keeps working when the person who set it up leaves.
 
-- A service account has [roles](./roles.md) on schemas like a person: a viewer for a scrape, an operator on one schema for a CI redrive, a worker for a worker.
+- A service account has [roles](./roles.md) on schemas like a person: a viewer for a scrape, and an operator on one schema for a CI redrive or a service that sends jobs.
 - It can't sign in to the Pro Console by password, SSO or invitation. It acts only through its tokens, and only on the [Pro API](./api.md) and `/metrics`.
 - Disabling it stops every one of its tokens at once.
 - It can have several tokens. To replace a token with no gap, create the new token, deploy it, then revoke the old token.
@@ -24,7 +24,7 @@ expires within 14 days.
 - **API tokens**: each with its name, its first characters, who created it, when it expires and
   when it was last used. **Create token** asks for a name and an expiry and shows the token once, to
   copy. **Revoke** stops a token at once.
-- **Audit**: whether its sending, fetching, completing and failing are recorded.
+- **Audit**: whether the jobs it sends are recorded.
 - **Using a token**: a `curl` for the Pro API and for open alerts, with this Pro Console's address.
 - **Recent activity**: what its tokens did, and the changes made to it.
 
@@ -52,4 +52,4 @@ Tokens work only on the Pro API and [`/metrics`](./metrics.md). The Pro Console'
 
 ## Audit
 
-The [audit log](./audit-log.md) records each change a token makes under its service account's name, with the token that made it. After a leaked token is revoked, the log shows every change it made. The calls a producer or worker makes at volume (sending, fetching, completing and failing jobs) are recorded only when the service account is set to record them.
+The [audit log](./audit-log.md) records each change a token makes under its service account's name, with the token that made it. After a leaked token is revoked, the log shows every change it made. The sends a producer makes at volume are recorded only when the service account is set to record them.

@@ -1,7 +1,8 @@
 # Single sign-on
 
 Under **Settings › SSO**, a global admin points Pro at any OpenID Connect provider, such as Okta,
-Entra, Google, Auth0 or Keycloak. The page runs in the order you set it up:
+Entra, Google, Auth0 or Keycloak. See [Support](./support.md#single-sign-on) for what support covers.
+The page runs in the order you set it up:
 
 - **Login page** names the **Sign in with…** button.
 - **1 Provider**: copy the redirect URI into the provider, then paste
