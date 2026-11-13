@@ -154,11 +154,8 @@ export function createDashboardHandler (
       // `null` rather than undefined, so PGBOSS_DASHBOARD_SITE_URL does not apply.
       siteUrl: siteOrigin ?? null,
       // The same overlay the standalone server loads, read from the build.
-      // It is the empty stub in every build but a Pro one and adds nothing there.
-      // In a Pro build it is the difference between a
-      // mounted dashboard that authenticates and one that does not.
-      // A Pro overlay owns authentication, so `auth: false` above costs it
-      // nothing: `createHonoApp` takes the overlay branch either way.
+      // Pro's package doesn't ship this handler, so here it is always the
+      // empty stub and adds nothing.
       overlay,
     })
   }
