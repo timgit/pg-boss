@@ -19,7 +19,7 @@ Pro encrypts each schema's connection, SMTP passwords, API keys, webhook URLs, s
 Authorization headers, PagerDuty integration keys and the OIDC client secret
 before it stores them. 
 
-The encryption key should be in the `PGBOSS_PRO_SECRET_KEY` environment variable, and it has to be at least 32 characters. Without the key, Pro logs an error at startup and serves no pages. Pro never writes a secret in the clear and never sends a stored secret back to the browser. In the browser, a secret is masked as bullets in place of the stored value. Saving a form with the bullets untouched keeps the stored secret.
+The encryption key should be in the `PGBOSS_PRO_SECRET_KEY` environment variable, and it has to be at least 32 characters. Without the key, Pro logs an error at startup and serves no pages. Pro doesn't write a secret in the clear or send a stored secret back to the browser. In the browser, a secret is masked as bullets in place of the stored value. Saving a form with the bullets untouched keeps the stored secret.
 
 Pro sends a stored secret only to the server it was entered for. Pro asks for the secret again when
 one of these changes:

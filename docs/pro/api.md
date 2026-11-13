@@ -1,9 +1,9 @@
 # Pro API
 
-The Pro API serves pg-boss's own methods over HTTP with [`@pg-boss/proxy`](../proxy.md), at `/pro/api/v1/<schema>` for each schema. Every call needs an [API token](./api-tokens.md). `<schema>` is the schema's id, shown under **Settings › Schemas**. Under a base path, the API is under it too: `/pgboss/pro/api/v1/…`.
+The Pro API serves pg-boss's own methods over HTTP with [`@pg-boss/proxy`](../proxy.md), at `/pro/api/v1/<schema>` for each schema. Every call needs an [API token](./api-tokens.md). `<schema>` is the id Pro gave the schema, shown under **Settings › Schemas**, such as `production` for a schema first named Production. The id stays the same when the schema is renamed. Under a base path, the API is under it too: `/pgboss/pro/api/v1/…`.
 
 ```bash
-curl -X POST https://console.example.com/pro/api/v1/pgboss/send \
+curl -X POST https://console.example.com/pro/api/v1/production/send \
   -H "Authorization: Bearer $PGBOSS_PRO_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{"name": "email-welcome", "data": {"to": "sam@example.com"}}'
@@ -13,20 +13,16 @@ Requests and responses use the proxy's format, `{ "ok": true, "result": … }` o
 
 ## Permissions
 
-Each method needs a capability, which the service account gets from its role on that schema. Pro refuses any method not listed.
+A service account's role on the schema decides which methods its tokens can call. A call to a method in the last row, or to one the table doesn't name, gets a `403` for every role.
 
-| Needs | Methods |
-| - | - |
-| Any role on the schema | `getQueue`, `getQueues`, `getQueueStats`, `findJobs`, `getSchedule`, `getSchedules`, `getDependencies`, `getDependents`, `getBlockedKeys`, `previewRedrive`, `previewSchedule`, `schemaVersion`, `isInstalled`, `getBamStatus`, `meta` |
-| Send (operator, admin) | `send`, `sendAfter`, `sendThrottled`, `sendDebounced`, `insert`, `upsert`, `update`, `flow` |
-| Retry (operator, admin) | `retry`, `redrive` |
-| Cancel and resume (operator, admin) | `cancel`, `resume` |
-| Delete (admin) | `deleteJob` |
-| Queues (admin) | `createQueue`, `updateQueue`, `deleteQueue` |
-| Schedules (admin) | `schedule`, `unschedule` |
-| Refused, in the Pro Console instead | `deleteQueuedJobs`, `deleteStoredJobs`, `deleteAllJobs`. Deleting many jobs at once is an [operation](./operations.md), where a person confirms the count. |
-| Refused, for workers | `fetch`, `complete`, `fail`, `touch`. A worker works jobs through pg-boss itself, or through a [`@pg-boss/proxy`](../proxy.md) it runs on its own, which keeps the Pro API off the application's job path. |
-| Refused | `publish`, `subscribe`, `unsubscribe`, `supervise`, `getReindexCommands` |
+| Methods | Viewer | Operator | Admin |
+| - | :-: | :-: | :-: |
+| `getQueue`, `getQueues`, `getQueueStats`, `findJobs`, `getSchedule`, `getSchedules`, `getDependencies`, `getDependents`, `getBlockedKeys`, `previewRedrive`, `previewSchedule`, `meta` | ✓ | ✓ | ✓ |
+| `send`, `sendAfter`, `sendThrottled`, `sendDebounced`, `insert`, `upsert`, `update`, `flow`, `retry`, `redrive`, `cancel`, `resume` | | ✓ | ✓ |
+| `deleteJob`, `createQueue`, `updateQueue`, `deleteQueue`, `schedule`, `unschedule` | | | ✓ |
+| `fetch`, `complete`, `fail`, `touch`, `deleteQueuedJobs`, `deleteStoredJobs`, `deleteAllJobs`, `publish`, `subscribe`, `unsubscribe` | | | |
+
+Workers don't use the Pro API. A worker fetches and completes jobs through pg-boss, or through a [`@pg-boss/proxy`](../proxy.md) it runs on its own. Deleting many jobs at once is an [operation](./operations.md) in the Pro Console, where a person confirms the count.
 
 ## Status codes
 
@@ -42,7 +38,7 @@ Each method needs a capability, which the service account gets from its role on 
 
 ## Audit
 
-The [audit log](./audit-log.md) records each change, never a read, with the method, the queue, the token and the answer. Sending jobs is recorded only when the service account is set to record it.
+The [audit log](./audit-log.md) records each change with the method, the queue, the token and the answer. It doesn't record reads. Sending jobs is recorded only when the service account is set to record it.
 
 ## Alerts
 
@@ -53,4 +49,4 @@ Beside pg-boss's methods, the Pro API serves Pro's own alerts:
 
 ## Scaling
 
-The Pro API runs in the same process as the Pro Console. Most traffic needs nothing more. For heavy traffic, such as a producer sending at volume, run more replicas of the same container behind the load balancer. An extra replica costs only memory, because the replicas evaluate alerts once between them. A load balancer can send `/pro/api/` to replicas of its own.
+The Pro API runs in the same process as the Pro Console. For heavy traffic, such as a producer sending at volume, run more replicas of the same container behind the load balancer. An extra replica costs only memory, because the replicas evaluate alerts once between them. A load balancer can send `/pro/api/` to replicas of its own.

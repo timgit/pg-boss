@@ -25,7 +25,7 @@ to the destinations the fire went to. A send that fails is tried again by its
 [send queue](#send-queues).
 
 An alert that fires while its rule has no destination shows only in the Pro Console. It isn't sent
-when the rule gets a destination later. Adding the first destination never sends a backlog of
+when the rule gets a destination later. Adding the first destination doesn't send a backlog of
 open alerts.
 
 Each rule sends to one destination, chosen on the rule's page. When a new destination is added
@@ -87,7 +87,7 @@ and everyone together 20, before tests stop for 15 minutes.
 Changing the
 SMTP host, port, user or TLS setting needs the password entered again. Pro
 requires STARTTLS unless the connection is TLS from the start or the server is
-on this machine. The password and messages never cross the network in the
+on this machine. The password and messages don't cross the network in the
 clear. For an internal relay without TLS, **Send without TLS when the server offers none**
 turns off the STARTTLS requirement.
 
@@ -101,7 +101,7 @@ Pro stores a webhook's URL encrypted, since receivers often keep their token in
 the path or the query. The page and the audit log show only the URL's origin. The
 edit form leaves its URL field blank. Leave the field blank to keep the URL, or enter a
 new URL. A new URL on another host needs the signing secret and Authorization
-header entered again or removed. A stored secret never goes to a host it
+header entered again or removed. A stored secret doesn't go to a host it
 wasn't entered for.
 
 Pro sends one alert per request, as a POST with version 4 of
@@ -173,7 +173,7 @@ receive Pro's alerts with no relay:
 
 - **Authorization header**, optional: Pro sends it as it is, for a receiver that
   takes a token (`Bearer …`). Pro stores it encrypted, like the signing secret,
-  and never shows it again once saved.
+  and doesn't show it again once saved.
 
 ## PagerDuty
 

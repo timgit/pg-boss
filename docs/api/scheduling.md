@@ -205,7 +205,7 @@ Each schedule has the following properties.
 | `key` | Unique key within the queue, `''` when none was supplied |
 | `kind` | Which format `cron` holds, `cron` or `rrule` |
 | `cron` | Cron expression or recurrence rule |
-| `timezone` | Time zone the expression is evaluated in, `UTC` when the row never named one |
+| `timezone` | Time zone the expression is evaluated in, `UTC` when the row doesn't name one |
 | `data` | Payload sent with each job |
 | `options` | The options `schedule()` was given, which are the `send()` options each job is created with plus `tz`, `key` and `missed` |
 | `createdOn` | When the schedule was first stored |
@@ -231,7 +231,7 @@ eventually deletes it. Re-running `schedule()` for the same `(name, key)`
 updates the definition and leaves `lastJobId` alone. `unschedule()` removes the row entirely.
 
 pg-boss records `lastJobId` on a best-effort basis in a separate statement after it creates the
-job. A `null` value doesn't prove a schedule never fired. A schedule reads `null` until its next run when
+job. A `null` value doesn't prove a schedule hasn't fired. A schedule reads `null` until its next run when
 it last fired before the upgrade that added the column, or when its annotating statement failed
 after its job was already created. Treat `lastJobId` as a pointer to the last run pg-boss observed. The queue's
 job history is the complete record of what actually ran.

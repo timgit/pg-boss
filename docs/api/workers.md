@@ -285,7 +285,7 @@ await boss.work('email-welcome', { batchSize: 5 }, (jobs) => myEmailService.send
 
 By default, workers fetch new jobs by polling every `pollingIntervalSeconds`. A new job waits up to one interval before a worker picks it up. pg-boss can also use Postgres [`LISTEN/NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html) to wake workers the moment a job is created, which cuts the wait to milliseconds.
 
-**LISTEN/NOTIFY is opt-in and runs on top of polling.** A missed notification (during a brief connection drop, for example) never loses a job, because polling keeps running as a safety net. A notification only tells a worker to fetch now instead of waiting. The locking fetch, queue policies and concurrency limits work the same with or without notifications.
+**LISTEN/NOTIFY is opt-in and runs on top of polling.** A missed notification (during a brief connection drop, for example) doesn't lose a job, because polling keeps running as a safety net. A notification only tells a worker to fetch now instead of waiting. The locking fetch, queue policies and concurrency limits work the same with or without notifications.
 
 **Enabling LISTEN/NOTIFY requires two opt-ins:**
 
@@ -346,7 +346,7 @@ Each job has its own signal. On a queue with `heartbeatSeconds`, a heartbeat tha
 
 When a handler runs past `expireInSeconds`, pg-boss fails its batch and aborts every signal in it. Because aborting can't stop a handler that ignores its signal, the worker waits for the handler to return before it fetches again. The worker emits a [`handler_overrun`](./events.md#warning) warning while it waits. Until that handler stops, it counts against `localConcurrency` and `localGroupConcurrency`. Its worker doesn't pick up the job's retry in that time.
 
-A handler that never returns holds its worker until [`offWork()`](#offwork-name-options) or [`stop()`](./ops.md#stop-options) stops the worker. Neither waits for the handler, but its `localGroupConcurrency` slots stay taken until it returns. While the worker waits, [`getWipData()`](#getwipdata-options) shows it as `active` with a `count` of 0, since its jobs have already failed.
+A handler that doesn't return holds its worker until [`offWork()`](#offwork-name-options) or [`stop()`](./ops.md#stop-options) stops the worker. Neither waits for the handler, but its `localGroupConcurrency` slots stay taken until it returns. While the worker waits, [`getWipData()`](#getwipdata-options) shows it as `active` with a `count` of 0, since its jobs have already failed.
 
 ### `getWipData(options)`
 

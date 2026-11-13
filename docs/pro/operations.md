@@ -63,8 +63,8 @@ jobs, through pg-boss's own `redrive()`. The page offers a redrive when at least
 queue names another as its `deadLetter`. A redrive needs the same permission as
 retrying a job.
 
-Choose the dead letter queue, then where the jobs go: **back where each came
-from** (the default), or **into another queue**. Filters narrow the redrive to the jobs
+Choose the dead letter queue and the destination: **back to each job's source
+queue** (the default) or **into another queue**. Filters narrow the redrive to the jobs
 from one source queue, by payload, and by how long ago they were dead-lettered.
 A pace cap of 1,000, 100 or 10 jobs a second keeps a large redrive from flooding
 the queue again. The summary shows how the jobs split across

@@ -51,7 +51,7 @@ Each queue gets a card, ten to a page.
 
 Each queue is a hexagon colored by its health, up to 500 to a page. The hexagons get smaller as a page holds more. The smallest hexagons show the first letter of each part of the name. On them, `payments-final` reads `pf`. Hover over a hexagon for the queue's name, health and counts.
 
-Over a range longer than an hour, a hexagon shows the lower of the queue's health now and the lowest health it held for 5 minutes or more in the range. A longer range never shows a queue as healthier than a shorter range does. The hover shows how long the low point lasted.
+Over a range longer than an hour, a hexagon shows the lower of the queue's health now and the lowest health it held for 5 minutes or more in the range. A longer range doesn't show a queue as healthier than a shorter range does. The hover shows how long the low point lasted.
 
 **Size** above the hexagons sets how small they may get: **Fit** shrinks them to fit about a screen, **Names** keeps every queue's name, and **Details** adds each queue's ready count. The choice is remembered. **Show** in the toolbar keeps the Hex view to the queues **Not keeping up**, which hides every hexagon colored Keeping up or Not judged. The filter covers every queue, including those past the first 500.
 

@@ -103,7 +103,7 @@ The only thing `doctor` repairs is a leftover clock override, and only when you 
 
 #### `doctor --fix`
 
-Repairs exactly one thing: a `job_now()` left overridden by a [TestClock](api/testing) whose run was killed before it released the clock. The override keeps time correct, since the body falls through to real time for any session that never opted in. The overridden function no longer inlines, though. Every statement that reads the clock pays a per-row function call. `--fix` restores the canonical body and drops the clock table, then re-runs the scan so the summary and exit code describe the repaired schema.
+Repairs exactly one thing: a `job_now()` left overridden by a [TestClock](api/testing) whose run was killed before it released the clock. The override keeps time correct, since the body falls through to real time for any session that didn't opt in. The overridden function no longer inlines, though. Every statement that reads the clock pays a per-row function call. `--fix` restores the canonical body and drops the clock table, then re-runs the scan so the summary and exit code describe the repaired schema.
 
 ```bash
 pg-boss doctor --connection-string postgres://localhost/myapp --fix

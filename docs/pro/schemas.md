@@ -16,7 +16,8 @@ between them. For a global admin, [Pro's own queues](#pro-queues) are one more c
 has no schemas, and its first global admin is sent to this page. **Add schema** asks for:
 
 - **Name**, such as Production or Billing. Pro makes the schema's id from the name it is first
-  given, such as `production` for Production. The id never changes.
+  given, such as `production` for Production, and shows it under the name as it's typed. The id
+  doesn't change.
 - **Color**, for the dot beside the name in the top bar and the schema menu. Until one is picked,
   the color follows the schema's place in the list.
 - **Connection**: host, port, database, user, password and SSL mode. Connect as the role that owns
@@ -33,7 +34,7 @@ is fine, because the application's pg-boss creates it when it first starts. Pro 
 database, and a pg-boss schema that is already added under another name.
 
 Pro stores each connection encrypted with [`PGBOSS_PRO_SECRET_KEY`](./administration.md#secrets) and
-never sends its password back to the browser. The list shows each schema's host and database.
+doesn't send its password back to the browser. The list shows each schema's host and database.
 
 ## Editing a schema
 

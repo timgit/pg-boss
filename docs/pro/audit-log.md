@@ -5,7 +5,7 @@ The **Audit log** lists every change made through the Pro Console and the [Pro A
 ![The audit log](../images/pro/audit-log.webp){.light-only}
 ![The audit log](../images/pro/audit-log-dark.webp){.dark-only}
 
-Pro writes each change to the log in the same transaction as the change itself. For a change pg-boss makes, Pro writes the entry first. Pro doesn't make a change it can't record. A refusal leaves no entry claiming otherwise.
+Pro writes each change to the log in the same transaction as the change itself. For a change pg-boss makes, Pro writes the entry first. Pro doesn't make a change it can't record. When Pro refuses a change, the log has no entry for it.
 
 ![An audit entry](../images/pro/audit-entry.webp){.light-only}
 ![An audit entry](../images/pro/audit-entry-dark.webp){.dark-only}

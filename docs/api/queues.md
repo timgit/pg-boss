@@ -153,7 +153,7 @@ Actual detection time is `heartbeatSeconds` plus up to the longer of [`monitorIn
 
 * **deleteAfterSeconds**, int
 
-  How long pg-boss keeps a completed job in the database. Default: 7 days. Set to 0 to never delete completed jobs.
+  How long pg-boss keeps a completed job in the database. Default: 7 days. Set to 0 to keep completed jobs indefinitely.
 
   Keep it above a few minutes if you rely on throughput counts. The monitor counts a completed job at its first pass at least 10 seconds after the job finishes (see [`getQueueStats()`](#getqueuestats-name-options)), and doesn't count a job deleted before then.
 
@@ -183,9 +183,9 @@ await boss.deleteQueue('email-send')
 
 For a queue in the shared job table, `deleteQueue()` first deletes its jobs in batches, as [`deleteAllJobs()`](./jobs.md#deletealljobs-name) does, and then deletes the queue. If it fails partway, the jobs already deleted stay deleted and the queue remains. While another queue, or a job in another queue, names the queue as its dead letter queue, `deleteQueue()` rejects before it deletes anything.
 
-A queue created with `partition: true` has its own table. Dropping that table needs brief exclusive locks on the job tables. Because `deleteQueue()` takes the locks without waiting, it never deadlocks with work in flight. While the locks are busy, `deleteQueue()` tries again for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue as it was.
+A queue created with `partition: true` has its own table. Dropping that table needs brief exclusive locks on the job tables. Because `deleteQueue()` takes the locks without waiting, it doesn't deadlock with work in flight. While the locks are busy, `deleteQueue()` tries again for about 3 seconds, then rejects with `Queue <name> was not deleted` and leaves the queue as it was.
 
-Other instances find out on their next write to the deleted queue. Their `send()`, `insert()`, `upsert()` and `flow()` calls reject with `Queue <name> does not exist`, as for a queue that was never created. A job naming the deleted queue as its `deadLetter` rejects with `Dead letter queue <name> does not exist`.
+Other instances find out on their next write to the deleted queue. Their `send()`, `insert()`, `upsert()` and `flow()` calls reject with `Queue <name> does not exist`, as for a queue that wasn't created. A job naming the deleted queue as its `deadLetter` rejects with `Dead letter queue <name> does not exist`.
 
 Inside a transaction passed as `db`, with the default partitioned layout, the database checks a queue in the shared job table when that transaction commits. So `send()` resolves with an id. The `COMMIT` then fails with a foreign key violation (`23503`). For a queue created with `partition: true`, or any queue under `noTablePartitioning` (CockroachDB), the `send()` itself rejects.
 
@@ -273,7 +273,7 @@ Subtracting two snapshots' counts doesn't give a delta. The change in `failedCou
 * `runBins`: how long the same jobs ran, from start to finish, in the same bins.
 * `readyOldestSeconds`: how long the oldest ready job had waited when the pass ran, leaving out deferred and blocked jobs. `0` when no ready job was waiting. Because `waitBins` counts a wait only once its job finishes, a queue whose workers have stopped records no waits at all. `readyOldestSeconds` is the figure that keeps rising.
 
-The deltas are eventually consistent. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it. The job's row becomes visible only when the transaction commits. So each window ends 10 seconds behind the pass. A transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting (or within the queue's `deleteAfterSeconds` or `retentionSeconds`, if either is shorter). So a snapshot from the last hour can still rise after it has been returned. It never falls. The histograms leave out a job that finishes inside a transaction longer than 10 seconds, even though the deltas take it in afterwards.
+The deltas are eventually consistent. A job lands in a delta by the time pg-boss stamped on it, which is the start of the transaction that created or finished it. The job's row becomes visible only when the transaction commits. So each window ends 10 seconds behind the pass. A transaction that commits within 10 seconds of starting is counted in the first pass after its stamp is 10 seconds old. Work done inside a longer transaction, such as a [transactional worker](./workers.md#work-name-options-handler) whose handler runs longer than that, commits after its window was recorded. A later pass then adds it to the snapshot its stamp belongs to, as long as it commits within an hour of starting (or within the queue's `deleteAfterSeconds` or `retentionSeconds`, if either is shorter). So a snapshot from the last hour can still rise after it has been returned. It doesn't fall. The histograms leave out a job that finishes inside a transaction longer than 10 seconds, even though the deltas take it in afterwards.
 
 **Wait and run histograms**
 
@@ -286,7 +286,7 @@ In `queue_stats` the histograms are stored as the `int[]` columns `wait_bins` an
 * `singletonsActive`, **deprecated**: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none. Since 12.37.1 it's informational only, because `fetch()` checks a key's active job directly instead of reading this list. It will be removed in the next major.
 * `table`: the table the queue's jobs are stored in, `job_common` unless the queue is partitioned
 * `createdOn`: when the queue was created
-* `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed the queue, or the same as `createdOn` if the queue was never updated
+* `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed the queue, or the same as `createdOn` if the queue hasn't been updated
 
 ### `getQueue(name)`
 

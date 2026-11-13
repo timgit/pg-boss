@@ -70,7 +70,7 @@ Creates a new job and returns the job id.
 
 * **deleteAfterSeconds**, int
 
-  Default: 7 days. How long the database keeps a job after it's completed. Set to 0 to never delete completed jobs.
+  Default: 7 days. How long the database keeps a job after it's completed. Set to 0 to keep completed jobs indefinitely.
 
 
 You can also set every retry, expiration and retention option on the queue. Each job inherits the queue's values unless it overrides them.
@@ -596,7 +596,7 @@ jobs that aren't being processed (still in the `created`/`retry` state)
 are moved.
 
 `redrive()` can't recover jobs that were part of a flow. The dependents of a dead-lettered
-parent stay blocked, because the parent never reaches the `completed` state. The
+parent stay blocked, because the parent doesn't reach the `completed` state. The
 re-created job also has a new id that the existing dependency rows don't point at. Redriving
 such a job runs it again on its own without resuming the original flow.
 

@@ -75,7 +75,7 @@ set later gets only the alerts that fire after it is set. Turning on a rule
 that has no destination asks for a destination for its alerts, and offers a destination
 that is on. A default
 rule can be edited and turned off,
-but never deleted. **Reset to default** puts back its original definition.
+but not deleted. **Reset to default** puts back its original definition.
 A schema added later gets its default rules on the evaluator's next pass.
 
 ![The rules list](../images/pro/alert-rules.webp){.light-only}

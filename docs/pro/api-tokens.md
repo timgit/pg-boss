@@ -45,7 +45,7 @@ A token is `pgbp_` followed by 43 characters. Pro shows it once, at creation. Pr
 A client sends the token in an `Authorization: Bearer` header:
 
 ```bash
-curl -H "Authorization: Bearer $PGBOSS_PRO_API_TOKEN" https://console.example.com/pro/api/v1/pgboss/getQueues
+curl -H "Authorization: Bearer $PGBOSS_PRO_API_TOKEN" https://console.example.com/pro/api/v1/production/getQueues
 ```
 
 Tokens work only on the Pro API and [`/metrics`](./metrics.md). The Pro Console's pages ignore them, and the Pro API ignores a session cookie. Pro answers a missing or invalid token with `401` and `WWW-Authenticate: Bearer`. After five invalid tokens from one address in fifteen minutes, Pro answers that address's invalid tokens with `429` for fifteen minutes. A client sharing an address with someone guessing isn't cut off, because a valid token from the address still works.

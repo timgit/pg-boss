@@ -142,7 +142,7 @@ for what each backend enables and the [compatibility matrix](../database-backend
 
 Bool, default false
 
-Enables a `LISTEN/NOTIFY` listener that wakes workers on notify-enabled queues the moment a job is created, before their `pollingIntervalSeconds` runs out. The listener lowers latency on top of polling. A missed notification never loses a job, because polling always stays active as a fallback. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for how it works and for the per-queue `notify` option that controls which queues emit notifications.
+Enables a `LISTEN/NOTIFY` listener that wakes workers on notify-enabled queues the moment a job is created, before their `pollingIntervalSeconds` runs out. The listener lowers latency on top of polling. A missed notification doesn't lose a job, because polling always stays active as a fallback. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for how it works and for the per-queue `notify` option that controls which queues emit notifications.
 
 This option holds one dedicated database connection open for listening. It needs a session-pinned connection, which the built-in connection pool and a `db` adapter that implements `listen` both provide. The listener can't run through PgBouncer in transaction or statement pooling mode, because those modes disable `LISTEN/NOTIFY`. When pg-boss can't establish a listener, it emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only.
 

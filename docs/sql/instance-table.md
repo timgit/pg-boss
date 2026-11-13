@@ -44,10 +44,10 @@ CREATE TABLE pgboss.instance (
 | `pool_max` … `pool_waiting` | Its connection pool at the last heartbeat. Null for a `db` adapter |
 | `workers` | One entry per `work()` call at the last heartbeat |
 | `metrics` | Its process's CPU, memory and event loop at the last heartbeat, against its container's limits. Null until the first sample lands |
-| `config` | The options it runs with, for comparing instances. Connection settings and credentials are never recorded |
+| `config` | The options it runs with, for comparing instances. Connection settings and credentials aren't recorded |
 | `crash_restarts` | Earlier runs with this name on this host that ended without `stop()` before this run started |
 | `crash_restarts_since` | When the first of those crashed runs went quiet. Null when there were none |
-| `started_on`, `heartbeat_on`, `stopped_on` | When it started, last beat, and stopped. A crashed instance never sets `stopped_on` |
+| `started_on`, `heartbeat_on`, `stopped_on` | When it started, last beat, and stopped. A crashed instance doesn't set `stopped_on` |
 
 ## Querying
 

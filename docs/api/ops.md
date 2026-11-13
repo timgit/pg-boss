@@ -30,7 +30,7 @@ You can also call `start()` again yourself on the same instance until it succeed
 
 * **attempts**, int, default 1
 
-  How many times to try before rejecting with the last error. The wait between tries starts at 1 second and doubles up to 30 seconds. With those waits, 10 attempts span about two and a half minutes. The first failure in each call emits a [`start_retry` warning](./events.md#warning). An `AssertionError` (pg-boss refusing a configuration it can't run) is never retried. An instance with `migrate: false` can wait for the instance that migrates, because a schema another process is still creating or migrating is retried. Calling `stop()` during a wait ends the wait. `start()` then rejects with the last error. An instance that started on a later try records that try as `config.startAttempt` in [`getInstances()`](#getinstances-options).
+  How many times to try before rejecting with the last error. The wait between tries starts at 1 second and doubles up to 30 seconds. With those waits, 10 attempts span about two and a half minutes. The first failure in each call emits a [`start_retry` warning](./events.md#warning). An `AssertionError` (pg-boss refusing a configuration it can't run) isn't retried. An instance with `migrate: false` can wait for the instance that migrates, because a schema another process is still creating or migrating is retried. Calling `stop()` during a wait ends the wait. `start()` then rejects with the last error. An instance that started on a later try records that try as `config.startAttempt` in [`getInstances()`](#getinstances-options).
 
 Once started, pg-boss keeps running when the database drops and comes back. Workers emit `error` while the database is gone and resume when it returns. No restart is needed.
 
@@ -201,7 +201,7 @@ const { rows } = await db.executeSql('SELECT now()')
 
 ### `getInstances(options)`
 
-Returns the pg-boss instances registered in this database, oldest first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last instance's `id` as `options.after` to read the next page. It rejects if that instance has been deleted since. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes leaves its row quiet instead, because it never marks itself stopped. `live` turns false once the row has missed three heartbeats. Maintenance deletes rows whose heartbeat hasn't moved for 7 days.
+Returns the pg-boss instances registered in this database, oldest first. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last instance's `id` as `options.after` to read the next page. It rejects if that instance has been deleted since. Each instance registers at `start()` unless constructed with `registerInstance: false`, refreshes its row every [`instanceHeartbeatSeconds`](./constructor.md#instanceheartbeatseconds), and marks it stopped on `stop()`. A process that crashes leaves its row quiet instead, because it doesn't mark itself stopped. `live` turns false once the row has missed three heartbeats. Maintenance deletes rows whose heartbeat hasn't moved for 7 days.
 
 Every `start()` of a new `PgBoss` object is a new row. So a crash loop, or a deploy whose processes exit without calling `stop()`, leaves a quiet row per life. To keep the table bounded, an instance that registers deletes all but the 20 newest stopped or quiet rows with its name (or with its host, when it has no name). Maintenance keeps the 1,000 newest stopped or quiet rows in all. To tell a deploy apart from a crash, call `stop()` on `SIGTERM`. The call marks the row stopped instead of quiet. `crashRestarts` survives that pruning.
 
@@ -230,7 +230,7 @@ Array of objects with the following properties:
 | `poolMax`, `poolTotal`, `poolIdle`, `poolWaiting` | number \| null | Its pool at the last heartbeat; null for a `db` adapter |
 | `workers` | array | One entry per `work()` call, below |
 | `metrics` | object \| null | Its process's CPU, memory and event loop at the last heartbeat, below |
-| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Each holds the value it resolved to, defaults included; an option with no default that was not given is absent. Connection settings and credentials are never recorded. Also `startAttempt`, the [`start({ attempts })`](#start-options) try it registered on, when that was not the first try |
+| `config` | object | The options it runs with, for comparing instances: `adapter` (`pg`, or `custom` for a `db` adapter), `backend`, `max`, the roles, every interval and retention setting, and `useListenNotify`. Each holds the value it resolved to, defaults included; an option with no default that was not given is absent. Connection settings and credentials aren't recorded. Also `startAttempt`, the [`start({ attempts })`](#start-options) try it registered on, when that was not the first try |
 | `crashRestarts` | number | Lives in a row with this name on this host that ended without `stop()` before this instance started |
 | `crashRestartsSince` | Date \| null | When the first of those went quiet |
 | `startedOn`, `heartbeatOn` | Date | When it started, and its last heartbeat |
@@ -396,7 +396,7 @@ The [`doctor`](../cli#doctor) CLI command runs this same check without writing a
 
 **Remediation**
 
-`detectSchemaDrift()` only reports. It never modifies the schema. `start()` and `migrate` rebuild indexes *only* as part of a version change. On a schema that's already at the latest version, they won't repair drift. The fixes below are manual. Run `DROP`/`CREATE INDEX` with `CONCURRENTLY` on a live database so job processing isn't blocked.
+`detectSchemaDrift()` reports drift and doesn't change the schema. `start()` and `migrate` rebuild indexes *only* as part of a version change. On a schema that's already at the latest version, they won't repair drift. The fixes below are manual. Run `DROP`/`CREATE INDEX` with `CONCURRENTLY` on a live database so job processing isn't blocked.
 
 | Category | What it means | How to fix |
 | --- | --- | --- |

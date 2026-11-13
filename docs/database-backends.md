@@ -713,4 +713,4 @@ time, the trade-off is acceptable because workers poll again.
   also has no LISTEN/NOTIFY and no heartbeat on a transactional worker.
 - The atomic-`UPDATE` fetch (`noSkipLocked`) has no benefit on stock PostgreSQL. Under contention,
   workers receive empty results instead of skipping to unlocked rows. pg-boss therefore enables the
-  atomic fetch only for the backends that need it, which never includes `backend: 'postgres'`.
+  atomic fetch only for the backends that need it, which doesn't include `backend: 'postgres'`.

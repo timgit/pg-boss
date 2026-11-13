@@ -45,7 +45,7 @@ One job: its state, the reason it's waiting or stopped, and its data and output.
 ![A failed job's page](./images/dashboard-job.webp){.light-only}
 ![A failed job's page](./images/dashboard-job-dark.webp){.dark-only}
 
-The timeline shows the times the job's row keeps. Earlier attempts appear only as a count, because a retry overwrites the start time and output. The last entry is when [retention](./api/queues.md#createqueue-name-queue) deletes the job, which is `deleteAfterSeconds` after it finished, or at `keepUntil` if it never ran.
+The timeline shows the times the job's row keeps. Earlier attempts appear only as a count, because a retry overwrites the start time and output. The last entry is when [retention](./api/queues.md#createqueue-name-queue) deletes the job, which is `deleteAfterSeconds` after it finished, or at `keepUntil` if it didn't run.
 
 #### Job actions
 
@@ -75,7 +75,7 @@ Every queue in the schema with its policy and cached counts (queued, deferred, r
 
 One queue's counts over time. Two charts plot what pg-boss records in `queue_stats`:
 
-- **Waiting**: every job not started yet, stacked by why it waits (ready, blocked by a flow parent, or deferred). Together they are the queue's queued count. Blocked is queued less ready and deferred. Computing it needs nothing more from pg-boss.
+- **Waiting**: every job not started yet, stacked by why it waits (ready, blocked by a flow parent, or deferred). Together they are the queue's queued count. The dashboard works out Blocked as queued less ready and deferred, from the counts pg-boss records.
 - **Active and failed**: jobs being worked, and failures still stored. **Show total stored** adds every job the queue holds.
 
 Choose whether each point is the highest, lowest or average of the samples in its bucket. Pick a range from the last hour to the last 30 days (24 hours by default), or set your own start and end. The queue page's counts open this page at the chart that holds them.

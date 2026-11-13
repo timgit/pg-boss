@@ -12,7 +12,7 @@ Grants read as the role followed by its scope, such as `Operator › All schemas
 
 ## Global admin
 
-An account with the admin role on all schemas is a global admin, whether the grant is its own or comes through a group. To make one, choose **Global admin** as the role, under **Pro administration**, when adding a person or granting a role to a person or a group. **Admin** always names one schema, so leaving the schema unset never makes a global admin. A service account can't be a global admin. Only a global admin manages alert rules, accounts, groups, SSO, destinations and settings, and opens the [audit log](./audit-log.md). An admin on one schema can't, because an admin who manages accounts could widen their own grant. The accounts list and an account's page show a **Global admin** label beside the name. The first account, made at [setup](./install.md), is a global admin.
+An account with the admin role on all schemas is a global admin, whether the grant is its own or comes through a group. To make one, choose **Global admin** as the role, under **Pro administration**, when adding a person or granting a role to a person or a group. **Admin** always names one schema. Leaving the schema unset doesn't make a global admin. A service account can't be a global admin. Only a global admin manages alert rules, accounts, groups, SSO, destinations and settings, and opens the [audit log](./audit-log.md). An admin on one schema can't, because an admin who manages accounts could widen their own grant. The accounts list and an account's page show a **Global admin** label beside the name. The first account, made at [setup](./install.md), is a global admin.
 
 ## Access by schema
 
