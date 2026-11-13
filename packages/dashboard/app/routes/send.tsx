@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
-import { redirect, useActionData, useBlocker, useNavigation, useSearchParams, type RouterContextProvider } from 'react-router'
+import { useState } from 'react'
+import { redirect, useActionData, useNavigation, useSearchParams, type RouterContextProvider } from 'react-router'
 import { DbLink, resolveDbHref } from '~/components/db-link'
 import { ErrorCard } from '~/components/error-card'
+import { Field, inputClass } from '~/components/form-field'
+import { LeaveGuard } from '~/components/leave-guard'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
@@ -46,41 +48,6 @@ export function ErrorBoundary ({ error }: { error: unknown }) {
   )
 }
 
-const inputClass = cn(
-  'w-full rounded-lg border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2 text-sm',
-  'text-[var(--text-primary)] placeholder-[var(--text-tertiary)]',
-  'focus:border-[var(--border-focus)] focus:shadow-[var(--shadow-focus)] focus:outline-none'
-)
-
-const labelClass = 'mb-1 block text-sm font-medium text-[var(--text-secondary)]'
-
-function Field ({ id, label, hint, children }: { id: string, label: string, hint?: string, children: React.ReactNode }) {
-  return (
-    <div>
-      <label htmlFor={id} className={labelClass}>{label}</label>
-      {children}
-      {hint && <p className="mt-1 text-xs text-[var(--text-tertiary)]">{hint}</p>}
-    </div>
-  )
-}
-
-// Asks before a navigation or a reload throws away what was typed.
-function useLeaveGuard (dirty: boolean) {
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname)
-
-  useEffect(() => {
-    if (!dirty) return
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty])
-
-  return blocker
-}
-
 export default function SendJob ({ loaderData }: { loaderData: ReturnType<typeof loader> }) {
   const [searchParams] = useSearchParams()
   const actionData = useActionData<typeof action>()
@@ -89,7 +56,6 @@ export default function SendJob ({ loaderData }: { loaderData: ReturnType<typeof
   const [dirty, setDirty] = useState(false)
   // `?queue=` from a queue's page starts the form on that queue.
   const [queue, setQueue] = useState(searchParams.get('queue') ?? '')
-  const blocker = useLeaveGuard(dirty && !sending)
 
   if (loaderData.readOnly) {
     return (
@@ -106,18 +72,7 @@ export default function SendJob ({ loaderData }: { loaderData: ReturnType<typeof
 
   return (
     <div className="space-y-6">
-      {blocker.state === 'blocked' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div role="dialog" aria-labelledby="leave-title" className="mx-4 max-w-md rounded-lg bg-[var(--surface-card)] p-6 shadow-lg">
-            <h2 id="leave-title" className="mb-2 text-lg font-semibold text-[var(--text-primary)]">Unsaved changes</h2>
-            <p className="mb-6 text-sm text-[var(--text-secondary)]">The job hasn't been sent. Leave this page anyway?</p>
-            <div className="flex justify-end gap-3">
-              <Button type="button" variant="outline" size="sm" onClick={() => blocker.reset()}>Stay</Button>
-              <Button type="button" variant="danger" size="sm" onClick={() => blocker.proceed()}>Leave</Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LeaveGuard dirty={dirty && !sending} unsaved="The job hasn't been sent." />
 
       <PageHeader parent={{ to: '/queues', label: 'Queues' }} title="Send job" />
 
