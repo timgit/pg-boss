@@ -90,30 +90,31 @@ export function proServerAlias (dir: string = overlayDir): string {
 /**
  * What `app/pro/routes.ts` may export.
  *
- * An array is appended to the free routes, which is all the first overlay
- * needed. A function is handed the free routes and returns the whole table,
- * which is what lets the overlay nest them under a layout route carrying
- * `middleware` — the only way to enforce a role on an action defined in this
- * package, since the free route modules are not Pro's to edit.
+ * An array is appended to the dashboard's routes, which is all the first
+ * overlay needed. A function is handed the dashboard's routes and returns the
+ * whole table, which is what lets the overlay nest them under a layout route
+ * carrying `middleware`. That is the only way to enforce a role on an action
+ * defined in this package, since the dashboard's route modules are not Pro's
+ * to edit.
  */
 export type ProRouteConfig =
   | RouteConfigEntry[]
-  | ((freeRoutes: RouteConfigEntry[]) => RouteConfigEntry[])
+  | ((dashboardRoutes: RouteConfigEntry[]) => RouteConfigEntry[])
 
 /**
- * The full route table: the free routes, plus or wrapped by whatever the overlay
+ * The full route table: the dashboard's routes, plus or wrapped by whatever the overlay
  * exports. See `proAlias` on `dir`.
  *
- * Returns `freeRoutes` untouched when there is no overlay, so this is the whole
+ * Returns `dashboardRoutes` untouched when there is no overlay. This is the whole
  * route table in every build rather than a fragment the caller has to remember
  * to spread.
  */
 export async function proRoutes (
-  freeRoutes: RouteConfigEntry[],
+  dashboardRoutes: RouteConfigEntry[],
   dir: string = overlayDir
 ): Promise<RouteConfigEntry[]> {
   if (!proEnabled()) {
-    return freeRoutes
+    return dashboardRoutes
   }
 
   requireOverlay(dir)
@@ -123,5 +124,5 @@ export async function proRoutes (
   const entry = pathToFileURL(join(dir, 'routes.ts')).href
   const { default: routes } = await import(/* @vite-ignore */ entry) as { default: ProRouteConfig }
 
-  return typeof routes === 'function' ? routes(freeRoutes) : [...freeRoutes, ...routes]
+  return typeof routes === 'function' ? routes(dashboardRoutes) : [...dashboardRoutes, ...routes]
 }

@@ -8,7 +8,7 @@ import { InstancePage } from '~/components/instance-page'
 import type { Connections, Instance } from '~/lib/types'
 import { NOW, instance, quiet, secondsAgo, stopped, worker } from '../fixtures/instances'
 
-// The free list and page, whatever the build: a Pro build mounts its overlay at `~pro`.
+// The dashboard's list and page, whatever the build: a Pro build mounts its overlay at `~pro`.
 vi.mock('~pro', () => ({ default: { nav: [], slots: {} } }))
 
 describe('listInstances', () => {

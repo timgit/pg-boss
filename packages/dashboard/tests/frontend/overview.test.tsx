@@ -5,7 +5,7 @@ import { OverviewSections } from '~/components/overview'
 import type { OverviewData } from '~/lib/overview.server'
 import type { QueueResult, WarningResult } from '~/lib/types'
 
-// The free sections, whatever the build: a Pro build mounts its overlay at `~pro`.
+// The dashboard's sections, whatever the build: a Pro build mounts its overlay at `~pro`.
 vi.mock('~pro', () => ({ default: { nav: [], slots: {} } }))
 
 const queue = (name: string, queuedCount: number): QueueResult => ({
@@ -40,7 +40,7 @@ function renderSections (extensions?: Parameters<typeof OverviewSections>[0]['ex
 const headers = () => within(screen.getByRole('table')).getAllByRole('columnheader').map((h) => h.textContent)
 
 describe('OverviewSections', () => {
-  it('is the free overview without extensions', () => {
+  it('is the dashboard\'s overview without extensions', () => {
     renderSections()
 
     expect(screen.getByText('Top Queues')).toBeInTheDocument()

@@ -5,8 +5,8 @@ import { AppSidebar } from '~/components/sidebar'
 import { ThemeProvider } from '~/components/theme-provider'
 import { SidebarProvider } from '~/components/ui/sidebar'
 
-// The free sidebar, whatever the build: a Pro build mounts its overlay at `~pro`,
-// and the wordmark tests below are about what a free build draws.
+// The dashboard's sidebar, whatever the build: a Pro build mounts its overlay at `~pro`,
+// and the wordmark tests below are about what a build without Pro draws.
 vi.mock('~pro', () => ({ default: { nav: [], slots: {} } }))
 
 function renderWithRouter (initialRoute = '/') {
@@ -117,8 +117,8 @@ describe('Sidebar', () => {
       expect(container.querySelector('.pgboss-wordmark')?.textContent).toBe('pg-boss')
     })
 
-    // These tests run against `pro-stub.ts`, which is what a free build gets.
-    // The badge appearing here would mean it appears in the free dashboard.
+    // These tests run against `pro-stub.ts`, which is what a build without Pro gets.
+    // The badge appearing here would mean it appears in the dashboard.
     it('shows no tier badge without an overlay', () => {
       const { container } = renderWithRouter()
 
@@ -127,7 +127,7 @@ describe('Sidebar', () => {
     })
 
     // Console is Pro's word: interactive, and every change has a person attached.
-    it('calls the free build a dashboard', () => {
+    it('calls a build without Pro a dashboard', () => {
       renderWithRouter()
 
       expect(screen.getByText('DASHBOARD')).toBeInTheDocument()

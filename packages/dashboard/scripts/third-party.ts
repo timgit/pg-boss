@@ -23,7 +23,7 @@ import type { Plugin } from 'vite'
  * and the UI kit; the server bundle carries those plus whatever renders. A
  * package that appears in either one is redistributed.
  *
- * Emits `build/third-party.json`. The free package's notices are generated from
+ * Emits `build/third-party.json`. The dashboard package's notices are generated from
  * it, and so are @pg-boss/pro's, which is why it is a data file rather than
  * formatted text: Pro's licence obligations are its own and its file says
  * different things around the same list.
@@ -198,7 +198,7 @@ export function thirdPartyPlugin (outFile = 'build/third-party.json'): Plugin {
 /**
  * Render the data file as the notices text a package ships.
  *
- * Shared so the free dashboard and @pg-boss/pro produce the same list from the
+ * Shared so @pg-boss/dashboard and @pg-boss/pro produce the same list from the
  * same source, and differ only in the wording around it.
  */
 export function renderNotices (packages: ThirdPartyPackage[], preamble: string): string {

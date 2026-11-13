@@ -32,7 +32,7 @@ import { Count } from '~/components/ui/count'
 
 /**
  * What an overlay that replaces a queue's page adds to the sections it composes. Every field is
- * optional, and without them the page is the free one.
+ * optional, and without them the page is the dashboard's own.
  */
 export interface QueuePageExtensions {
   /** In place of `Queue: <name>`, for a queue whose name doesn't say what it is. */
@@ -265,7 +265,7 @@ export function QueueJobs ({ data }: { data: QueuePageData }) {
 }
 
 /**
- * The free page whole: header, then the counts and jobs beside the queue's settings, as a job's page
+ * The dashboard's page whole: header, then the counts and jobs beside the queue's settings, as a job's page
  * sets its details beside its data. An overlay that replaces the page composes it with its own
  * `extensions`.
  */

@@ -7,7 +7,7 @@ import { cn } from '~/lib/utils'
 /**
  * The instances in summary: the tiles above the `/instances` list, and the overview's Instances card.
  * Each takes an `aside` or children for what an overlay judges on top, such as a health badge or what
- * needs attention, so the free and Pro pages share one layout.
+ * needs attention. The dashboard's pages and Pro's share one layout.
  */
 
 const DAY_MS = 86_400_000

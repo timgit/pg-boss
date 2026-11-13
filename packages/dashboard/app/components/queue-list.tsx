@@ -60,15 +60,15 @@ export interface QueueTableColumn {
   /** The column's name for a header that abbreviates it. */
   title?: string
   align?: 'left' | 'right'
-  /** The free column it follows. */
+  /** The dashboard's column it follows. */
   after: 'name' | 'trend'
   cell: (queue: QueueResult) => ReactNode
 }
 
-/** A free table column an overlay may leave out. */
+/** A column of the dashboard's table that an overlay may leave out. */
 export type QueueTableHideable = 'deferred' | 'total' | 'storage'
 
-/** A sort an overlay offers beside the free ones, which it applies to the page itself. */
+/** A sort an overlay offers beside the dashboard's, which it applies to the page itself. */
 export interface QueueSortOption {
   value: string
   label: string
@@ -76,7 +76,7 @@ export interface QueueSortOption {
 
 /**
  * What an overlay that replaces `/queues` adds to the sections it composes. Every field is optional,
- * and without them the page is the free one.
+ * and without them the page is the dashboard's own.
  */
 /** A way of drawing the list that an overlay adds beside the cards and the table. */
 export interface QueueViewOption {
@@ -92,13 +92,13 @@ export interface QueueListExtensions {
   subtitle?: ReactNode
   /** In the header, before the page's actions: controls for the whole page rather than the list. */
   header?: ReactNode
-  /** After the free controls in the toolbar, before the view toggle. */
+  /** After the dashboard's controls in the toolbar, before the view toggle. */
   toolbar?: ReactNode
   /** Between the header and the toolbar. */
   above?: ReactNode
   /** Under the queues and their pagination. */
   below?: ReactNode
-  /** Sorts offered before the free ones; the first is the default when the URL names none. */
+  /** Sorts offered before the dashboard's; the first is the default when the URL names none. */
   sorts?: QueueSortOption[]
   card?: (queue: QueueResult) => QueueCardExtension | undefined
   /** Views of the overlay's own, drawn in place of the cards or the table when chosen. */
@@ -111,7 +111,7 @@ export interface QueueListExtensions {
   }
 }
 
-const FREE_SORTS: QueueSortOption[] = [
+const DASHBOARD_SORTS: QueueSortOption[] = [
   { value: 'ready', label: 'Most ready' },
   { value: 'name', label: 'Name' },
 ]
@@ -182,7 +182,7 @@ function Toolbar ({ data, extensions }: { data: QueueListData, extensions?: Queu
   }
   const applySearch = (value: string) => update((p) => { if (value.trim()) p.set('search', value.trim()); else p.delete('search') })
   const applyFilter = (value: string) => update((p) => { if (value === 'all') p.delete('filter'); else p.set('filter', value) })
-  const sorts = [...(extensions?.sorts ?? []), ...FREE_SORTS]
+  const sorts = [...(extensions?.sorts ?? []), ...DASHBOARD_SORTS]
   const sort = effectiveSort(data.sort, extensions)
   const applySort = (value: string) => update((p) => {
     p.set('sort', value)
@@ -519,7 +519,7 @@ export function QueueListSections ({ data, extensions }: { data: QueueListData, 
   )
 }
 
-/** The free page whole, for an overlay that wants it as it is. */
+/** The dashboard's page whole, for an overlay that wants it as it is. */
 export function QueueList ({ data, extensions }: { data: QueueListData, extensions?: QueueListExtensions }) {
   return (
     <div className="space-y-4">

@@ -42,7 +42,7 @@ const answersProbe: ProServerOverlay = {
  * exists, which stops being true exactly when the suite runs mounted, which is
  * when this file most needs to pass. The subject here is the stub itself.
  */
-describe('the stub every free build resolves to', () => {
+describe('the stub every build without Pro resolves to', () => {
   it('has no hooks on it, so nothing in createHonoApp changes', () => {
     expect(stub).toEqual({})
   })
@@ -158,7 +158,7 @@ describe('getLoadContext with an overlay', () => {
     return resolved!
   }
 
-  it('seeds the free context when there is no overlay', async () => {
+  it('seeds the dashboard\'s context when there is no overlay', async () => {
     const context = await contextFor(null)
 
     expect(context.get(dbContext).SCHEMA).toBe('pgboss')
@@ -174,13 +174,13 @@ describe('getLoadContext with an overlay', () => {
 
   /**
    * Ordering is the whole point: a viewer scoped to one database needs to be
-   * able to override the free dashboard's choice, not merely observe it.
+   * able to override the dashboard's choice, not merely observe it.
    */
-  it('lets the overlay narrow what the free dashboard chose', async () => {
+  it('lets the overlay narrow what the dashboard chose', async () => {
     const context = await contextFor({
       loadContext: (_c, ctx) => {
-        const free = ctx.get(dbContext)
-        ctx.set(dbContext, { ...free, SCHEMA: 'narrowed' })
+        const chosen = ctx.get(dbContext)
+        ctx.set(dbContext, { ...chosen, SCHEMA: 'narrowed' })
       },
     })
 

@@ -6,7 +6,7 @@ import { proRoutes } from './lib/pro-overlay'
  * these under a layout route that carries authorisation middleware, which is
  * not something an appended array can do.
  */
-const freeRoutes = [
+const dashboardRoutes = [
   index('routes/_index.tsx'),
   route('jobs', 'routes/jobs.tsx'),
   route('queue-names', 'routes/queue-names.ts'),
@@ -27,4 +27,4 @@ const freeRoutes = [
   route('warnings/:id', 'routes/warnings.$id.tsx'),
 ]
 
-export default (await proRoutes(freeRoutes)) satisfies RouteConfig
+export default (await proRoutes(dashboardRoutes)) satisfies RouteConfig

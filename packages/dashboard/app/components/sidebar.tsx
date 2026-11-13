@@ -307,7 +307,7 @@ export function AppSidebar () {
           <div className="leading-tight whitespace-nowrap group-data-[state=collapsed]:hidden">
             <div className="pgboss-wordmark text-sm text-sidebar-accent-foreground">pg-boss</div>
             {/*
-              The free build is a dashboard; with Pro it is a console, where every
+              A build without Pro is a dashboard; with Pro it is a console, where every
               change is made by a signed-in person and recorded as theirs.
             */}
             <div className="font-mono text-[9px] tracking-[0.15em] text-sidebar-foreground/60">
@@ -321,7 +321,7 @@ export function AppSidebar () {
             riding high against the square. The row's own `items-center` is what
             centres it once it is a sibling of the mark.
 
-            Only in a build that carries the overlay — the free dashboard has no
+            Only in a build that carries the overlay. The dashboard has no
             tier to announce, and a badge reading PRO on it would be a lie about
             what somebody is running. See `pro-present.ts` for why this is
             derived from the overlay rather than from the build flag.

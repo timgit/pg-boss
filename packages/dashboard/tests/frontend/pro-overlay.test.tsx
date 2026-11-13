@@ -76,7 +76,7 @@ describe('pro overlay', () => {
       expect(container).toBeEmptyDOMElement()
     })
 
-    it('fills no slot, so the free build draws no write controls', async () => {
+    it('fills no slot, leaving the dashboard to draw its own write controls', async () => {
       mockOverlay(NO_OVERLAY)
 
       const { hasProSlot } = await import('~/components/pro-slot')
@@ -86,7 +86,7 @@ describe('pro overlay', () => {
       }
     })
 
-    it('leaves the free navigation untouched', async () => {
+    it('leaves the dashboard\'s navigation untouched', async () => {
       mockOverlay(NO_OVERLAY)
 
       await renderSidebar()
@@ -188,7 +188,7 @@ describe('pro overlay', () => {
       expect(container).toBeEmptyDOMElement()
     })
 
-    // The free build has no actions of its own, so every write control arrives through a slot.
+    // Under Pro every write control arrives through a slot, in place of the dashboard's own.
     it('hands the job action slots the job, its queue and its state', async () => {
       mockOverlay({ nav: [], slots: { jobActions: DemoJobActions, jobRowActions: DemoJobActions } })
 
@@ -216,7 +216,7 @@ describe('pro overlay', () => {
       expect(container).toBeEmptyDOMElement()
     })
 
-    it('appends overlay entries after the free navigation', async () => {
+    it('appends overlay entries after the dashboard\'s navigation', async () => {
       mockOverlay({
         nav: [{ name: 'Demo', href: '/pro-demo', icon: DemoIcon }],
         slots: { sidebarFooter: DemoFooter },

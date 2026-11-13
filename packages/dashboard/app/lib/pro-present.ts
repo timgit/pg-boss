@@ -4,8 +4,8 @@ import overlay from '~pro'
  * Whether this build carries a Pro overlay, for the UI that has to say so.
  *
  * The chrome needs this for one thing: the tier badge beside the wordmark,
- * which must not appear in the free dashboard. Everything else the overlay adds
- * announces itself by existing — a nav row, a slot's contents — and needs no
+ * which must not appear in a build without Pro. Everything else the overlay adds
+ * announces itself by existing, as a nav row or a slot's contents, and needs no
  * flag.
  *
  * Derived from the overlay rather than from `PGBOSS_PRO`. The flag is read at

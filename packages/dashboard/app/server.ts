@@ -35,9 +35,9 @@ export function getLoadContext (
     SCHEMA: currentDb?.schema || 'pgboss',
   })
 
-  // Last, so the overlay can narrow what was just chosen as well as add to it —
-  // a viewer scoped to one database has to be able to override `currentDb`, not
-  // merely to observe that the free default disagreed with them.
+  // Last, so the overlay can narrow what was just chosen as well as add to it.
+  // A viewer scoped to one database has to be able to override `currentDb`, not
+  // merely to observe that the dashboard's default disagreed with them.
   overlay?.loadContext?.(c, context)
 
   return context
@@ -71,8 +71,8 @@ export interface CreateHonoAppOptions {
    */
   siteUrl?: string | null;
   /**
-   * The Pro overlay's server half, from `serverOverlayOf(build)`, or `null` for a free
-   * build — which is the only shape this package is ever tested against on its
+   * The Pro overlay's server half, from `serverOverlayOf(build)`, or `null` for a build
+   * without Pro, which is the only shape this package is ever tested against on its
    * own.
    *
    * Required, with no default, and that is the whole point. An entry point that

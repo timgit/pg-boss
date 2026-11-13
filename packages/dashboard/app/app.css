@@ -9,8 +9,8 @@
  * `.gitignore`, which is why it has to be written out.
  *
  * Carried here rather than appended by the Pro build, which meant editing a
- * tracked file on every mount: naming a path that does not exist is inert, so
- * free builds are unaffected.
+ * tracked file on every mount. Naming a path that does not exist is inert, and
+ * a build without Pro is unaffected.
  */
 @source "./pro";
 

@@ -5,7 +5,7 @@ import { QueueList, ReadyChart, effectiveSort } from '~/components/queue-list'
 import type { QueueListData } from '~/lib/queue-list.server'
 import type { QueueResult } from '~/lib/types'
 
-// The free page, whatever the build: a Pro build mounts its overlay at `~pro`.
+// The dashboard's page, whatever the build: a Pro build mounts its overlay at `~pro`.
 vi.mock('~pro', () => ({ default: { nav: [], slots: {} } }))
 
 const queue = (name: string, readyCount: number, readyHistory: number[] | null = [readyCount, 1, 0]): QueueResult => ({
@@ -100,7 +100,7 @@ describe('QueueList', () => {
     expect(screen.queryByRole('button', { name: 'Cards' })).toBeNull()
   })
 
-  it('draws the free table without extensions', () => {
+  it('draws the dashboard\'s table without extensions', () => {
     renderList(data('table'))
 
     expect(headers()).toEqual(['Name', 'Ready', 'Trend', 'Queued', 'Deferred', 'Active', 'Failed', 'Total', 'Policy', 'Storage'])

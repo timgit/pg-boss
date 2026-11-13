@@ -12,7 +12,7 @@ import { resolveBasePath } from './lib/base-path'
  * Not `import pkg from '../package.json'`: that is resolved when the bundle is
  * *built*, which bakes in the name it was built under. @pg-boss/pro ships this
  * exact server under its own name, so the import made a Pro install announce
- * itself as the free dashboard — the one thing this line exists to avoid.
+ * itself as @pg-boss/dashboard, the one thing this line exists to avoid.
  *
  * Unreadable is not fatal. A missing manifest says nothing about whether the
  * dashboard can serve requests, and refusing to start over a log line would be
@@ -36,8 +36,8 @@ const buildModulePath = './server/index.js'
 const build = (await import(buildModulePath)) as unknown as ServerBuild
 
 // The overlay comes from the build, so it shares the routes' modules. It is the
-// empty stub in every build but a Pro one, so this is the free dashboard
-// unchanged: an object with no hooks on it. Its setting names apply before any
+// empty stub in every build but a Pro one. There it leaves the dashboard
+// unchanged, as an object with no hooks on it. Its setting names apply before any
 // setting below is read.
 const overlay = serverOverlayOf(build)
 applySettingAliases(overlay)

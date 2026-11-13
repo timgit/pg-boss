@@ -69,10 +69,10 @@ export interface ScheduleSlotProps {
 }
 
 /**
- * Named regions of the free UI an overlay may render into.
+ * Named regions of the dashboard's UI an overlay may render into.
  *
- * This package makes no changes of its own: every button that sends, retries,
- * creates or deletes something is an overlay's, drawn into one of these.
+ * Under Pro, every button that sends, retries, creates or deletes something is
+ * the overlay's, drawn into one of these.
  */
 export interface ProSlots {
   /** In the sidebar footer, above the sidebar toggle. */
@@ -166,7 +166,7 @@ export interface ProSite {
  */
 export interface ProServerOverlay {
   /**
-   * The overlay authenticates requests itself, so the free Basic-auth gate is
+   * The overlay authenticates requests itself. The dashboard's Basic-auth gate is
    * skipped rather than stacked in front of it.
    *
    * Without this an operator who sets `PGBOSS_DASHBOARD_AUTH_*` and then buys
@@ -179,7 +179,7 @@ export interface ProServerOverlay {
   ownsAuth?: boolean
 
   /**
-   * Register middleware and routes on the Hono app, before any free middleware.
+   * Register middleware and routes on the Hono app, before any of the dashboard's middleware.
    *
    * First because the overlay's own login route has to be reachable by someone
    * who is not yet authenticated, and because middleware that establishes who
@@ -188,11 +188,11 @@ export interface ProServerOverlay {
   server?: (app: Hono, site: ProSite) => void
 
   /**
-   * Add to the per-request load context, after the free dashboard has seeded it.
+   * Add to the per-request load context, after the dashboard has seeded it.
    *
    * After, so the overlay can both add its own values (the actor) and narrow
-   * what the free dashboard chose (the database a viewer is allowed to see).
-   * Running first would mean the free defaults silently overwrote the narrowing.
+   * what the dashboard chose (the database a viewer is allowed to see).
+   * Running first would mean the dashboard's defaults silently overwrote the narrowing.
    */
   loadContext?: (c: Context, context: RouterContextProvider) => void
 

@@ -10,7 +10,7 @@ const port = Number(process.env.PORT) || 3000
 const host = process.env.HOST || 'localhost'
 
 // Created before Vite so HMR can share its port. Vite's default HMR port is a fixed
-// 24678, so a second dev server (the free dashboard beside Pro, say) would connect its
+// 24678, so a second dev server (a dashboard without the overlay beside Pro, say) would connect its
 // pages to the first one's websocket and fail the handshake.
 const server = createHttpServer((req, res) => {
   // Vite handles its own asset/HMR/module requests; anything it passes on goes to Hono.
@@ -32,7 +32,7 @@ const { applySettingAliases, serverOverlayOf } = await ssrRunner.import('/app/li
 const serverBuild = () => ssrRunner.import('virtual:react-router/server-build')
 
 // The same server overlay production loads, read from the build's entry module,
-// the stub in every free build. Without this the dev server builds a Hono app
+// the stub in every build without Pro. Without this the dev server builds a Hono app
 // that production does not: no overlay middleware, no overlay auth. A Pro feature
 // living in that half would be undevelopable locally, which is how it ends up
 // only ever exercised by a release.

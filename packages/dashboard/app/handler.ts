@@ -76,7 +76,7 @@ export function createDashboardHandler (
   { databases, basePath, siteUrl, auth = false }: CreateDashboardHandlerOptions
 ): DashboardHandler {
   // An empty list is a mistake now. A missing one is a Pro build's, whose apps are kept in its own
-  // database; the build says which once it loads, and a free one without databases refuses then.
+  // database; the build says which once it loads, and one without Pro refuses then when it has no databases.
   if (databases?.length === 0) {
     throw new Error('createDashboardHandler() needs at least one database')
   }
@@ -154,8 +154,8 @@ export function createDashboardHandler (
       // `null` rather than undefined, so PGBOSS_DASHBOARD_SITE_URL does not apply.
       siteUrl: siteOrigin ?? null,
       // The same overlay the standalone server loads, read from the build.
-      // It is the empty stub in every build but a Pro one, so this adds nothing
-      // to a free build — and in a Pro build it is the difference between a
+      // It is the empty stub in every build but a Pro one and adds nothing there.
+      // In a Pro build it is the difference between a
       // mounted dashboard that authenticates and one that does not.
       // A Pro overlay owns authentication, so `auth: false` above costs it
       // nothing: `createHonoApp` takes the overlay branch either way.

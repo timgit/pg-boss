@@ -12,7 +12,7 @@ const fixture = join(here, '..', 'fixtures', 'pro-overlay')
  * Stand-in for the real route table. `proRoutes` returns the whole table rather
  * than the overlay's fragment, so every case has to say what it started with.
  */
-const FREE_ROUTES = [
+const DASHBOARD_ROUTES = [
   { file: 'routes/_index.tsx' },
   { path: 'jobs', file: 'routes/jobs.tsx' },
 ]
@@ -76,8 +76,8 @@ describe('pro overlay resolution', () => {
       expect(proServerAlias(missingOverlay())).toBe(stubServerPath)
     })
 
-    it('returns the free routes unchanged', async () => {
-      await expect(proRoutes(FREE_ROUTES, missingOverlay())).resolves.toEqual(FREE_ROUTES)
+    it('returns the dashboard\'s routes unchanged', async () => {
+      await expect(proRoutes(DASHBOARD_ROUTES, missingOverlay())).resolves.toEqual(DASHBOARD_ROUTES)
     })
 
     it('ignores an overlay that is present but not asked for', async () => {
@@ -85,7 +85,7 @@ describe('pro overlay resolution', () => {
 
       expect(proAlias(dir)).toBe(stubPath)
       expect(proServerAlias(dir)).toBe(stubServerPath)
-      await expect(proRoutes(FREE_ROUTES, dir)).resolves.toEqual(FREE_ROUTES)
+      await expect(proRoutes(DASHBOARD_ROUTES, dir)).resolves.toEqual(DASHBOARD_ROUTES)
     })
   })
 
@@ -103,12 +103,12 @@ describe('pro overlay resolution', () => {
     })
 
     it('fails route resolution rather than falling back silently', async () => {
-      await expect(proRoutes(FREE_ROUTES, missingOverlay())).rejects.toThrow(/PGBOSS_PRO=1 but no overlay is present/)
+      await expect(proRoutes(DASHBOARD_ROUTES, missingOverlay())).rejects.toThrow(/PGBOSS_PRO=1 but no overlay is present/)
     })
 
     it('defaults to app/pro, since that is where a build looks', () => {
       // Read-only either way: this must pass on a Pro checkout that has a real
-      // overlay cloned in, not only on a free one.
+      // overlay cloned in, not only on one without Pro.
       if (existsSync(overlayDir)) {
         expect(proAlias()).toBe(join(overlayDir, 'index.tsx'))
       } else {
@@ -160,11 +160,11 @@ describe('pro overlay resolution', () => {
       expect(proAlias(dir)).toBe(join(dir, 'index.tsx'))
     })
 
-    it('appends the overlay routes to the free ones', async () => {
-      const routes = await proRoutes(FREE_ROUTES, installFixture())
+    it('appends the overlay routes to the dashboard\'s', async () => {
+      const routes = await proRoutes(DASHBOARD_ROUTES, installFixture())
 
-      expect(routes).toHaveLength(FREE_ROUTES.length + 1)
-      expect(routes.slice(0, FREE_ROUTES.length)).toEqual(FREE_ROUTES)
+      expect(routes).toHaveLength(DASHBOARD_ROUTES.length + 1)
+      expect(routes.slice(0, DASHBOARD_ROUTES.length)).toEqual(DASHBOARD_ROUTES)
       expect(routes[routes.length - 1]).toMatchObject({ path: 'pro-demo', file: 'pro/routes/demo.tsx' })
     })
 
@@ -174,15 +174,15 @@ describe('pro overlay resolution', () => {
      * route modules are not Pro's to edit — nesting them under a layout route
      * it does own is the only way in.
      */
-    it('lets an overlay exporting a function wrap the free routes', async () => {
+    it('lets an overlay exporting a function wrap the dashboard\'s routes', async () => {
       const dir = installFixture()
       cpSync(join(fixture, '..', 'pro-overlay-wrapping', 'routes.ts'), join(dir, 'routes.ts'))
 
-      const routes = await proRoutes(FREE_ROUTES, dir)
+      const routes = await proRoutes(DASHBOARD_ROUTES, dir)
 
       expect(routes).toHaveLength(1)
       expect(routes[0]).toMatchObject({ file: 'pro/routes/guard.tsx' })
-      expect(routes[0].children).toEqual(FREE_ROUTES)
+      expect(routes[0].children).toEqual(DASHBOARD_ROUTES)
     })
 
     it('leaves the real overlay directory alone', () => {

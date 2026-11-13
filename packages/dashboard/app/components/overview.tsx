@@ -36,7 +36,7 @@ export interface OverviewQueueColumn {
 
 /**
  * What an overlay that replaces the overview adds to the sections it composes. Every field is
- * optional, and without them the sections are the free overview's.
+ * optional, and without them the sections are the dashboard's own.
  */
 export interface OverviewExtensions {
   /** A line under a stat card, by the figure it sits under. */

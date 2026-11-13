@@ -42,7 +42,7 @@ describe('applySettingAliases', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
-  it('changes nothing for an overlay with no aliases, as in a free build', () => {
+  it('changes nothing for an overlay with no aliases, as in a build without Pro', () => {
     const env: NodeJS.ProcessEnv = { PGBOSS_PRO_SITE_URL: 'https://pro.example.com', PGBOSS_DASHBOARD_SITE_URL: 'https://site.example.com' }
 
     applySettingAliases({}, env)
