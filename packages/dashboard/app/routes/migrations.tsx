@@ -71,7 +71,7 @@ export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
     <ErrorCard
       title="Error loading migrations"
       error={error}
-      backTo={{ href: '/', label: 'Back to Dashboard' }}
+      backTo={{ href: '/', label: 'Back to Overview' }}
     />
   )
 }

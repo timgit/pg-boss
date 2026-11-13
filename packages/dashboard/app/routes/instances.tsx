@@ -23,7 +23,7 @@ export function ErrorBoundary ({ error }: { error: unknown }) {
     <ErrorCard
       title="Error loading instances"
       error={error}
-      backTo={{ href: '/', label: 'Back to Dashboard' }}
+      backTo={{ href: '/', label: 'Back to Overview' }}
     />
   )
 }
