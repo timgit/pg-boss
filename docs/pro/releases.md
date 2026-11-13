@@ -11,6 +11,8 @@ The first release of pg-boss Pro, on pg-boss 12.38 and dashboard 2.0.
 - Each release states the pg-boss schemas it supports. On any other schema the Pro Console keeps showing everything and turns changes off.
 - Accounts, groups and roles per schema, single sign-on, and an audit log of every change.
 - Operations over every job a filter matches, health and throughput on every queue, ninety days of status, and the instances working each queue.
+- `npm init @pg-boss/pro` sets up a project for Pro. It checks the license key, connects to Pro's database or creates one, writes `.env` with a new secret key, installs Pro and opens the setup page. See [Install](./install.md#install).
+- `pg-boss-pro` reads a `.env` file in the project, and `pg-boss-pro doctor` checks the settings and Pro's database without starting Pro. See [check the install](./install.md#check-the-install).
 
 ### Upgrading from the dashboard
 

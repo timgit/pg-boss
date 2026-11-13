@@ -9,7 +9,33 @@
 
 ## Install
 
-Pro is installed from a private registry, not from npmjs. To run Pro as its own server, create a project for it and point npm at Pro's registry:
+Pro is installed from a private registry, not from npmjs. To create a project for Pro, install Pro and start it, run:
+
+```bash
+npm init @pg-boss/pro
+```
+
+The command asks for the license key and for Pro's database, which is either an existing database or a new one it creates from an admin connection. It doesn't keep the admin connection. It then:
+
+1. Checks the license key with the registry.
+2. Points the project's `.npmrc` at Pro's registry, and saves the license key in the user's npm config, as `npm login` does.
+3. Writes `.env` with Pro's database, a new secret key and a setup token. `.gitignore` keeps the file out of version control.
+4. Installs Pro, starts it and opens the setup page, where you create the first global administrator.
+
+Keep a copy of `PGBOSS_PRO_SECRET_KEY` from `.env` in another secret store, because Pro's database backups don't hold it. See [Backup](#backup).
+
+To run it without prompts, as in a script, pass the answers after `--`:
+
+```bash
+npm init @pg-boss/pro -- pgboss-pro --yes --license "<your license key>" \
+  --database-url "postgres://pgboss_pro:<password>@localhost:5432/pgboss_pro" --no-start
+```
+
+`--admin-url` in place of `--database-url` creates the database. `--token-in-env` leaves the user's npm config alone and has the project's `.npmrc` read the license key from `PGBOSS_PRO_LICENSE`, as a CI runner needs. `npm init @pg-boss/pro -- --help` lists every option.
+
+## Install by hand
+
+To set up the project yourself, or to install Pro in an existing application's project for [Mount in your application](./mount.md), point npm at Pro's registry:
 
 ```bash
 npm init -y
@@ -25,6 +51,8 @@ Then, assign the environment variable and install:
 PGBOSS_PRO_LICENSE="<your license key>" \
 npm install @pg-boss/pro
 ```
+
+Then create Pro's database, set its configuration and start it, as the next sections describe.
 
 ## Database setup
 
@@ -92,14 +120,13 @@ echo ".env" >> .gitignore
 
 Keep a copy of the secret key in another secret store as well, because Pro's database backups don't hold it. See [Backup](#backup).
 
-To start Pro with the file, add a start script to the project and run it:
+Start Pro in the project. Pro reads the `.env` file in the directory it starts in:
 
 ```bash
-npm pkg set scripts.start="node --env-file=.env node_modules/@pg-boss/pro/bin/cli.js"
-npm start
+npx pg-boss-pro
 ```
 
-A variable set in the environment takes precedence over the same variable in `.env`.
+A variable set in the environment takes precedence over the same variable in `.env`. When Pro doesn't start, [check the install](#check-the-install).
 
 On first run there are no accounts. Pro prints a setup link to its log:
 
@@ -131,7 +158,7 @@ See [destinations](./destinations.md) for each kind.
 
 ## Docker
 
-With the `.npmrc` above, pass the license key as a build secret so that no image layer keeps it.
+The image reads the license key from `PGBOSS_PRO_LICENSE`, which the `.npmrc` from [Install by hand](#install-by-hand) names. A project from `npm init @pg-boss/pro -- --token-in-env` has the same `.npmrc`. Pass the license key as a build secret so that no image layer keeps it.
 The image copies `package-lock.json`. Run `npm install` in the project once before the first build:
 
 ```dockerfile
@@ -143,7 +170,7 @@ RUN --mount=type=secret,id=pgboss_pro_license \
 ENV PORT=3000
 EXPOSE 3000
 HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
-CMD ["./node_modules/.bin/pg-boss-pro"]
+ENTRYPOINT ["./node_modules/.bin/pg-boss-pro"]
 ```
 
 ```bash
@@ -159,6 +186,72 @@ docker run -p 3000:3000 \
   -e PGBOSS_PRO_SECRET_KEY="<your secret key>" \
   pgboss-pro
 ```
+
+To [check the install](#check-the-install) in a container, add `doctor` after the image name, with the same settings.
+
+### Docker Compose
+
+Compose runs the `pgboss-pro` image built above beside a Postgres of its own. Compose reads the settings from the project's `.env`. The following commands add a database password and a secret key to it:
+
+```bash
+echo "PGBOSS_PRO_DB_PASSWORD=$(openssl rand -hex 24)" >> .env
+echo "PGBOSS_PRO_SECRET_KEY=$(openssl rand -base64 32)" >> .env
+```
+
+Save the following as `compose.yaml` in the project:
+
+```yaml
+services:
+  pro:
+    image: pgboss-pro
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      PGBOSS_PRO_DB_HOST: db
+      PGBOSS_PRO_DB_PASSWORD: ${PGBOSS_PRO_DB_PASSWORD:?set it in .env}
+      PGBOSS_PRO_SECRET_KEY: ${PGBOSS_PRO_SECRET_KEY:?set it in .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pgboss_pro
+      POSTGRES_DB: pgboss_pro
+      POSTGRES_PASSWORD: ${PGBOSS_PRO_DB_PASSWORD:?set it in .env}
+    volumes:
+      - pgboss_pro_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgboss_pro -d pgboss_pro"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgboss_pro_data:
+```
+
+Then start both containers, and check the install in the `pro` container:
+
+```bash
+docker compose up -d
+docker compose run --rm pro doctor
+```
+
+The Postgres image creates the `pgboss_pro` role and database the first time it starts with an empty volume. It reads `POSTGRES_PASSWORD` only then. To change the password later, change it in `.env` and run `ALTER ROLE pgboss_pro PASSWORD` with the same value.
+
+Pro waits for Postgres to report healthy before it starts. The database publishes no port, because only Pro connects to it. Pro's port is published on `127.0.0.1` alone, which keeps a first run off the network. To serve it from a server, publish `3000:3000` or put a reverse proxy in front, and set [`PGBOSS_PRO_SITE_URL`](./environment.md#pgboss-pro-site-url).
+
+`extra_hosts` makes `host.docker.internal` resolve on Linux as it does on macOS and Windows. A schema whose database runs on the Docker host is added in the Pro Console with `host.docker.internal` as its host.
+
+Pro's database in the volume and the secret key in `.env` are on the same machine. Keep a copy of the key somewhere else. See [Backup](#backup).
+
+To upgrade, run `npm update @pg-boss/pro`, build the image again with the `docker build` command above, and run `docker compose up -d`.
 
 ## Backup
 
@@ -187,3 +280,29 @@ npm update @pg-boss/pro
 At startup, Pro logs its version. The [release notes](./releases.md) list what each release changes.
 
 Each Pro release is built with one pg-boss release, and installs that release whatever version the application runs. When the application moves to a pg-boss release with a new schema version, upgrade Pro with it. See [pg-boss versions](./versions.md).
+
+## Check the install
+
+The `doctor` command checks Pro's settings and its database without starting Pro. Run it in the project, where it reads the same `.env` file:
+
+```bash
+npx pg-boss-pro doctor
+```
+
+It reports each check as passed or failed, with the fix for each failure:
+
+- The secret key, and the setup token when one is set.
+- The connection to Pro's database.
+- Pro's tables, against the version this Pro uses. Tables from a later Pro mean the install is older than the release that last migrated the database.
+- The stored secrets, decrypted with the current key. See [key changes](./administration.md#key-changes).
+
+The doctor doesn't write to Pro's database, and it exits with status 1 when a check fails. It doesn't connect to the schemas Pro monitors, which Settings › Schemas checks. See [Schemas](./schemas.md).
+
+```
+pg-boss Pro 1.0.0
+
+✓ Secret key: PGBOSS_PRO_SECRET_KEY is set.
+✓ Pro's database: Connected to localhost:5432/pgboss_pro.
+✓ Pro's tables: At version 1, the version this Pro uses.
+✓ Stored secrets: They were saved with this PGBOSS_PRO_SECRET_KEY.
+```

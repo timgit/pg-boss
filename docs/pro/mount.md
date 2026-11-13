@@ -1,6 +1,6 @@
 # Mount in your application
 
-An existing Node server can run Pro as a route without a second process. Install `@pg-boss/pro` in the application's own project, after setting up its `.npmrc` as in [Install](./install.md#install). The application then serves Pro from a route of its own:
+An existing Node server can run Pro as a route without a second process. Install `@pg-boss/pro` in the application's own project, after setting up its `.npmrc` as in [Install by hand](./install.md#install-by-hand). The application then serves Pro from a route of its own:
 
 ```ts
 import { getConnInfo } from '@hono/node-server/conninfo'

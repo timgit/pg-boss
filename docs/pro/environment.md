@@ -4,6 +4,8 @@ outline: 2
 
 # Environment variables
 
+Pro reads its settings from the environment, and from a `.env` file in the directory it starts in. A variable set in the environment takes precedence over the same variable in the file.
+
 | Variable | Default |
 | - | - |
 | [`PORT`](#port) | `3000` |

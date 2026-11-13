@@ -49,6 +49,9 @@ for that reason names the secret and isn't retried. SSO sign-in fails until the 
 entered again, and password sign-in keeps working. Restarting Pro with the earlier key also brings
 the secrets back.
 
+To try a key before starting Pro with it, run `npx pg-boss-pro doctor` with the key set. The doctor
+lists the same secrets and changes nothing. See [check the install](./install.md#check-the-install).
+
 A check value that fails while every stored secret decrypts is stored again with the current key,
 and Pro reports nothing. After each save in Settings › Schemas, Destinations, Email or SSO, Pro tries every
 stored secret again. Once every stored secret decrypts, Pro stores the check value again with the
