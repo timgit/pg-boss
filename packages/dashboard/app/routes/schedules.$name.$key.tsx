@@ -1,10 +1,12 @@
-import { DbLink } from '~/components/db-link'
+import { redirect } from 'react-router'
+import { DbLink, resolveDbHref } from '~/components/db-link'
 import { ParentLink } from '~/components/parent-link'
 import type { Route } from './+types/schedules.$name.$key'
-import { ProSlot } from '~/components/pro-slot'
+import { ScheduleActions } from '~/components/schedule-actions'
 import { getSchedule } from '~/lib/queries.server'
 import { nextScheduleOccurrence } from '~/lib/schedule.server'
 import { dbContext } from '~/lib/db-context'
+import { removeSchedule } from '~/lib/schedule-job.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
 import { ErrorCard } from '~/components/error-card'
@@ -26,6 +28,20 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 
   const next = nextScheduleOccurrence(schedule.cron, schedule.timezone)
   return { schedule, nextOccurrence: next ? next.toISOString() : null }
+}
+
+// Read-only mode refuses the post before it gets here. In a Pro build, Pro's Unschedule posts to a
+// route of its own, which checks the role and records the change.
+export async function action ({ params, request, context }: Route.ActionArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const form = await request.formData()
+
+  if (form.get('intent') !== 'unschedule') return { error: 'Unknown action' }
+
+  const removed = await removeSchedule(DB_URL, SCHEMA, params.name, params.key === '__default__' ? '' : params.key)
+  if ('error' in removed) return { error: removed.error }
+
+  return redirect(resolveDbHref('/schedules', new URL(request.url).searchParams.get('schema')))
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
@@ -54,7 +70,9 @@ export default function ScheduleDetail ({ loaderData }: Route.ComponentProps) {
           </h1>
         </div>
         <div className="flex flex-col items-end gap-3">
-          <ProSlot name="scheduleActions" schedule={{ name: schedule.name, key: schedule.key || null }} />
+          <div className="flex items-center gap-3">
+            <ScheduleActions name={schedule.name} scheduleKey={schedule.key || null} />
+          </div>
           <div className="flex gap-6 text-sm text-[var(--text-tertiary)]">
             <span>Created {formatDate(new Date(schedule.createdOn))}</span>
             {new Date(schedule.updatedOn).getTime() !== new Date(schedule.createdOn).getTime() && (

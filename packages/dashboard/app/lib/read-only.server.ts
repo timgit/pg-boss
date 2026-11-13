@@ -2,8 +2,8 @@ import type { Hono } from 'hono'
 
 /**
  * Read-only mode. `PGBOSS_DASHBOARD_READ_ONLY=true` (or `1`) turns off sending, retrying,
- * cancelling, resuming and deleting jobs: every request that could change something is refused, and
- * the buttons are hidden.
+ * cancelling, resuming and deleting jobs, and adding and removing schedules: every request that could
+ * change something is refused, and the buttons are hidden.
  *
  * A global switch, not authentication: everyone who can reach the dashboard gets the same view.
  * Read at call time rather than at import time so tests can exercise both states.
@@ -24,7 +24,7 @@ export const READ_ONLY_MESSAGE = 'This dashboard is read-only (PGBOSS_DASHBOARD_
 export function openWritesWarning (checksAuth: boolean, credential: boolean): string | null {
   if (!checksAuth || credential || isReadOnly()) return null
 
-  return 'pg-boss dashboard: anyone who can reach this dashboard can send, retry, cancel, resume and delete jobs. ' +
+  return 'pg-boss dashboard: anyone who can reach this dashboard can send, retry, cancel, resume and delete jobs, and add and remove schedules. ' +
     'Set PGBOSS_DASHBOARD_AUTH_USERNAME and PGBOSS_DASHBOARD_AUTH_PASSWORD to ask for a password, ' +
     'or PGBOSS_DASHBOARD_READ_ONLY=true to turn changes off.'
 }

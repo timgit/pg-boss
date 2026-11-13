@@ -1,5 +1,5 @@
 import { DbLink } from '~/components/db-link'
-import { ProSlot } from '~/components/pro-slot'
+import { SchedulesPageActions } from '~/components/schedule-actions'
 import type { Route } from './+types/schedules'
 import {
   getSchedules,
@@ -82,7 +82,7 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title="Schedules"
-        action={<ProSlot name="pageActions" page="schedules" />}
+        action={<SchedulesPageActions />}
       />
 
       <Card>
