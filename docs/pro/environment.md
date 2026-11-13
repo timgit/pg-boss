@@ -107,7 +107,7 @@ Required.
 
 ### `PGBOSS_PRO_SETUP_TOKEN`
 
-The token `/setup` asks for on a new install. It needs 32 characters or more, such as the output of `openssl rand -base64 32`. Setup refuses every token while a shorter one is set. Without the variable, each process makes its own token and prints the setup link to its log. Set it when several instances share a load balancer.
+The token `/setup` asks for on a new install. It needs 32 characters or more, such as the output of `openssl rand -base64 32`. Setup refuses every token while a shorter one is set. Without the variable, each process makes its own token and prints the setup link to its log. With it, the log shows the whole link only when it goes to a terminal, and the variable's name in place of the token anywhere else. Set it when several instances share a load balancer.
 
 ### `PGBOSS_PRO_TRUSTED_PROXIES`
 
