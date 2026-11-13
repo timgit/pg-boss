@@ -400,7 +400,11 @@ describePglite('cli', function () {
       // than left for a BAM worker that has no row for it.
       itPostgresOnly('should print the index builds left to run when one fails after the version commits', async function () {
         runCli(['create', '--connection-string', connectionString, '--schema', schema])
-        runCli(['rollback', '--connection-string', connectionString, '--schema', schema])
+
+        // roll back below v46, which adds i15, i16 and i17
+        for (let v = currentSchemaVersion; v > 45; v--) {
+          runCli(['rollback', '--connection-string', connectionString, '--schema', schema])
+        }
 
         const db = await getDb()
         const trigger = `${schema}_fail_i16`
