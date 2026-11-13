@@ -177,6 +177,7 @@ Configure the dashboard with these environment variables.
 | Variable | Default |
 | - | - |
 | [`DATABASE_URL`](#database-url) | `postgres://localhost/pgboss` |
+| [`PGBOSS_SCHEMA`](#pgboss-schema) | `pgboss` |
 | [`PORT`](#port) | `3000` |
 | [`HOST`](#host) | `0.0.0.0` |
 | [`PGBOSS_DASHBOARD_AUTH_USERNAME`](#pgboss-dashboard-auth-username) | |
@@ -191,6 +192,12 @@ Configure the dashboard with these environment variables.
 PostgreSQL connection strings, each naming its pg-boss schema with `?schema=`. See [Multiple schemas](#multiple-schemas).
 
 Default: `postgres://localhost/pgboss`
+
+#### `PGBOSS_SCHEMA`
+
+The pg-boss schema for each entry in `DATABASE_URL` that has no `?schema=`. An entry's own `?schema=` takes precedence. The pg-boss [CLI](./cli.md) reads the same variable. See [A DATABASE_URL the host sets](#a-database-url-the-host-sets).
+
+Default: `pgboss`
 
 #### `PORT`
 
@@ -249,7 +256,7 @@ Without a credential or `PGBOSS_DASHBOARD_READ_ONLY`, the server logs a warning 
 
 ### Multiple schemas
 
-Each entry in `DATABASE_URL` is one pg-boss schema. Name the schema on the connection string with `?schema=`. An entry without it reads the `pgboss` schema:
+Each entry in `DATABASE_URL` is one pg-boss schema. Name the schema on the connection string with `?schema=`. An entry without it reads the schema in [`PGBOSS_SCHEMA`](#pgboss-schema), or `pgboss` when that isn't set:
 
 ```bash
 DATABASE_URL="postgres://localhost/mydb?schema=jobs" npx @pg-boss/dashboard
@@ -271,9 +278,23 @@ DATABASE_URL="Production=postgres://prod/db?schema=jobs|Staging=postgres://stage
 
 Two unnamed entries for the same database, such as two schemas in one database, would share a name. The later entry shows its schema, as in `app (jobs)`. Name each entry to choose what shows instead.
 
-The dashboard doesn't read `PGBOSS_SCHEMA`. When the variable is set, the dashboard stops at startup with a message showing the `?schema=` form. The pg-boss [CLI](./cli.md) reads `PGBOSS_SCHEMA`. In an environment shared with the CLI, unset the variable for the dashboard.
-
 The top bar on every page starts with the name of the schema being shown, and a colored dot that marks its place in the configuration. When you configure more than one schema, the name opens a menu to switch between them. Switching keeps you on the same page. From a page about one item, such as a queue or a job, switching opens the list that page sits under instead (Queues, for both), since the other schema may not have that item. A shared link opens the same schema, because the URL's `schema` query parameter holds the selected schema (a URL without it opens the first schema). Dashboard 1.x named the schema with `db` in its links. The dashboard opens such a link at the same URL with `schema` in its place.
+
+#### A DATABASE_URL the host sets
+
+A host such as Heroku, Render or Railway sets `DATABASE_URL` itself for an attached database, and may replace it when it rotates the database's credentials. An edit to the variable can then be lost. Leave `DATABASE_URL` as the host sets it, and name the schema with `PGBOSS_SCHEMA`:
+
+```bash
+PGBOSS_SCHEMA=jobs npx @pg-boss/dashboard
+```
+
+To keep more than one entry, or to name the entry, build `DATABASE_URL` in the start command from the variable the host sets. The shell reads the host's value each time the dashboard starts, which picks up rotated credentials on the next restart:
+
+```bash
+DATABASE_URL="Production=${DATABASE_URL}|Reporting=${REPORTING_DATABASE_URL}?schema=reports" npx @pg-boss/dashboard
+```
+
+When the host's connection string already has a query, such as `?sslmode=require`, add the schema with `&schema=` instead.
 
 ## Production deployment
 

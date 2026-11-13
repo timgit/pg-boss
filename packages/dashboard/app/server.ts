@@ -4,7 +4,7 @@ import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'r
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { configureReadOnly, isReadOnly, openWritesWarning } from './lib/read-only.server'
-import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, refuseSchemaVariable, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
+import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 import type { ProServerOverlay, ProSite } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
@@ -95,9 +95,6 @@ export function createHonoApp ({
   siteUrl,
   overlay,
 }: CreateHonoAppOptions): Hono {
-  // Pro adds its schemas in the Pro Console and says at startup that the variable does nothing there.
-  if (databases === undefined && !overlay?.ownsAuth) refuseSchemaVariable()
-
   const app = new Hono()
   const siteOrigin = siteUrl === undefined ? parseSiteUrl() : siteUrl === null ? undefined : toSiteOrigin(siteUrl, 'siteUrl')
   const build = typeof givenBuild === 'function' ? givenBuild : withBasePath(givenBuild, basePath)

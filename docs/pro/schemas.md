@@ -47,6 +47,11 @@ schema's id.
 Changing the connection, such as after a password rotation or a move to another host, keeps the
 schema's id, rules and history.
 
+Pro stores the connection as it was entered, and doesn't read it from an environment variable. A
+host such as Heroku, Render or Railway may rotate an attached database's credentials and change its
+`DATABASE_URL`. Pro keeps the old connection until a global admin enters the new one with **Edit**.
+Until then, the [Schema unreachable](./alert-rules.md#default-rules) alert opens for the schema.
+
 A schema whose connection was saved under an earlier `PGBOSS_PRO_SECRET_KEY` shows **Connection
 can't be decrypted** in the list, and a banner on every page names it to global admins. Pro leaves
 the schema out of every page, alert rule and metric until a global admin enters its connection again

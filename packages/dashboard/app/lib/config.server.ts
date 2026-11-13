@@ -35,10 +35,15 @@ export function splitEnvList (value: string, separator: string): string[] {
 
 /**
  * Parse DATABASE_URL into a list of schemas: entries split on `|`, each an optional `Name=` and a
- * connection string with an optional `?schema=`.
+ * connection string with an optional `?schema=`. An entry without one reads `PGBOSS_SCHEMA`, as
+ * pg-boss's CLI does, or `pgboss`.
+ *
+ * `PGBOSS_SCHEMA` is how a host that sets `DATABASE_URL` itself, as an attached database does, names
+ * the schema without an edit to that variable that the host may overwrite.
  */
 export function parseDatabaseConfig (): DatabaseConfig[] {
   const dbUrlEnv = process.env.DATABASE_URL || 'postgres://localhost/pgboss'
+  const defaultSchema = process.env.PGBOSS_SCHEMA?.trim() || undefined
 
   return distinctIds(splitEnvList(dbUrlEnv, SEPARATOR).map((part, index) => {
     // Check for "name=url" format
@@ -50,7 +55,7 @@ export function parseDatabaseConfig (): DatabaseConfig[] {
     const name = named ? part.substring(0, equalsIndex).trim() : undefined
     const { url, schema } = takeSchema(named ? part.substring(equalsIndex + 1).trim() : part)
 
-    return toDatabaseConfig({ name, url, schema }, index)
+    return toDatabaseConfig({ name, url, schema: schema ?? defaultSchema }, index)
   }))
 }
 
@@ -71,22 +76,6 @@ export function takeSchema (connection: string): { url: string, schema?: string 
   const base = connection.slice(0, query)
 
   return { url: rest.length > 0 ? `${base}?${rest.join('&')}` : base, schema }
-}
-
-/**
- * Stop at startup when `PGBOSS_SCHEMA` is set. The dashboard reads each schema from its entry in
- * `DATABASE_URL`, and ignoring the variable would open a setup's `jobs` schema as `pgboss`.
- */
-export function refuseSchemaVariable (): void {
-  const value = process.env.PGBOSS_SCHEMA?.trim()
-  if (!value) return
-
-  const example = /^[A-Za-z_][A-Za-z0-9_]*$/.test(value) ? value : 'jobs'
-
-  throw new Error(
-    "The dashboard doesn't read PGBOSS_SCHEMA. Unset it and name each schema on its connection string " +
-    `in DATABASE_URL, as in DATABASE_URL=postgres://host/db?schema=${example}.`
-  )
 }
 
 /**

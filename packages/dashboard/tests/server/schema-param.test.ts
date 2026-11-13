@@ -71,15 +71,10 @@ describe('PGBOSS_SCHEMA', () => {
     vi.unstubAllEnvs()
   })
 
-  it('stops a dashboard that reads DATABASE_URL', () => {
+  it('starts a dashboard that reads DATABASE_URL, a dashboard given its schemas, and an overlay that brings its own', () => {
     vi.stubEnv('PGBOSS_SCHEMA', 'jobs')
 
-    expect(() => createHonoApp({ build, mode: 'production', overlay: null })).toThrow('DATABASE_URL=postgres://host/db?schema=jobs')
-  })
-
-  it('does not stop a dashboard given its schemas, or an overlay that brings its own', () => {
-    vi.stubEnv('PGBOSS_SCHEMA', 'jobs')
-
+    expect(() => createHonoApp({ build, mode: 'production', overlay: null })).not.toThrow()
     expect(() => createHonoApp({ build, mode: 'production', databases, overlay: null })).not.toThrow()
     expect(() => createHonoApp({ build, mode: 'production', overlay: { ownsAuth: true, server: () => {} } })).not.toThrow()
   })

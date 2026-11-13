@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { parseDatabaseConfig, parseSiteUrl, refuseSchemaVariable, takeSchema, toDatabaseConfig } from '~/lib/config.server'
+import { parseDatabaseConfig, parseSiteUrl, takeSchema, toDatabaseConfig } from '~/lib/config.server'
 
 describe('toDatabaseConfig', () => {
   it('names the database after the connection string and defaults the schema', () => {
@@ -47,9 +47,16 @@ describe('parseDatabaseConfig', () => {
     ])
   })
 
-  it('ignores PGBOSS_SCHEMA, which createHonoApp refuses', () => {
+  it('reads PGBOSS_SCHEMA for an entry without its own schema, which keeps its own', () => {
+    process.env.DATABASE_URL = 'postgres://host/a|postgres://host/b?schema=billing'
+    process.env.PGBOSS_SCHEMA = ' jobs '
+
+    expect(parseDatabaseConfig().map((db) => db.schema)).toEqual(['jobs', 'billing'])
+  })
+
+  it('reads pgboss when PGBOSS_SCHEMA is blank', () => {
     process.env.DATABASE_URL = 'postgres://host/a'
-    process.env.PGBOSS_SCHEMA = 'jobs'
+    process.env.PGBOSS_SCHEMA = ' '
 
     expect(parseDatabaseConfig()[0].schema).toBe('pgboss')
   })
@@ -82,33 +89,6 @@ describe('takeSchema', () => {
 
   it('treats an empty schema as unset', () => {
     expect(takeSchema('postgres://h/db?schema=')).toEqual({ url: 'postgres://h/db', schema: undefined })
-  })
-})
-
-describe('refuseSchemaVariable', () => {
-  const originalEnv = { ...process.env }
-
-  afterEach(() => {
-    process.env = { ...originalEnv }
-  })
-
-  it('does nothing when PGBOSS_SCHEMA is unset or blank', () => {
-    delete process.env.PGBOSS_SCHEMA
-    expect(() => refuseSchemaVariable()).not.toThrow()
-    process.env.PGBOSS_SCHEMA = ' '
-    expect(() => refuseSchemaVariable()).not.toThrow()
-  })
-
-  it('stops with the new form, using the schema it was given', () => {
-    process.env.PGBOSS_SCHEMA = 'orders'
-    expect(() => refuseSchemaVariable()).toThrow("The dashboard doesn't read PGBOSS_SCHEMA. Unset it and name each schema on its connection string in DATABASE_URL, as in DATABASE_URL=postgres://host/db?schema=orders.")
-  })
-
-  it('stops on a pgboss value too, and on a list', () => {
-    process.env.PGBOSS_SCHEMA = 'pgboss'
-    expect(() => refuseSchemaVariable()).toThrow('?schema=pgboss.')
-    process.env.PGBOSS_SCHEMA = 'one|two'
-    expect(() => refuseSchemaVariable()).toThrow('?schema=jobs.')
   })
 })
 
