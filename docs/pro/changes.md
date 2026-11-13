@@ -1,6 +1,6 @@
 # Jobs and queues
 
-The dashboard sends a job and retries, cancels, resumes or deletes one job, and records nothing about who did. Pro makes the same changes and adds the queue and schedule changes below. It checks each change against the user's [role](./roles.md) on the schema and records the change in the [audit log](./audit-log.md) before making it through pg-boss itself. If Pro can't record a change, it doesn't make it.
+The dashboard sends, retries, cancels, resumes and deletes jobs, and adds and removes schedules. It records nothing about who made a change. Pro makes the same changes and adds the queue changes below. It checks each change against the user's [role](./roles.md) on the schema and records the change in the [audit log](./audit-log.md) before making it through pg-boss itself. If Pro can't record a change, it doesn't make it.
 
 ![A failed job's page, with its actions](../images/pro/job.webp){.light-only}
 ![A failed job's page, with its actions](../images/pro/job-dark.webp){.dark-only}

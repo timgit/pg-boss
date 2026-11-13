@@ -75,9 +75,9 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 | Alerts by email, a webhook in Prometheus Alertmanager's format, or a [paging service](./destinations.md), each told when the alert closes | | ✓ |
 | A [status page](./status.md) of each queue's health day by day, with each day's states and alerts in time order | | ✓ |
 | [Operations](./operations.md) across multiple queues, including [dead letter redrive](./operations.md#redrive) | | ✓ |
-| [Send and delete jobs](./changes.md) | | ✓ |
-| [Create and delete queues and schedules](./changes.md) | | ✓ |
-| [Retry, cancel and resume a job](./changes.md) | ✓ | ✓, by role and in the audit log |
+| [Send, retry, cancel, resume and delete a job](./changes.md) | ✓ | ✓, by role and in the audit log |
+| [Add and remove schedules](./changes.md) | ✓ | ✓, by role and in the audit log |
+| [Create and delete queues](./changes.md) | | ✓ |
 | Sign-in | One username and password shared by every user, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
 | [Groups](./accounts.md), with [roles](./roles.md) per schema | | ✓ |
 | [Single sign-on](./sso.md) through an existing OpenID Connect provider | | ✓ |
