@@ -748,8 +748,8 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
  */
 export interface QueueOptions {
   /**
-   * How many seconds a job may be in active state before being retried or
-   * failed. Must be >=1. The default is 15 minutes.
+   * How many seconds a job may be active before being retried or failed, from 1 to 1209600 (14 days).
+   * The default is 15 minutes.
    * @default 900
    */
   expireInSeconds?: number;
@@ -1283,8 +1283,8 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
    */
   transactional?: boolean;
   /**
-   * How long the database gives the handler's transaction before it ends it, in seconds. Only valid
-   * with `transactional`. `0` removes the bound. Defaults to `expireInSeconds` plus 5.
+   * Transaction timeout in seconds for transactional workers; required when job expiration exceeds 86400 seconds.
+   * Defaults to `expireInSeconds` plus 5; `0` removes the bound.
    * @see https://pgboss.io/api/workers#work-name-options-handler
    */
   transactionTimeoutSeconds?: number;

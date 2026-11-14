@@ -83,6 +83,8 @@ The default options for `work()` is 1 job every 2 seconds.
 
   How long the database gives the handler's transaction before it kills the connection under it. Only valid alongside `transactional`; `0` removes the bound.
 
+  Transactional jobs whose `expireInSeconds` exceeds 24 hours require an explicit `transactionTimeoutSeconds`. A multi-day job deadline must not implicitly allow a multi-day database transaction.
+
   This is not the timer that ends a slow handler. `expireInSeconds` is, and it fires first by design. What this covers is the case no timer inside the process can: the process itself failing under an open transaction (a starved event loop, a driver wedged below the promise). That transaction goes on advertising `backend_xmin` and holding vacuum off every table in the database until something closes it, which is the condition [`monitorVacuum`](./constructor.md#monitorvacuum) reports as an `xmin_horizon` warning.
 
   ```js
