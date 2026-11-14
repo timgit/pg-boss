@@ -107,6 +107,9 @@ Subscribing, unsubscribing and publishing have the same version requirement as t
 ![Subscriptions page](./images/dashboard-subscriptions.webp){.light-only}
 ![Subscriptions page](./images/dashboard-subscriptions-dark.webp){.dark-only}
 
+![An event's page, with Subscribe queue, Publish and Unsubscribe](./images/dashboard-subscription.webp){.light-only}
+![An event's page, with Subscribe queue, Publish and Unsubscribe](./images/dashboard-subscription-dark.webp){.dark-only}
+
 ### Instances
 
 Every pg-boss instance registered in the schema's [instance registry](./api/ops.md#getinstances-options). Each row shows an instance's status (live, quiet or stopped), the pg-boss version it runs, which of `supervise` and `schedule` it has on, and the queues it works. Filter by status, or by **Recent** for the instances that started, stopped or went quiet in the last 24 hours. An instance's page shows its pool, CPU, memory and event loop at its last heartbeat against the limits it read. Its workers and options follow, with non-default options listed first. Beside those cards, a process card shows the instance's id, connection name, start and last heartbeat, the connections Postgres has open under that name now, and any crash restarts (instances with the same name on the same host that ended without `stop()` in a row before this instance started). The registry needs pg-boss 12.36 or later (schema 44). On an older schema the page says so.
