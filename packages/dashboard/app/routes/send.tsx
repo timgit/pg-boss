@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { redirect, useActionData, useNavigation, useSearchParams, type RouterContextProvider } from 'react-router'
 import { DbLink, resolveDbHref } from '~/components/db-link'
 import { ErrorCard } from '~/components/error-card'
-import { Field, inputClass } from '~/components/form-field'
+import { Field } from '~/components/form-field'
+import { JobFields } from '~/components/job-fields'
 import { LeaveGuard } from '~/components/leave-guard'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
@@ -13,7 +14,6 @@ import type { TitleHandle } from '~/lib/page-title'
 import { READ_ONLY_MESSAGE, isReadOnly } from '~/lib/read-only.server'
 import { parseSendForm } from '~/lib/send-form'
 import { sendJob } from '~/lib/send-job.server'
-import { cn } from '~/lib/utils'
 
 export const handle: TitleHandle = { title: 'Send job' }
 
@@ -105,27 +105,7 @@ export default function SendJob ({ loaderData }: { loaderData: ReturnType<typeof
               />
             </Field>
 
-            <Field id="data" label="Data" hint="Optional. A JSON object the job carries as its data.">
-              <textarea id="data" name="data" rows={6} placeholder='{"key": "value"}' className={cn(inputClass, 'font-mono')} />
-            </Field>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field id="priority" label="Priority">
-                <input type="number" id="priority" name="priority" placeholder="0" className={inputClass} />
-              </Field>
-              <Field id="startAfter" label="Start after">
-                <input type="text" id="startAfter" name="startAfter" placeholder="2026-01-01T00:00:00Z, or seconds" className={inputClass} />
-              </Field>
-              <Field id="singletonKey" label="Singleton key">
-                <input type="text" id="singletonKey" name="singletonKey" placeholder="Optional" className={inputClass} />
-              </Field>
-              <Field id="retryLimit" label="Retry limit">
-                <input type="number" id="retryLimit" name="retryLimit" min="0" placeholder="The queue's" className={inputClass} />
-              </Field>
-              <Field id="expireInSeconds" label="Expire in seconds">
-                <input type="number" id="expireInSeconds" name="expireInSeconds" min="1" placeholder="The queue's" className={inputClass} />
-              </Field>
-            </div>
+            <JobFields />
 
             <div className="flex items-center gap-3 pt-2">
               <Button type="submit" disabled={sending || !queue}>

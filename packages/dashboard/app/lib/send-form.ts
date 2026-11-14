@@ -28,6 +28,14 @@ export function parseSendForm (form: FormData): ParsedSend {
   const queue = field(form, 'queueName')
   if (!queue) return { error: 'Queue name is required' }
 
+  const fields = parseJobFields(form)
+  if ('error' in fields) return fields
+
+  return { value: { queue, ...fields } }
+}
+
+/** The data and options a job is sent with, shared by the send and publish forms. */
+export function parseJobFields (form: FormData): { error: string } | { data: object | null, options?: SendOptions } {
   let data: object | null = null
   const raw = field(form, 'data')
 
@@ -65,5 +73,5 @@ export function parseSendForm (form: FormData): ParsedSend {
   const singletonKey = field(form, 'singletonKey')
   if (singletonKey) options.singletonKey = singletonKey
 
-  return { value: { queue, data, options: Object.keys(options).length > 0 ? options : undefined } }
+  return { data, options: Object.keys(options).length > 0 ? options : undefined }
 }

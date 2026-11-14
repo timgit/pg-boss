@@ -17,6 +17,7 @@ const dashboardRoutes = [
   route('schedules', 'routes/schedules.tsx'),
   route('schedules/new', 'routes/schedules.new.tsx'),
   route('schedules/:name/:key', 'routes/schedules.$name.$key.tsx'),
+  route('publish', 'routes/publish.tsx'),
   route('send', 'routes/send.tsx'),
   route('subscribe', 'routes/subscribe.tsx'),
   route('subscriptions', 'routes/subscriptions.tsx'),

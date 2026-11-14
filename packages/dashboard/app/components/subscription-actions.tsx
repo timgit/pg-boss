@@ -10,7 +10,7 @@ export function NewSubscriptionButton ({ event }: { event?: string }) {
   if (useReadOnly()) return null
 
   return (
-    <Button variant="primary" size="md" render={<DbLink to={event ? `/subscribe?${new URLSearchParams({ event })}` : '/subscribe'} />}>
+    <Button variant={event ? 'outline' : 'primary'} size="md" render={<DbLink to={event ? `/subscribe?${new URLSearchParams({ event })}` : '/subscribe'} />}>
       {event ? 'Subscribe queue' : 'New subscription'}
     </Button>
   )
@@ -21,11 +21,30 @@ export function SubscriptionsPageActions () {
   return hasProSlot('pageActions') ? <ProSlot name="pageActions" page="subscriptions" /> : <NewSubscriptionButton />
 }
 
-/** An event page's header actions: the overlay's, when one fills `subscriptionActions`, or Subscribe queue. */
+/** Opens the publish form on `event`. Nothing in read-only mode. */
+export function PublishButton ({ event }: { event: string }) {
+  if (useReadOnly()) return null
+
+  return (
+    <Button variant="primary" size="md" render={<DbLink to={`/publish?${new URLSearchParams({ event })}`} />}>
+      Publish
+    </Button>
+  )
+}
+
+/** An event page's header actions: the overlay's, when one fills `subscriptionActions`, or Subscribe queue and Publish. */
 export function SubscriptionActions ({ event }: { event: string }) {
-  return hasProSlot('subscriptionActions')
-    ? <ProSlot name="subscriptionActions" subscription={{ event }} />
-    : <NewSubscriptionButton event={event} />
+  const readOnly = useReadOnly()
+
+  if (hasProSlot('subscriptionActions')) return <ProSlot name="subscriptionActions" subscription={{ event }} />
+  if (readOnly) return null
+
+  return (
+    <span className="flex items-center gap-3">
+      <NewSubscriptionButton event={event} />
+      <PublishButton event={event} />
+    </span>
+  )
 }
 
 /** One queue's Unsubscribe, after a confirmation. Posts to the event page's own action. */

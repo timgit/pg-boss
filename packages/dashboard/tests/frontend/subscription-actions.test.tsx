@@ -46,11 +46,12 @@ describe('the subscription controls', () => {
     expect(screen.getByRole('link', { name: 'New subscription' }).getAttribute('href')).toBe('/subscribe?schema=reporting')
   })
 
-  it('open the form on the event from an event\'s page', async () => {
+  it('open the subscription and publish forms on the event from an event\'s page', async () => {
     mockOverlay(NO_OVERLAY)
     await renderWith(({ SubscriptionActions }) => <SubscriptionActions event="user.created" />)
 
     expect(screen.getByRole('link', { name: 'Subscribe queue' }).getAttribute('href')).toBe('/subscribe?event=user.created')
+    expect(screen.getByRole('link', { name: 'Publish' }).getAttribute('href')).toBe('/publish?event=user.created')
   })
 
   it('offer Unsubscribe on each queue of an event', async () => {
@@ -94,5 +95,6 @@ describe('the subscription controls', () => {
     expect(screen.getByTestId('pro-subscription-actions').textContent).toBe('user.created')
     expect(screen.getByTestId('pro-row-actions').textContent).toBe('user.created:emails')
     expect(screen.queryByRole('button', { name: 'Unsubscribe' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Publish' })).toBeNull()
   })
 })
