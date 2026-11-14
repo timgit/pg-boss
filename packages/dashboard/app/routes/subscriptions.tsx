@@ -1,5 +1,5 @@
 import { DbLink } from '~/components/db-link'
-import { ProSlot } from '~/components/pro-slot'
+import { SubscriptionsPageActions } from '~/components/subscription-actions'
 import type { Route } from './+types/subscriptions'
 import {
   getSubscriptions,
@@ -66,7 +66,7 @@ export default function Subscriptions ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title="Subscriptions"
-        action={<ProSlot name="pageActions" page="subscriptions" />}
+        action={<SubscriptionsPageActions />}
       />
 
       <Card>

@@ -68,6 +68,20 @@ export interface ScheduleSlotProps {
   }
 }
 
+/** The event on screen, as its subscription page knows it. */
+export interface SubscriptionSlotProps {
+  subscription: { event: string }
+}
+
+/** One queue subscribed to an event, as a row of the event's page knows it. */
+export interface SubscriptionQueueSlotProps {
+  subscription: {
+    event: string
+    /** The subscribed queue. */
+    queue: string
+  }
+}
+
 /**
  * Named regions of the dashboard's UI an overlay may render into.
  *
@@ -111,7 +125,7 @@ export interface ProSlots {
    */
   queueActions?: ComponentType<QueueSlotProps>
 
-  /** In the header of the overview, jobs, queues and schedules pages, for actions that start there. */
+  /** In the header of the overview, jobs, queues, schedules and subscriptions pages, for actions that start there. */
   pageActions?: ComponentType<PageSlotProps>
 
   /** In a job page's header, for actions on that job. */
@@ -122,6 +136,12 @@ export interface ProSlots {
 
   /** In a schedule page's header, for actions on that schedule. */
   scheduleActions?: ComponentType<ScheduleSlotProps>
+
+  /** In an event's subscription page header, for actions on that event's subscriptions. */
+  subscriptionActions?: ComponentType<SubscriptionSlotProps>
+
+  /** At the end of each queue's row on an event's subscription page, for actions on that queue's subscription. */
+  subscriptionRowActions?: ComponentType<SubscriptionQueueSlotProps>
 }
 
 export interface ProOverlay {

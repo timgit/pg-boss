@@ -1,6 +1,6 @@
 # Dashboard
 
-The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. The dashboard [sends a job](#send-job), [retries, cancels, resumes and deletes](#job-actions) a job from its detail page, and [adds and removes schedules](#schedules). The [pg-boss Pro Console](./pro/index.md) adds changing many jobs at once, and creating and deleting queues, for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
+The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. The dashboard [sends a job](#send-job), [retries, cancels, resumes and deletes](#job-actions) a job from its detail page, [adds and removes schedules](#schedules), and [subscribes and unsubscribes queues](#subscriptions). The [pg-boss Pro Console](./pro/index.md) adds changing many jobs at once, and creating and deleting queues, for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
 
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting.webp){.light-only}
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting-dark.webp){.dark-only}
@@ -11,7 +11,7 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 - **Queues**: View all queues with cached statistics
 - **Queue Metrics**: Chart a queue's counts over time from its recorded history
 - **Schedules**: Each schedule with its queue, expression and next occurrence, and adding and removing a schedule
-- **Subscriptions**: Each event and the queues subscribed to it
+- **Subscriptions**: Each event and the queues subscribed to it, and subscribing and unsubscribing a queue
 - **Instances**: The pg-boss instances registered in the schema, with their workers and options
 - **Migrations**: The async migration commands, such as index builds, and their status
 - **Job List**: View jobs with state and queue filtering
@@ -97,6 +97,10 @@ Schedules registered with `boss.schedule()`. The list shows the target queue, op
 ### Subscriptions
 
 Events registered with [`boss.subscribe()`](./api/pubsub.md). Each row is an event with every queue subscribed to it. Sort by event, queue count or the time a queue last subscribed. A queue's page shows how many events it is subscribed to and links to this page filtered to those events.
+
+**New subscription** on the Subscriptions page opens a form that subscribes a queue to an event with pg-boss's own [`subscribe()`](./api/pubsub.md#subscribe-event-name). **Subscribe queue** on an event's page opens the same form with the event filled in. Subscribing a queue that is already subscribed changes only its updated time. **Unsubscribe** on a queue's row of an event's page asks first, then removes that queue's subscription with [`unsubscribe()`](./api/pubsub.md#unsubscribe-event-name). Jobs already in the queue stay there.
+
+Subscribing and unsubscribing have the same version requirement as the [job actions](#job-actions). `PGBOSS_DASHBOARD_READ_ONLY=true` turns them off too.
 
 ![Subscriptions page](./images/dashboard-subscriptions.webp){.light-only}
 ![Subscriptions page](./images/dashboard-subscriptions-dark.webp){.dark-only}
@@ -229,7 +233,7 @@ Default: `/`
 
 #### `PGBOSS_DASHBOARD_READ_ONLY`
 
-`true` or `1` turns off sending jobs, retry, cancel, resume and delete on a job's page, and adding and removing schedules. See [Job actions](#job-actions), [Send job](#send-job) and [Schedules](#schedules).
+`true` or `1` turns off sending jobs, retry, cancel, resume and delete on a job's page, adding and removing schedules, and subscribing and unsubscribing queues. See [Job actions](#job-actions), [Send job](#send-job), [Schedules](#schedules) and [Subscriptions](#subscriptions).
 
 #### `PGBOSS_DASHBOARD_QUERY_TIMEOUT`
 
@@ -254,7 +258,7 @@ npx @pg-boss/dashboard
 
 Set both variables or neither. If only one is set, the dashboard throws an error on startup.
 
-Without a credential or `PGBOSS_DASHBOARD_READ_ONLY`, the server logs a warning when it starts, because anyone who can reach the dashboard can send and change jobs and change schedules. A [mounted dashboard](#mounting-inside-an-existing-application) doesn't warn, because its host handles authentication.
+Without a credential or `PGBOSS_DASHBOARD_READ_ONLY`, the server logs a warning when it starts, because anyone who can reach the dashboard can send and change jobs, and change schedules and subscriptions. A [mounted dashboard](#mounting-inside-an-existing-application) doesn't warn, because its host handles authentication.
 
 ### Multiple schemas
 

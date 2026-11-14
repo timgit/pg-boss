@@ -81,7 +81,7 @@ describe('pro overlay', () => {
 
       const { hasProSlot } = await import('~/components/pro-slot')
 
-      for (const name of ['pageActions', 'queueActions', 'jobActions', 'jobRowActions', 'scheduleActions'] as const) {
+      for (const name of ['pageActions', 'queueActions', 'jobActions', 'jobRowActions', 'scheduleActions', 'subscriptionActions', 'subscriptionRowActions'] as const) {
         expect(hasProSlot(name)).toBe(false)
       }
     })

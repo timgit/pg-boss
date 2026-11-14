@@ -1,10 +1,13 @@
+import { redirect } from 'react-router'
 import type { Route } from './+types/subscriptions.$event'
 import { getSubscription } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
+import { unsubscribeQueue } from '~/lib/subscription.server'
+import { SubscriptionActions, SubscriptionRowActions, useSubscriptionRowActions } from '~/components/subscription-actions'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
-import { DbLink } from '~/components/db-link'
+import { DbLink, resolveDbHref } from '~/components/db-link'
 import { ErrorCard } from '~/components/error-card'
 import { formatDate } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
@@ -24,6 +27,26 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
   return { event: params.event, queues }
 }
 
+// Read-only mode refuses the post before it gets here. In a Pro build, Pro's Unsubscribe posts to a
+// route of its own, which checks the role and records the change.
+export async function action ({ params, request, context }: Route.ActionArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const form = await request.formData()
+  const queue = form.get('queue')
+
+  if (form.get('intent') !== 'unsubscribe' || typeof queue !== 'string' || !queue) return { error: 'Unknown action' }
+
+  const removed = await unsubscribeQueue(DB_URL, SCHEMA, { event: params.event, queue })
+  if ('error' in removed) return { error: removed.error }
+
+  // The last queue gone leaves no subscription, and no page for it.
+  if ((await getSubscription(DB_URL, SCHEMA, params.event)).length === 0) {
+    return redirect(resolveDbHref('/subscriptions', new URL(request.url).searchParams.get('schema')))
+  }
+
+  return { ok: true }
+}
+
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return <ErrorCard title="Error loading the subscription" error={error} backTo={{ href: '/subscriptions', label: 'Back to subscriptions' }} />
 }
@@ -32,6 +55,7 @@ const linkClass = 'font-mono text-xs text-primary-600 hover:text-primary-700 dar
 
 export default function SubscriptionDetail ({ loaderData }: Route.ComponentProps) {
   const { event, queues } = loaderData
+  const withActions = useSubscriptionRowActions()
 
   return (
     <div className="space-y-4">
@@ -39,6 +63,7 @@ export default function SubscriptionDetail ({ loaderData }: Route.ComponentProps
         parent={{ to: '/subscriptions', label: 'Subscriptions' }}
         title={`Subscription: ${event}`}
         subtitle={`Sends each published job to ${queues.length === 1 ? 'one queue' : `${queues.length} queues`}`}
+        action={<SubscriptionActions event={event} />}
       />
 
       <Card>
@@ -52,6 +77,7 @@ export default function SubscriptionDetail ({ loaderData }: Route.ComponentProps
                 <TableHead>Queue</TableHead>
                 <TableHead>Subscribed</TableHead>
                 <TableHead>Updated</TableHead>
+                {withActions && <TableHead><span className="sr-only">Actions</span></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -62,6 +88,11 @@ export default function SubscriptionDetail ({ loaderData }: Route.ComponentProps
                   </TableCell>
                   <TableCell className="text-[var(--text-secondary)]">{formatDate(new Date(queue.createdOn))}</TableCell>
                   <TableCell className="text-[var(--text-secondary)]">{formatDate(new Date(queue.updatedOn))}</TableCell>
+                  {withActions && (
+                    <TableCell className="text-right">
+                      <SubscriptionRowActions event={event} queue={queue.name} />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
