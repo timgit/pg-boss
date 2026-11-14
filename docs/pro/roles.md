@@ -5,7 +5,7 @@ Access comes from grants. A grant gives a person, a [group](./accounts.md#groups
 | Role | May |
 | - | - |
 | Viewer | Viewer users have read-only access. |
-| Operator | Operator users can retry, cancel, resume and send jobs, and acknowledge alerts. |
+| Operator | Operator users can retry, cancel, resume and send jobs, publish events, and acknowledge alerts. |
 | Admin | Admin users can delete jobs, create and delete queues and schedules, and subscribe and unsubscribe queues. An admin role covers one schema. Admin on all schemas is the [global admin](#global-admin) role. |
 
 Grants read as the role followed by its scope, such as `Operator › All schemas` or `Viewer › Production`, where "Production" is a schema's name.

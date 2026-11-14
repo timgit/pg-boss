@@ -78,6 +78,7 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 | [Send, retry, cancel, resume and delete a job](./changes.md) | ✓ | ✓, by role and in the audit log |
 | [Add and remove schedules](./changes.md) | ✓ | ✓, by role and in the audit log |
 | [Subscribe and unsubscribe queues](./changes.md) | ✓ | ✓, by role and in the audit log |
+| [Publish events](./changes.md) | ✓ | ✓, by role and in the audit log |
 | [Create and delete queues](./changes.md) | | ✓ |
 | Sign-in | One username and password shared by every user, through [basic authentication](../dashboard.md#basic-authentication) | An [account](./accounts.md) for each user, with its own password |
 | [Groups](./accounts.md), with [roles](./roles.md) per schema | | ✓ |
