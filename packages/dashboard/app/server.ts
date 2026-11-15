@@ -11,7 +11,7 @@ import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 import { stripBasePrefix } from './lib/base-path'
 
 // Resolve the per-request load context the loaders/actions rely on. The selected
-// schema comes from the `?schema=` query param or the `pgboss_db` cookie, falling back
+// schema comes from the `?schema=` query param or the `pgboss_schema` cookie, falling back
 // to the first configured schema. With `v8_middleware` on, loaders read these
 // values via `context.get(dbContext)`.
 //
@@ -23,8 +23,8 @@ export function getLoadContext (
   overlay: ProServerOverlay | null = null
 ): RouterContextProvider {
   const url = new URL(c.req.url)
-  const dbId = url.searchParams.get('schema') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
-  const currentSchema = findSchemaById(schemas, dbId) || schemas[0]
+  const schemaId = url.searchParams.get('schema') || c.req.header('cookie')?.match(/pgboss_schema=([^;]+)/)?.[1] || null
+  const currentSchema = findSchemaById(schemas, schemaId) || schemas[0]
 
   const context = new RouterContextProvider()
   context.set(schemaContext, {

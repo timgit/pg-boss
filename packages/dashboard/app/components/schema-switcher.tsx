@@ -77,7 +77,7 @@ export function SchemaSwitcher () {
     </>
   )
 
-  // Named even for the first schema: without `?schema=` a remembered `pgboss_db` cookie would win, and
+  // Named even for the first schema: without `?schema=` a remembered `pgboss_schema` cookie would win, and
   // switching back to the first would land on the schema just left. Links elsewhere stay short.
   // A page about one item lands on its list instead, with none of the item's own query string.
   const select = (id: string) => {
