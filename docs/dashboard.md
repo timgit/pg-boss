@@ -145,7 +145,7 @@ Every warning pg-boss emitted while [`persistWarnings`](#enabling-warning-persis
 
 ### Matching pg-boss versions
 
-Dashboard 2.x reads a database on pg-boss schema version 32 or later (pg-boss 12.21 or later). Its version doesn't have to match the pg-boss your application runs. 2.0 has been run against every schema from 32 to 46 (pg-boss 12.38). Pages show the data a newer schema stores, such as the count of jobs blocked by a flow parent from schema 44, and leave that data out on an older schema.
+Dashboard 2.x reads a database on pg-boss schema version 32 or later (pg-boss 12.21 or later). Its version doesn't have to match the pg-boss your application runs.
 
 The dashboard does not migrate your schema. It doesn't appear in [`getInstances()`](./api/ops.md#getinstances-options), because it starts no pg-boss instance of its own.
 
