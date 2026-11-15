@@ -33,6 +33,7 @@ Workers don't use the Pro API. A worker fetches and completes jobs through pg-bo
 | `403` | The token's role doesn't include the method, or Pro refuses the method. |
 | `404` | No schema by that id, a schema the service account has no role on, or an alert that doesn't exist or is on such a schema. |
 | `409` | The schema's pg-boss version isn't the version this Pro makes changes on (see [pg-boss versions](./versions.md)), or the alert to acknowledge is closed or already acknowledged. |
+| `413` | A request body over 1 MB, with or without `Content-Length`. Pro refuses it before checking the token. |
 | `429` | Only an invalid token, after too many from this address. |
 | `503` | Pro couldn't record the call in the audit log, or couldn't start pg-boss for the schema. The call made no change. |
 
