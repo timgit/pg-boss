@@ -84,7 +84,7 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 | [Groups](./accounts.md), with [roles](./roles.md) per schema | | ✓ |
 | [Single sign-on](./sso.md) through an existing OpenID Connect provider | | ✓ |
 | An [audit log](./audit-log.md) of every change | | ✓ |
-| The [Pro API](./api.md), through which a deploy script, a CI job or a service in another language sends, retries and redrives jobs without a Node.js client | | ✓ |
+| The [Pro API](./api.md), through which automation scripts and other systems (not workers) send, retry and redrive jobs and manage queues and schedules | | ✓ |
 | [API tokens](./api-tokens.md) for service accounts, whose role decides which methods a token may call | | ✓ |
 | Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
 | Registered [instances](./instances.md) | ✓ | ✓, grouped by name and host, with what needs attention across them, and each instance's pool, CPU, memory or event loop marked at its limit |
