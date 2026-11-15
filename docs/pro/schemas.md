@@ -39,8 +39,10 @@ doesn't send its password back to the browser. The list shows each schema's host
 ## Editing a schema
 
 **Edit** in a schema's menu opens its name, color and connection. The connection's fields show what
-is stored, except the password. A blank password keeps the stored one, and the stored connection is
-written again only when a field of it changes. Names show in the schema menu, in alert emails
+is stored, except the password. A blank password keeps the stored one while the host, port,
+database, user and sslmode stay the same. Changing any of them needs the password entered again,
+for **Test connection** too. A stored password doesn't go to a server it wasn't entered for. The
+stored connection is written again only when a field of it changes. Names show in the schema menu, in alert emails
 and webhook payloads, and in the audit log. A webhook payload holds the name in `schema_label` and the
 id in `schema`. Renaming keeps every link, alert rule and history row, because they all refer to the
 schema's id.
