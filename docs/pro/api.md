@@ -18,9 +18,9 @@ A service account's role on the schema decides which methods its tokens can call
 | Methods | Viewer | Operator | Admin |
 | - | :-: | :-: | :-: |
 | `getQueue`, `getQueues`, `getQueueStats`, `findJobs`, `getSchedule`, `getSchedules`, `getDependencies`, `getDependents`, `getBlockedKeys`, `previewRedrive`, `previewSchedule`, `meta` | ✓ | ✓ | ✓ |
-| `send`, `sendAfter`, `sendThrottled`, `sendDebounced`, `insert`, `upsert`, `update`, `flow`, `retry`, `redrive`, `cancel`, `resume` | | ✓ | ✓ |
-| `deleteJob`, `createQueue`, `updateQueue`, `deleteQueue`, `schedule`, `unschedule` | | | ✓ |
-| `fetch`, `complete`, `fail`, `touch`, `deleteQueuedJobs`, `deleteStoredJobs`, `deleteAllJobs`, `publish`, `subscribe`, `unsubscribe` | | | |
+| `send`, `sendAfter`, `sendThrottled`, `sendDebounced`, `insert`, `upsert`, `update`, `flow`, `retry`, `redrive`, `cancel`, `resume`, `publish` | | ✓ | ✓ |
+| `deleteJob`, `createQueue`, `updateQueue`, `deleteQueue`, `schedule`, `unschedule`, `subscribe`, `unsubscribe` | | | ✓ |
+| `fetch`, `complete`, `fail`, `touch`, `deleteQueuedJobs`, `deleteStoredJobs`, `deleteAllJobs` | | | |
 
 Workers don't use the Pro API. A worker fetches and completes jobs through pg-boss, or through a [`@pg-boss/proxy`](../proxy.md) it runs on its own. Deleting many jobs at once is an [operation](./operations.md) in the Pro Console, where a person confirms the count.
 
@@ -38,7 +38,7 @@ Workers don't use the Pro API. A worker fetches and completes jobs through pg-bo
 
 ## Audit
 
-The [audit log](./audit-log.md) records each change with the method, the queue, the token and the answer. It doesn't record reads. Sending jobs is recorded only when the service account is set to record it.
+The [audit log](./audit-log.md) records each change with the method, the queue or event, the token and the answer. It doesn't record reads. Sending jobs and publishing events are recorded only when the service account is set to record them. A published event's entry lists the queues subscribed to the event.
 
 ## Alerts
 

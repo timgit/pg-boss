@@ -24,7 +24,7 @@ expires within 14 days.
 - **API tokens**: each with its name, its first characters, who created it, when it expires and
   when it was last used. **Create token** asks for a name and an expiry and shows the token once, to
   copy. **Revoke** stops a token at once.
-- **Audit**: whether the jobs it sends are recorded.
+- **Audit**: whether the jobs it sends and the events it publishes are recorded.
 - **Using a token**: a `curl` for the Pro API and for open alerts, with this Pro Console's address.
 - **Recent activity**: what its tokens did, and the changes made to it.
 
@@ -52,4 +52,4 @@ Tokens work only on the Pro API and [`/metrics`](./metrics.md). The Pro Console'
 
 ## Audit
 
-The [audit log](./audit-log.md) records each change a token makes under its service account's name, with the token that made it. After a leaked token is revoked, the log shows every change it made. The sends a producer makes at volume are recorded only when the service account is set to record them.
+The [audit log](./audit-log.md) records each change a token makes under its service account's name, with the token that made it. After a leaked token is revoked, the log shows every change it made. The jobs a producer sends and the events it publishes are recorded only when the service account is set to record them.
