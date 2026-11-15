@@ -86,7 +86,9 @@ instead.
 
 A role is granted for one schema or for all schemas. The same user can be an operator on one schema
 and a viewer on another. The Pro Console remembers the last schema viewed for 30 days. A page that
-names no schema, such as Settings, leads back to it.
+names no schema, such as Settings, leads back to it. The address of every other page names its
+schema with `?schema=`, and a change made on that page goes to that schema, even after another tab
+switches to a different one.
 
 ## Pro queues
 
