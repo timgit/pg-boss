@@ -1,8 +1,10 @@
 # pg-boss Dashboard
 
-A web dashboard for [pg-boss](https://github.com/timgit/pg-boss) job queues: browse queues, inspect jobs and schedules, retry, cancel or resume a job, and review warning history from a single UI.
+A web dashboard for [pg-boss](https://github.com/timgit/pg-boss) job queues. It shows queues, jobs, schedules, subscriptions, instances and warning history. It also manages jobs, schedules and subscriptions.
 
 📖 **[Read the full documentation →](https://pgboss.io/dashboard)**
+
+[pg-boss Pro](https://pgboss.io/pro/) is built on the dashboard and supported by the author of pg-boss. Available as a subscription, it adds user accounts with roles, an audit log, customizable alert rules and the Pro API for automation scripts. Pro helps fund the ongoing development and maintenance of pg-boss as well as the dashboard.
 
 ## Quick Start
 

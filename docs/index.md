@@ -30,7 +30,7 @@ features:
     link: /api/jobs
     linkText: Jobs & flows
   - title: Web dashboard & HTTP proxy
-    details: A read-only web dashboard for monitoring queues and jobs, and an HTTP proxy for calling pg-boss from any language or runtime.
+    details: A web dashboard for monitoring queues and managing jobs, and an HTTP proxy for calling pg-boss from any language or runtime.
     link: /dashboard
     linkText: Dashboard
   - title: Runs anywhere Postgres does
@@ -100,7 +100,7 @@ See the [CLI documentation](/cli) for details.
 
 ## Dashboard
 
-A web dashboard in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package monitors jobs, queues and schedules.
+A web dashboard in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package monitors queues and manages jobs.
 
 See the [dashboard documentation](/dashboard) for details.
 
@@ -112,7 +112,7 @@ See the [proxy documentation](/proxy) for details.
 
 ## Pro 🚀
 
-[pg-boss Pro](/pro/) is built and supported by the author of pg-boss for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users send, retry and delete jobs, create queues and schedules, run batch operations across queues and make other changes their role allows, with every change recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds single sign-on, Prometheus metrics, queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service. Pro is sold as a yearly or monthly subscription. Subscriptions and sponsorship pay for the maintenance of pg-boss.
+[pg-boss Pro](/pro/) is built and supported by the author of pg-boss for teams running pg-boss in production. It has two components, the Pro Console in the browser (built on the dashboard) and the Pro API over HTTP. In the Pro Console, users send, retry and delete jobs, create queues and schedules, run batch operations across queues and make other changes their role allows, each recorded in the audit log. Through the Pro API, automation scripts and other systems call pg-boss's methods using an API token. Pro also adds single sign-on, Prometheus metrics, queue health monitoring and customizable alert rules that can notify whoever is on call. Pro is sold as a yearly or monthly subscription that helps fund the ongoing maintenance of pg-boss.
 
 ## Sponsors
 

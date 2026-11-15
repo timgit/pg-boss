@@ -63,7 +63,7 @@ See the [CLI documentation](https://pgboss.io/cli) for details.
 
 ## Dashboard
 
-A web dashboard in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package monitors jobs, queues and schedules.
+A web dashboard in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package monitors queues and manages jobs.
 
 See the [dashboard documentation](https://pgboss.io/dashboard) for details.
 
@@ -75,7 +75,7 @@ See the [proxy documentation](https://pgboss.io/proxy) for details.
 
 ## Pro 🚀
 
-[pg-boss Pro](https://pgboss.io/pro/) is built and supported by the author of pg-boss for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users send, retry and delete jobs, create queues and schedules, run batch operations across queues and make other changes their role allows, with every change recorded in the audit log. Through the Pro API, scripts, CI jobs and other systems call pg-boss's methods using an API token. Pro also adds single sign-on, Prometheus metrics, queue health monitoring and alert rules that reach whoever is on call by email, webhook or a paging service. Pro is sold as a yearly or monthly subscription. Subscriptions and sponsorship pay for the maintenance of pg-boss.
+[pg-boss Pro](https://pgboss.io/pro/) is built and supported by the author of pg-boss for teams running pg-boss in production. It has two components, the Pro Console in the browser (built on the dashboard) and the Pro API over HTTP. In the Pro Console, users send, retry and delete jobs, create queues and schedules, run batch operations across queues and make other changes their role allows, each recorded in the audit log. Through the Pro API, automation scripts and other systems call pg-boss's methods using an API token. Pro also adds single sign-on, Prometheus metrics, queue health monitoring and customizable alert rules that can notify whoever is on call. Pro is sold as a yearly or monthly subscription that helps fund the ongoing maintenance of pg-boss.
 
 ## Sponsors
 
