@@ -19,7 +19,7 @@ import { DatabaseSwitcher } from "~/components/database-switcher";
 import { ProSlot } from "~/components/pro-slot";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 import { cn } from "~/lib/utils";
-import { showsDatabase } from "~/lib/page-scope";
+import { showsSchema } from "~/lib/page-scope";
 import { dbContext } from "~/lib/db-context";
 import { toPublicDatabase } from "~/lib/config.server";
 import { isPgBossInstalled } from "~/lib/queries.server";
@@ -31,7 +31,7 @@ import { BRAND_COBALT, COLOR_HEX, DEFAULT_COLOR_THEME } from "~/lib/favicon";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
-  const database = showsDatabase(useMatches())
+  const schema = showsSchema(useMatches())
 
   return (
     <main
@@ -50,7 +50,7 @@ function MainContent ({ children }: { children: React.ReactNode }) {
           {/* Phones only: the sidebar is a sheet there, so its own toggle cannot open it. */}
           <SidebarTrigger className="-ml-2 md:hidden" />
           {/* The database first, as Supabase leads with the project: in view on every page about one, at every width. */}
-          {database && <DatabaseSwitcher />}
+          {schema && <DatabaseSwitcher />}
           <ProSlot name="topbarStart" />
         </div>
         <div className="flex items-center gap-2">

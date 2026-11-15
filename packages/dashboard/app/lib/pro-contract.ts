@@ -93,8 +93,8 @@ export interface ProSlots {
   sidebarFooter?: ComponentType
 
   /**
-   * In the topbar, after the database switcher. A route whose `handle` has
-   * `database: false` (`ScopeHandle`) is about no one database and shows no
+   * In the topbar, after the schema switcher. A route whose `handle` has
+   * `schema: false` (`ScopeHandle`) is about no one schema and shows no
    * switcher, so this slot starts the row there.
    */
   topbarStart?: ComponentType
