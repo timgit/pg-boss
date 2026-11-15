@@ -21,7 +21,7 @@ import { VPButton } from 'vitepress/theme'
 
 # pg-boss Pro
 
-pg-boss Pro is built and supported by the author of pg-boss for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users create queues and jobs, modify schedules and make other changes their [role](./roles.md) allows, with every change recorded in the audit log. Through the Pro API, automation scripts and other systems call pg-boss's methods using an API token. Pro also adds enhanced health monitoring and a configurable rules engine, which can alert whoever is on call by email, webhook or a paging service. An alert catches a stalled queue before it turns into an outage.
+pg-boss Pro is built and supported by the author of pg-boss for teams running pg-boss in production. It has two components, the Pro Console in the browser and the Pro API over HTTP. In the Pro Console, users manage the queues, jobs and operations their [role](./roles.md) allows, with each change recorded in the audit log. Through the Pro API, automation scripts and other systems call pg-boss's methods using an API token. Pro also adds single sign-on, Prometheus metrics, enhanced health monitoring and customizable alert rules that can notify whoever is on call by email, webhook or a paging service. Pro is sold as a yearly or monthly subscription that helps fund the ongoing maintenance of pg-boss.
 
 ![The Pro overview](../images/pro/overview.webp){.light-only}
 ![The Pro overview](../images/pro/overview-dark.webp){.dark-only}
