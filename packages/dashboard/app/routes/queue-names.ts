@@ -1,5 +1,5 @@
 import type { Route } from './+types/queue-names'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { searchQueueNames } from '~/lib/queries.server'
 
 /**
@@ -7,9 +7,9 @@ import { searchQueueNames } from '~/lib/queries.server'
  * types. Its own path, since `/queues/search` would hide a queue named `search`.
  */
 export async function loader ({ request, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const search = new URL(request.url).searchParams.get('q')?.trim() ?? ''
-  return searchQueueNames(DB_URL, SCHEMA, search)
+  return searchQueueNames(connection.url, connection.schema, search)
 }
 
 export type QueueNamesResult = Awaited<ReturnType<typeof loader>>

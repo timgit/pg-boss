@@ -1,7 +1,7 @@
 import { useContext } from 'react'
 import { isRouteErrorResponse } from 'react-router'
 import { MissingPgBossContext } from '~/lib/missing-pgboss'
-import { DbLink } from './db-link'
+import { SchemaLink } from './schema-link'
 import { Card, CardContent } from './ui/card'
 
 interface ErrorCardProps {
@@ -36,7 +36,7 @@ export function ErrorCard ({
   // the reads failed for that reason, not the connection.
   const heading = response?.statusText || (missing ? "pg-boss isn't installed in this schema" : title)
   const detail = body || (missing
-    ? `There's no pg-boss schema named ${missing.schema} in ${missing.name}. The application's pg-boss creates it when it first starts, or pg-boss's CLI can create it.`
+    ? `There's no pg-boss schema named ${missing.connection.schema} in ${missing.name}. The application's pg-boss creates it when it first starts, or pg-boss's CLI can create it.`
     : message)
 
   return (
@@ -46,12 +46,12 @@ export function ErrorCard ({
           <p className="text-red-600 dark:text-red-400 font-medium">{heading}</p>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{detail}</p>
           {backTo && (
-            <DbLink
+            <SchemaLink
               to={backTo.href}
               className="inline-block mt-4 text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
             >
               {backTo.label}
-            </DbLink>
+            </SchemaLink>
           )}
         </CardContent>
       </Card>

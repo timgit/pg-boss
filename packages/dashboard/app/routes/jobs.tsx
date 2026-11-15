@@ -5,7 +5,7 @@ import {
   getRecentJobs,
   type RecentJobsFilterOptions,
 } from '~/lib/queries.server'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
@@ -104,7 +104,7 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
 }
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const url = new URL(request.url)
   const parsed = parseFiltersFromUrl(url.searchParams)
   const jobColumns = parseJobColumns(url.searchParams, defaultJobColumnsFor(parsed.state))
@@ -112,7 +112,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const { page, cursor } = parsePaging(url.searchParams)
   const limit = PAGE_SIZE
 
-  const recentJobsResult = await getRecentJobs(DB_URL, SCHEMA, {
+  const recentJobsResult = await getRecentJobs(connection.url, connection.schema, {
     ...parsed.serverFilters,
     limit,
     cursor,

@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import type { Route } from './+types/warnings'
 import { getWarnings } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
@@ -28,7 +28,7 @@ import {
   warningTypeVariant,
   warningTypeLabel,
 } from '~/lib/utils'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import type { TitleHandle } from '~/lib/page-title'
 import { PAGE_SIZE } from '~/lib/pagination'
 
@@ -37,7 +37,7 @@ export const handle: TitleHandle = { title: 'Warnings' }
 
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const url = new URL(request.url)
   const typeParam = url.searchParams.get('type')
 
@@ -50,7 +50,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const dir = url.searchParams.get('dir')
 
   // No count: the warning table grows for as long as warnings are kept, so a page reads one past its end to offer Next.
-  const warnings = await getWarnings(DB_URL, SCHEMA, {
+  const warnings = await getWarnings(connection.url, connection.schema, {
     type: typeFilter,
     limit,
     cursor,
@@ -137,9 +137,9 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
                       <WarningTypeBadge type={warning.type} />
                     </TableCell>
                     <TableCell className="max-w-md truncate">
-                      <DbLink to={`/warnings/${warning.id}`} className="text-[var(--text-primary)] hover:underline">
+                      <SchemaLink to={`/warnings/${warning.id}`} className="text-[var(--text-primary)] hover:underline">
                         {warning.message}
-                      </DbLink>
+                      </SchemaLink>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-[var(--text-tertiary)] max-w-xs truncate">
                       {formatWarningData(warning.data)}

@@ -2,7 +2,7 @@ import { useFetcher } from 'react-router'
 import { Trash2 } from 'lucide-react'
 import { Button } from '~/components/ui/button'
 import { ConfirmDialog } from '~/components/ui/confirm-dialog'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { ProSlot, hasProSlot } from '~/components/pro-slot'
 import { useReadOnly } from '~/components/send-job-button'
 
@@ -11,7 +11,7 @@ export function NewScheduleButton () {
   if (useReadOnly()) return null
 
   return (
-    <Button variant="primary" size="md" render={<DbLink to="/schedules/new" />}>
+    <Button variant="primary" size="md" render={<SchemaLink to="/schedules/new" />}>
       New schedule
     </Button>
   )

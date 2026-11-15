@@ -18,7 +18,7 @@ import {
 import { Badge } from '~/components/ui/badge'
 import { Card } from '~/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '~/components/ui/popover'
 import { cn } from '~/lib/utils'
 
@@ -74,7 +74,7 @@ export function WorksCell ({ instance }: { instance: Instance }) {
       {queues.slice(0, 2).map((q, k) => (
         <Fragment key={q}>
           {k > 0 && ', '}
-          <DbLink to={`/queues/${encodeURIComponent(q)}`} className="hover:text-[var(--text-primary)] hover:underline">{q}</DbLink>
+          <SchemaLink to={`/queues/${encodeURIComponent(q)}`} className="hover:text-[var(--text-primary)] hover:underline">{q}</SchemaLink>
         </Fragment>
       ))}
       {queues.length > 2 && <span className="text-[var(--text-tertiary)]"> +{queues.length - 2}</span>}
@@ -86,12 +86,12 @@ export function WorksCell ({ instance }: { instance: Instance }) {
 export function InstanceName ({ instance: i }: { instance: Instance }) {
   return (
     <>
-      <DbLink
+      <SchemaLink
         to={instancePath(i.id)}
         className={cn('block font-medium hover:underline', i.name ? 'text-[var(--text-primary)]' : 'font-normal italic text-[var(--text-secondary)]')}
       >
         {instanceName(i.name)}
-      </DbLink>
+      </SchemaLink>
       <span className="block text-[11.5px] text-[var(--text-tertiary)]">
         <span className="font-mono">{i.id.slice(0, 8)}</span> · {i.host} · pid {i.pid}
       </span>

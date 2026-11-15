@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url'
 import type { Hono } from 'hono'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
-import { toDatabaseConfig, toSiteOrigin, type DatabaseInput } from './lib/config.server'
+import { toSchemaConfig, toSiteOrigin, type DatabaseInput } from './lib/config.server'
 import { withBasePath } from './lib/runtime-base-path'
 import { applySettingAliases, serverOverlayOf } from './lib/server-overlay'
 
@@ -73,15 +73,15 @@ const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
  * standalone server does.
  */
 export function createDashboardHandler (
-  { databases, basePath, siteUrl, auth = false }: CreateDashboardHandlerOptions
+  { databases: schemas, basePath, siteUrl, auth = false }: CreateDashboardHandlerOptions
 ): DashboardHandler {
   // An empty list is a mistake now. A missing one is a Pro build's, whose apps are kept in its own
   // database; the build says which once it loads, and one without Pro refuses then when it has no databases.
-  if (databases?.length === 0) {
+  if (schemas?.length === 0) {
     throw new Error('createDashboardHandler() needs at least one database')
   }
 
-  const configs = (databases ?? []).map(toDatabaseConfig)
+  const configs = (schemas ?? []).map(toSchemaConfig)
 
   const duplicate = configs.find((config, index) => configs.findIndex(other => other.id === config.id) !== index)
 
@@ -145,7 +145,7 @@ export function createDashboardHandler (
       mode: 'production',
       serveStaticAssets: true,
       clientRoot: fileURLToPath(new URL('./client', import.meta.url)),
-      databases: configs,
+      schemas: configs,
       basePath,
       // Defaults to false: the host authenticates. `createHonoApp` says so on
       // stdout when a credential was configured, rather than dropping it in

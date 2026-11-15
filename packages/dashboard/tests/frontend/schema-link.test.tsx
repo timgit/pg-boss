@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { useSearchParams } from "react-router";
-import { DbLink } from "~/components/db-link";
+import { SchemaLink } from "~/components/schema-link";
 
 // Override the mock for specific tests
 vi.mock("react-router", async () => {
@@ -21,7 +21,7 @@ describe("DbLink", () => {
   it("renders link with children", () => {
     render(
       <MemoryRouter>
-        <DbLink to="/queues">Go to Queues</DbLink>
+        <SchemaLink to="/queues">Go to Queues</SchemaLink>
       </MemoryRouter>
     );
 
@@ -37,7 +37,7 @@ describe("DbLink", () => {
 
     render(
       <MemoryRouter>
-        <DbLink to="/queues">Queues</DbLink>
+        <SchemaLink to="/queues">Queues</SchemaLink>
       </MemoryRouter>
     );
 
@@ -47,7 +47,7 @@ describe("DbLink", () => {
   it("does not add db param if not present in current URL", () => {
     render(
       <MemoryRouter>
-        <DbLink to="/warnings">Warnings</DbLink>
+        <SchemaLink to="/warnings">Warnings</SchemaLink>
       </MemoryRouter>
     );
 
@@ -62,7 +62,7 @@ describe("DbLink", () => {
 
     render(
       <MemoryRouter>
-        <DbLink to="/queues?page=2">Page 2</DbLink>
+        <SchemaLink to="/queues?page=2">Page 2</SchemaLink>
       </MemoryRouter>
     );
 
@@ -79,7 +79,7 @@ describe("DbLink", () => {
 
     render(
       <MemoryRouter>
-        <DbLink to="/queues?schema=other">Link</DbLink>
+        <SchemaLink to="/queues?schema=other">Link</SchemaLink>
       </MemoryRouter>
     );
 
@@ -95,7 +95,7 @@ describe("DbLink", () => {
 
     render(
       <MemoryRouter>
-        <DbLink to="/queues/q/metrics?total=1#active">Link</DbLink>
+        <SchemaLink to="/queues/q/metrics?total=1#active">Link</SchemaLink>
       </MemoryRouter>
     );
 
@@ -110,7 +110,7 @@ describe("DbLink", () => {
 
     render(
       <MemoryRouter>
-        <DbLink to={{ pathname: "/queues", search: "?state=active" }}>Link</DbLink>
+        <SchemaLink to={{ pathname: "/queues", search: "?state=active" }}>Link</SchemaLink>
       </MemoryRouter>
     );
 

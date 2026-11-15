@@ -259,11 +259,11 @@ export function AppSidebar () {
   const [searchParams] = useSearchParams()
   const { setOpenMobile, state } = useSidebar()
 
-  const dbParam = searchParams.get('schema')
+  const schemaParam = searchParams.get('schema')
 
   const buildHref = (path: string) => {
-    if (!dbParam) return path
-    return `${path}?schema=${dbParam}`
+    if (!schemaParam) return path
+    return `${path}?schema=${schemaParam}`
   }
 
   return (

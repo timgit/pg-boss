@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { QueueStats } from '~/lib/types'
 import { Count } from '~/components/ui/count'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { cn } from '~/lib/utils'
 
 /** Which cell: the `QueueStats` figure it leads with. */
@@ -72,7 +72,7 @@ export function CountsCard ({ cells, label, caption }: { cells: CountCell[], lab
           )
           const className = 'flex min-w-0 flex-col gap-1.5 bg-[var(--surface-card)] px-4 py-4'
           return cell.to
-            ? <DbLink key={cell.key} to={cell.to} className={cn(className, 'transition-colors hover:bg-[var(--surface-hover)]')}>{body}</DbLink>
+            ? <SchemaLink key={cell.key} to={cell.to} className={cn(className, 'transition-colors hover:bg-[var(--surface-hover)]')}>{body}</SchemaLink>
             : <div key={cell.key} className={className}>{body}</div>
         })}
       </div>

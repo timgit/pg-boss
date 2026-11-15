@@ -30,8 +30,8 @@ function cookieValue (request: Request, name: string): string | null {
  * there is only the table.
  */
 export async function loadQueueList (
-  DB_URL: string,
-  SCHEMA: string,
+  dbUrl: string,
+  schema: string,
   request: Request,
   { all = false, views = ['table'], defaultView }: { all?: boolean, views?: QueueView[], defaultView?: QueueView } = {}
 ) {
@@ -49,8 +49,8 @@ export async function loadQueueList (
   // Most ready first unless the URL names a sort. A sort only an overlay knows falls back to name
   // here, and the overlay orders the page itself.
   const [queues, totalCount] = await Promise.all([
-    getQueuePage(DB_URL, SCHEMA, { limit, cursor, filter, search, sort: sort ?? 'ready', dir: sort ? dir : 'desc' }),
-    getQueueCount(DB_URL, SCHEMA, { filter, search }),
+    getQueuePage(dbUrl, schema, { limit, cursor, filter, search, sort: sort ?? 'ready', dir: sort ? dir : 'desc' }),
+    getQueueCount(dbUrl, schema, { filter, search }),
   ])
 
   return {

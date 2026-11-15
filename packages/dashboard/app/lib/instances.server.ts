@@ -13,9 +13,9 @@ export type InstancesData = Awaited<ReturnType<typeof getInstanceRegistry>> & {
  * The registry and the server's connections for `/instances`. Apart from the route so an overlay that
  * replaces the page can load it too.
  */
-export async function loadInstances (DB_URL: string, SCHEMA: string): Promise<InstancesData> {
-  const registry = await getInstanceRegistry(DB_URL, SCHEMA)
-  const connections = registry.available ? await readConnections((sql) => query(DB_URL, sql)).catch(() => null) : null
+export async function loadInstances (dbUrl: string, schema: string): Promise<InstancesData> {
+  const registry = await getInstanceRegistry(dbUrl, schema)
+  const connections = registry.available ? await readConnections((sql) => query(dbUrl, sql)).catch(() => null) : null
   return { ...registry, connections }
 }
 
@@ -32,15 +32,15 @@ export interface InstancePageData {
  * One registered instance by id, for `/instances/:id`. Throws a 404 response when there is no
  * such row, or the schema predates the registry.
  */
-export async function loadInstancePage (DB_URL: string, SCHEMA: string, id: string): Promise<InstancePageData> {
-  const { available, instances, checkedOn } = await getInstanceRegistry(DB_URL, SCHEMA)
+export async function loadInstancePage (dbUrl: string, schema: string, id: string): Promise<InstancePageData> {
+  const { available, instances, checkedOn } = await getInstanceRegistry(dbUrl, schema)
   const instance = available ? instances.find((i) => i.id === id) : undefined
 
   if (!instance) {
     throw new Response('Instance not found', { status: 404 })
   }
 
-  const connections = await readConnections((sql) => query(DB_URL, sql)).catch(() => null)
+  const connections = await readConnections((sql) => query(dbUrl, sql)).catch(() => null)
 
   return { instance, instances, checkedOn, connections }
 }

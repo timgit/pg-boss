@@ -1,4 +1,4 @@
-import { resolveDbHref } from '~/components/db-link'
+import { resolveSchemaHref } from '~/components/schema-link'
 import type { PublishRequest } from './publish-form'
 import { getSubscription } from './queries.server'
 import { SchemaVersionMismatch, withBoss } from './pg-boss.server'
@@ -33,5 +33,5 @@ export async function publishEvent (dbUrl: string, schema: string, { event, data
 
 /** The Jobs page on the queues an event was published to, where its jobs are. */
 export function publishedJobsHref (queues: string[], schema: string | null): string {
-  return resolveDbHref(`/jobs?${new URLSearchParams({ queues: queues.join(',') })}`, schema)
+  return resolveSchemaHref(`/jobs?${new URLSearchParams({ queues: queues.join(',') })}`, schema)
 }

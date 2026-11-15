@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import type { Route } from './+types/migrations.$id'
 import { getBamEntry } from '~/lib/queries.server'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { ErrorCard } from '~/components/error-card'
 import { CopyButton } from '~/components/job-detail'
 import { formatSpan } from '~/lib/instances'
@@ -17,9 +17,9 @@ import type { TitleHandle } from '~/lib/page-title'
 export const handle: TitleHandle<Route.ComponentProps['loaderData'] | undefined> = { title: ({ data }) => (data ? `Migration: ${data.entry.name}` : null) }
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   // Not a uuid is no migration, rather than a database error.
-  const entry = /^[0-9a-f-]{36}$/i.test(params.id) ? await getBamEntry(DB_URL, SCHEMA, params.id) : null
+  const entry = /^[0-9a-f-]{36}$/i.test(params.id) ? await getBamEntry(connection.url, connection.schema, params.id) : null
 
   if (!entry) {
     throw new Response('No such migration.', { status: 404, statusText: 'Not found' })
@@ -163,7 +163,7 @@ export default function MigrationDetail ({ loaderData }: Route.ComponentProps) {
               <p className="text-[15px] leading-relaxed text-[var(--text-primary)]">
                 {does.verb} <span className="font-mono">{entry.name}</span> on <span className="font-mono">{entry.table}</span>
                 {entry.queue
-                  ? <>, for the jobs of <DbLink to={`/queues/${encodeURIComponent(entry.queue)}`} className={queueLink}>{entry.queue}</DbLink></>
+                  ? <>, for the jobs of <SchemaLink to={`/queues/${encodeURIComponent(entry.queue)}`} className={queueLink}>{entry.queue}</SchemaLink></>
                   : ', for every queue'}
                 .{concurrent && ' It runs in the background, without locking the table.'}
               </p>
@@ -175,7 +175,7 @@ export default function MigrationDetail ({ loaderData }: Route.ComponentProps) {
                 <dt className="text-[var(--text-tertiary)]">Queue</dt>
                 <dd className="text-[var(--text-secondary)]">
                   {entry.queue
-                    ? <DbLink to={`/queues/${encodeURIComponent(entry.queue)}`} className={queueLink}>{entry.queue}</DbLink>
+                    ? <SchemaLink to={`/queues/${encodeURIComponent(entry.queue)}`} className={queueLink}>{entry.queue}</SchemaLink>
                     : 'Every queue'}
                 </dd>
               </dl>

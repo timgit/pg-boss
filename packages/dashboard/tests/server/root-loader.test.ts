@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { RouterContextProvider } from 'react-router'
 import { ctx } from './helpers'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { loader as rootLoader } from '~/root'
 
 // A loader's return value is serialized into the HTML for hydration, so
@@ -9,14 +9,13 @@ import { loader as rootLoader } from '~/root'
 // connection strings carry passwords.
 const PASSWORD = 'hunter2-should-never-reach-the-browser'
 
-function contextWith (databases: Array<{ id: string, name: string, url: string, schema: string }>) {
+function contextWith (schemas: Array<{ id: string, name: string, connection: { url: string, schema: string } }>) {
   const provider = new RouterContextProvider()
 
-  provider.set(dbContext, {
-    databases,
-    currentDb: databases[0],
-    DB_URL: databases[0].url,
-    SCHEMA: databases[0].schema,
+  provider.set(schemaContext, {
+    schemas,
+    currentSchema: schemas[0],
+    connection: schemas[0].connection,
   })
 
   return provider
@@ -25,21 +24,19 @@ function contextWith (databases: Array<{ id: string, name: string, url: string, 
 const primary = {
   id: 'primary',
   name: 'Production',
-  url: `postgres://admin:${PASSWORD}@db.internal:5432/app`,
-  schema: 'pgboss',
+  connection: { url: `postgres://admin:${PASSWORD}@db.internal:5432/app`, schema: 'pgboss' },
 }
 
 const secondary = {
   id: 'secondary',
   name: 'Staging',
-  url: `postgres://admin:${PASSWORD}@stage.internal:5432/app`,
-  schema: 'jobs',
+  connection: { url: `postgres://admin:${PASSWORD}@stage.internal:5432/app`, schema: 'jobs' },
 }
 
-async function load (databases = [primary, secondary]) {
+async function load (schemas = [primary, secondary]) {
   return rootLoader({
     request: new Request('http://localhost/'),
-    context: contextWith(databases),
+    context: contextWith(schemas),
     params: {},
   } as Parameters<typeof rootLoader>[0])
 }
@@ -53,35 +50,35 @@ describe('root loader', () => {
   })
 
   it('sends only the fields the sidebar renders', async () => {
-    const { databases, currentDb } = await load()
+    const { schemas, currentSchema } = await load()
 
-    for (const db of [...databases, currentDb]) {
-      expect(Object.keys(db).sort()).toEqual(['id', 'name', 'schema'])
+    for (const schema of [...schemas, currentSchema]) {
+      expect(Object.keys(schema).sort()).toEqual(['connection', 'id', 'name'])
+      expect(Object.keys(schema.connection)).toEqual(['schema'])
     }
   })
 
   it('keeps the schema, which the database selector displays', async () => {
-    const { databases } = await load()
+    const { schemas } = await load()
 
-    expect(databases.map((db) => db.schema)).toEqual(['pgboss', 'jobs'])
+    expect(schemas.map((schema) => schema.connection.schema)).toEqual(['pgboss', 'jobs'])
   })
 
   it('preserves identity and order so the selector still works', async () => {
-    const { databases, currentDb } = await load()
+    const { schemas, currentSchema } = await load()
 
-    expect(databases.map((db) => db.id)).toEqual(['primary', 'secondary'])
-    expect(databases.map((db) => db.name)).toEqual(['Production', 'Staging'])
-    expect(currentDb).toEqual({ id: 'primary', name: 'Production', schema: 'pgboss' })
+    expect(schemas.map((schema) => schema.id)).toEqual(['primary', 'secondary'])
+    expect(schemas.map((schema) => schema.name)).toEqual(['Production', 'Staging'])
+    expect(currentSchema).toEqual({ id: 'primary', name: 'Production', connection: { schema: 'pgboss' } })
   })
 
   it('tolerates a missing current database rather than throwing', async () => {
     const provider = new RouterContextProvider()
 
-    provider.set(dbContext, {
-      databases: [],
-      currentDb: undefined as never,
-      DB_URL: ctx.connectionString,
-      SCHEMA: ctx.schema,
+    provider.set(schemaContext, {
+      schemas: [],
+      currentSchema: undefined as never,
+      connection: { url: ctx.connectionString, schema: ctx.schema },
     })
 
     const data = await rootLoader({
@@ -91,9 +88,9 @@ describe('root loader', () => {
     } as Parameters<typeof rootLoader>[0])
 
     expect(data).toEqual({
-      databases: [],
+      schemas: [],
       internal: [],
-      currentDb: undefined,
+      currentSchema: undefined,
       pgbossMissing: false,
       readOnly: false,
     })
@@ -102,7 +99,7 @@ describe('root loader', () => {
   it('says whether the dashboard is read-only, for the headers\' Send job', async () => {
     const original = process.env.PGBOSS_DASHBOARD_READ_ONLY
     const provider = new RouterContextProvider()
-    provider.set(dbContext, { databases: [], currentDb: undefined as never, DB_URL: ctx.connectionString, SCHEMA: ctx.schema })
+    provider.set(schemaContext, { schemas: [], currentSchema: undefined as never, connection: { url: ctx.connectionString, schema: ctx.schema } })
     const load = () => rootLoader({ request: new Request('http://localhost/'), context: provider, params: {} } as Parameters<typeof rootLoader>[0])
 
     try {
@@ -116,9 +113,9 @@ describe('root loader', () => {
 
   it('sends an overlay\'s own schemas apart from the databases, with their badge and never their connection string', async () => {
     const provider = contextWith([primary])
-    provider.set(dbContext, {
-      ...provider.get(dbContext),
-      internal: [{ id: 'pro_queues', name: 'Pro queues', url: `postgres://admin:${PASSWORD}@db.internal:5432/app`, schema: 'pgboss_pro_queue', badge: 'Pro' }],
+    provider.set(schemaContext, {
+      ...provider.get(schemaContext),
+      internal: [{ id: 'pro_queues', name: 'Pro queues', connection: { url: `postgres://admin:${PASSWORD}@db.internal:5432/app`, schema: 'pgboss_pro_queue' }, badge: 'Pro' }],
     })
 
     const data = await rootLoader({
@@ -127,8 +124,8 @@ describe('root loader', () => {
       params: {},
     } as Parameters<typeof rootLoader>[0])
 
-    expect(data.databases.map((db) => db.id)).toEqual(['primary'])
-    expect(data.internal).toEqual([{ id: 'pro_queues', name: 'Pro queues', schema: 'pgboss_pro_queue', badge: 'Pro' }])
+    expect(data.schemas.map((schema) => schema.id)).toEqual(['primary'])
+    expect(data.internal).toEqual([{ id: 'pro_queues', name: 'Pro queues', connection: { schema: 'pgboss_pro_queue' }, badge: 'Pro' }])
     expect(JSON.stringify(data)).not.toContain(PASSWORD)
   })
 })

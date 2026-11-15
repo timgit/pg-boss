@@ -1,4 +1,4 @@
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { SchedulesPageActions } from '~/components/schedule-actions'
 import type { Route } from './+types/schedules'
 import {
@@ -20,7 +20,7 @@ import {
 } from '~/components/ui/table'
 import { TablePagination } from '~/components/table-pagination'
 import { ErrorCard } from '~/components/error-card'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import {
   parsePaging,
   formatDate,
@@ -34,7 +34,7 @@ export const handle: TitleHandle = { title: 'Schedules' }
 
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const url = new URL(request.url)
   const { page, cursor } = parsePaging(url.searchParams)
   const limit = PAGE_SIZE
@@ -42,8 +42,8 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const dir = url.searchParams.get('dir')
 
   const [schedules, totalCount] = await Promise.all([
-    getSchedules(DB_URL, SCHEMA, { limit, cursor, sort, dir }),
-    getScheduleCount(DB_URL, SCHEMA),
+    getSchedules(connection.url, connection.schema, { limit, cursor, sort, dir }),
+    getScheduleCount(connection.url, connection.schema),
   ])
 
   // Derive each schedule's next fire time from its expression + timezone (null when the expression
@@ -124,12 +124,12 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
                       to={schedulePath}
                     >
                       <TableCell>
-                        <DbLink
+                        <SchemaLink
                           to={schedulePath}
                           className="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                         >
                           {schedule.name}
-                        </DbLink>
+                        </SchemaLink>
                       </TableCell>
                       <TableCell className="font-mono text-xs text-[var(--text-secondary)]">
                         {schedule.key}

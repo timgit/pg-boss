@@ -1,11 +1,11 @@
 import { redirect } from 'react-router'
-import { DbLink, resolveDbHref } from '~/components/db-link'
+import { SchemaLink, resolveSchemaHref } from '~/components/schema-link'
 import { ParentLink } from '~/components/parent-link'
 import type { Route } from './+types/schedules.$name.$key'
 import { ScheduleActions } from '~/components/schedule-actions'
 import { getSchedule } from '~/lib/queries.server'
 import { nextScheduleOccurrence } from '~/lib/schedule.server'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { removeSchedule } from '~/lib/schedule-job.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
@@ -17,10 +17,10 @@ import type { TitleHandle } from '~/lib/page-title'
 export const handle: TitleHandle = { title: ({ params }) => (params.name ? `Schedule: ${params.name}${params.key && params.key !== '__default__' ? ` (${params.key})` : ''}` : null) }
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   // Decode __default__ placeholder back to empty string
   const key = params.key === '__default__' ? '' : params.key
-  const schedule = await getSchedule(DB_URL, SCHEMA, params.name, key)
+  const schedule = await getSchedule(connection.url, connection.schema, params.name, key)
 
   if (!schedule) {
     throw new Response('Schedule not found', { status: 404 })
@@ -33,15 +33,15 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 // Read-only mode refuses the post before it gets here. In a Pro build, Pro's Unschedule posts to a
 // route of its own, which checks the role and records the change.
 export async function action ({ params, request, context }: Route.ActionArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const form = await request.formData()
 
   if (form.get('intent') !== 'unschedule') return { error: 'Unknown action' }
 
-  const removed = await removeSchedule(DB_URL, SCHEMA, params.name, params.key === '__default__' ? '' : params.key)
+  const removed = await removeSchedule(connection.url, connection.schema, params.name, params.key === '__default__' ? '' : params.key)
   if ('error' in removed) return { error: removed.error }
 
-  return redirect(resolveDbHref('/schedules', new URL(request.url).searchParams.get('schema')))
+  return redirect(resolveSchemaHref('/schedules', new URL(request.url).searchParams.get('schema')))
 }
 
 export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
@@ -92,12 +92,12 @@ export default function ScheduleDetail ({ loaderData }: Route.ComponentProps) {
               <div>
                 <dt className="pgb-eyebrow">Queue</dt>
                 <dd className="mt-1 text-sm">
-                  <DbLink
+                  <SchemaLink
                     to={`/queues/${encodeURIComponent(schedule.name)}`}
                     className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                   >
                     {schedule.name}
-                  </DbLink>
+                  </SchemaLink>
                 </dd>
               </div>
               <div>
@@ -110,12 +110,12 @@ export default function ScheduleDetail ({ loaderData }: Route.ComponentProps) {
                 <dt className="pgb-eyebrow">Last job</dt>
                 <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
                   {schedule.lastJobId ? (
-                    <DbLink
+                    <SchemaLink
                       to={`/queues/${encodeURIComponent(schedule.name)}/jobs/${encodeURIComponent(schedule.lastJobId)}`}
                       className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                     >
                       {schedule.lastJobId}
-                    </DbLink>
+                    </SchemaLink>
                   ) : (
                     // Null both before the schedule has ever fired and on a database older than
                     // schema v41, where the column the pass writes does not exist yet.

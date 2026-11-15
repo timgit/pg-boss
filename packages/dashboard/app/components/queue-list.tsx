@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { LayoutGrid, List, Search, X } from 'lucide-react'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { ProSlot } from '~/components/pro-slot'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
@@ -317,7 +317,7 @@ export function QueueCard ({ queue, extension }: { queue: QueueResult, extension
   ]
   const severity = extension?.severity
   return (
-    <DbLink
+    <SchemaLink
       to={queueHref(queue.name)}
       className={cn(
         // The card gradient, as every Card has: a solid fill reads darker beside them in dark mode.
@@ -339,7 +339,7 @@ export function QueueCard ({ queue, extension }: { queue: QueueResult, extension
       </div>
       {extension?.lines}
       {extension?.footer}
-    </DbLink>
+    </SchemaLink>
   )
 }
 
@@ -413,9 +413,9 @@ export function QueueTable ({ queues, extensions }: { queues: QueueResult[], ext
           : queues.map((queue) => (
             <TableRow key={queue.name} to={queueHref(queue.name)}>
               <TableCell>
-                <DbLink to={queueHref(queue.name)} className="font-medium text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:text-[var(--primary-700)] dark:hover:text-[var(--primary-300)]">
+                <SchemaLink to={queueHref(queue.name)} className="font-medium text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:text-[var(--primary-700)] dark:hover:text-[var(--primary-300)]">
                   {queue.name}
-                </DbLink>
+                </SchemaLink>
               </TableCell>
               <ExtraCells columns={afterName} queue={queue} />
               <TableCell className={numCell}>{n(queue.readyCount)}</TableCell>

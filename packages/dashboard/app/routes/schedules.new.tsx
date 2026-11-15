@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { redirect, useActionData, useNavigation, type RouterContextProvider } from 'react-router'
-import { DbLink, resolveDbHref } from '~/components/db-link'
+import { SchemaLink, resolveSchemaHref } from '~/components/schema-link'
 import { ErrorCard } from '~/components/error-card'
 import { Field, inputClass } from '~/components/form-field'
 import { LeaveGuard } from '~/components/leave-guard'
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { QueueSelect } from '~/components/ui/queue-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import type { TitleHandle } from '~/lib/page-title'
 import { READ_ONLY_MESSAGE, isReadOnly } from '~/lib/read-only.server'
 import { parseScheduleForm } from '~/lib/schedule-form'
@@ -27,17 +27,17 @@ export function loader () {
 
 // Read-only mode refuses the post before it gets here, and in a Pro build Pro answers this URL itself.
 export async function action ({ request, context }: { request: Request, context: Readonly<RouterContextProvider> }) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const parsed = parseScheduleForm(await request.formData())
 
   if ('error' in parsed) return { error: parsed.error }
 
-  const created = await createSchedule(DB_URL, SCHEMA, parsed.value)
+  const created = await createSchedule(connection.url, connection.schema, parsed.value)
   if ('error' in created) return { error: created.error }
 
   const key = typeof parsed.value.options?.key === 'string' ? parsed.value.options.key : '__default__'
   const schema = new URL(request.url).searchParams.get('schema')
-  return redirect(resolveDbHref(`/schedules/${encodeURIComponent(parsed.value.queue)}/${encodeURIComponent(key)}`, schema))
+  return redirect(resolveSchemaHref(`/schedules/${encodeURIComponent(parsed.value.queue)}/${encodeURIComponent(key)}`, schema))
 }
 
 export function ErrorBoundary ({ error }: { error: unknown }) {
@@ -157,9 +157,9 @@ export default function NewSchedule ({ loaderData }: { loaderData: ReturnType<ty
               <Button type="submit" disabled={saving || !queue}>
                 {saving ? 'Adding…' : 'Add schedule'}
               </Button>
-              <DbLink to="/schedules" className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
+              <SchemaLink to="/schedules" className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
                 Cancel
-              </DbLink>
+              </SchemaLink>
             </div>
           </form>
         </CardContent>

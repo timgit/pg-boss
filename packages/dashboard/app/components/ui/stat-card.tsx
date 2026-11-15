@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react'
 import { cn } from '~/lib/utils'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 
 type StatAccent = 'neutral' | 'primary' | 'success' | 'warning' | 'error'
 
@@ -57,8 +57,8 @@ export function StatCard ({ label, value, hint, accent = 'neutral', sparkline, t
   if (!to) return card
 
   return (
-    <DbLink to={to} className="block" aria-label={`View ${label} metrics`}>
+    <SchemaLink to={to} className="block" aria-label={`View ${label} metrics`}>
       {card}
-    </DbLink>
+    </SchemaLink>
   )
 }

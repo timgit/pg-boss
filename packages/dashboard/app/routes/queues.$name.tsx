@@ -1,5 +1,5 @@
 import type { RouterContextProvider } from 'react-router'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { loadQueuePage, type QueuePageData } from '~/lib/queue-page.server'
 import { QueuePage } from '~/components/queue-page'
 import { ErrorCard } from '~/components/error-card'
@@ -12,8 +12,8 @@ export const handle: TitleHandle = { title: ({ params }) => (params.name ? `Queu
 // own, React Router then generates no types for it, and the build still typechecks this file.
 
 export async function loader ({ params, request, context }: { params: { name?: string }, request: Request, context: Readonly<RouterContextProvider> }) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
-  return loadQueuePage(DB_URL, SCHEMA, params.name ?? '', request)
+  const { connection } = context.get(schemaContext)
+  return loadQueuePage(connection.url, connection.schema, params.name ?? '', request)
 }
 
 export function ErrorBoundary ({ error }: { error: unknown }) {

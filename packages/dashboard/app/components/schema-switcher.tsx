@@ -1,11 +1,11 @@
 import { useId } from 'react'
 import { useLocation, useNavigate, useParams, useRouteLoaderData, useSearchParams } from 'react-router'
-import { switchPathname } from '~/lib/database-switch'
+import { switchPathname } from '~/lib/schema-switch'
 import { cn } from '~/lib/utils'
 import { Check, ChevronsUpDown, Layers } from 'lucide-react'
-import type { PublicDatabase } from '~/lib/types'
+import type { PublicSchema } from '~/lib/types'
 import { ProSlot } from '~/components/pro-slot'
-import { DATABASE_COLORS, databaseColor } from '~/lib/database-colors'
+import { SCHEMA_COLORS, schemaColor } from '~/lib/schema-colors'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,13 +17,13 @@ import {
 } from './ui/dropdown-menu'
 
 interface RootLoaderData {
-  databases: PublicDatabase[]
-  internal?: PublicDatabase[]
-  currentDb: PublicDatabase | undefined
+  schemas: PublicSchema[]
+  internal?: PublicSchema[]
+  currentSchema: PublicSchema | undefined
 }
 
-function Dot ({ db, index }: { db: PublicDatabase, index: number }) {
-  return <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: DATABASE_COLORS[databaseColor(db.color, index)] }} />
+function Dot ({ schema, index }: { schema: PublicSchema, index: number }) {
+  return <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: SCHEMA_COLORS[schemaColor(schema.color, index)] }} />
 }
 
 /** An overlay's own schema: a tile in place of a configured database's dot, so the two never read alike. */
@@ -39,11 +39,11 @@ function InternalMark ({ className }: { className?: string }) {
   )
 }
 
-function Name ({ db }: { db: PublicDatabase }) {
+function Name ({ schema }: { schema: PublicSchema }) {
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
-      <span className="truncate font-medium">{db.name}</span>
-      {db.badge && <span className="pgboss-tier shrink-0">{db.badge}</span>}
+      <span className="truncate font-medium">{schema.name}</span>
+      {schema.badge && <span className="pgboss-tier shrink-0">{schema.badge}</span>}
     </span>
   )
 }
@@ -53,7 +53,7 @@ function Name ({ db }: { db: PublicDatabase }) {
  * is in view on every page and at every width. A menu when there is more than one, a plain label when
  * there is not.
  */
-export function DatabaseSwitcher () {
+export function SchemaSwitcher () {
   const root = useRouteLoaderData('root') as RootLoaderData | undefined
   const [params] = useSearchParams()
   const navigate = useNavigate()
@@ -61,19 +61,19 @@ export function DatabaseSwitcher () {
   const routeParams = useParams()
   const ids = useId()
 
-  const databases = root?.databases ?? []
+  const schemas = root?.schemas ?? []
   const internal = root?.internal ?? []
-  const current = root?.currentDb
+  const current = root?.currentSchema
 
   if (!current) return null
 
-  const isInternal = internal.some((db) => db.id === current.id)
-  const index = Math.max(0, databases.findIndex((db) => db.id === current.id))
+  const isInternal = internal.some((schema) => schema.id === current.id)
+  const index = Math.max(0, schemas.findIndex((schema) => schema.id === current.id))
   const label = (
     <>
       {/* On a phone a badge marks an internal database alone, leaving its name the room. */}
-      {isInternal ? <InternalMark className={current.badge ? 'max-sm:hidden' : undefined} /> : <Dot db={current} index={index} />}
-      <span className="min-w-0 max-w-[14rem] text-[var(--text-primary)] max-sm:max-w-[9rem]"><Name db={current} /></span>
+      {isInternal ? <InternalMark className={current.badge ? 'max-sm:hidden' : undefined} /> : <Dot schema={current} index={index} />}
+      <span className="min-w-0 max-w-[14rem] text-[var(--text-primary)] max-sm:max-w-[9rem]"><Name schema={current} /></span>
     </>
   )
 
@@ -87,7 +87,7 @@ export function DatabaseSwitcher () {
     navigate({ pathname, search: `?${next.toString()}` })
   }
 
-  if (databases.length + internal.length <= 1) {
+  if (schemas.length + internal.length <= 1) {
     return <span className="inline-flex h-8 min-w-0 items-center gap-2 text-sm" title="Schema">{label}</span>
   }
 
@@ -103,22 +103,22 @@ export function DatabaseSwitcher () {
       <DropdownMenuContent align="start" className="min-w-[18rem]">
         {/* Each section a group named by its heading, and each database a radio item: one is
             the database every page reads, and a screen reader says which. */}
-        <DropdownMenuGroup aria-labelledby={`${ids}-databases`}>
-          <DropdownMenuLabel id={`${ids}-databases`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Schemas</DropdownMenuLabel>
-          {databases.map((db, k) => (
+        <DropdownMenuGroup aria-labelledby={`${ids}-schemas`}>
+          <DropdownMenuLabel id={`${ids}-schemas`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Schemas</DropdownMenuLabel>
+          {schemas.map((schema, k) => (
             <DropdownMenuItem
-              key={db.id}
+              key={schema.id}
               role="menuitemradio"
-              aria-checked={db.id === current.id}
-              onClick={() => select(db.id)}
+              aria-checked={schema.id === current.id}
+              onClick={() => select(schema.id)}
               className="cursor-pointer gap-2.5 py-2"
             >
-              <Dot db={db} index={k} />
+              <Dot schema={schema} index={k} />
               <span className="flex min-w-0 flex-col">
-                <span className="truncate font-medium">{db.name}</span>
-                <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{db.schema}</span>
+                <span className="truncate font-medium">{schema.name}</span>
+                <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{schema.connection.schema}</span>
               </span>
-              {db.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
+              {schema.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
             </DropdownMenuItem>
           ))}
         </DropdownMenuGroup>
@@ -127,20 +127,20 @@ export function DatabaseSwitcher () {
             <DropdownMenuSeparator />
             <DropdownMenuGroup aria-labelledby={`${ids}-internal`}>
               <DropdownMenuLabel id={`${ids}-internal`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Internal</DropdownMenuLabel>
-              {internal.map((db) => (
+              {internal.map((schema) => (
                 <DropdownMenuItem
-                  key={db.id}
+                  key={schema.id}
                   role="menuitemradio"
-                  aria-checked={db.id === current.id}
-                  onClick={() => select(db.id)}
+                  aria-checked={schema.id === current.id}
+                  onClick={() => select(schema.id)}
                   className="cursor-pointer gap-2.5 py-2"
                 >
                   <InternalMark />
                   <span className="flex min-w-0 flex-col">
-                    <Name db={db} />
-                    <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{db.schema}</span>
+                    <Name schema={schema} />
+                    <span className="truncate font-mono text-xs text-[var(--text-tertiary)]">{schema.connection.schema}</span>
                   </span>
-                  {db.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
+                  {schema.id === current.id && <Check aria-hidden="true" className="ml-auto h-4 w-4 shrink-0 text-primary-500" />}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuGroup>

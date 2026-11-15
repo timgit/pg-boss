@@ -1,22 +1,22 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useNavigate, useRouteLoaderData, useSearchParams } from 'react-router'
-import { DatabaseSwitcher } from '~/components/database-switcher'
-import type { PublicDatabase } from '~/lib/types'
+import { SchemaSwitcher } from '~/components/schema-switcher'
+import type { PublicSchema } from '~/lib/types'
 
-const main = { id: 'pgboss', name: 'pgboss', schema: 'pgboss_dev' } as PublicDatabase
-const reporting = { id: 'reporting', name: 'reporting', schema: 'pgboss_reporting_dev' } as PublicDatabase
-const own = { id: 'pro_queues', name: 'Pro queues', schema: 'pgboss_pro_queue', badge: 'Pro' } as PublicDatabase
+const main = { id: 'pgboss', name: 'pgboss', connection: { schema: 'pgboss_dev' } } as PublicSchema
+const reporting = { id: 'reporting', name: 'reporting', connection: { schema: 'pgboss_reporting_dev' } } as PublicSchema
+const own = { id: 'pro_queues', name: 'Pro queues', connection: { schema: 'pgboss_pro_queue' }, badge: 'Pro' } as PublicSchema
 
 // The setup file mocks the router hooks that need a data router; each test says what they return.
-function renderAt (path: string, search: string, databases: PublicDatabase[], currentDb: PublicDatabase, pattern = path, internal: PublicDatabase[] = []) {
+function renderAt (path: string, search: string, schemas: PublicSchema[], currentSchema: PublicSchema, pattern = path, internal: PublicSchema[] = []) {
   const navigate = vi.fn()
-  vi.mocked(useRouteLoaderData).mockReturnValue({ databases, internal, currentDb })
+  vi.mocked(useRouteLoaderData).mockReturnValue({ schemas, internal, currentSchema })
   vi.mocked(useSearchParams).mockReturnValue([new URLSearchParams(search), vi.fn()])
   vi.mocked(useNavigate).mockReturnValue(navigate)
   render(
     <MemoryRouter initialEntries={[`${path}${search}`]}>
-      <Routes><Route path={pattern} element={<DatabaseSwitcher />} /></Routes>
+      <Routes><Route path={pattern} element={<SchemaSwitcher />} /></Routes>
     </MemoryRouter>
   )
   return navigate

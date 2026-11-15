@@ -1,7 +1,7 @@
 import { useFetcher } from 'react-router'
 import { Button } from '~/components/ui/button'
 import { ConfirmDialog } from '~/components/ui/confirm-dialog'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { ProSlot, hasProSlot } from '~/components/pro-slot'
 import { useReadOnly } from '~/components/send-job-button'
 
@@ -10,7 +10,7 @@ export function NewSubscriptionButton ({ event }: { event?: string }) {
   if (useReadOnly()) return null
 
   return (
-    <Button variant={event ? 'outline' : 'primary'} size="md" render={<DbLink to={event ? `/subscribe?${new URLSearchParams({ event })}` : '/subscribe'} />}>
+    <Button variant={event ? 'outline' : 'primary'} size="md" render={<SchemaLink to={event ? `/subscribe?${new URLSearchParams({ event })}` : '/subscribe'} />}>
       {event ? 'Subscribe queue' : 'New subscription'}
     </Button>
   )
@@ -26,7 +26,7 @@ export function PublishButton ({ event }: { event: string }) {
   if (useReadOnly()) return null
 
   return (
-    <Button variant="primary" size="md" render={<DbLink to={`/publish?${new URLSearchParams({ event })}`} />}>
+    <Button variant="primary" size="md" render={<SchemaLink to={`/publish?${new URLSearchParams({ event })}`} />}>
       Publish
     </Button>
   )

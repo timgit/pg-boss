@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Form } from 'react-router'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { Field, inputClass } from '~/components/form-field'
 import { JobFields } from '~/components/job-fields'
 import { LeaveGuard } from '~/components/leave-guard'
@@ -56,9 +56,9 @@ export function PublishForm ({ error, publishing, event = '', cancelTo }: Publis
               <Button type="submit" disabled={publishing}>
                 {publishing ? 'Publishing…' : 'Publish'}
               </Button>
-              <DbLink to={cancelTo} className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
+              <SchemaLink to={cancelTo} className="text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">
                 Cancel
-              </DbLink>
+              </SchemaLink>
             </div>
           </Form>
         </CardContent>

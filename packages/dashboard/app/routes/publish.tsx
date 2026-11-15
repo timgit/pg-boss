@@ -3,7 +3,7 @@ import { ErrorCard } from '~/components/error-card'
 import { PublishForm } from '~/components/publish-form'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import type { TitleHandle } from '~/lib/page-title'
 import { parsePublishForm } from '~/lib/publish-form'
 import { publishEvent, publishedJobsHref } from '~/lib/publish.server'
@@ -20,12 +20,12 @@ export function loader () {
 
 // Read-only mode refuses the post before it gets here, and in a Pro build Pro answers this URL itself.
 export async function action ({ request, context }: { request: Request, context: Readonly<RouterContextProvider> }) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const parsed = parsePublishForm(await request.formData())
 
   if ('error' in parsed) return { error: parsed.error }
 
-  const published = await publishEvent(DB_URL, SCHEMA, parsed.value)
+  const published = await publishEvent(connection.url, connection.schema, parsed.value)
   if ('error' in published) return { error: published.error }
 
   return redirect(publishedJobsHref(published.queues, new URL(request.url).searchParams.get('schema')))

@@ -1,10 +1,10 @@
 import type { Route } from './+types/warnings.$id'
 import { getWarning } from '~/lib/queries.server'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { ErrorCard } from '~/components/error-card'
 import { formatDateWithSeconds, formatTimeAgo, warningTypeLabel, warningTypeVariant } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
@@ -13,10 +13,10 @@ import type { TitleHandle } from '~/lib/page-title'
 export const handle: TitleHandle<Route.ComponentProps['loaderData'] | undefined> = { title: ({ data }) => (data ? `Warning: ${warningTypeLabel(data.warning.type)}` : null) }
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   // Not a uuid is no warning, rather than a database error.
   const id = /^[0-9a-f-]{36}$/i.test(params.id) ? params.id : null
-  const warning = id === null ? null : await getWarning(DB_URL, SCHEMA, id)
+  const warning = id === null ? null : await getWarning(connection.url, connection.schema, id)
 
   if (!warning) {
     throw new Response('No such warning.', { status: 404, statusText: 'Not found' })
@@ -60,16 +60,16 @@ export default function WarningDetail ({ loaderData }: Route.ComponentProps) {
             <dt className="text-[var(--text-tertiary)]">Type</dt>
             <dd>
               <Badge variant={warningTypeVariant(warning.type)} size="sm" dot>{warningTypeLabel(warning.type)}</Badge>
-              <DbLink to={`/warnings?type=${encodeURIComponent(warning.type)}`} className={`ml-3 ${linkClass}`}>
+              <SchemaLink to={`/warnings?type=${encodeURIComponent(warning.type)}`} className={`ml-3 ${linkClass}`}>
                 Every warning of this type
-              </DbLink>
+              </SchemaLink>
             </dd>
             <dt className="text-[var(--text-tertiary)]">Recorded</dt>
             <dd className="pgb-num text-[var(--text-secondary)]">{formatDateWithSeconds(createdOn)}</dd>
             {queue && (
               <>
                 <dt className="text-[var(--text-tertiary)]">Queue</dt>
-                <dd><DbLink to={`/queues/${encodeURIComponent(queue)}`} className={linkClass}>{queue}</DbLink></dd>
+                <dd><SchemaLink to={`/queues/${encodeURIComponent(queue)}`} className={linkClass}>{queue}</SchemaLink></dd>
               </>
             )}
           </dl>

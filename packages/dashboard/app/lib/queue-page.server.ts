@@ -15,7 +15,7 @@ import { PAGE_SIZE } from './pagination'
  * Apart from the route so an overlay that replaces the page can load it too. Throws a 404 response
  * when there is no such queue.
  */
-export async function loadQueuePage (DB_URL: string, SCHEMA: string, name: string, request: Request) {
+export async function loadQueuePage (dbUrl: string, schema: string, name: string, request: Request) {
   const url = new URL(request.url)
   const stateParam = url.searchParams.get('state')
 
@@ -27,7 +27,7 @@ export async function loadQueuePage (DB_URL: string, SCHEMA: string, name: strin
   // A preview, not a list: the Jobs page, filtered to this queue, pages and picks columns.
   const jobColumns = defaultJobColumnsFor(stateFilter, DEFAULT_QUEUE_JOB_COLUMNS)
 
-  const queue = await getQueue(DB_URL, SCHEMA, name)
+  const queue = await getQueue(dbUrl, schema, name)
 
   if (!queue) {
     throw new Response('Queue not found', { status: 404 })
@@ -36,10 +36,10 @@ export async function loadQueuePage (DB_URL: string, SCHEMA: string, name: strin
   // The Ready sparkline comes from the always-on queue.ready_history column (loaded with `queue`).
   // collection drives the banner that points at the interactive metrics chart (needs persistQueueStats).
   const [jobs, collection, isDeadLetter, subscribedEvents] = await Promise.all([
-    getJobs(DB_URL, SCHEMA, name, { state: stateFilter, limit: PAGE_SIZE, jobColumns }),
-    getQueueStatsCollectionStatus(DB_URL, SCHEMA),
-    isDeadLetterQueue(DB_URL, SCHEMA, name),
-    getSubscriptionEventCount(DB_URL, SCHEMA, name),
+    getJobs(dbUrl, schema, name, { state: stateFilter, limit: PAGE_SIZE, jobColumns }),
+    getQueueStatsCollectionStatus(dbUrl, schema),
+    isDeadLetterQueue(dbUrl, schema, name),
+    getSubscriptionEventCount(dbUrl, schema, name),
   ])
 
   // Use cached count from queue table instead of COUNT(*) query

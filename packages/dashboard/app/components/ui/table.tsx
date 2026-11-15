@@ -2,7 +2,7 @@ import { type ReactNode, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { cn, resetPaging } from '~/lib/utils'
-import { useDbHref } from '~/components/db-link'
+import { useSchemaHref } from '~/components/schema-link'
 
 interface TableProps {
   children: ReactNode
@@ -89,7 +89,7 @@ export const CLICKABLE_ROW = 'cursor-pointer hover:bg-[var(--surface-hover)] tra
 export function useRowClick ({ to, onClick }: { to?: string, onClick?: () => void }) {
   const navigate = useNavigate()
   // Hooks must run unconditionally; the resolved href is only used when `to` is set.
-  const href = useDbHref(to ?? '')
+  const href = useSchemaHref(to ?? '')
   if (!to && !onClick) return undefined
 
   return (event: MouseEvent<HTMLElement>) => {

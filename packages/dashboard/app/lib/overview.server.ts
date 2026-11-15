@@ -14,15 +14,15 @@ import { instanceSummary, type InstanceSummary } from './instances'
  * latest warnings. Apart from the route so a Pro overview that replaces the page can load it too.
  * `warnings: false` and `instances: false` skip those reads, for an overview that leaves the card out.
  */
-export async function loadOverview (DB_URL: string, SCHEMA: string, options: { warnings?: boolean, instances?: boolean } = {}) {
+export async function loadOverview (dbUrl: string, schema: string, options: { warnings?: boolean, instances?: boolean } = {}) {
   const [warnings, registry, stats, topQueues, totalQueues, problemQueuesCount, bamSummary] = await Promise.all([
-    options.warnings === false ? null : getWarnings(DB_URL, SCHEMA, { limit: 5 }),
-    options.instances === false ? null : loadInstances(DB_URL, SCHEMA).catch(() => null),
-    getQueueStats(DB_URL, SCHEMA),
-    getTopQueues(DB_URL, SCHEMA, 5),
-    getQueueCount(DB_URL, SCHEMA),
-    getProblemQueuesCount(DB_URL, SCHEMA),
-    getBamStatusSummary(DB_URL, SCHEMA),
+    options.warnings === false ? null : getWarnings(dbUrl, schema, { limit: 5 }),
+    options.instances === false ? null : loadInstances(dbUrl, schema).catch(() => null),
+    getQueueStats(dbUrl, schema),
+    getTopQueues(dbUrl, schema, 5),
+    getQueueCount(dbUrl, schema),
+    getProblemQueuesCount(dbUrl, schema),
+    getBamStatusSummary(dbUrl, schema),
   ])
 
   // Reduce the BAM summary to the counts the overview card needs.

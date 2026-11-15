@@ -122,7 +122,7 @@ describe("ErrorCard", () => {
     function renderMissing(card: ReactNode) {
       render(
         <MemoryRouter>
-          <MissingPgBossContext.Provider value={{ name: "Staging", schema: "jobs" }}>{card}</MissingPgBossContext.Provider>
+          <MissingPgBossContext.Provider value={{ name: "Staging", connection: { schema: "jobs" } }}>{card}</MissingPgBossContext.Provider>
         </MemoryRouter>
       );
     }

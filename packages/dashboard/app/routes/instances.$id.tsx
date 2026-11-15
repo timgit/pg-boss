@@ -1,5 +1,5 @@
 import type { RouterContextProvider } from 'react-router'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { loadInstancePage, type InstancePageData } from '~/lib/instances.server'
 import { InstancePage } from '~/components/instance-page'
 import { useRegistryRefresh } from '~/components/instances-table'
@@ -14,8 +14,8 @@ export const handle: TitleHandle<InstancePageData | undefined> = { title: ({ dat
 // own, React Router then generates no types for it, and the build still typechecks this file.
 
 export async function loader ({ params, context }: { params: { id?: string }, context: Readonly<RouterContextProvider> }) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
-  return loadInstancePage(DB_URL, SCHEMA, params.id ?? '')
+  const { connection } = context.get(schemaContext)
+  return loadInstancePage(connection.url, connection.schema, params.id ?? '')
 }
 
 export function ErrorBoundary ({ error }: { error: unknown }) {

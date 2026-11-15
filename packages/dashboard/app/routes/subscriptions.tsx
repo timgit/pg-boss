@@ -1,4 +1,4 @@
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { SubscriptionsPageActions } from '~/components/subscription-actions'
 import type { Route } from './+types/subscriptions'
 import {
@@ -18,7 +18,7 @@ import {
 } from '~/components/ui/table'
 import { TablePagination } from '~/components/table-pagination'
 import { ErrorCard } from '~/components/error-card'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { formatDate, parsePaging } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
 import { PAGE_SIZE } from '~/lib/pagination'
@@ -28,7 +28,7 @@ export const handle: TitleHandle = { title: 'Subscriptions' }
 
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const url = new URL(request.url)
   const { page, cursor } = parsePaging(url.searchParams)
   const sort = url.searchParams.get('sort')
@@ -36,8 +36,8 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const queue = url.searchParams.get('queue') || null
 
   const [subscriptions, totalCount] = await Promise.all([
-    getSubscriptions(DB_URL, SCHEMA, { queue, limit: PAGE_SIZE, cursor, sort, dir }),
-    getSubscriptionEventCount(DB_URL, SCHEMA, queue),
+    getSubscriptions(connection.url, connection.schema, { queue, limit: PAGE_SIZE, cursor, sort, dir }),
+    getSubscriptionEventCount(connection.url, connection.schema, queue),
   ])
 
   return {
@@ -73,14 +73,14 @@ export default function Subscriptions ({ loaderData }: Route.ComponentProps) {
         <CardHeader>
           <CardTitle>
             {queue
-              ? <>Events <DbLink to={`/queues/${encodeURIComponent(queue)}`} className={queueLinkClass}>{queue}</DbLink> is subscribed to</>
+              ? <>Events <SchemaLink to={`/queues/${encodeURIComponent(queue)}`} className={queueLinkClass}>{queue}</SchemaLink> is subscribed to</>
               : 'All events'}
           </CardTitle>
           <span className="flex items-center gap-3 text-xs text-[var(--text-tertiary)]">
             {queue && (
-              <DbLink to="/subscriptions" className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+              <SchemaLink to="/subscriptions" className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
                 Show all events
-              </DbLink>
+              </SchemaLink>
             )}
             <span className="pgb-num">{totalCount.toLocaleString()} total</span>
           </span>
@@ -106,9 +106,9 @@ export default function Subscriptions ({ loaderData }: Route.ComponentProps) {
                 subscriptions.map((subscription) => (
                   <TableRow key={subscription.event} to={`/subscriptions/${encodeURIComponent(subscription.event)}`}>
                     <TableCell className="font-medium font-mono text-xs">
-                      <DbLink to={`/subscriptions/${encodeURIComponent(subscription.event)}`} className={queueLinkClass}>
+                      <SchemaLink to={`/subscriptions/${encodeURIComponent(subscription.event)}`} className={queueLinkClass}>
                         {subscription.event}
-                      </DbLink>
+                      </SchemaLink>
                     </TableCell>
                     {/* Names only: a queue is a link on the event's own page, where the row has one job. */}
                     <TableCell className="whitespace-normal">

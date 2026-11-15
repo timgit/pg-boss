@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { ArrowRight, Check, ChevronDown, CircleAlert, Copy, LoaderCircle, X } from 'lucide-react'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { Badge } from '~/components/ui/badge'
 import { Card } from '~/components/ui/card'
 import type { LinkedJob } from '~/lib/queries.server'
@@ -187,7 +187,7 @@ export function FailurePanel ({ output, attempt, maxAttempts, deadLetter }: {
       <div className="text-sm text-[var(--text-secondary)]">
         Attempt {attempt} of {maxAttempts}.{' '}
         {deadLetter
-          ? <>A copy was sent to the dead letter queue <DbLink to={`/queues/${encodeURIComponent(deadLetter)}`} className="font-mono text-primary-600 dark:text-primary-400">{deadLetter}</DbLink>.</>
+          ? <>A copy was sent to the dead letter queue <SchemaLink to={`/queues/${encodeURIComponent(deadLetter)}`} className="font-mono text-primary-600 dark:text-primary-400">{deadLetter}</SchemaLink>.</>
           : exhausted
             ? 'No retries left, so it stays failed until someone retries it.'
             : 'It stays failed until someone retries it.'}
@@ -211,17 +211,17 @@ export function DeadLetterPanel ({ sourceName, sourceId, sourceRetryCount, sourc
       eyebrow="Dead letter reason"
       headline={headline}
       aside={sourceExists && (
-        <DbLink
+        <SchemaLink
           to={`/queues/${encodeURIComponent(sourceName)}/jobs/${sourceId}`}
           className="inline-flex shrink-0 items-start gap-1.5 whitespace-nowrap text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
         >
           Open source job <ArrowRight className="mt-0.5 h-3.5 w-3.5" aria-hidden="true" />
-        </DbLink>
+        </SchemaLink>
       )}
     >
       <div className="text-sm text-[var(--text-secondary)]">
         Failed in{' '}
-        <DbLink to={`/queues/${encodeURIComponent(sourceName)}`} className="font-mono text-primary-600 dark:text-primary-400">{sourceName}</DbLink>
+        <SchemaLink to={`/queues/${encodeURIComponent(sourceName)}`} className="font-mono text-primary-600 dark:text-primary-400">{sourceName}</SchemaLink>
         {tries === 1 ? ' on its first attempt' : ` after ${tries} attempts`}, then moved to this dead letter queue.
       </div>
       <OutputFacts output={sourceOutput} />
@@ -616,12 +616,12 @@ function LinkedJobPanel ({ id, role, jobId, queue, linked, stored, onClose }: {
         </div>
         <div className="flex shrink-0 items-center gap-3">
           {linked && (
-            <DbLink
+            <SchemaLink
               to={`/queues/${encodeURIComponent(queue)}/jobs/${jobId}`}
               className="whitespace-nowrap text-[13px] font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
             >
               Open job →
-            </DbLink>
+            </SchemaLink>
           )}
           <button
             type="button"

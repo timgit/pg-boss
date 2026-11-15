@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { redirect, useRevalidator } from 'react-router'
 import { DeadLetterBadge } from '~/components/dead-letter-badge'
 import { PolicyBadge } from '~/components/policy-badge'
-import { DbLink, resolveDbHref } from '~/components/db-link'
+import { SchemaLink, resolveSchemaHref } from '~/components/schema-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
 import { ProSlot, hasProSlot } from '~/components/pro-slot'
 import { JobActions } from '~/components/job-actions'
@@ -14,7 +14,7 @@ import {
   getJobPageContext,
   getLinkedJob,
 } from '~/lib/queries.server'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { ErrorCard } from '~/components/error-card'
 import {
   ConfigCard,
@@ -41,8 +41,8 @@ export const handle: TitleHandle = { title: ({ params }) => (params.jobId ? `Job
 const REFRESH_MS = 10_000
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
-  const job = await getJobById(DB_URL, SCHEMA, params.name, params.jobId)
+  const { connection } = context.get(schemaContext)
+  const job = await getJobById(connection.url, connection.schema, params.name, params.jobId)
 
   if (!job) {
     throw new Response('Job not found', { status: 404 })
@@ -55,9 +55,9 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
   const hasRoot = !!job.sourceRootId && job.sourceRootId !== job.sourceId
 
   const [pageContext, source, root] = await Promise.all([
-    getJobPageContext(DB_URL, SCHEMA, params.name),
-    job.sourceId && job.sourceName ? getLinkedJob(DB_URL, SCHEMA, job.sourceName, job.sourceId) : null,
-    hasRoot ? getLinkedJob(DB_URL, SCHEMA, rootQueue, job.sourceRootId!) : null,
+    getJobPageContext(connection.url, connection.schema, params.name),
+    job.sourceId && job.sourceName ? getLinkedJob(connection.url, connection.schema, job.sourceName, job.sourceId) : null,
+    hasRoot ? getLinkedJob(connection.url, connection.schema, rootQueue, job.sourceRootId!) : null,
   ])
 
   return {
@@ -76,7 +76,7 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 // here, and under Pro the Console's own audited routes make these changes instead. A deleted job's
 // page has nothing left to show, so a delete goes on to the job's queue, on the same schema.
 export async function action ({ params, request, context }: Route.ActionArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const intent = (await request.formData()).get('intent')
 
   if (!isJobIntent(intent)) {
@@ -85,14 +85,14 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
 
   let result
   try {
-    result = await runJobAction(DB_URL, SCHEMA, params.name, params.jobId, intent)
+    result = await runJobAction(connection.url, connection.schema, params.name, params.jobId, intent)
   } catch (error) {
     console.error('pg-boss dashboard: a job action failed.', error)
     return { success: false, message: 'The database refused the change' }
   }
 
   if (intent === 'delete' && result.success) {
-    return redirect(resolveDbHref(`/queues/${encodeURIComponent(params.name)}`, new URL(request.url).searchParams.get('schema')))
+    return redirect(resolveSchemaHref(`/queues/${encodeURIComponent(params.name)}`, new URL(request.url).searchParams.get('schema')))
   }
 
   return result
@@ -169,9 +169,9 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
       label: 'Dead letter queue',
       mono: true,
       value: (
-        <DbLink to={`/queues/${encodeURIComponent(job.deadLetter)}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+        <SchemaLink to={`/queues/${encodeURIComponent(job.deadLetter)}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
           {job.deadLetter}
-        </DbLink>
+        </SchemaLink>
       ),
     })
   } else {
@@ -203,9 +203,9 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
             {/* The queue is the way up, so no parent link above the title. */}
             <h1 className="min-w-0 break-all text-2xl font-semibold tracking-[-0.02em] text-[var(--text-primary)]">
               <span className="font-normal text-[var(--text-secondary)]">Job in </span>
-              <DbLink to={`/queues/${encodeURIComponent(queueName)}`} className="hover:underline hover:decoration-[var(--text-tertiary)] hover:underline-offset-4">
+              <SchemaLink to={`/queues/${encodeURIComponent(queueName)}`} className="hover:underline hover:decoration-[var(--text-tertiary)] hover:underline-offset-4">
                 {queueName}
-              </DbLink>
+              </SchemaLink>
             </h1>
             {isDeadLetterQueue && <DeadLetterBadge />}
           </div>

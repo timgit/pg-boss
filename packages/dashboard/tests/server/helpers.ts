@@ -3,7 +3,7 @@ import pg from 'pg'
 import crypto from 'node:crypto'
 import { PgBoss } from 'pg-boss'
 import { RouterContextProvider } from 'react-router'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 
 const { Pool } = pg
 
@@ -125,11 +125,10 @@ export const ctx: TestContext = {
 // DB_URL/SCHEMA, so databases/currentDb are stubbed.
 export function makeContext (testCtx: TestContext): RouterContextProvider {
   const provider = new RouterContextProvider()
-  provider.set(dbContext, {
-    databases: [],
-    currentDb: undefined as any,
-    DB_URL: testCtx.connectionString,
-    SCHEMA: testCtx.schema,
+  provider.set(schemaContext, {
+    schemas: [],
+    currentSchema: undefined as any,
+    connection: { url: testCtx.connectionString, schema: testCtx.schema },
   })
   return provider
 }

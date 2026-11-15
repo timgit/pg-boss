@@ -4,8 +4,8 @@ import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'r
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
 import { configureReadOnly, openWritesWarning } from './lib/read-only.server'
-import { getDatabaseConfigs, findDatabaseById, parseSiteUrl, toSiteOrigin, type DatabaseConfig } from './lib/config.server'
-import { dbContext } from './lib/db-context'
+import { getSchemaConfigs, findSchemaById, parseSiteUrl, toSiteOrigin, type SchemaConfig } from './lib/config.server'
+import { schemaContext } from './lib/schema-context'
 import type { ProServerOverlay, ProSite } from './lib/pro-contract'
 import { renderManifestSource, withBasePath } from './lib/runtime-base-path'
 import { stripBasePrefix } from './lib/base-path'
@@ -19,24 +19,22 @@ import { stripBasePrefix } from './lib/base-path'
 // should call it.
 export function getLoadContext (
   c: Context,
-  databases: DatabaseConfig[],
+  schemas: SchemaConfig[],
   overlay: ProServerOverlay | null = null
 ): RouterContextProvider {
   const url = new URL(c.req.url)
   const dbId = url.searchParams.get('schema') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
-  const currentDb = findDatabaseById(databases, dbId) || databases[0]
+  const currentSchema = findSchemaById(schemas, dbId) || schemas[0]
 
   const context = new RouterContextProvider()
-  context.set(dbContext, {
-    databases,
-    currentDb,
-    // Backwards-compatible accessors
-    DB_URL: currentDb?.url || 'postgres://localhost/pgboss',
-    SCHEMA: currentDb?.schema || 'pgboss',
+  context.set(schemaContext, {
+    schemas,
+    currentSchema,
+    connection: { url: currentSchema?.connection.url || 'postgres://localhost/pgboss', schema: currentSchema?.connection.schema || 'pgboss' },
   })
 
   // Last, so the overlay can narrow what was just chosen as well as add to it.
-  // A viewer scoped to one database has to be able to override `currentDb`, not
+  // A viewer scoped to one database has to be able to override `currentSchema`, not
   // merely to observe that the dashboard's default disagreed with them.
   overlay?.loadContext?.(c, context)
 
@@ -59,7 +57,7 @@ export interface CreateHonoAppOptions {
   /** Where the built client assets live. Defaults to `./build/client`, relative to the cwd. */
   clientRoot?: string;
   /** Defaults to the schemas described by DATABASE_URL. */
-  databases?: DatabaseConfig[];
+  schemas?: SchemaConfig[];
   /** Overrides the base path baked into the build. Production builds only. */
   basePath?: string;
   /** Apply PGBOSS_DASHBOARD_AUTH_*. Off when embedded: the host authenticates. */
@@ -89,7 +87,7 @@ export function createHonoApp ({
   mode,
   serveStaticAssets = false,
   clientRoot = './build/client',
-  databases,
+  schemas,
   basePath,
   auth = true,
   siteUrl,
@@ -102,7 +100,7 @@ export function createHonoApp ({
   const publicSite: ProSite = {
     url: siteOrigin ? `${siteOrigin}${mountPath}` : null,
     basePath: typeof build === 'function' ? null : mountPath,
-    databases: () => databases ?? getDatabaseConfigs(),
+    schemas: () => schemas ?? getSchemaConfigs(),
   }
 
   if (mountPath) {
@@ -253,7 +251,7 @@ export function createHonoApp ({
 
   app.all('*', async (c) => {
     const handler = productionHandler ?? createRequestHandler(await (build as () => ServerBuild | Promise<ServerBuild>)(), mode)
-    const response = await handler(c.req.raw, getLoadContext(c, databases ?? getDatabaseConfigs(), overlay))
+    const response = await handler(c.req.raw, getLoadContext(c, schemas ?? getSchemaConfigs(), overlay))
 
     // Pages carry job payloads.
     if (!response.headers.has('Cache-Control')) {

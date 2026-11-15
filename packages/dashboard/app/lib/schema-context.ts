@@ -1,16 +1,16 @@
 import { createContext, type RouterContext } from 'react-router'
-import type { DatabaseConfig } from './config.server'
+import type { Connection, SchemaConfig } from './config.server'
 
-export interface DbContext {
-  readonly databases: DatabaseConfig[]
+export interface SchemaContext {
+  readonly schemas: SchemaConfig[]
   /**
    * Schemas an overlay keeps for its own work, which the switcher lists apart under Internal. They
-   * are never in `databases`, though one may be `currentDb`.
+   * are never in `schemas`, though one may be `currentSchema`.
    */
-  readonly internal?: DatabaseConfig[]
-  readonly currentDb: DatabaseConfig
-  readonly DB_URL: string
-  readonly SCHEMA: string
+  readonly internal?: SchemaConfig[]
+  readonly currentSchema: SchemaConfig
+  /** Where the current schema's pg-boss is: its connection string and its Postgres schema. */
+  readonly connection: Connection
 }
 
 // `createContext()` returns an identity-keyed token: a RouterContextProvider stores
@@ -21,10 +21,10 @@ export interface DbContext {
 // the value the server `set`s would be invisible to the loader's `get`. Pin a single
 // token on globalThis (a process-wide Symbol.for key) so both bundles share one. In dev
 // everything loads through a single Vite module graph, making this a harmless no-op.
-const TOKEN_KEY = Symbol.for('pgboss.dashboard.dbContext')
+const TOKEN_KEY = Symbol.for('pgboss.dashboard.schemaContext')
 const globalStore = globalThis as typeof globalThis & {
-  [TOKEN_KEY]?: RouterContext<DbContext>
+  [TOKEN_KEY]?: RouterContext<SchemaContext>
 }
 
-export const dbContext: RouterContext<DbContext> =
-  globalStore[TOKEN_KEY] ??= createContext<DbContext>()
+export const schemaContext: RouterContext<SchemaContext> =
+  globalStore[TOKEN_KEY] ??= createContext<SchemaContext>()

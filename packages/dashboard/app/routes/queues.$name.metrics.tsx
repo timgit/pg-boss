@@ -7,7 +7,7 @@ import {
   getQueueStatsCollectionStatus,
   resolveAggregate,
 } from '~/lib/queries.server'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { waitingBreakdown } from '~/lib/queue-metrics'
 import { PageHeader } from '~/components/ui/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -70,7 +70,7 @@ const CHART_HEIGHT = 280
 // and the build still typechecks this file.
 export async function loader ({ params, request, context }: { params: { name?: string }, request: Request, context: Readonly<RouterContextProvider> }) {
   const name = params.name ?? ''
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const sp = new URL(request.url).searchParams
 
   const rangeParam = sp.get('range')
@@ -99,8 +99,8 @@ export async function loader ({ params, request, context }: { params: { name?: s
   }
 
   const [history, collection] = await Promise.all([
-    getQueueStatsHistory(DB_URL, SCHEMA, name, { from, to, aggregate, maxDataPoints }),
-    getQueueStatsCollectionStatus(DB_URL, SCHEMA),
+    getQueueStatsHistory(connection.url, connection.schema, name, { from, to, aggregate, maxDataPoints }),
+    getQueueStatsCollectionStatus(connection.url, connection.schema),
   ])
 
   return {

@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from '~/server'
-import { dbContext } from '~/lib/db-context'
-import type { DatabaseConfig } from '~/lib/config.server'
+import { schemaContext } from '~/lib/schema-context'
+import type { SchemaConfig } from '~/lib/config.server'
 
 const seen = vi.hoisted(() => ({ schema: undefined as string | undefined }))
 
-const createRequestHandler = vi.hoisted(() => vi.fn(() => async (_request: Request, context: { get: (key: unknown) => { currentDb: { id: string } } }) => {
-  seen.schema = context.get(dbContext).currentDb.id
+const createRequestHandler = vi.hoisted(() => vi.fn(() => async (_request: Request, context: { get: (key: unknown) => { currentSchema: { id: string } } }) => {
+  seen.schema = context.get(schemaContext).currentSchema.id
   return new Response('ssr')
 }))
 
@@ -22,12 +22,12 @@ const build = {
   assets: { url: '/assets/manifest-abc123.js', version: 'abc123', entry: { module: '/assets/entry.client-1.js', imports: [], css: [] }, routes: {} },
 } as unknown as ServerBuild
 
-const databases: DatabaseConfig[] = [
-  { id: 'orders', name: 'orders', url: 'postgres://host/orders', schema: 'pgboss' },
-  { id: 'billing', name: 'billing', url: 'postgres://host/billing', schema: 'jobs' },
+const schemas: SchemaConfig[] = [
+  { id: 'orders', name: 'orders', connection: { url: 'postgres://host/orders', schema: 'pgboss' } },
+  { id: 'billing', name: 'billing', connection: { url: 'postgres://host/billing', schema: 'jobs' } },
 ]
 
-const app = () => createHonoApp({ build, mode: 'production', databases, overlay: null })
+const app = () => createHonoApp({ build, mode: 'production', schemas, overlay: null })
 
 describe('?db= from dashboard 1.x', () => {
   it('moves a page request to ?schema= in the same place, with a permanent redirect', async () => {
@@ -50,7 +50,7 @@ describe('?db= from dashboard 1.x', () => {
   })
 
   it('redirects under a base path', async () => {
-    const res = await createHonoApp({ build, mode: 'production', basePath: '/admin', databases, overlay: null }).request('/admin/jobs?db=billing')
+    const res = await createHonoApp({ build, mode: 'production', basePath: '/admin', schemas, overlay: null }).request('/admin/jobs?db=billing')
 
     expect(res.headers.get('location')).toBe('/admin/jobs?schema=billing')
   })
@@ -75,7 +75,7 @@ describe('PGBOSS_SCHEMA', () => {
     vi.stubEnv('PGBOSS_SCHEMA', 'jobs')
 
     expect(() => createHonoApp({ build, mode: 'production', overlay: null })).not.toThrow()
-    expect(() => createHonoApp({ build, mode: 'production', databases, overlay: null })).not.toThrow()
+    expect(() => createHonoApp({ build, mode: 'production', schemas, overlay: null })).not.toThrow()
     expect(() => createHonoApp({ build, mode: 'production', overlay: { ownsAuth: true, server: () => {} } })).not.toThrow()
   })
 })

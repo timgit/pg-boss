@@ -3,7 +3,7 @@ import type { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { RouterContextProvider } from 'react-router'
 import type { TitleMatch } from '~/lib/page-title'
-import type { DatabaseConfig } from '~/lib/config.server'
+import type { SchemaConfig } from '~/lib/config.server'
 
 /**
  * The contract between this package and an optional Pro overlay.
@@ -172,7 +172,7 @@ export interface ProSite {
    */
   basePath: string | null
   /** The databases the pages read: a handler's own, or those DATABASE_URL describes. */
-  databases: () => DatabaseConfig[]
+  schemas: () => SchemaConfig[]
 }
 
 /**

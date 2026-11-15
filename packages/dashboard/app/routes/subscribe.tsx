@@ -1,10 +1,10 @@
 import { redirect, useActionData, useNavigation, useSearchParams, type RouterContextProvider } from 'react-router'
-import { resolveDbHref } from '~/components/db-link'
+import { resolveSchemaHref } from '~/components/schema-link'
 import { ErrorCard } from '~/components/error-card'
 import { SubscriptionForm } from '~/components/subscription-form'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import type { TitleHandle } from '~/lib/page-title'
 import { READ_ONLY_MESSAGE, isReadOnly } from '~/lib/read-only.server'
 import { parseSubscriptionForm } from '~/lib/subscription-form'
@@ -21,16 +21,16 @@ export function loader () {
 
 // Read-only mode refuses the post before it gets here, and in a Pro build Pro answers this URL itself.
 export async function action ({ request, context }: { request: Request, context: Readonly<RouterContextProvider> }) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const parsed = parseSubscriptionForm(await request.formData())
 
   if ('error' in parsed) return { error: parsed.error }
 
-  const subscribed = await subscribeQueue(DB_URL, SCHEMA, parsed.value)
+  const subscribed = await subscribeQueue(connection.url, connection.schema, parsed.value)
   if ('error' in subscribed) return { error: subscribed.error }
 
   const schema = new URL(request.url).searchParams.get('schema')
-  return redirect(resolveDbHref(`/subscriptions/${encodeURIComponent(parsed.value.event)}`, schema))
+  return redirect(resolveSchemaHref(`/subscriptions/${encodeURIComponent(parsed.value.event)}`, schema))
 }
 
 export function ErrorBoundary ({ error }: { error: unknown }) {

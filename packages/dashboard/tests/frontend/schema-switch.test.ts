@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { switchPathname } from '~/lib/database-switch'
+import { switchPathname } from '~/lib/schema-switch'
 
 describe('switchPathname', () => {
   it('keeps a page that is about no one item', () => {

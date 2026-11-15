@@ -1,5 +1,5 @@
 /** The colors a database can be marked with, in the order they are handed out by position. */
-export const DATABASE_COLORS = {
+export const SCHEMA_COLORS = {
   blue: '#4f7cf7',
   amber: '#e0a43a',
   green: '#3fb27f',
@@ -7,18 +7,18 @@ export const DATABASE_COLORS = {
   red: '#e5534b',
 } as const
 
-export type DatabaseColor = keyof typeof DATABASE_COLORS
+export type SchemaColor = keyof typeof SCHEMA_COLORS
 
-const ORDER = Object.keys(DATABASE_COLORS) as DatabaseColor[]
+const ORDER = Object.keys(SCHEMA_COLORS) as SchemaColor[]
 
-export function isDatabaseColor (value: unknown): value is DatabaseColor {
-  return typeof value === 'string' && value in DATABASE_COLORS
+export function isSchemaColor (value: unknown): value is SchemaColor {
+  return typeof value === 'string' && value in SCHEMA_COLORS
 }
 
 /**
  * A database's color: the one it was given, or one by its place in the configuration, so a switch
  * shows even out of the corner of an eye. Red is last: on the first database it would read as an alarm.
  */
-export function databaseColor (color: DatabaseColor | undefined, index: number): DatabaseColor {
+export function schemaColor (color: SchemaColor | undefined, index: number): SchemaColor {
   return color ?? ORDER[index % ORDER.length]
 }

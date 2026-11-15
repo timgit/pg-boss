@@ -22,7 +22,7 @@ import { Card } from '~/components/ui/card'
 import { CLICKABLE_ROW, useRowClick } from '~/components/ui/table'
 import { Badge } from '~/components/ui/badge'
 import { PageHeader } from '~/components/ui/page-header'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { StatusBadge } from '~/components/instances-table'
 import { CopyButton } from '~/components/job-detail'
 import { cn, formatDateWithSeconds } from '~/lib/utils'
@@ -265,9 +265,9 @@ function WorkCalls ({ group, checkedOn }: { group: QueueWork, checkedOn: Date })
           )
         })}
       </table>
-      <DbLink to={`/queues/${encodeURIComponent(group.queue)}`} className="justify-self-start text-[12.5px] text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:underline">
+      <SchemaLink to={`/queues/${encodeURIComponent(group.queue)}`} className="justify-self-start text-[12.5px] text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:underline">
         Queue page for {group.queue}
-      </DbLink>
+      </SchemaLink>
     </div>
   )
 }

@@ -15,13 +15,13 @@ import { AppSidebar } from "~/components/sidebar";
 import { ThemeToggle } from "~/components/ui/theme-toggle";
 import { LoadingBar } from "~/components/loading-bar";
 import { ThemeProvider } from "~/components/theme-provider";
-import { DatabaseSwitcher } from "~/components/database-switcher";
+import { SchemaSwitcher } from "~/components/schema-switcher";
 import { ProSlot } from "~/components/pro-slot";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 import { cn } from "~/lib/utils";
 import { showsSchema } from "~/lib/page-scope";
-import { dbContext } from "~/lib/db-context";
-import { toPublicDatabase } from "~/lib/config.server";
+import { schemaContext } from "~/lib/schema-context";
+import { toPublicSchema } from "~/lib/config.server";
 import { isPgBossInstalled } from "~/lib/queries.server";
 import { isReadOnly } from "~/lib/read-only.server";
 import { MissingPgBossContext } from "~/lib/missing-pgboss";
@@ -50,7 +50,7 @@ function MainContent ({ children }: { children: React.ReactNode }) {
           {/* Phones only: the sidebar is a sheet there, so its own toggle cannot open it. */}
           <SidebarTrigger className="-ml-2 md:hidden" />
           {/* The database first, as Supabase leads with the project: in view on every page about one, at every width. */}
-          {schema && <DatabaseSwitcher />}
+          {schema && <SchemaSwitcher />}
           <ProSlot name="topbarStart" />
         </div>
         <div className="flex items-center gap-2">
@@ -140,19 +140,19 @@ const themeScript = `
 `;
 
 export async function loader({ context }: Route.LoaderArgs) {
-  const { databases, internal = [], currentDb } = context.get(dbContext);
+  const { schemas, internal = [], currentSchema } = context.get(schemaContext);
 
   // Project before returning. The sidebar needs an id, a display name and the
   // schema; it never needs the connection string. A loader's return value is
   // serialized into the HTML for hydration, so returning the raw config puts
   // every connection string, passwords included, in page source.
   return {
-    databases: databases.map(toPublicDatabase),
-    internal: internal.map(toPublicDatabase),
-    currentDb: currentDb ? toPublicDatabase(currentDb) : currentDb,
+    schemas: schemas.map(toPublicSchema),
+    internal: internal.map(toPublicSchema),
+    currentSchema: currentSchema ? toPublicSchema(currentSchema) : currentSchema,
     // For the error card: a page that failed on a database with no pg-boss schema says so, rather
     // than blaming the connection.
-    pgbossMissing: currentDb ? (await isPgBossInstalled(currentDb.url, currentDb.schema)) === false : false,
+    pgbossMissing: currentSchema ? (await isPgBossInstalled(currentSchema.connection.url, currentSchema.connection.schema)) === false : false,
     // For the headers' Send job, which read-only mode leaves out.
     readOnly: isReadOnly(),
   };
@@ -185,10 +185,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { pgbossMissing, currentDb } = useLoaderData<typeof loader>();
+  const { pgbossMissing, currentSchema } = useLoaderData<typeof loader>();
 
   return (
-    <MissingPgBossContext.Provider value={pgbossMissing && currentDb ? currentDb : null}>
+    <MissingPgBossContext.Provider value={pgbossMissing && currentSchema ? currentSchema : null}>
       <Outlet />
     </MissingPgBossContext.Provider>
   );

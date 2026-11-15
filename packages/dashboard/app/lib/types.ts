@@ -1,7 +1,7 @@
 // Types based on or imported from pg-boss
 import type { Instance, InstanceMetrics, InstanceWorker, JobWithMetadata, QueuePolicy, QueueResult as PgBossQueueResult, ScheduleKind } from 'pg-boss'
 import type { WarningTypeValue } from './utils'
-import type { DatabaseColor } from './database-colors'
+import type { SchemaColor } from './schema-colors'
 export type { Instance, InstanceMetrics, InstanceWorker, JobWithMetadata, QueuePolicy, ScheduleKind }
 
 /** The connections Postgres has open under one `application_name`. */
@@ -183,15 +183,16 @@ export interface SubscriptionResult {
 }
 
 // The subset of a database configuration that is safe to send to the browser.
-// `DatabaseConfig` in config.server.ts also carries `url`, a connection string
+// `SchemaConfig` in config.server.ts also carries `connection.url`, a connection string
 // with a password in it, and that must never reach a loader payload — React
 // Router serializes those into the HTML for hydration, where anyone who can
 // load the page can read them. The schema name is not a credential and the
 // database selector displays it, so it stays.
-export interface PublicDatabase {
+export interface PublicSchema {
   id: string;
   name: string;
-  schema: string;
-  color?: DatabaseColor;
+  /** The connection's Postgres schema alone: its URL holds a password. */
+  connection: { schema: string };
+  color?: SchemaColor;
   badge?: string;
 }

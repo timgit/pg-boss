@@ -5,8 +5,8 @@ import { serverOverlay as stub } from '~/lib/pro-server-stub'
 import { serverOverlayOf } from '~/lib/server-overlay'
 import * as entry from '~/entry.server'
 import { serverOverlay as aliased } from '~pro-server'
-import { dbContext } from '~/lib/db-context'
-import { getDatabaseConfigs } from '~/lib/config.server'
+import { schemaContext } from '~/lib/schema-context'
+import { getSchemaConfigs } from '~/lib/config.server'
 import type { ProServerOverlay } from '~/lib/pro-contract'
 
 /**
@@ -150,7 +150,7 @@ describe('getLoadContext with an overlay', () => {
     app.get('*', (c) => {
       // The databases are passed explicitly now that a host may supply its own;
       // these tests are about the overlay hook, so they use the configured ones.
-      resolved = getLoadContext(c, getDatabaseConfigs(), overlay)
+      resolved = getLoadContext(c, getSchemaConfigs(), overlay)
       return c.text('ok')
     })
 
@@ -161,7 +161,7 @@ describe('getLoadContext with an overlay', () => {
   it('seeds the dashboard\'s context when there is no overlay', async () => {
     const context = await contextFor(null)
 
-    expect(context.get(dbContext).SCHEMA).toBe('pgboss')
+    expect(context.get(schemaContext).connection.schema).toBe('pgboss')
   })
 
   it('runs the overlay hook', async () => {
@@ -169,7 +169,7 @@ describe('getLoadContext with an overlay', () => {
     const context = await contextFor({ loadContext: (c) => { seen.push(new URL(c.req.url).pathname) } }, '/jobs')
 
     expect(seen).toEqual(['/jobs'])
-    expect(context.get(dbContext).SCHEMA).toBe('pgboss')
+    expect(context.get(schemaContext).connection.schema).toBe('pgboss')
   })
 
   /**
@@ -179,11 +179,11 @@ describe('getLoadContext with an overlay', () => {
   it('lets the overlay narrow what the dashboard chose', async () => {
     const context = await contextFor({
       loadContext: (_c, ctx) => {
-        const chosen = ctx.get(dbContext)
-        ctx.set(dbContext, { ...chosen, SCHEMA: 'narrowed' })
+        const chosen = ctx.get(schemaContext)
+        ctx.set(schemaContext, { ...chosen, connection: { schema: 'narrowed' } })
       },
     })
 
-    expect(context.get(dbContext).SCHEMA).toBe('narrowed')
+    expect(context.get(schemaContext).connection.schema).toBe('narrowed')
   })
 })

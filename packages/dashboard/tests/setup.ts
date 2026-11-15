@@ -23,8 +23,8 @@ vi.mock('react-router', async () => {
   return {
     ...actual,
     useRouteLoaderData: vi.fn(() => ({
-      databases: [{ id: 'default', name: 'Default DB', url: 'postgres://...', schema: 'pgboss' }],
-      currentDb: { id: 'default', name: 'Default DB', url: 'postgres://...', schema: 'pgboss' },
+      schemas: [{ id: 'default', name: 'Default DB', url: 'postgres://...', schema: 'pgboss' }],
+      currentSchema: { id: 'default', name: 'Default DB', url: 'postgres://...', schema: 'pgboss' },
     })),
     useSearchParams: vi.fn(() => [new URLSearchParams(), vi.fn()]),
     useNavigate: vi.fn(() => vi.fn()),

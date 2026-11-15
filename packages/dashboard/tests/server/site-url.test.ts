@@ -100,9 +100,9 @@ describe('PGBOSS_DASHBOARD_SITE_URL', () => {
     let site: ProSite | undefined
     const server = (_app: unknown, given: ProSite) => { site = given }
 
-    createHonoApp({ build, mode: 'production', basePath: '/admin/queues', databases: [orders], overlay: { server } })
+    createHonoApp({ build, mode: 'production', basePath: '/admin/queues', schemas: [orders], overlay: { server } })
     expect(site!.basePath).toBe('/admin/queues')
-    expect(site!.databases()).toEqual([orders])
+    expect(site!.schemas()).toEqual([orders])
 
     createHonoApp({ build, mode: 'production', overlay: { server } })
     expect(site!.basePath).toBe('')

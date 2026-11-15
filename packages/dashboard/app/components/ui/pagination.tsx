@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { Button, buttonVariants } from './button'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { cn } from '~/lib/utils'
 
 // Ported from shadcn/ui's Base UI pagination. The links are the dashboard's own Button rendered as
@@ -67,7 +67,7 @@ function PaginationLink ({ to, isActive, size = 'icon', className, children, ...
       render={disabled
         ? <span aria-disabled="true" data-slot="pagination-link" />
         : (
-          <DbLink
+          <SchemaLink
             to={to}
             data-slot="pagination-link"
           />

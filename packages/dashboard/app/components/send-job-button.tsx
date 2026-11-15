@@ -1,6 +1,6 @@
 import { useRouteLoaderData } from 'react-router'
 import { Button } from '~/components/ui/button'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { ProSlot, hasProSlot } from '~/components/pro-slot'
 
 /** Whether `PGBOSS_DASHBOARD_READ_ONLY` is on, as the root loader read it. */
@@ -14,7 +14,7 @@ export function SendJobButton ({ queue }: { queue?: string }) {
   if (useReadOnly()) return null
 
   return (
-    <Button variant="primary" size="md" render={<DbLink to={queue ? `/send?${new URLSearchParams({ queue })}` : '/send'} />}>
+    <Button variant="primary" size="md" render={<SchemaLink to={queue ? `/send?${new URLSearchParams({ queue })}` : '/send'} />}>
       Send job
     </Button>
   )

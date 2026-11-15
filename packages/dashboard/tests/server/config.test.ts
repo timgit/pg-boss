@@ -1,27 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { parseDatabaseConfig, parseSiteUrl, takeSchema, toDatabaseConfig } from '~/lib/config.server'
+import { parseSchemaConfig, parseSiteUrl, takeSchema, toSchemaConfig } from '~/lib/config.server'
 
 describe('toDatabaseConfig', () => {
   it('names the database after the connection string and defaults the schema', () => {
-    expect(toDatabaseConfig({ url: 'postgres://user:pass@host/orders' }, 0)).toEqual({
+    expect(toSchemaConfig({ url: 'postgres://user:pass@host/orders' }, 0)).toEqual({
       id: 'orders',
       name: 'orders',
-      url: 'postgres://user:pass@host/orders',
-      schema: 'pgboss',
+      connection: { url: 'postgres://user:pass@host/orders', schema: 'pgboss' },
     })
   })
 
   it('keeps an explicit name and schema', () => {
-    expect(toDatabaseConfig({ url: 'postgres://host/db', name: 'Main DB', schema: 'jobs' }, 0)).toEqual({
+    expect(toSchemaConfig({ url: 'postgres://host/db', name: 'Main DB', schema: 'jobs' }, 0)).toEqual({
       id: 'main-db',
       name: 'Main DB',
-      url: 'postgres://host/db',
-      schema: 'jobs',
+      connection: { url: 'postgres://host/db', schema: 'jobs' },
     })
   })
 
   it('falls back to a positional name when the connection string has no database', () => {
-    expect(toDatabaseConfig({ url: 'postgres://host/' }, 1).name).toBe('Schema 2')
+    expect(toSchemaConfig({ url: 'postgres://host/' }, 1).name).toBe('Schema 2')
   })
 })
 
@@ -40,10 +38,10 @@ describe('parseDatabaseConfig', () => {
   it('reads named and unnamed entries with the schema on each connection string', () => {
     process.env.DATABASE_URL = 'Prod=postgres://user:p=ss@host/a?schema=one|postgres://host/b?sslmode=require&schema=two|postgres://host/c'
 
-    expect(parseDatabaseConfig()).toEqual([
-      { id: 'prod', name: 'Prod', url: 'postgres://user:p=ss@host/a', schema: 'one' },
-      { id: 'b', name: 'b', url: 'postgres://host/b?sslmode=require', schema: 'two' },
-      { id: 'c', name: 'c', url: 'postgres://host/c', schema: 'pgboss' },
+    expect(parseSchemaConfig()).toEqual([
+      { id: 'prod', name: 'Prod', connection: { url: 'postgres://user:p=ss@host/a', schema: 'one' } },
+      { id: 'b', name: 'b', connection: { url: 'postgres://host/b?sslmode=require', schema: 'two' } },
+      { id: 'c', name: 'c', connection: { url: 'postgres://host/c', schema: 'pgboss' } },
     ])
   })
 
@@ -51,20 +49,20 @@ describe('parseDatabaseConfig', () => {
     process.env.DATABASE_URL = 'postgres://host/a|postgres://host/b?schema=billing'
     process.env.PGBOSS_SCHEMA = ' jobs '
 
-    expect(parseDatabaseConfig().map((db) => db.schema)).toEqual(['jobs', 'billing'])
+    expect(parseSchemaConfig().map((schema) => schema.connection.schema)).toEqual(['jobs', 'billing'])
   })
 
   it('reads pgboss when PGBOSS_SCHEMA is blank', () => {
     process.env.DATABASE_URL = 'postgres://host/a'
     process.env.PGBOSS_SCHEMA = ' '
 
-    expect(parseDatabaseConfig()[0].schema).toBe('pgboss')
+    expect(parseSchemaConfig()[0].connection.schema).toBe('pgboss')
   })
 
   it('tells apart two schemas in one database, keeping the first id as it was', () => {
     process.env.DATABASE_URL = 'postgres://host/app|postgres://host/app?schema=jobs|postgres://other/app?schema=jobs'
 
-    expect(parseDatabaseConfig().map(({ id, name }) => ({ id, name }))).toEqual([
+    expect(parseSchemaConfig().map(({ id, name }) => ({ id, name }))).toEqual([
       { id: 'app', name: 'app' },
       { id: 'app-jobs', name: 'app (jobs)' },
       { id: 'app-jobs-3', name: 'app (jobs)' },

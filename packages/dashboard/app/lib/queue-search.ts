@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useFetcher, useSearchParams } from 'react-router'
-import { resolveDbHref } from '~/components/db-link'
+import { resolveSchemaHref } from '~/components/schema-link'
 import type { QueueNamesResult } from '~/routes/queue-names'
 
 export interface QueueSearch {
@@ -18,7 +18,7 @@ export function useQueueSearch (open: boolean, search: string): QueueSearch {
   const [searchParams] = useSearchParams()
   const fetcher = useFetcher<QueueNamesResult>()
   const q = search.trim()
-  const href = open ? resolveDbHref(`/queue-names?${new URLSearchParams({ q })}`, searchParams.get('schema')) : null
+  const href = open ? resolveSchemaHref(`/queue-names?${new URLSearchParams({ q })}`, searchParams.get('schema')) : null
 
   useEffect(() => {
     if (!href) return

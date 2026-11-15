@@ -1,15 +1,20 @@
-import type { PublicDatabase } from './types'
-import type { DatabaseColor } from './database-colors'
+import type { PublicSchema } from './types'
+import type { SchemaColor } from './schema-colors'
 
 // Each `DATABASE_URL` entry is one schema: "Production=postgres://host/db?schema=jobs|postgres://host2/db2".
 // The name before `=` and `?schema=` are both optional.
 
-export interface DatabaseConfig {
+/** Where a schema's pg-boss is: the database's connection string, and the Postgres schema in it. */
+export interface Connection {
+  url: string;
+  schema: string;
+}
+
+export interface SchemaConfig {
   id: string;      // URL-safe identifier
   name: string;    // Display name
-  url: string;     // Connection string
-  schema: string;  // pg-boss schema
-  color?: DatabaseColor; // Set by an overlay; otherwise one is picked by position
+  connection: Connection;
+  color?: SchemaColor; // Set by an overlay; otherwise one is picked by position
   badge?: string;  // A short label beside the name in the switcher, set by an overlay
 }
 
@@ -21,8 +26,8 @@ export interface DatabaseConfig {
  * the projection has to happen before the value leaves the server, not in the
  * component that renders it.
  */
-export function toPublicDatabase ({ id, name, schema, color, badge }: DatabaseConfig): PublicDatabase {
-  return { id, name, schema, ...(color ? { color } : {}), ...(badge ? { badge } : {}) }
+export function toPublicSchema ({ id, name, connection: { schema }, color, badge }: SchemaConfig): PublicSchema {
+  return { id, name, connection: { schema }, ...(color ? { color } : {}), ...(badge ? { badge } : {}) }
 }
 
 const SEPARATOR = '|'
@@ -41,7 +46,7 @@ export function splitEnvList (value: string, separator: string): string[] {
  * `PGBOSS_SCHEMA` is how a host that sets `DATABASE_URL` itself, as an attached database does, names
  * the schema without an edit to that variable that the host may overwrite.
  */
-export function parseDatabaseConfig (): DatabaseConfig[] {
+export function parseSchemaConfig (): SchemaConfig[] {
   const dbUrlEnv = process.env.DATABASE_URL || 'postgres://localhost/pgboss'
   const defaultSchema = process.env.PGBOSS_SCHEMA?.trim() || undefined
 
@@ -55,7 +60,7 @@ export function parseDatabaseConfig (): DatabaseConfig[] {
     const name = named ? part.substring(0, equalsIndex).trim() : undefined
     const { url, schema } = takeSchema(named ? part.substring(equalsIndex + 1).trim() : part)
 
-    return toDatabaseConfig({ name, url, schema: schema ?? defaultSchema }, index)
+    return toSchemaConfig({ name, url, schema: schema ?? defaultSchema }, index)
   }))
 }
 
@@ -83,7 +88,7 @@ export function takeSchema (connection: string): { url: string, schema?: string 
  * is named. The first keeps its id; a later one takes its schema into its id and
  * name. Shared, an id would scope a role to both and leave the second unreachable from the switcher.
  */
-function distinctIds (configs: DatabaseConfig[]): DatabaseConfig[] {
+function distinctIds (configs: SchemaConfig[]): SchemaConfig[] {
   const taken = new Set<string>()
 
   return configs.map((config, index) => {
@@ -92,11 +97,11 @@ function distinctIds (configs: DatabaseConfig[]): DatabaseConfig[] {
       return config
     }
 
-    let id = generateId(`${config.name}-${config.schema}`, index)
+    let id = generateId(`${config.name}-${config.connection.schema}`, index)
     if (taken.has(id)) id = `${id}-${index + 1}`
     taken.add(id)
 
-    return { ...config, id, name: `${config.name} (${config.schema})` }
+    return { ...config, id, name: `${config.name} (${config.connection.schema})` }
   })
 }
 
@@ -107,14 +112,13 @@ export interface DatabaseInput {
 }
 
 /** Shared by the environment parser above and by `createDashboardHandler()`. */
-export function toDatabaseConfig ({ url, name, schema }: DatabaseInput, index: number): DatabaseConfig {
+export function toSchemaConfig ({ url, name, schema }: DatabaseInput, index: number): SchemaConfig {
   const displayName = name || extractDatabaseName(url) || `Schema ${index + 1}`
 
   return {
     id: generateId(displayName, index),
     name: displayName,
-    url,
-    schema: schema || DEFAULT_SCHEMA,
+    connection: { url, schema: schema || DEFAULT_SCHEMA },
   }
 }
 
@@ -148,20 +152,20 @@ function generateId (name: string, index: number): string {
 /**
  * Find a database config by ID
  */
-export function findDatabaseById (
-  configs: DatabaseConfig[],
+export function findSchemaById (
+  configs: SchemaConfig[],
   id: string | null
-): DatabaseConfig | null {
+): SchemaConfig | null {
   if (!id) return configs[0] || null
   return configs.find(c => c.id === id) || configs[0] || null
 }
 
 // Cached config to avoid re-parsing on every request
-let cachedConfig: DatabaseConfig[] | null = null
+let cachedConfig: SchemaConfig[] | null = null
 
-export function getDatabaseConfigs (): DatabaseConfig[] {
+export function getSchemaConfigs (): SchemaConfig[] {
   if (!cachedConfig) {
-    cachedConfig = parseDatabaseConfig()
+    cachedConfig = parseSchemaConfig()
   }
   return cachedConfig
 }

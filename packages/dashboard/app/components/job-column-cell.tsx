@@ -1,4 +1,4 @@
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { Badge } from '~/components/ui/badge'
 import { TableCell } from '~/components/ui/table'
 import type { JobResult } from '~/lib/types'
@@ -24,12 +24,12 @@ export function JobColumnCell ({
     case 'id':
       return (
         <TableCell>
-          <DbLink
+          <SchemaLink
             to={`/queues/${encodeURIComponent(queueName)}/jobs/${row.id}`}
             className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
           >
             {row.id}
-          </DbLink>
+          </SchemaLink>
         </TableCell>
       )
     case 'name':

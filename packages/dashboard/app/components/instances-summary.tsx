@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 import type { Connections, Instance } from '~/lib/types'
 import { endedOn, instanceName, instanceStatus, liveVersions, type InstanceSummary } from '~/lib/instances'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { cn } from '~/lib/utils'
 
 /**
@@ -22,7 +22,7 @@ export function Panel ({ label, title, link, children }: { label: string, title:
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{title}</h2>
-        {link && <DbLink to={link.to} className="text-sm font-medium text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:underline">{link.text}</DbLink>}
+        {link && <SchemaLink to={link.to} className="text-sm font-medium text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:underline">{link.text}</SchemaLink>}
       </div>
       {children}
     </section>

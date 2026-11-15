@@ -101,7 +101,7 @@ export async function closeAllPools (): Promise<void> {
 
 // Standalone, the dashboard owns the process: run the `onClose` steps, close the pools and exit on
 // a signal. Embedded, the host does, so `createDashboardHandler()` sets this flag and runs the same
-// close itself, through globalThis because it lives in another bundle (as db-context.ts does for
+// close itself, through globalThis because it lives in another bundle (as schema-context.ts does for
 // its token).
 const EMBEDDED_KEY = Symbol.for('pgboss.dashboard.embedded')
 const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')

@@ -1,5 +1,5 @@
 import type { RouterContextProvider } from 'react-router'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { loadOverview, type OverviewData } from '~/lib/overview.server'
 import { OverviewHeader, OverviewSections } from '~/components/overview'
 import { ErrorCard } from '~/components/error-card'
@@ -12,8 +12,8 @@ export const handle: TitleHandle = { title: 'Overview' }
 // overview, React Router then generates no types for it, and the build still typechecks this file.
 
 export async function loader ({ context }: { context: Readonly<RouterContextProvider> }) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
-  return loadOverview(DB_URL, SCHEMA)
+  const { connection } = context.get(schemaContext)
+  return loadOverview(connection.url, connection.schema)
 }
 
 export function ErrorBoundary ({ error }: { error: unknown }) {

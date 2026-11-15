@@ -1,4 +1,4 @@
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { useSearchParams } from 'react-router'
 import type { Route } from './+types/migrations'
 import { getBamEntries, getBamCount } from '~/lib/queries.server'
@@ -26,7 +26,7 @@ import {
   BAM_STATUS_VARIANTS,
   BAM_STATUS_LABELS,
 } from '~/lib/utils'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import type { TitleHandle } from '~/lib/page-title'
 import { PAGE_SIZE } from '~/lib/pagination'
 
@@ -35,7 +35,7 @@ export const handle: TitleHandle = { title: 'Migrations' }
 
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const url = new URL(request.url)
   const statusParam = url.searchParams.get('status')
 
@@ -47,8 +47,8 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const dir = url.searchParams.get('dir')
 
   const [entries, totalCount] = await Promise.all([
-    getBamEntries(DB_URL, SCHEMA, { status: statusFilter, limit: PAGE_SIZE, cursor, sort, dir }),
-    getBamCount(DB_URL, SCHEMA, statusFilter),
+    getBamEntries(connection.url, connection.schema, { status: statusFilter, limit: PAGE_SIZE, cursor, sort, dir }),
+    getBamCount(connection.url, connection.schema, statusFilter),
   ])
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE)
@@ -134,9 +134,9 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
                 entries.map((entry: BamEntryResult) => (
                   <TableRow key={entry.id} to={`/migrations/${entry.id}`}>
                     <TableCell className="font-medium">
-                      <DbLink to={`/migrations/${entry.id}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+                      <SchemaLink to={`/migrations/${entry.id}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
                         {entry.name}
-                      </DbLink>
+                      </SchemaLink>
                     </TableCell>
                     <TableCell className="text-right pgb-num text-[var(--text-tertiary)]">
                       {entry.version}

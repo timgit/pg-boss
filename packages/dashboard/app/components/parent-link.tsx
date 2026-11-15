@@ -1,5 +1,5 @@
 import { ChevronLeft } from 'lucide-react'
-import { DbLink } from './db-link'
+import { SchemaLink } from './schema-link'
 
 export interface Parent {
   to: string
@@ -12,12 +12,12 @@ export interface Parent {
  */
 export function ParentLink ({ to, label }: Parent) {
   return (
-    <DbLink
+    <SchemaLink
       to={to}
       className="inline-flex max-w-full items-center gap-1 self-start text-sm text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
     >
       <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{label}</span>
-    </DbLink>
+    </SchemaLink>
   )
 }

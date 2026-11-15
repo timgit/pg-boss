@@ -1,13 +1,13 @@
 import { redirect } from 'react-router'
 import type { Route } from './+types/subscriptions.$event'
 import { getSubscription } from '~/lib/queries.server'
-import { dbContext } from '~/lib/db-context'
+import { schemaContext } from '~/lib/schema-context'
 import { unsubscribeQueue } from '~/lib/subscription.server'
 import { SubscriptionActions, SubscriptionRowActions, useSubscriptionRowActions } from '~/components/subscription-actions'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
-import { DbLink, resolveDbHref } from '~/components/db-link'
+import { SchemaLink, resolveSchemaHref } from '~/components/schema-link'
 import { ErrorCard } from '~/components/error-card'
 import { formatDate } from '~/lib/utils'
 import type { TitleHandle } from '~/lib/page-title'
@@ -16,8 +16,8 @@ import type { TitleHandle } from '~/lib/page-title'
 export const handle: TitleHandle = { title: ({ params }) => (params.event ? `Subscription: ${params.event}` : null) }
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
-  const queues = await getSubscription(DB_URL, SCHEMA, params.event)
+  const { connection } = context.get(schemaContext)
+  const queues = await getSubscription(connection.url, connection.schema, params.event)
 
   // An event with no queue subscribed to it is not a subscription at all.
   if (queues.length === 0) {
@@ -30,18 +30,18 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 // Read-only mode refuses the post before it gets here. In a Pro build, Pro's Unsubscribe posts to a
 // route of its own, which checks the role and records the change.
 export async function action ({ params, request, context }: Route.ActionArgs) {
-  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const { connection } = context.get(schemaContext)
   const form = await request.formData()
   const queue = form.get('queue')
 
   if (form.get('intent') !== 'unsubscribe' || typeof queue !== 'string' || !queue) return { error: 'Unknown action' }
 
-  const removed = await unsubscribeQueue(DB_URL, SCHEMA, { event: params.event, queue })
+  const removed = await unsubscribeQueue(connection.url, connection.schema, { event: params.event, queue })
   if ('error' in removed) return { error: removed.error }
 
   // The last queue gone leaves no subscription, and no page for it.
-  if ((await getSubscription(DB_URL, SCHEMA, params.event)).length === 0) {
-    return redirect(resolveDbHref('/subscriptions', new URL(request.url).searchParams.get('schema')))
+  if ((await getSubscription(connection.url, connection.schema, params.event)).length === 0) {
+    return redirect(resolveSchemaHref('/subscriptions', new URL(request.url).searchParams.get('schema')))
   }
 
   return { ok: true }
@@ -84,7 +84,7 @@ export default function SubscriptionDetail ({ loaderData }: Route.ComponentProps
               {queues.map((queue) => (
                 <TableRow key={queue.name} to={`/queues/${encodeURIComponent(queue.name)}`}>
                   <TableCell>
-                    <DbLink to={`/queues/${encodeURIComponent(queue.name)}`} className={linkClass}>{queue.name}</DbLink>
+                    <SchemaLink to={`/queues/${encodeURIComponent(queue.name)}`} className={linkClass}>{queue.name}</SchemaLink>
                   </TableCell>
                   <TableCell className="text-[var(--text-secondary)]">{formatDate(new Date(queue.createdOn))}</TableCell>
                   <TableCell className="text-[var(--text-secondary)]">{formatDate(new Date(queue.updatedOn))}</TableCell>

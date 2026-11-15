@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { LineChart } from 'lucide-react'
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { DeadLetterBadge } from '~/components/dead-letter-badge'
 import { PolicyBadge } from '~/components/policy-badge'
 import { ConfigCard, type ConfigRow } from '~/components/job-detail'
@@ -67,7 +67,7 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
             <Button
               variant="outline"
               size="md"
-              render={<DbLink to={metricsPath(queue.name)} />}
+              render={<SchemaLink to={metricsPath(queue.name)} />}
             >
               <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
               View metrics
@@ -153,9 +153,9 @@ export function QueueConfig ({ queue, subscribedEvents = 0 }: { queue: QueueResu
       label: 'Dead letter queue',
       mono: true,
       value: (
-        <DbLink to={`/queues/${encodeURIComponent(queue.deadLetter)}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+        <SchemaLink to={`/queues/${encodeURIComponent(queue.deadLetter)}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
           {queue.deadLetter}
-        </DbLink>
+        </SchemaLink>
       ),
     })
   }
@@ -168,9 +168,9 @@ export function QueueConfig ({ queue, subscribedEvents = 0 }: { queue: QueueResu
     rows.push({
       label: 'Subscribed to',
       value: (
-        <DbLink to={`/subscriptions?queue=${encodeURIComponent(queue.name)}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+        <SchemaLink to={`/subscriptions?queue=${encodeURIComponent(queue.name)}`} className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
           {subscribedEvents.toLocaleString()} {subscribedEvents === 1 ? 'event' : 'events'}
-        </DbLink>
+        </SchemaLink>
       ),
     })
   }
@@ -228,12 +228,12 @@ export function QueueJobs ({ data }: { data: QueuePageData }) {
               onChange={handleStateChange}
             />
           </div>
-          <DbLink
+          <SchemaLink
             to={`/jobs?${all.toString()}`}
             className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
           >
             View all
-          </DbLink>
+          </SchemaLink>
         </CardHeader>
         <CardContent className="p-0">
           <Table>

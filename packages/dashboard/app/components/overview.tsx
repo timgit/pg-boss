@@ -1,4 +1,4 @@
-import { DbLink } from '~/components/db-link'
+import { SchemaLink } from '~/components/schema-link'
 import { PageActions } from '~/components/send-job-button'
 import { StatsCards } from '~/components/stats-cards'
 import { InstancesCard } from '~/components/instances-summary'
@@ -99,12 +99,12 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
         <Card>
           <CardHeader>
             <CardTitle>{q.title ?? 'Top Queues'}</CardTitle>
-            <DbLink
+            <SchemaLink
               to={q.more?.to ?? '/queues'}
               className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
             >
               {q.more?.text ?? 'View all'}
-            </DbLink>
+            </SchemaLink>
           </CardHeader>
           {topQueues.length === 0 ? (
             <p className="text-sm text-[var(--text-tertiary)] p-5">No queues found</p>
@@ -125,12 +125,12 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
                 {topQueues.map((queue: QueueResult) => (
                   <TableRow key={queue.name} to={`/queues/${encodeURIComponent(queue.name)}`}>
                     <TableCell>
-                      <DbLink
+                      <SchemaLink
                         to={`/queues/${encodeURIComponent(queue.name)}`}
                         className="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                       >
                         {queue.name}
-                      </DbLink>
+                      </SchemaLink>
                     </TableCell>
                     {q.afterName?.map(cellOf(queue))}
                     <TableCell className="text-right pgb-num text-[var(--text-primary)]">
@@ -178,12 +178,12 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
             <Card>
               <CardHeader>
                 <CardTitle>Recent Warnings</CardTitle>
-                <DbLink
+                <SchemaLink
                   to="/warnings"
                   className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                 >
                   View all
-                </DbLink>
+                </SchemaLink>
               </CardHeader>
               <div className="flex flex-col gap-2 p-3">
                 {warnings.length === 0 ? (
@@ -204,9 +204,9 @@ export function OverviewSections ({ data, narrow = false, extensions = {} }: { d
                             {formatTimeAgo(new Date(warning.createdOn))}
                           </span>
                         </div>
-                        <DbLink to={`/warnings/${warning.id}`} className="block truncate text-sm text-[var(--text-secondary)] hover:underline">
+                        <SchemaLink to={`/warnings/${warning.id}`} className="block truncate text-sm text-[var(--text-secondary)] hover:underline">
                           {warning.message}
-                        </DbLink>
+                        </SchemaLink>
                       </div>
                     </WarningItem>
                   ))
@@ -251,7 +251,7 @@ function migrationsRow ({ pending, inProgress, failed }: { pending: number; inPr
   if (failed > 0) parts.push(`${failed.toLocaleString()} failed`)
 
   return (
-    <DbLink to="/migrations" className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-hover)]">
+    <SchemaLink to="/migrations" className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-hover)]">
       <Badge variant={failed > 0 ? 'error' : 'warning'} size="sm" dot>
         Async migrations
       </Badge>
@@ -259,7 +259,7 @@ function migrationsRow ({ pending, inProgress, failed }: { pending: number; inPr
       <span className="ml-auto text-sm font-medium text-primary-600 dark:text-primary-400">
         View
       </span>
-    </DbLink>
+    </SchemaLink>
   )
 }
 
