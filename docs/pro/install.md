@@ -81,6 +81,7 @@ Pro reads these settings at startup:
 | `PGBOSS_PRO_SITE_URL` | In production | The public address of the Pro Console and Pro API. Without it, emails, webhooks and PagerDuty carry no link to the alert. Behind a reverse proxy that ends HTTPS, actions need it too. See [reverse proxy](../dashboard.md#reverse-proxy). |
 | `PGBOSS_PRO_TRUSTED_PROXIES` | Behind a reverse proxy on another host | The reverse proxy's address. Pro then reads each client's address from `X-Forwarded-For`, for sign-in limits and the [audit log](./audit-log.md#address). |
 | `PGBOSS_PRO_SETUP_TOKEN` | With several instances behind a load balancer | One setup token the instances share, set before the first start. The setup link then works on every instance. |
+| `PGBOSS_PRO_LOG_FORMAT` | With a log collector | Set it to `json` for one JSON object per line, or to `pretty` for reading in a terminal. The default is `text`. See [logging](./environment.md#pgboss-pro-log-format). |
 
 Store the encryption key in another secret store. Rotating the secret key requires entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error at startup and serves no pages. See [secrets](./administration.md#secrets).
 
@@ -297,7 +298,7 @@ npx pg-boss-pro doctor
 
 It reports each check as passed or failed, with the fix for each failure:
 
-- The secret key, and the setup token when one is set.
+- The secret key, the log format when `PGBOSS_PRO_LOG_FORMAT` is set, and the setup token when one is set.
 - The connection to Pro's database.
 - Pro's tables, against the version this Pro uses. Tables from a later Pro mean the install is older than the release that last migrated the database.
 - The stored secrets, decrypted with the current key. See [key changes](./administration.md#key-changes).

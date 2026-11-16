@@ -89,6 +89,7 @@ Pro includes every page of the dashboard. In Pro, roles, alert rules, the Pro AP
 | Each queue's [live workers](./queues.md#queue-detail) and how much of their capacity is in use | | ✓ |
 | Registered [instances](./instances.md) | ✓ | ✓, grouped by name and host, with what needs attention across them, and each instance's pool, CPU, memory or event loop marked at its limit |
 | [Prometheus metrics](./metrics.md) at `/metrics`, for existing dashboards and alerting to scrape | | ✓ |
+| [Logs as JSON](./environment.md#pgboss-pro-log-format), one object per line for a log collector | | ✓ |
 | [Support](./support.md) from the author of pg-boss | | ✓ |
 
 ## Pricing
