@@ -24,6 +24,7 @@ Pro reads its settings from the environment, and from a `.env` file in the direc
 | [`PGBOSS_PRO_SETUP_TOKEN`](#pgboss-pro-setup-token) | |
 | [`PGBOSS_PRO_TRUSTED_PROXIES`](#pgboss-pro-trusted-proxies) | loopback |
 | [`PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES`](#pgboss-pro-block-private-addresses) | `false` |
+| [`PGBOSS_PRO_LOG_FORMAT`](#pgboss-pro-log-format) | `text` |
 
 ## Server
 
@@ -120,6 +121,28 @@ Default: loopback
 `true` keeps webhook and SMTP destinations to public addresses. See [Private addresses](./network.md#private-addresses).
 
 Default: `false`
+
+## Logging
+
+### `PGBOSS_PRO_LOG_FORMAT`
+
+The format of Pro's log. Pro refuses to start with a value other than `text`, `json` or `pretty`. [`pg-boss-pro doctor`](./install.md#check-the-install) reports such a value as a failed check.
+
+| Value | Output |
+| - | - |
+| `text` | One line per message, starting with `pg-boss Pro`. Warnings and errors go to standard error. Other lines go to standard output. |
+| `json` | One JSON object per line, on standard output. |
+| `pretty` | Each message after its time and level, with its fields on the lines below, on standard output. It's in color when standard output is a terminal. |
+
+With `json` or `pretty`, the lines the dashboard and its libraries print come out in the same format as Pro's. A stack trace that Node prints for a crash stays plain text.
+
+Each JSON object has `level`, `time`, `app` and `msg`. A line about a schema, alert rule or queue names the schema, rule or queue in a field of its own, such as `schema` or `rule`. A line about an error has an `err` field with the error's `type`, `message` and `stack`:
+
+```json
+{"level":"error","time":"2026-11-16T16:19:34.306Z","app":"pg-boss Pro","err":{"type":"Error","message":"connect ECONNREFUSED 10.0.0.7:5432","stack":"Error: connect ECONNREFUSED 10.0.0.7:5432\n    at …","code":"ECONNREFUSED"},"schema":"billing","msg":"could not read billing for /metrics"}
+```
+
+Default: `text`
 
 ## Dashboard variables
 
