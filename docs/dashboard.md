@@ -430,7 +430,7 @@ import { Hono } from 'hono'
 import { createDashboardHandler } from '@pg-boss/dashboard/handler'
 
 const dashboard = createDashboardHandler({
-  databases: [{ url: process.env.DATABASE_URL!, schema: 'pgboss' }],
+  schemas: [{ url: process.env.DATABASE_URL!, schema: 'pgboss' }],
   basePath: '/admin/queues',
 })
 
@@ -458,7 +458,7 @@ app.use(['/admin/queues', '/admin/queues.data'], requireAdmin, (req, res) => {
 
 | Option | Description |
 |--------|-------------|
-| `databases` | One or more `{ url, name?, schema? }` entries. The first is selected by default. Give each a distinct `name` when two connection strings end in the same database name. |
+| `schemas` | One or more `{ url, name?, schema? }` entries, each a connection string and the pg-boss schema in it. The first is selected by default. Give each a distinct `name` when two connection strings end in the same database name. Dashboard 1.x named this option `databases`. |
 | `basePath` | The path you mount the handler under. Requests must reach the handler with this prefix still in the URL. Defaults to `/`. |
 | `siteUrl` | The public URL the dashboard is served at, as `https://host[:port]`. Needed behind a proxy (see below). |
 | `auth` | Puts the `PGBOSS_DASHBOARD_AUTH_*` Basic credential in front of the mounted dashboard. Defaults to `false`, because the host app normally handles authentication. |
