@@ -39,7 +39,7 @@ Workers don't use the Pro API. A worker fetches and completes jobs through pg-bo
 
 ## Audit
 
-The [audit log](./audit-log.md) records each change with the method, the queue or event, the token and the answer. It doesn't record reads. Sending jobs and publishing events are recorded only when the service account is set to record them. A published event's entry lists the queues subscribed to the event.
+The [audit log](./audit-log.md) records each change with the method, the queue or event, the token and the answer. It doesn't record reads. Sending jobs and publishing events are recorded only when the service account is set to record them. That covers `send`, `sendAfter`, `sendThrottled`, `sendDebounced`, `insert`, `upsert`, `flow`, `update` and `publish`. A token that may send jobs can change a job's data with `update`, which leaves no entry unless the setting is on. A published event's entry lists the queues subscribed to the event.
 
 ## Alerts
 
