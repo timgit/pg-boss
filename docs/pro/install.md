@@ -310,6 +310,6 @@ pg-boss Pro 1.0.0
 
 ✓ Secret key: PGBOSS_PRO_SECRET_KEY is set.
 ✓ Pro's database: Connected to localhost:5432/pgboss_pro.
-✓ Pro's tables: At version 1, the version this Pro uses.
+✓ Pro's tables: At version 1, which this Pro uses.
 ✓ Stored secrets: They were saved with this PGBOSS_PRO_SECRET_KEY.
 ```
