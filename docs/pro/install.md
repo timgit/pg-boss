@@ -35,6 +35,8 @@ npm init @pg-boss/pro -- pgboss-pro --yes --license "<your license key>" \
 
 Pro runs as its own server, apart from your application's. To serve it under a path of an existing site, such as `https://example.com/admin/queues`, put it behind that site's reverse proxy and set [`PGBOSS_PRO_BASE_PATH`](./environment.md#pgboss-pro-base-path) to the path.
 
+Served over HTTPS, Pro sends `Strict-Transport-Security` with a one-year `max-age` and no `includeSubDomains`. A browser that has opened the Pro Console over HTTPS then uses only HTTPS on that host for a year, for every path on it.
+
 ## Install by hand
 
 To set up the project yourself, point npm at Pro's registry:
