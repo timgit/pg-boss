@@ -19,7 +19,7 @@ export interface SchemaConfig {
 }
 
 /**
- * Strip a database configuration down to what the browser is allowed to see.
+ * Strip a schema's configuration down to what the browser is allowed to see.
  *
  * `url` is a connection string with a password in it. Anything a loader
  * returns is serialized into the SSR payload and readable in page source, so
@@ -150,7 +150,7 @@ function generateId (name: string, index: number): string {
 }
 
 /**
- * Find a database config by ID
+ * Find a schema's config by id
  */
 export function findSchemaById (
   configs: SchemaConfig[],

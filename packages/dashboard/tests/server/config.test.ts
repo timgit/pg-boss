@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { parseSchemaConfig, parseSiteUrl, takeSchema, toSchemaConfig } from '~/lib/config.server'
 
-describe('toDatabaseConfig', () => {
+describe('toSchemaConfig', () => {
   it('names the database after the connection string and defaults the schema', () => {
     expect(toSchemaConfig({ url: 'postgres://user:pass@host/orders' }, 0)).toEqual({
       id: 'orders',
@@ -23,7 +23,7 @@ describe('toDatabaseConfig', () => {
   })
 })
 
-describe('parseDatabaseConfig', () => {
+describe('parseSchemaConfig', () => {
   const originalEnv = { ...process.env }
 
   beforeEach(() => {

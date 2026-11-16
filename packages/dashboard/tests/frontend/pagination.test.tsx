@@ -41,7 +41,7 @@ describe("Pagination primitives", () => {
   });
 
   it("links through the router, keeping the selected database", () => {
-    // tests/setup.ts mocks useSearchParams, which is where DbLink reads the database from.
+    // tests/setup.ts mocks useSearchParams, which is where SchemaLink reads the schema from.
     vi.mocked(useSearchParams).mockReturnValueOnce([new URLSearchParams("schema=orders"), vi.fn()]);
     renderInRouter(<PaginationLink to="/jobs?page=2">2</PaginationLink>, "/jobs?schema=orders");
 

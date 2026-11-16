@@ -13,7 +13,7 @@ vi.mock("react-router", async () => {
   };
 });
 
-describe("DbLink", () => {
+describe("SchemaLink", () => {
   beforeEach(() => {
     vi.mocked(useSearchParams).mockReturnValue([new URLSearchParams(), vi.fn()]);
   });

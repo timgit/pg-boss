@@ -22,7 +22,7 @@ function renderAt (path: string, search: string, schemas: PublicSchema[], curren
   return navigate
 }
 
-describe('DatabaseSwitcher', () => {
+describe('SchemaSwitcher', () => {
   it('names the only database without offering a menu', () => {
     renderAt('/queues', '', [main], main)
 

@@ -268,7 +268,7 @@ export function AppSidebar () {
 
   return (
     <Sidebar>
-      {/* The top bar's height, centered, so the lockup sits on one line with the database beside it. */}
+      {/* The top bar's height, centered, so the lockup sits on one line with the schema beside it. */}
       <SidebarHeader className="h-14 shrink-0 justify-center py-0">
         <div className="flex items-center gap-2.5 pl-1.5 pr-3">
           {/*

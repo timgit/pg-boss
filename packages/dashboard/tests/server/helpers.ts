@@ -121,8 +121,8 @@ export const ctx: TestContext = {
 }
 
 // Seed a RouterContextProvider for invoking loaders/actions directly (v8_middleware
-// passes `context` as a provider, read via context.get(dbContext)). Loaders only read
-// DB_URL/SCHEMA, so databases/currentDb are stubbed.
+// passes `context` as a provider, read via context.get(schemaContext)). Loaders only read
+// `connection`, so `schemas` and `currentSchema` are stubbed.
 export function makeContext (testCtx: TestContext): RouterContextProvider {
   const provider = new RouterContextProvider()
   provider.set(schemaContext, {

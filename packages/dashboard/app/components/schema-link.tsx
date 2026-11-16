@@ -6,7 +6,7 @@ type LinkProps = ComponentProps<typeof Link>;
 type To = LinkProps["to"];
 
 // Resolve a router `to` into an href string that preserves the active schema selection (the `schema`
-// query param). Pure so it can be reused by both DbLink and row-level navigation.
+// query param). Pure so it can be reused by both SchemaLink and row-level navigation.
 export function resolveSchemaHref(to: To, schemaParam: string | null): string {
   if (typeof to === "string") {
     const url = new URL(to, "http://localhost");
@@ -30,7 +30,7 @@ export function resolveSchemaHref(to: To, schemaParam: string | null): string {
   return String(to);
 }
 
-// Hook form of resolveDbHref, reading the current schema param from the URL.
+// Hook form of resolveSchemaHref, reading the current schema param from the URL.
 export function useSchemaHref(to: To): string {
   const [searchParams] = useSearchParams();
   return resolveSchemaHref(to, searchParams.get("schema"));

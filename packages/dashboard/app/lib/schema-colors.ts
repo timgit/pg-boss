@@ -1,4 +1,4 @@
-/** The colors a database can be marked with, in the order they are handed out by position. */
+/** The colors a schema can be marked with, in the order they are handed out by position. */
 export const SCHEMA_COLORS = {
   blue: '#4f7cf7',
   amber: '#e0a43a',
@@ -16,8 +16,8 @@ export function isSchemaColor (value: unknown): value is SchemaColor {
 }
 
 /**
- * A database's color: the one it was given, or one by its place in the configuration, so a switch
- * shows even out of the corner of an eye. Red is last: on the first database it would read as an alarm.
+ * A schema's color: the one it was given, or one by its place in the configuration, so a switch
+ * shows even out of the corner of an eye. Red is last: on the first schema it would read as an alarm.
  */
 export function schemaColor (color: SchemaColor | undefined, index: number): SchemaColor {
   return color ?? ORDER[index % ORDER.length]

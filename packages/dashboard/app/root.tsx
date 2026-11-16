@@ -41,7 +41,7 @@ function MainContent ({ children }: { children: React.ReactNode }) {
       )}
       style={{ background: 'var(--gradient-app)' }}
     >
-      {/* Frosted console topbar: the database, then global chrome. Pages name themselves and link up a level. */}
+      {/* Frosted console topbar: the schema, then global chrome. Pages name themselves and link up a level. */}
       <div
         className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 px-6 border-b border-[var(--border-subtle)] backdrop-blur-md backdrop-saturate-150"
         style={{ background: 'var(--surface-topbar)', boxShadow: 'var(--topbar-shadow)' }}
@@ -49,7 +49,7 @@ function MainContent ({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Phones only: the sidebar is a sheet there, so its own toggle cannot open it. */}
           <SidebarTrigger className="-ml-2 md:hidden" />
-          {/* The database first, as Supabase leads with the project: in view on every page about one, at every width. */}
+          {/* The schema first, as Supabase leads with the project: in view on every page about one, at every width. */}
           {schema && <SchemaSwitcher />}
           <ProSlot name="topbarStart" />
         </div>

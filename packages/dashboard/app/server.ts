@@ -13,7 +13,7 @@ import { stripBasePrefix } from './lib/base-path'
 // Resolve the per-request load context the loaders/actions rely on. The selected
 // schema comes from the `?schema=` query param or the `pgboss_schema` cookie, falling back
 // to the first configured schema. With `v8_middleware` on, loaders read these
-// values via `context.get(dbContext)`.
+// values via `context.get(schemaContext)`.
 //
 // Exported for the tests, which assert the overlay hook runs last. Nothing else
 // should call it.
@@ -34,7 +34,7 @@ export function getLoadContext (
   })
 
   // Last, so the overlay can narrow what was just chosen as well as add to it.
-  // A viewer scoped to one database has to be able to override `currentSchema`, not
+  // A viewer scoped to one schema has to be able to override `currentSchema`, not
   // merely to observe that the dashboard's default disagreed with them.
   overlay?.loadContext?.(c, context)
 

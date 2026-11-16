@@ -26,7 +26,7 @@ function Dot ({ schema, index }: { schema: PublicSchema, index: number }) {
   return <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: SCHEMA_COLORS[schemaColor(schema.color, index)] }} />
 }
 
-/** An overlay's own schema: a tile in place of a configured database's dot, so the two never read alike. */
+/** An overlay's own schema: a tile in place of a configured schema's dot, so the two never read alike. */
 function InternalMark ({ className }: { className?: string }) {
   return (
     <span
@@ -49,7 +49,7 @@ function Name ({ schema }: { schema: PublicSchema }) {
 }
 
 /**
- * The database every page is reading, first in the topbar the way Supabase shows its project, so it
+ * The schema every page is reading, first in the topbar the way Supabase shows its project, so it
  * is in view on every page and at every width. A menu when there is more than one, a plain label when
  * there is not.
  */
@@ -71,7 +71,7 @@ export function SchemaSwitcher () {
   const index = Math.max(0, schemas.findIndex((schema) => schema.id === current.id))
   const label = (
     <>
-      {/* On a phone a badge marks an internal database alone, leaving its name the room. */}
+      {/* On a phone a badge marks an internal schema alone, leaving its name the room. */}
       {isInternal ? <InternalMark className={current.badge ? 'max-sm:hidden' : undefined} /> : <Dot schema={current} index={index} />}
       <span className="min-w-0 max-w-[14rem] text-[var(--text-primary)] max-sm:max-w-[9rem]"><Name schema={current} /></span>
     </>
@@ -101,7 +101,7 @@ export function SchemaSwitcher () {
         <ChevronsUpDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[18rem]">
-        {/* Each section a group named by its heading, and each database a radio item: one is
+        {/* Each section a group named by its heading, and each schema a radio item: one is
             the database every page reads, and a screen reader says which. */}
         <DropdownMenuGroup aria-labelledby={`${ids}-schemas`}>
           <DropdownMenuLabel id={`${ids}-schemas`} className="text-xs font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">Schemas</DropdownMenuLabel>

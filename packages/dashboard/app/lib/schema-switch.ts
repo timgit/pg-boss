@@ -1,6 +1,6 @@
 /**
- * Where the database switcher goes from `pathname`. A page about one item (a queue, a job, a
- * schedule) gives way to the list it belongs to, since the other database may not have that item:
+ * Where the schema switcher goes from `pathname`. A page about one item (a queue, a job, a
+ * schedule) gives way to the list it belongs to, since the other schema may not have that item:
  * the path is cut at its first segment that holds a route parameter, so `/queues/:name/jobs/:jobId`
  * lands on `/queues` and Pro's `/pro/alerts/:id` on `/pro/alerts`. Any other page stays put.
  */

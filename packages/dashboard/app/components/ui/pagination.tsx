@@ -5,7 +5,7 @@ import { SchemaLink } from '~/components/schema-link'
 import { cn } from '~/lib/utils'
 
 // Ported from shadcn/ui's Base UI pagination. The links are the dashboard's own Button rendered as
-// a DbLink, so page changes stay client-side and keep the base path and the selected database.
+// a SchemaLink, so page changes stay client-side and keep the base path and the selected schema.
 
 function Pagination ({ className, ...props }: ComponentProps<'nav'>) {
   return (

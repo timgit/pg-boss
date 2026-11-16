@@ -100,7 +100,7 @@ export interface ProSlots {
   topbarStart?: ComponentType
 
   /**
-   * At the end of the database switcher's menu, for actions on the list itself, such as adding a
+   * At the end of the schema switcher's menu, for actions on the list itself, such as adding a
    * schema. Its component renders menu items and the separator above them, since it may render
    * nothing for some viewers.
    */
@@ -171,7 +171,7 @@ export interface ProSite {
    * request, as in development, where PGBOSS_DASHBOARD_BASE_PATH sets it.
    */
   basePath: string | null
-  /** The databases the pages read: a handler's own, or those DATABASE_URL describes. */
+  /** The schemas the pages read: a handler's own, or those DATABASE_URL describes. */
   schemas: () => SchemaConfig[]
 }
 
@@ -192,7 +192,7 @@ export interface ProServerOverlay {
    * Without this an operator who sets `PGBOSS_DASHBOARD_AUTH_*` and then buys
    * Pro gets two prompts for two unrelated credentials, and the browser's Basic
    * dialog is the one they cannot log out of. The overlay owning auth is the
-   * stronger statement — per-user, per-role, per-database — so it wins, and
+   * stronger statement — per-user, per-role, per-schema — so it wins, and
    * `createHonoApp` says so on stdout rather than dropping a configured
    * credential silently.
    */
@@ -211,7 +211,7 @@ export interface ProServerOverlay {
    * Add to the per-request load context, after the dashboard has seeded it.
    *
    * After, so the overlay can both add its own values (the actor) and narrow
-   * what the dashboard chose (the database a viewer is allowed to see).
+   * what the dashboard chose (the schema a viewer is allowed to see).
    * Running first would mean the dashboard's defaults silently overwrote the narrowing.
    */
   loadContext?: (c: Context, context: RouterContextProvider) => void
