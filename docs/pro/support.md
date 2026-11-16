@@ -1,6 +1,6 @@
 # Support
 
-Support is by email at [support@pgboss.io](mailto:support@pgboss.io), from the author of pg-boss, while a subscription is current. It's best effort. There's no committed response time and no service level agreement. Section 6 of [`LICENSE`](https://npm.pgboss.io/terms) holds the terms.
+Support is by email at [support@pgboss.io](mailto:support@pgboss.io), while a subscription is current. There's no committed response time and no service level agreement. Section 6 of [`LICENSE`](https://npm.pgboss.io/terms) holds the terms.
 
 ## What support covers
 
