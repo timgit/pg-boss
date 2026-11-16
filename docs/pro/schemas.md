@@ -36,6 +36,10 @@ database, and a pg-boss schema that is already added under another name.
 Pro stores each connection encrypted with [`PGBOSS_PRO_SECRET_KEY`](./administration.md#secrets) and
 doesn't send its password back to the browser. The list shows each schema's host and database.
 
+If the `PGBOSS_PRO_DB_` settings are changed to name the database of a schema already added, Pro
+stops monitoring that schema. The list marks it **Pro's own database, not monitored** until a global
+admin edits its connection or removes it.
+
 ## Editing a schema
 
 **Edit** in a schema's menu opens its name, color and connection. The connection's fields show what

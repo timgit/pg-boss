@@ -126,7 +126,7 @@ Default: `false`
 
 ### `PGBOSS_PRO_LOG_FORMAT`
 
-The format of Pro's log. Pro refuses to start with a value other than `text`, `json` or `pretty`. [`pg-boss-pro doctor`](./install.md#check-the-install) reports such a value as a failed check.
+The format of Pro's log. With a value other than `text`, `json` or `pretty`, Pro logs a warning and writes text. [`pg-boss-pro doctor`](./install.md#check-the-install) reports such a value as a failed check.
 
 | Value | Output |
 | - | - |

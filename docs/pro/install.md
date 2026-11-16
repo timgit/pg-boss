@@ -83,7 +83,7 @@ Pro reads these settings at startup:
 | `PGBOSS_PRO_SETUP_TOKEN` | With several instances behind a load balancer | One setup token the instances share, set before the first start. The setup link then works on every instance. |
 | `PGBOSS_PRO_LOG_FORMAT` | With a log collector | Set it to `json` for one JSON object per line, or to `pretty` for reading in a terminal. The default is `text`. See [logging](./environment.md#pgboss-pro-log-format). |
 
-Store the encryption key in another secret store. Rotating the secret key requires entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error at startup and serves no pages. See [secrets](./administration.md#secrets).
+Store the encryption key in another secret store. Rotating the secret key requires entering all secrets again. Without `PGBOSS_PRO_SECRET_KEY`, Pro logs an error that names the setting and exits. See [secrets](./administration.md#secrets).
 
 Pro doesn't read `DATABASE_URL`, which the dashboard reads. The schemas Pro monitors are added in the Pro Console. See [Schemas](./schemas.md).
 
@@ -131,7 +131,7 @@ Start Pro in the project. Pro reads the `.env` file in the directory it starts i
 npx pg-boss-pro
 ```
 
-A variable set in the environment takes precedence over the same variable in `.env`. When Pro doesn't start, [check the install](#check-the-install).
+A variable set in the environment takes precedence over the same variable in `.env`. Pro doesn't start without `PGBOSS_PRO_SECRET_KEY` and its database settings, or with a setting it can't use, such as a port that isn't a number. It logs one line that names the setting and exits with status 1. When Pro doesn't start, [check the install](#check-the-install).
 
 On first run there are no accounts. Pro prints a setup link to its log:
 
@@ -301,6 +301,7 @@ It reports each check as passed or failed, with the fix for each failure:
 - The secret key, the log format when `PGBOSS_PRO_LOG_FORMAT` is set, and the setup token when one is set.
 - The connection to Pro's database.
 - Pro's tables, against the version this Pro uses. Tables from a later Pro mean the install is older than the release that last migrated the database.
+- Each schema whose connection is Pro's own database, which Pro doesn't monitor.
 - The stored secrets, decrypted with the current key. See [key changes](./administration.md#key-changes).
 
 The doctor doesn't write to Pro's database, and it exits with status 1 when a check fails. It doesn't connect to the schemas Pro monitors, which Settings › Schemas checks. See [Schemas](./schemas.md).
