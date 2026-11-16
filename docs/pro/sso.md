@@ -38,7 +38,8 @@ same address can't sign in as the account. The person keeps the account if the
 provider changes their address. When the provider replaces a person's own
 account, a global admin presses **Forget SSO link** on the account's page so
 the next sign-in links the account again. Pointing Pro at a new issuer links each account
-again by its address.
+again by its address. With email domains named, Pro links an existing account by its address only
+when the address is in one of them. A user outside them signs in with their password.
 
 If the provider sends a group claim, each row of **Groups** maps one of the provider's group names onto a Pro
 group that already exists. Pro syncs only the mapped groups. A group kept by hand isn't
