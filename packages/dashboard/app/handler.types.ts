@@ -8,7 +8,7 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 export const publishedTypesMatch: [
   Equal<typeof Declared.createDashboardHandler, typeof Implemented.createDashboardHandler>,
   Equal<Declared.CreateDashboardHandlerOptions, Implemented.CreateDashboardHandlerOptions>,
-  Equal<Declared.DatabaseInput, Implemented.DatabaseInput>,
+  Equal<Declared.SchemaInput, Implemented.SchemaInput>,
   Equal<Declared.DashboardHandler, Implemented.DashboardHandler>,
   Equal<Declared.DashboardRequestInfo, Implemented.DashboardRequestInfo>
 ] = [true, true, true, true, true]

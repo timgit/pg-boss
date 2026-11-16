@@ -2,18 +2,19 @@ import { fileURLToPath } from 'node:url'
 import type { Hono } from 'hono'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
-import { toSchemaConfig, toSiteOrigin, type DatabaseInput } from './lib/config.server'
+import { toSchemaConfig, toSiteOrigin, type SchemaInput } from './lib/config.server'
 import { withBasePath } from './lib/runtime-base-path'
 import { applySettingAliases, serverOverlayOf } from './lib/server-overlay'
 
-export type { DatabaseInput }
+export type { SchemaInput }
 
 export interface CreateDashboardHandlerOptions {
   /**
-   * The first one is selected by default. Required by the dashboard. pg-boss Pro leaves it out: its
-   * apps are added in the Pro Console.
+   * The schemas the dashboard reads, each a connection string and the pg-boss schema in it. The first
+   * one is selected by default. Required by the dashboard. pg-boss Pro leaves it out: its schemas are
+   * added in the Pro Console.
    */
-  databases?: DatabaseInput[];
+  schemas?: SchemaInput[];
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
   /**
@@ -73,12 +74,12 @@ const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
  * standalone server does.
  */
 export function createDashboardHandler (
-  { databases: schemas, basePath, siteUrl, auth = false }: CreateDashboardHandlerOptions
+  { schemas, basePath, siteUrl, auth = false }: CreateDashboardHandlerOptions
 ): DashboardHandler {
-  // An empty list is a mistake now. A missing one is a Pro build's, whose apps are kept in its own
-  // database; the build says which once it loads, and one without Pro refuses then when it has no databases.
+  // An empty list is a mistake now. A missing one is a Pro build's, whose schemas are kept in its own
+  // database; the build says which once it loads, and one without Pro refuses then when it has no schemas.
   if (schemas?.length === 0) {
-    throw new Error('createDashboardHandler() needs at least one database')
+    throw new Error('createDashboardHandler() needs at least one schema')
   }
 
   const configs = (schemas ?? []).map(toSchemaConfig)
@@ -86,7 +87,7 @@ export function createDashboardHandler (
   const duplicate = configs.find((config, index) => configs.findIndex(other => other.id === config.id) !== index)
 
   if (duplicate) {
-    throw new Error(`Two databases resolve to the id "${duplicate.id}": give each one a distinct name`)
+    throw new Error(`Two schemas resolve to the id "${duplicate.id}": give each one a distinct name`)
   }
 
   // Fail on a bad base path now, not on the first request.
@@ -135,7 +136,7 @@ export function createDashboardHandler (
     const overlay = serverOverlayOf(build)
 
     if (configs.length === 0 && !overlay.ownsAuth) {
-      throw new Error('createDashboardHandler() needs at least one database')
+      throw new Error('createDashboardHandler() needs at least one schema')
     }
     // Before any pool opens: the query timeout is read from the environment, under Pro's name too.
     applySettingAliases(overlay)

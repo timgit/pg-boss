@@ -1,4 +1,4 @@
-export interface DatabaseInput {
+export interface SchemaInput {
   url: string;
   /** Defaults to the database name in the connection string. */
   name?: string;
@@ -8,10 +8,11 @@ export interface DatabaseInput {
 
 export interface CreateDashboardHandlerOptions {
   /**
-   * The first one is selected by default. Required by the dashboard. pg-boss Pro leaves it out: its
-   * apps are added in the Pro Console.
+   * The schemas the dashboard reads, each a connection string and the pg-boss schema in it. The first
+   * one is selected by default. Required by the dashboard. pg-boss Pro leaves it out: its schemas are
+   * added in the Pro Console.
    */
-  databases?: DatabaseInput[];
+  schemas?: SchemaInput[];
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
   /**

@@ -105,14 +105,14 @@ function distinctIds (configs: SchemaConfig[]): SchemaConfig[] {
   })
 }
 
-export interface DatabaseInput {
+export interface SchemaInput {
   url: string;
   name?: string;
   schema?: string;
 }
 
 /** Shared by the environment parser above and by `createDashboardHandler()`. */
-export function toSchemaConfig ({ url, name, schema }: DatabaseInput, index: number): SchemaConfig {
+export function toSchemaConfig ({ url, name, schema }: SchemaInput, index: number): SchemaConfig {
   const displayName = name || extractDatabaseName(url) || `Schema ${index + 1}`
 
   return {

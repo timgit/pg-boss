@@ -94,7 +94,7 @@ describe('PGBOSS_DASHBOARD_SITE_URL', () => {
     expect(told({ basePath: '/queues' })).toBe('https://pgboss.example.com/queues')
   })
 
-  it('tells the overlay the mount path and the databases the pages read, not the environment', () => {
+  it('tells the overlay the mount path and the schemas the pages read, not the environment', () => {
     vi.stubEnv('DATABASE_URL', 'postgres://localhost/host_app')
     const orders = { id: 'orders', name: 'Orders', url: 'postgres://localhost/orders', schema: 'pgboss' }
     let site: ProSite | undefined
@@ -172,7 +172,7 @@ describe('createDashboardHandler siteUrl', () => {
   }))
 
   it('runs an action from the site origin the option names', async () => {
-    const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }], siteUrl: 'https://pgboss.example.com' })
+    const handler = createDashboardHandler({ schemas: [{ url: 'postgres://host/app' }], siteUrl: 'https://pgboss.example.com' })
 
     expect((await post(handler)).status).toBe(200)
     await handler.close()
@@ -181,7 +181,7 @@ describe('createDashboardHandler siteUrl', () => {
   it('ignores PGBOSS_DASHBOARD_SITE_URL: only the option applies', async () => {
     vi.stubEnv('PGBOSS_DASHBOARD_SITE_URL', 'https://pgboss.example.com')
     vi.spyOn(console, 'log').mockImplementation(() => {})
-    const handler = createDashboardHandler({ databases: [{ url: 'postgres://host/app' }] })
+    const handler = createDashboardHandler({ schemas: [{ url: 'postgres://host/app' }] })
 
     expect((await post(handler)).status).toBe(400)
     await handler.close()
