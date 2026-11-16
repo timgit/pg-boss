@@ -44,8 +44,9 @@ account is disabled, its password is set or changed another way, or the person s
 Failed sign-ins lock for fifteen minutes. Five failures against an account from one client
 address in fifteen minutes lock that account from that address. Five failures from one client address lock
 that address out of every account. An account is locked from everywhere only after twenty failures. A
-stranger can't lock someone out of their own account in a few tries. The account's page shows
-the lock, where a global admin can clear it.
+stranger can't lock someone out of their own account in a few tries. An IPv6 address counts as its
+whole /64, so a client can't get more tries by moving to another address in it. The account's page
+shows the lock, where a global admin can clear it.
 
 Machines get [service accounts](./api-tokens.md) instead, which appear in the same list. A service account
 acts only through API tokens.
