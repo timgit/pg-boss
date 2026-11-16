@@ -54,7 +54,8 @@ groups out past its group limit (`_claim_names` or `hasgroups`). The other is a
 sign-in that would take the last global admin out of the group that makes them
 a global admin.
 
-A sign-in through the provider starts a Pro session that lasts 12 hours. A person
+A sign-in through the provider starts a Pro session like a password's, which ends after 12 hours
+or an hour without use (see [Accounts](./accounts.md)). A person
 disabled or signed out at the provider keeps their open session until it ends, because Pro
 doesn't check with the provider again during the session. To end the session at once, disable the
 account in Pro, which ends its sessions immediately.

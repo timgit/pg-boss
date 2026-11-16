@@ -41,6 +41,11 @@ Edit the account's name here too, or disable or delete the account. Disabling, d
 password ends that account's sessions immediately. An open invitation link stops working when the
 account is disabled, its password is set or changed another way, or the person signs in by SSO.
 
+A session lasts 12 hours from sign-in. It ends sooner after an hour in which the person doesn't
+click, type, scroll or open a page. A page that refreshes itself doesn't count, which means a browser
+left open on a page is signed out an hour after anyone last used it. Signing in again from a browser
+ends the session that browser held before.
+
 Failed sign-ins lock for fifteen minutes. Five failures against an account from one client
 address in fifteen minutes lock that account from that address. Five failures from one client address lock
 that address out of every account. An account is locked from everywhere only after twenty failures.
