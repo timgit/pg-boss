@@ -8,9 +8,10 @@ alerts and links to this page. An alert's page
 shows the condition that matched, the rule and version that opened it, and the destinations its
 notifications went to.
 
-The page header shows the time the evaluator last finished a pass, which it does once
-a minute. When no pass has finished for 3 minutes, every Pro Console page shows a
-banner, because no alert opens or closes until the evaluator runs again.
+The page header shows the time the evaluator last finished a pass on the schema, which it does
+once a minute. When no pass has finished on a schema for 3 minutes, the schema's pages show a
+banner, because no alert opens or closes on that schema until its next pass. Pages that name no
+schema, such as Settings, show a banner naming every schema behind.
 [Requirements](./alert-rules.md#requirements) covers how the evaluator runs.
 
 ![The alerts list](../images/pro/alerts.webp){.light-only}

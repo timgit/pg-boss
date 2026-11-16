@@ -101,7 +101,10 @@ Pro runs its own background work on pg-boss queues in the `pgboss` schema of
 **Internal** in the schema menu, after the schemas and before **Add schema**. They aren't one of the schemas added under **Settings ›
 Schemas**. A banner on each of their pages says which database holds them.
 
-- `pgboss-pro-alerts` runs the alert evaluator once a minute.
+- Each schema has a pass queue, named `pgboss-pro-pass-` and the schema's id, which runs the
+  alert evaluator on that schema once a minute.
+- `pgboss-pro-housekeeping` prunes Pro's store once a minute, as
+  [Retention](./administration.md#retention) describes.
 - Each alert destination has a [send queue](./destinations.md#send-queues), named
   `pgboss-pro-send-` and the destination's id. Its page is titled with the destination's name.
 

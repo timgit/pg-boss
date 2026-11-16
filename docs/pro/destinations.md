@@ -32,6 +32,10 @@ Each rule sends to one destination, chosen on the rule's page. When a new destin
 while rules that are on have none, Pro offers to send those rules to it. Accepting gives every one
 of them the new destination. **Not now** leaves them as they are.
 
+Rules on two schemas that send to one destination share its [send queue](#send-queues). A burst of
+alerts on a test schema then waits ahead of production's sends to that destination. Give a test or
+staging schema destinations of its own.
+
 ![The offer to send the rules that are on to a new destination](../images/pro/destination-routing.webp){.light-only}
 ![The offer to send the rules that are on to a new destination](../images/pro/destination-routing-dark.webp){.dark-only}
 

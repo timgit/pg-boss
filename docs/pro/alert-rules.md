@@ -218,11 +218,12 @@ that point at them.
 - The health check and the per-minute rates in thresholds read the stats
   `persistQueueStats` keeps (pg-boss 12.35 or later). Waits and run times need
   pg-boss 12.36, and so do the instance checks, which read pg-boss's instance registry.
-- The evaluator runs once a minute as a pg-boss job in the `pgboss` schema of
-  [Pro's database](./install.md#database-setup). A pass holds a Postgres advisory lock
-  on Pro's database while it runs. Pro replicas run one pass at a time between them, and the pass queues each
-  notification once to its destination's [send queue](./destinations.md#send-queues).
-  A minute whose job finds the lock taken skips its pass. A pooler in front of
+- The evaluator runs a pass on each schema once a minute, as a pg-boss job on that schema's own
+  queue in the `pgboss` schema of [Pro's database](./install.md#database-setup). A slow or
+  unreachable schema holds up only its own passes. While a schema's pass runs, Pro creates no
+  job for that schema's next minute. A pass also holds a Postgres advisory lock for its schema on
+  Pro's database. Pro replicas run one pass per schema at a time between them. Each pass queues a
+  notification once to its destination's [send queue](./destinations.md#send-queues). A pooler in front of
   the store must not be in transaction mode, because the lock needs a session
   of its own. In transaction mode, the send queues also lose LISTEN/NOTIFY and find
   new sends by polling every 10 seconds.
@@ -230,5 +231,5 @@ that point at them.
   the Pro Console, and tries again each minute until it runs.
 - On SIGTERM or SIGINT, a pass in progress gets up to 20 seconds to finish before the
   database connections close. A replica that dies during a pass releases the lock
-  with its connection. The next minute's pass then runs. pg-boss fails the
-  dead pass's job about two minutes later, once the job's heartbeat stops.
+  with its connection. pg-boss fails the dead pass's job about two minutes later, once the
+  job's heartbeat stops. The schema's next pass runs at the following minute.
