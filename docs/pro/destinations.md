@@ -101,28 +101,6 @@ Pro sends each email with an HTML part and a plain text part, for mail clients t
 
 ![An alert email for a stalled queue](../images/pro/alert-email.webp)
 
-### SMTP settings for common services
-
-Each service's own docs have the current values. The From address must be one the service lets the
-login send from, usually on a domain verified with it.
-
-| Service | SMTP host | Port | Username and password |
-|---|---|---|---|
-| Microsoft 365, SMTP AUTH | `smtp.office365.com` | 587 | The sending mailbox's address and password. SMTP AUTH must be on for the mailbox |
-| Microsoft 365, connector | The domain's MX host, such as `example-com.mail.protection.outlook.com` | 25 | None. An inbound connector in Exchange Online accepts Pro's public IP address |
-| Google Workspace | `smtp-relay.gmail.com` | 587 | None when the SMTP relay service in the Admin console allows Pro's IP address, else a Workspace user's address and app password |
-| Amazon SES | `email-smtp.<region>.amazonaws.com` | 587 | SMTP credentials made in the SES console, not an AWS access key |
-| SendGrid | `smtp.sendgrid.net` | 587 | `apikey`, and an API key |
-| Postmark | `smtp.postmarkapp.com` | 587 | A Server API token, in both fields |
-| Mailgun | `smtp.mailgun.org`, or `smtp.eu.mailgun.org` in the EU | 587 | The domain's SMTP login and password |
-| Resend | `smtp.resend.com` | 587 | `resend`, and an API key |
-
-Each of these takes STARTTLS on the port listed, which Pro requires by default. Leave **TLS from
-the first byte (port 465)** unchecked for them.
-
-Microsoft has announced the end of password sign-in for SMTP AUTH in Exchange Online. The
-connector doesn't depend on it, though it needs Pro to reach port 25 from a fixed public address.
-
 ## Webhook
 
 Pro stores a webhook's URL encrypted, since receivers often keep their token in
