@@ -12,8 +12,8 @@ set up, Pro talks only to its Postgres database.
 | `npm install` | at install or upgrade | `npm.pgboss.io`, the configured registry |
 | A webhook alert | only once a webhook destination exists, when a rule sending to it fires or its alert closes, or a user sends a test | the URL on that destination |
 | A PagerDuty alert | only once a PagerDuty destination exists, at the same moments | `events.pagerduty.com` |
-| An email alert | only once an email destination exists, at the same moments, or when a global admin presses **Send test** under **Settings › Email** | the configured SMTP server, or `api.resend.com` |
-| An invitation email | when a global admin sends an invitation from an account's page, or adds a person with **Email the link to this address** checked | the configured SMTP server, or `api.resend.com` |
+| An email alert | only once an email destination exists, at the same moments, or when a global admin presses **Send test** under **Settings › Email** | the configured SMTP server |
+| An invitation email | when a global admin sends an invitation from an account's page, or adds a person with **Email the link to this address** checked | the configured SMTP server |
 | A schema's database | only once a schema is added, when a page, the alert evaluator or an operation reads or changes it | the host in that schema's connection |
 | Single sign-on | when a user signs in or presses **Test connection** | the provider's issuer, token and key endpoints |
 
@@ -29,7 +29,7 @@ Set `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES=true` to keep webhook and SMTP
 destinations on the public internet. Pro then refuses any destination whose host resolves to a loopback,
 private, link-local, shared or other non-public address. The destination's
 deliveries show the reason. Pro checks the address it connects to. A host name can't pass the
-check and then resolve somewhere private. PagerDuty and Resend are public
+check and then resolve somewhere private. PagerDuty is public
 already. Single sign-on isn't covered, because providers often run on the
 internal network. The provider's endpoints must use https, or http on localhost.
 

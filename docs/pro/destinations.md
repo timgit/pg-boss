@@ -71,8 +71,8 @@ Pro queues each resolve once per fire, under a job id made from the alert and th
 send is kept for 8 days, which stops the evaluator from queuing the same resolve again.
 
 Every email destination sends through the one email server under **Settings › Email**. Two email
-destinations can still send at the same time. Resend answers a burst over its rate limit with 429, which
-Pro retries like any other failure.
+destinations can still send at the same time. A sending service may refuse a burst over its rate
+limit with a 4xx reply, which Pro retries like any other failure.
 
 ## Email
 
@@ -82,7 +82,8 @@ Destinations page says nothing about the server until an email destination exist
 server is set up, an email destination shows **Waiting for Settings › Email** and its switch can't
 be turned on.
 
-Email goes out through SMTP or Resend. **Send test** on the Email page sends one message to your
+Email goes out through SMTP, to any server Pro can reach: a relay on the internal network, a
+mailbox provider or a sending service. **Send test** on the Email page sends one message to your
 own address with the settings in the form, saved or not. Each person can send 5 tests in 15 minutes,
 and everyone together 20, before tests stop for 15 minutes.
 
@@ -99,6 +100,28 @@ turns off the STARTTLS requirement.
 Pro sends each email with an HTML part and a plain text part, for mail clients that show only text.
 
 ![An alert email for a stalled queue](../images/pro/alert-email.webp)
+
+### SMTP settings for common services
+
+Each service's own docs have the current values. The From address must be one the service lets the
+login send from, usually on a domain verified with it.
+
+| Service | SMTP host | Port | Username and password |
+|---|---|---|---|
+| Microsoft 365, SMTP AUTH | `smtp.office365.com` | 587 | The sending mailbox's address and password. SMTP AUTH must be on for the mailbox |
+| Microsoft 365, connector | The domain's MX host, such as `example-com.mail.protection.outlook.com` | 25 | None. An inbound connector in Exchange Online accepts Pro's public IP address |
+| Google Workspace | `smtp-relay.gmail.com` | 587 | None when the SMTP relay service in the Admin console allows Pro's IP address, else a Workspace user's address and app password |
+| Amazon SES | `email-smtp.<region>.amazonaws.com` | 587 | SMTP credentials made in the SES console, not an AWS access key |
+| SendGrid | `smtp.sendgrid.net` | 587 | `apikey`, and an API key |
+| Postmark | `smtp.postmarkapp.com` | 587 | A Server API token, in both fields |
+| Mailgun | `smtp.mailgun.org`, or `smtp.eu.mailgun.org` in the EU | 587 | The domain's SMTP login and password |
+| Resend | `smtp.resend.com` | 587 | `resend`, and an API key |
+
+Each of these takes STARTTLS on the port listed, which Pro requires by default. Leave **TLS from
+the first byte (port 465)** unchecked for them.
+
+Microsoft has announced the end of password sign-in for SMTP AUTH in Exchange Online. The
+connector doesn't depend on it, though it needs Pro to reach port 25 from a fixed public address.
 
 ## Webhook
 

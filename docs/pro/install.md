@@ -147,7 +147,7 @@ Open the setup link and create the first global administrator. Whoever reaches a
 ## Email server
 
 After setup, Pro opens **Settings › Email**, an optional step. Pro sends alert email and invitations
-through this server, by SMTP or with a Resend API key. Set it up and press **Save**, or press
+through this server, which is any SMTP server Pro can reach. Set it up and press **Save**, or press
 **Skip** and set it up later from Settings. Either way, Pro goes on to **Settings › Schemas**.
 See [email](./destinations.md#email).
 
@@ -164,7 +164,7 @@ or PagerDuty:
 
 1. Add a destination under **Settings › Destinations**: an email list, a webhook or PagerDuty. Pro
    offers to send the rules that are on to it.
-2. For an email destination, set up **Settings › Email** with an SMTP server or a Resend API key.
+2. For an email destination, set up **Settings › Email** with an SMTP server.
 3. Press **Send test** on the destination's row. A webhook or PagerDuty destination gets a sample
    alert that fires and then resolves. An email destination gets one message.
 
