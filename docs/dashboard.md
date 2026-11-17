@@ -1,6 +1,6 @@
 # Dashboard
 
-The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring queues and jobs. Users can also [send a job](#send-job), [retry or cancel it](#job-actions), and manage [schedules](#schedules) and [subscriptions](#subscriptions). The [pg-boss Pro Console](./pro/index.md) adds changing many jobs at once, and creating and deleting queues, for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
+The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring queues and jobs. Users can also [send a job](#send-job), [retry or cancel it](#job-actions), and manage [schedules](#schedules) and [subscriptions](#subscriptions). The [pg-boss Pro Console](./pro/index.md) adds batch job operations and queue creation and deletion for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
 
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting.webp){.light-only}
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting-dark.webp){.dark-only}
@@ -18,7 +18,7 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 - **Job Details**: View full job payloads, output data, and metadata, and retry, cancel, resume or delete the job
 - **Send Job**: Send a job to a queue, with its data and options
 - **Warning History**: Browse the warnings pg-boss emitted earlier, when `persistWarnings` is enabled
-- **Multi-Schema Support**: Monitor multiple pg-boss instances from a single dashboard
+- **Multi-Schema Support**: Monitor multiple pg-boss schemas from a single dashboard
 - **Mobile Responsive**: Full functionality on mobile devices with collapsible sidebar
 - **Shareable URLs**: A shared URL opens the same schema and filters
 
