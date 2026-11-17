@@ -221,12 +221,12 @@ that point at them.
 - The evaluator runs a pass on each schema once a minute, as a pg-boss job on that schema's own
   queue in the `pgboss` schema of [Pro's database](./install.md#database-setup). A slow or
   unreachable schema holds up only its own passes. While a schema's pass runs, Pro creates no
-  job for that schema's next minute. A pass also holds a Postgres advisory lock for its schema on
-  Pro's database. Pro replicas run one pass per schema at a time between them. Each pass queues a
-  notification once to its destination's [send queue](./destinations.md#send-queues). A pooler in front of
-  the store must not be in transaction mode, because the lock needs a session
-  of its own. In transaction mode, the pass and send queues also lose LISTEN/NOTIFY and find
-  new work by polling every 30 seconds.
+  job for that schema's next minute. A pass reads first, then decides in one transaction
+  on Pro's database that holds a lock for its schema. Pro replicas decide one pass per schema at a
+  time between them, and a pass whose reads are older than another's finished pass stops without
+  deciding. Each pass queues a notification once to its destination's
+  [send queue](./destinations.md#send-queues). Behind a pooler in transaction mode, the pass and send
+  queues find new work by polling every 30 seconds instead of by LISTEN.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
   the Pro Console, and tries again each minute until it runs.
 - On SIGTERM or SIGINT, a pass in progress gets up to 20 seconds to finish before the
