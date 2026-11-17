@@ -19,12 +19,14 @@ collects metrics with Prometheus, or with another tool that reads the Prometheus
 | `pgboss_instance_pool_connections` | `schema`, `instance`, `name`, `host`, `state` | Its pool at the last heartbeat: total, idle, waiting. |
 | `pgboss_instance_cpu_cores` | `schema`, `instance`, `name`, `host` | CPU cores its process used. |
 | `pgboss_instance_memory_bytes` | `schema`, `instance`, `name`, `host` | Its process's resident memory. |
+| `pgboss_evaluator_pass_age_seconds` | `schema` | Seconds since Pro's alert evaluator last finished a pass over the schema. Missing until the first pass. |
 
-A service account that is a [global admin](./roles.md#global-admin) also gets [Pro's own queues](./schemas.md#pro-queues),
-as the schema menu shows them only to a global admin. They come under `schema="pro_queues"`:
-the alert evaluator's queue and a send queue for each destination. The metrics of a send queue
+A service account with a role on all schemas also gets [Pro's own queues](./schemas.md#pro-queues).
+The schema menu shows them only to a [global admin](./roles.md#global-admin), which a service account
+can't be. They come under `schema="pro_queues"`: a pass queue for each schema, the housekeeping
+queue and a send queue for each destination. The metrics of a send queue
 carry a `destination` label with the destination's name. Pro's queues have no `pgboss_alerts_open`.
-A viewer's token, as below, leaves them out.
+A token whose roles each name one schema doesn't get them.
 
 Pro leaves out any figure pg-boss hasn't recorded instead of reporting it as 0. Rates and health need `persistQueueStats`. Wait times, run times and the instance metrics need pg-boss 12.36. The 0.99 quantile appears once the hour holds 100 finished jobs.
 
@@ -46,5 +48,12 @@ scrape_configs:
 ## Health check
 
 `/healthz` answers 200 with `ok` once Pro has reached its database and brought its tables up to date. Until then it answers 503. It needs no sign-in. Pro doesn't check the database again for each probe after that. Under a base path, the endpoint moves under it too, as in `/pgboss/healthz`.
+
+`/healthz?ready=evaluator` also answers 503 until this instance's alert evaluator has started.
+Use it for an orchestrator that should restart an instance whose alerting never started.
+
+When the evaluator stops, only the Pro Console warns. Alert on `pgboss_evaluator_pass_age_seconds`
+from Prometheus too, such as when it passes 180 seconds, which is when the Pro Console starts
+warning that alerts are behind.
 
 Point a load balancer's or an orchestrator's health check at `/healthz`. The image in [Docker](./install.md#docker) uses it for its `HEALTHCHECK`.
