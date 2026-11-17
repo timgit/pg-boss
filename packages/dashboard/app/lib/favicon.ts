@@ -105,3 +105,26 @@ export function applyFavicon (href: string): void {
 
   link.href = href
 }
+
+/**
+ * The browser bar's color in each mode, the solid start of `--surface-topbar` in app.css, so Safari
+ * and Chrome paint their toolbar to meet the top bar. Interpolated into the inline theme script,
+ * which sets it before first paint, like the icon.
+ */
+export const BAR_COLOR: Record<'light' | 'dark', string> = {
+  light: '#ecf0f9',
+  dark: '#171b24',
+}
+
+/** Set the document's `theme-color` to the bar's color in `mode`, creating the tag if the page has none. */
+export function applyThemeColor (mode: 'light' | 'dark'): void {
+  let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+
+  if (!meta) {
+    meta = document.createElement('meta')
+    meta.name = 'theme-color'
+    document.head.appendChild(meta)
+  }
+
+  meta.content = BAR_COLOR[mode]
+}

@@ -7,6 +7,7 @@ import {
   isRouteErrorResponse,
   useLoaderData,
   useMatches,
+  useHref,
 } from "react-router";
 import type { Route } from "./+types/root";
 import { DocumentTitle } from "~/components/document-title";
@@ -30,7 +31,7 @@ import { isReadOnly } from "~/lib/read-only.server";
 import { MissingPgBossContext } from "~/lib/missing-pgboss";
 import faviconSource from "~/assets/pg-boss-favicon.svg?raw";
 import markWhite from "~/assets/pg-boss-mark-white.svg?raw";
-import { BRAND_COBALT, COLOR_HEX, DEFAULT_COLOR_THEME } from "~/lib/favicon";
+import { BAR_COLOR, BRAND_COBALT, COLOR_HEX, DEFAULT_COLOR_THEME } from "~/lib/favicon";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -117,6 +118,13 @@ const themeScript = `
       theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
     document.documentElement.classList.add(theme);
+
+    // The browser bar meets the top bar. Set here for the same reason as the
+    // icon below: only the client knows the stored mode.
+    var themeColor = document.createElement('meta');
+    themeColor.name = 'theme-color';
+    themeColor.content = ${JSON.stringify(BAR_COLOR)}[theme];
+    document.head.appendChild(themeColor);
     // Expose the selected mode (light/dark/system) so the sidebar theme label
     // can render from CSS on the first paint instead of client-only React state.
     document.documentElement.dataset.themeMode = mode;
@@ -162,11 +170,26 @@ export async function loader({ context }: Route.LoaderArgs) {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  // The home screen icon and the web app manifest are files in public/assets.
+  // Relative to the root route, so they resolve under the router's basename,
+  // and the build stays portable across base paths (check-build-portable.ts).
+  //
+  // The PNGs there were rendered once from ~/assets/pg-boss-favicon.svg: the
+  // touch icon and the maskable icon from the full square (the rect's rx set to
+  // 0), the 192 and 512 icons from the rounded mark. Render them again if the
+  // mark changes, under new names, because assets/ is cached for a year.
+  const touchIcon = useHref("assets/apple-touch-icon.png");
+  const manifest = useHref("assets/manifest.webmanifest");
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="apple-mobile-web-app-title" content="pg-boss" />
+        <link rel="apple-touch-icon" href={touchIcon} />
+        {/* With credentials, so a dashboard behind basic auth or Pro's sign-in still gets it. */}
+        <link rel="manifest" href={manifest} crossOrigin="use-credentials" />
         <DocumentTitle />
         <Meta />
         <Links />

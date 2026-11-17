@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { applyFavicon, faviconDataUri } from '~/lib/favicon'
+import { applyFavicon, applyThemeColor, faviconDataUri } from '~/lib/favicon'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -70,6 +70,11 @@ export function ThemeProvider ({ children }: { children: React.ReactNode }) {
     // when the theme changes without a reload.
     root.dataset.themeMode = theme
   }, [theme])
+
+  // The browser bar follows the resolved mode, whether the picker or the system changed it.
+  useEffect(() => {
+    applyThemeColor(resolvedTheme)
+  }, [resolvedTheme])
 
   // Listen for system theme changes
   useEffect(() => {
