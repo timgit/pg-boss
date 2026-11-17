@@ -56,7 +56,7 @@ evaluator queues every fire and resolve to it, and every Pro replica sends from 
 gets one send at a time, which keeps a slow or rate-limited destination from holding up any other's.
 
 A send that fails has five attempts in all. The first retry waits 20 to 40 seconds, and each wait
-after that roughly doubles, up to 5 minutes. Pro doesn't retry a failure that sending again can't
+after that roughly doubles, up to 5 minutes. A retry starts within 30 seconds of its time. Pro doesn't retry a failure that sending again can't
 fix: a 4xx answer other than 408 or 429, a redirect, a mail server's 5xx answer or refused
 login, an address that `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES` blocks, or a missing setting. Every attempt shows in the
 destination's deliveries.

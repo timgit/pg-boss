@@ -225,8 +225,8 @@ that point at them.
   Pro's database. Pro replicas run one pass per schema at a time between them. Each pass queues a
   notification once to its destination's [send queue](./destinations.md#send-queues). A pooler in front of
   the store must not be in transaction mode, because the lock needs a session
-  of its own. In transaction mode, the send queues also lose LISTEN/NOTIFY and find
-  new sends by polling every 10 seconds.
+  of its own. In transaction mode, the pass and send queues also lose LISTEN/NOTIFY and find
+  new work by polling every 30 seconds.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
   the Pro Console, and tries again each minute until it runs.
 - On SIGTERM or SIGINT, a pass in progress gets up to 20 seconds to finish before the
