@@ -7,7 +7,7 @@ collects metrics with Prometheus, or with another tool that reads the Prometheus
 
 | Metric | Labels | What |
 | - | - | - |
-| `pgboss_schema_up` | `schema` | 1, or 0 when the schema could not be read. |
+| `pgboss_schema_up` | `schema` | 1, or 0 when the schema could not be read within 5 seconds. Pro reads the schemas at once, and a slow one leaves the others in the scrape. |
 | `pgboss_queue_jobs` | `schema`, `queue`, `state` | Jobs by state: ready, active, deferred, queued, blocked, failed, total. |
 | `pgboss_queue_arrived_per_minute` | `schema`, `queue` | Jobs created per minute over the last hour. |
 | `pgboss_queue_finished_per_minute` | `schema`, `queue` | Jobs completed or failed per minute over the last hour. |
