@@ -30,8 +30,12 @@ one of these changes:
 
 ### Key changes
 
-Without the key it was encrypted with, Pro can't read a stored secret. Pro reads one key, and
-changing the key means entering every secret again.
+Without the key it was encrypted with, Pro can't read a stored secret. To rotate the key, start Pro
+with the new key in `PGBOSS_PRO_SECRET_KEY` and the old one in
+[`PGBOSS_PRO_SECRET_KEY_PREVIOUS`](./environment.md#pgboss-pro-secret-key-previous). At start, Pro
+saves every stored secret again under the new key and logs how many it saved. Then unset
+`PGBOSS_PRO_SECRET_KEY_PREVIOUS`. Until then, Pro decrypts with either key and encrypts with the new
+one. A key changed without the previous one set means entering every secret again.
 
 The first time Pro starts with a key, it stores a check value encrypted with that key. Each start
 decrypts the check value. When that fails, Pro tries to decrypt every stored secret and reports only

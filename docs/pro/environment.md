@@ -21,6 +21,7 @@ Pro reads its settings from the environment, and from a `.env` file in the direc
 | [`PGBOSS_PRO_DB_SSLMODE`](#pgboss-pro-db-sslmode) | |
 | [`PGBOSS_PRO_DB_CONNECTION_STRING`](#pgboss-pro-db-connection-string) | |
 | [`PGBOSS_PRO_SECRET_KEY`](#pgboss-pro-secret-key) | *Required* |
+| [`PGBOSS_PRO_SECRET_KEY_PREVIOUS`](#pgboss-pro-secret-key-previous) | |
 | [`PGBOSS_PRO_SETUP_TOKEN`](#pgboss-pro-setup-token) | |
 | [`PGBOSS_PRO_TRUSTED_PROXIES`](#pgboss-pro-trusted-proxies) | loopback |
 | [`PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES`](#pgboss-pro-block-private-addresses) | `false` |
@@ -106,6 +107,12 @@ The key Pro encrypts stored secrets with. Pro encrypts each schema's connection,
 
 Required.
 
+
+### `PGBOSS_PRO_SECRET_KEY_PREVIOUS`
+
+The key before a rotation. Pro decrypts with it what it saved, and at start saves each such secret
+again under `PGBOSS_PRO_SECRET_KEY`. Unset it once Pro has logged that every stored secret uses the
+current key. See [key changes](./administration.md#key-changes).
 ### `PGBOSS_PRO_SETUP_TOKEN`
 
 The token `/setup` asks for on a new install. It needs 32 characters or more, such as the output of `openssl rand -base64 32`. Setup refuses every token while a shorter one is set. Without the variable, each process makes its own token and prints the setup link to its log. With it, the log shows the whole link only when it goes to a terminal, and the variable's name in place of the token anywhere else. Set it when several instances share a load balancer.
