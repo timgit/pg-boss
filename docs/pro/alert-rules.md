@@ -225,8 +225,8 @@ that point at them.
   on Pro's database that holds a lock for its schema. Pro replicas decide one pass per schema at a
   time between them, and a pass whose reads are older than another's finished pass stops without
   deciding. Each pass queues a notification once to its destination's
-  [send queue](./destinations.md#send-queues). Behind a pooler in transaction mode, the pass and send
-  queues find new work by polling every 30 seconds instead of by LISTEN.
+  [send queue](./destinations.md#send-queues). Behind a pooler in transaction mode, without LISTEN, a
+  pass can start up to 30 seconds into its minute, and its sends still go out at once.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
   the Pro Console, and tries again each minute until it runs.
 - On SIGTERM or SIGINT, a pass in progress gets up to 20 seconds to finish before the

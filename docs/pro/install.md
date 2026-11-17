@@ -80,8 +80,9 @@ Each Pro instance opens at most 35 connections to this database, however many sc
 Allow 35 per instance in the database's `max_connections`, beside whatever else uses the server.
 
 A pooler in front of this database, such as PgBouncer or a managed service's pooled endpoint, may be
-in session or transaction mode. In transaction mode, Pro's workers find new work by polling every 30
-seconds instead of by LISTEN. Set the query timeout on Pro's role too, because a `SET` on a pooled
+in session or transaction mode. In transaction mode, without LISTEN, a schema's pass can start up to
+30 seconds into its minute. Its sends still go out at once, because Pro wakes its own send workers
+when a pass commits. Set the query timeout on Pro's role too, because a `SET` on a pooled
 connection can reach another session:
 
 ```sql
