@@ -69,6 +69,16 @@ CREATE DATABASE pgboss_pro OWNER pgboss_pro;
 
 Pro uses pg-boss internally to run its alert evaluator and send notifications. Pro's own tables go in `public` and pg-boss uses its default schema `pgboss`. As the database's owner, the role has the permissions to create Pro's tables and run the migrations in later upgrades.
 
+Each Pro instance opens at most 35 connections to this database, however many schemas it monitors:
+
+- 10 for pages, sign-ins and the Pro API
+- 4 for sending alerts
+- 8 for the alert evaluator, which runs at most 8 schemas' passes at once and starts the rest as those finish
+- 2 for keeping a running operation alive
+- 11 for Pro's pg-boss, a pool of 10 and its listener
+
+Allow 35 per instance in the database's `max_connections`, beside whatever else uses the server.
+
 ## Configuration
 
 Pro reads these settings at startup:
