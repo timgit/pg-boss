@@ -213,4 +213,7 @@ its severity is `critical` or `warning`. Its details hold the alert's why, rule
 and data, with a link to the alert once the Pro Console's address is set. Pro stores
 the key encrypted, and records a key PagerDuty refuses as a failed delivery.
 
+**Service region** sends to `events.pagerduty.com` for an account in the US region, or
+`events.eu.pagerduty.com` for one in the EU region. It's US unless set.
+
 Secrets need `PGBOSS_PRO_SECRET_KEY`. See [Secrets](./administration.md#secrets). A secret saved with another key is marked in the list until it's entered again. See [Key changes](./administration.md#key-changes).
