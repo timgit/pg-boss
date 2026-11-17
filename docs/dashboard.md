@@ -1,6 +1,6 @@
 # Dashboard
 
-The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring jobs, queues and schedules. The dashboard [sends a job](#send-job), [retries, cancels, resumes and deletes](#job-actions) a job from its detail page, [adds and removes schedules](#schedules), [subscribes and unsubscribes queues](#subscriptions), and [publishes events](#subscriptions). The [pg-boss Pro Console](./pro/index.md) adds changing many jobs at once, and creating and deleting queues, for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
+The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package is a web dashboard for monitoring queues and jobs. Users can also [send a job](#send-job), [retry or cancel it](#job-actions), and manage [schedules](#schedules) and [subscriptions](#subscriptions). The [pg-boss Pro Console](./pro/index.md) adds changing many jobs at once, and creating and deleting queues, for authenticated users with assigned [roles](./pro/roles.md). The Pro Console also adds alerts and an audit log.
 
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting.webp){.light-only}
 ![A queue's waiting jobs over the last 24 hours](./images/dashboard-queue-waiting-dark.webp){.dark-only}
