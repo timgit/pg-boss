@@ -26,6 +26,7 @@ Pro reads its settings from the environment, and from a `.env` file in the direc
 | [`PGBOSS_PRO_TRUSTED_PROXIES`](#pgboss-pro-trusted-proxies) | loopback |
 | [`PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES`](#pgboss-pro-block-private-addresses) | `false` |
 | [`PGBOSS_PRO_LOG_FORMAT`](#pgboss-pro-log-format) | `text` |
+| [`PGBOSS_PRO_HEARTBEAT_URL`](#pgboss-pro-heartbeat-url) | |
 
 ## Server
 
@@ -150,6 +151,15 @@ Each JSON object has `level`, `time`, `app` and `msg`. A line about a schema, al
 ```
 
 Default: `text`
+
+## Monitoring
+
+### `PGBOSS_PRO_HEARTBEAT_URL`
+
+A URL Pro requests once a minute while every schema's alert evaluator pass is current, for a dead
+man's switch such as Healthchecks.io or Cronitor. When Pro stops, its database is down, or a schema's
+passes fall 3 minutes behind, the requests stop and that service raises the alarm. The request is a
+GET, through `HTTPS_PROXY` when it's set. See [health check](./metrics.md#health-check).
 
 ## Dashboard variables
 

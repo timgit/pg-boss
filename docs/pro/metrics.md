@@ -55,5 +55,7 @@ Use it for an orchestrator that should restart an instance whose alerting never 
 When the evaluator stops, only the Pro Console warns. Alert on `pgboss_evaluator_pass_age_seconds`
 from Prometheus too, such as when it passes 180 seconds, which is when the Pro Console starts
 warning that alerts are behind.
+Without Prometheus, set [`PGBOSS_PRO_HEARTBEAT_URL`](./environment.md#pgboss-pro-heartbeat-url) to a
+dead man's switch, which raises the alarm when Pro's requests to it stop.
 
 Point a load balancer's or an orchestrator's health check at `/healthz`. The image in [Docker](./install.md#docker) uses it for its `HEALTHCHECK`.
