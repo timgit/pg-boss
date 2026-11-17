@@ -9,7 +9,7 @@ import faviconSource from '~/assets/pg-boss-favicon.svg?raw'
  * colour followed by the wrong one — the script wins, then `<Links />` renders
  * over the top of it.
  *
- * `links()` no longer carries an icon at all. It cannot: the theme lives in
+ * The document head carries no icon at all. It cannot: the theme lives in
  * `localStorage`, which the server rendering that tag has never seen, so
  * anything it emits is a guess that has to be corrected on the client — and
  * correcting it is what caused the flash. The script sets it before first paint

@@ -63,6 +63,11 @@ export default defineConfig(({ command }) => {
     // Router dev server requires `basename` to start with `base`, and the dev
     // server serves assets from the root regardless of the app's basename.
     base: command === 'build' ? viteBase : '/',
+    // A stylesheet names its fonts relative to itself, so the CSS holds no absolute asset URL and
+    // `withBasePath()` can serve the same build under any prefix (scripts/check-build-portable.ts).
+    experimental: {
+      renderBuiltUrl: (_filename, { hostType }) => (hostType === 'css' ? { relative: true } : undefined),
+    },
     // A Pro dev server's aliases differ from the dashboard's. Sharing one cache, the two would
     // re-optimize it under each other and serve the page two Reacts.
     cacheDir: process.env.PGBOSS_PRO === '1' ? 'node_modules/.vite-pro' : 'node_modules/.vite',

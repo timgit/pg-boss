@@ -67,8 +67,8 @@
   --color-gray-900: #181b21;
   --color-gray-950: #0e1014;
 
-  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
   /* Indeterminate loading bar. Declared as a theme animation (with its
      keyframes inside @theme) so Tailwind generates `animate-loading-bar`
@@ -526,8 +526,8 @@
  *
  * Space Grotesk Bold is the face the `pgb` letterforms inside the mark's square
  * are drawn from, so the name and the logo are one set of letters rather than
- * two that happen to sit together. Loaded with Geist in `root.tsx`; the stack
- * falls through to the UI face while it arrives.
+ * two that happen to sit together. Its seven glyphs are inlined above. The
+ * stack falls back to the UI face for any other letter.
  */
 .pgboss-wordmark {
   font-family: "Space Grotesk", var(--font-sans);

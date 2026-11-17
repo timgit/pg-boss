@@ -10,6 +10,9 @@ import {
 } from "react-router";
 import type { Route } from "./+types/root";
 import { DocumentTitle } from "~/components/document-title";
+// Geist and Geist Mono ship with the dashboard, so a page asks no other host for its fonts.
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "./app.css";
 import { AppSidebar } from "~/components/sidebar";
 import { ThemeToggle } from "~/components/ui/theme-toggle";
@@ -122,8 +125,8 @@ const themeScript = `
     document.documentElement.dataset.colorTheme = colorTheme;
 
     // Tint the mark's square to the chosen theme. This runs before first paint
-    // and is the only thing that sets the icon on load — links() deliberately
-    // emits none, because the server has never seen localStorage. Only the
+    // and is the only thing that sets the icon on load. The document has no
+    // icon link of its own, because the server has never seen localStorage. Only the
     // square's fill is swapped, so the queue row comes straight from the asset
     // and cannot drift from the one the sidebar draws.
     const hex = colorHex[colorTheme] || colorHex[${JSON.stringify(DEFAULT_COLOR_THEME)}];
@@ -228,16 +231,3 @@ export function meta() {
   return [{ name: "description", content: "Monitor pg-boss job queues" }];
 }
 
-export function links() {
-  return [
-    { rel: "preconnect", href: "https://fonts.googleapis.com" },
-    { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-    {
-      rel: "stylesheet",
-      // Geist and Geist Mono only. The wordmark's face is Space Grotesk and it
-      // is not requested here — seven glyphs of it are inlined in `app.css`,
-      // which is a smaller thing to carry than a round trip to fetch.
-      href: "https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap",
-    },
-  ];
-}
