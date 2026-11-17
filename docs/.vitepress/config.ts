@@ -108,7 +108,7 @@ export default defineConfig({
         { text: 'pg-boss', link: '/introduction' }
       ],
       '/': [
-        { text: 'Introduction', link: '/introduction' },
+        { text: 'Getting Started', link: '/introduction' },
         { text: 'CLI', link: '/cli' },
         { text: 'Dashboard', link: '/dashboard' },
         { text: 'Proxy', link: '/proxy' },

@@ -1,4 +1,4 @@
-# Introduction
+# Getting Started
 
 pg-boss is a job queue for Node.js built on PostgreSQL.
 
