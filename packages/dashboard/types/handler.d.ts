@@ -9,10 +9,9 @@ export interface SchemaInput {
 export interface CreateDashboardHandlerOptions {
   /**
    * The schemas the dashboard reads, each a connection string and the pg-boss schema in it. The first
-   * one is selected by default. Required by the dashboard. pg-boss Pro leaves it out: its schemas are
-   * added in the Pro Console.
+   * one is selected by default. At least one is required.
    */
-  schemas?: SchemaInput[];
+  schemas: SchemaInput[];
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
   /**
@@ -39,18 +38,8 @@ export interface CreateDashboardHandlerOptions {
   siteUrl?: string;
 }
 
-/** What the host knows about a request that the `Request` itself does not carry. */
-export interface DashboardRequestInfo {
-  /**
-   * The address the request came from, for a dashboard that records one, such as Pro's sign-in
-   * limits and audit log. Not set by default.
-   * @see https://pgboss.io/pro/mount
-   */
-  clientIp?: string | null;
-}
-
 export interface DashboardHandler {
-  (request: Request, info?: DashboardRequestInfo): Promise<Response>;
+  (request: Request): Promise<Response>;
   /**
    * Releases everything this handler holds: the database pools and the pg-boss
    * instances behind the write paths, whose timers otherwise keep the event

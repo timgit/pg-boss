@@ -11,10 +11,9 @@ export type { SchemaInput }
 export interface CreateDashboardHandlerOptions {
   /**
    * The schemas the dashboard reads, each a connection string and the pg-boss schema in it. The first
-   * one is selected by default. Required by the dashboard. pg-boss Pro leaves it out: its schemas are
-   * added in the Pro Console.
+   * one is selected by default. At least one is required.
    */
-  schemas?: SchemaInput[];
+  schemas: SchemaInput[];
   /** Where the host mounts the handler, e.g. `/admin/queues`. Requests keep this prefix. */
   basePath?: string;
   /**
@@ -41,18 +40,8 @@ export interface CreateDashboardHandlerOptions {
   siteUrl?: string;
 }
 
-/** What the host knows about a request that the `Request` itself does not carry. */
-export interface DashboardRequestInfo {
-  /**
-   * The address the request came from, for a dashboard that records one, such as Pro's sign-in
-   * limits and audit log. Not set by default.
-   * @see https://pgboss.io/pro/mount
-   */
-  clientIp?: string | null;
-}
-
 export interface DashboardHandler {
-  (request: Request, info?: DashboardRequestInfo): Promise<Response>;
+  (request: Request): Promise<Response>;
   /**
    * Releases everything this handler holds: its database pools.
    *
@@ -69,20 +58,17 @@ const CLOSE_POOLS_KEY = Symbol.for('pgboss.dashboard.closeAllPools')
  * It loads nothing until the first request.
  *
  * It adds no authentication of its own — mount it behind whatever your host
- * application already uses. A Pro build is the exception: its overlay brings its
- * own, and this loads it, so mounting Pro here authenticates exactly as the
- * standalone server does.
+ * application already uses. A pg-boss Pro build can't be mounted: Pro runs as its
+ * own server.
  */
 export function createDashboardHandler (
   { schemas, basePath, siteUrl, auth = false }: CreateDashboardHandlerOptions
 ): DashboardHandler {
-  // An empty list is a mistake now. A missing one is a Pro build's, whose schemas are kept in its own
-  // database; the build says which once it loads, and one without Pro refuses then when it has no schemas.
-  if (schemas?.length === 0) {
+  if (!schemas?.length) {
     throw new Error('createDashboardHandler() needs at least one schema')
   }
 
-  const configs = (schemas ?? []).map(toSchemaConfig)
+  const configs = schemas.map(toSchemaConfig)
 
   const duplicate = configs.find((config, index) => configs.findIndex(other => other.id === config.id) !== index)
 
@@ -135,8 +121,10 @@ export function createDashboardHandler (
     const build = (await import(buildModulePath)) as unknown as ServerBuild
     const overlay = serverOverlayOf(build)
 
-    if (configs.length === 0 && !overlay.ownsAuth) {
-      throw new Error('createDashboardHandler() needs at least one schema')
+    // Pro authenticates, keeps its schemas in its own database and records each request's address,
+    // none of which a mount gives it.
+    if (overlay.ownsAuth) {
+      throw new Error('A pg-boss Pro build can\'t be mounted with createDashboardHandler(). Run Pro as its own server: https://pgboss.io/pro/install')
     }
     // Before any pool opens: the query timeout is read from the environment, under Pro's name too.
     applySettingAliases(overlay)
@@ -154,14 +142,13 @@ export function createDashboardHandler (
       auth,
       // `null` rather than undefined, so PGBOSS_DASHBOARD_SITE_URL does not apply.
       siteUrl: siteOrigin ?? null,
-      // The same overlay the standalone server loads, read from the build.
-      // Pro's package doesn't ship this handler, so here it is always the
-      // empty stub and adds nothing.
+      // The same overlay the standalone server loads, read from the build: the empty stub, since a
+      // Pro build is refused above.
       overlay,
     })
   }
 
-  const handler = async (request: Request, info: DashboardRequestInfo = {}): Promise<Response> => {
+  const handler = async (request: Request): Promise<Response> => {
     if (closed) {
       return new Response('The dashboard handler is closed', { status: 503 })
     }
@@ -172,9 +159,7 @@ export function createDashboardHandler (
       throw error
     })
 
-    // As Hono's env, where an overlay reads it. `getRequestListener` passes the Node request here
-    // too, as the standalone server's adapter does, so a host using it needs no `clientIp`.
-    return (await app).fetch(request, info)
+    return (await app).fetch(request)
   }
 
   const close = async (): Promise<void> => {

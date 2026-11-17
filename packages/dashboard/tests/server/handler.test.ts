@@ -7,12 +7,9 @@ describe('createDashboardHandler', () => {
     vi.restoreAllMocks()
   })
 
-  it('needs at least one schema when it is given a list', () => {
+  it('needs at least one schema', () => {
     expect(() => createDashboardHandler({ schemas: [] })).toThrow('needs at least one schema')
-  })
-
-  it('takes no list at creation, for a Pro build that keeps its apps itself', () => {
-    expect(() => createDashboardHandler({})).not.toThrow()
+    expect(() => createDashboardHandler({} as never)).toThrow('needs at least one schema')
   })
 
   it('refuses two schemas that would share an id', () => {
