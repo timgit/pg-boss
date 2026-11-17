@@ -76,21 +76,25 @@ session.
 
 A person gets their first password in one of two ways:
 
-- **A password**. The global admin sets it and hands it over.
+- **A password**. The global admin types it twice, on **Add a person** or with **Set a password** on
+  the account's page, and hands it over.
 - **An invitation**. Pro makes a link the person opens to choose a password. The link works once,
-  for 7 days. Pro stores only the link's hash, which means the page shows the link once, with a
-  **Copy** button, right after it's made.
+  for 7 days. Pro stores only the link's hash, which means the page offers the link only right
+  after it's made, with **Copy link**.
 
 With [Settings › Email](./destinations.md#email) set up, Pro can email the link:
 
 - **Add a person** starts on **Invite**, with **Email the link to this address** checked. Without
   an email server, it starts on **Set a password**, and **Invite** makes a link to copy.
 - An account's page has **Send invitation**, which emails a new link to the account's address, and
-  **Create invitation link**, which makes a new link and emails nothing.
+  **Create a link to copy**, which makes a new link and emails nothing.
 
-Either way, the account's page then shows the link with **Copy**, for the global admin to send
-another way. When the email isn't sent, the page shows the email server's error. The link
-still works. The audit log records each invitation, and each email sent or failed.
+After an email, **Copy link** copies the link for sending it another way. **Show link** shows
+it. When the email isn't sent, the page shows the email server's error and the link, which still
+works. The audit log records each invitation, and each email sent or failed.
+
+While an invitation is open, the account's page shows when it expires and when Pro last emailed it.
+**Send again** and **Create a new link to copy** each make a new link.
 
 A new link replaces the account's open one, which stops working, including in an email already
 sent. While a link is open, the account's page asks before making a new one. Each global admin can
