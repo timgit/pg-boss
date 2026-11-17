@@ -76,7 +76,8 @@ Pro retries like any other failure.
 
 ## Email
 
-Email is optional. Its server has a page of its own, **Settings › Email**, under Destinations. The
+Email is optional. Its server has a page of its own, **Settings › Email**, under General. The same
+server sends [invitation emails](./accounts.md#first-password-and-invitations). The
 Destinations page says nothing about the server until an email destination exists. Until the
 server is set up, an email destination shows **Waiting for Settings › Email** and its switch can't
 be turned on.

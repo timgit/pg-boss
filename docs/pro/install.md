@@ -144,9 +144,16 @@ Open the setup link and create the first global administrator. Whoever reaches a
 ![Creating the first global administrator](../images/pro/setup.webp){.light-only}
 ![Creating the first global administrator](../images/pro/setup-dark.webp){.dark-only}
 
+## Email server
+
+After setup, Pro opens **Settings › Email**, an optional step. Pro sends alert email and invitations
+through this server, by SMTP or with a Resend API key. Set it up and press **Save**, or press
+**Skip** and set it up later from Settings. Either way, Pro goes on to **Settings › Schemas**.
+See [email](./destinations.md#email).
+
 ## First schema
 
-After setup, Pro opens **Settings › Schemas**. Press **Add schema** and enter a name, the connection to the database the application's pg-boss uses, and the name of its pg-boss schema. **Test connection** checks the connection before you add the schema. Add one schema for each pg-boss Pro monitors, such as Production and Staging. See [Schemas](./schemas.md).
+On **Settings › Schemas**, press **Add schema** and enter a name, the connection to the database the application's pg-boss uses, and the name of its pg-boss schema. **Test connection** checks the connection before you add the schema. Add one schema for each pg-boss Pro monitors, such as Production and Staging. See [Schemas](./schemas.md).
 
 ## First alert
 

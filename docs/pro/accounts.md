@@ -14,8 +14,8 @@ grant.
 
 The list holds people and [service accounts](./api-tokens.md) together. **All**,
 **People** and **Service accounts** narrow the list to one kind. **Add** creates
-a person or a service account. A person is added on a page of its own, which then opens the new
-account's page. The search box keeps the accounts whose email, service account name or
+a person or a service account. A person is added on a page of its own with a first password or an
+invitation, which then opens the new account's page. The search box keeps the accounts whose email, service account name or
 person's name holds the text. The counts on the tabs follow the search. **In group** keeps one
 group's members. **Role on** picks a schema. The list then shows each account with a role on that schema
 and the grant the role comes from. See [access by schema](./roles.md#access-by-schema).
@@ -31,7 +31,8 @@ grant each role comes from. The **Activity** link after the date the account was
 - **Direct roles**: the roles granted to the account itself. Grant and remove them here. When a
   direct role adds nothing a group already gives, the page says so.
 - **Groups**: the groups the account is in, with what each group grants. Add the account to a group or take it out here.
-- **Signing in**: set a password, or create an invitation link the person opens to choose a password. The section
+- **Signing in**: set a password, or invite the person to choose one. See
+  [first password and invitations](#first-password-and-invitations). The section
   also says how many browsers the account is signed in on and the address it was last seen from. **Sessions**
   lists each browser with the address it signed in from and the time, and links to the account's sign-in
   history in the audit log: every sign-in, failed attempt and sign-out. **Sign out everywhere** ends
@@ -66,12 +67,35 @@ Pro always refuses two changes, and says so:
   disabling or deletion, because nobody would be left to undo it
 - a global admin disabling or deleting their own account (another global admin can do that)
 
-Pro sends no invitation email, even with **Settings › Email** set up. A global admin sends the invitation link, or sets the
-first password and hands it over. The person then changes it
-from **Profile** in the account menu at the top right. That page needs no role.
-It shows the signed-in account and its roles, and takes the current
-password and the new password twice. Changing the password there signs out
-every other session and keeps the current session.
+The person changes their password from **Profile** in the account menu at the top right. That page
+needs no role. It shows the signed-in account and its roles, and takes the current password and the
+new password twice. Changing the password there signs out every other session and keeps the current
+session.
+
+## First password and invitations
+
+A person gets their first password in one of two ways:
+
+- **A password**. The global admin sets it and hands it over.
+- **An invitation**. Pro makes a link the person opens to choose a password. The link works once,
+  for 7 days. Pro stores only the link's hash, which means the page shows the link once, with a
+  **Copy** button, right after it's made.
+
+With [Settings › Email](./destinations.md#email) set up, Pro can email the link:
+
+- **Add a person** starts on **Invite**, with **Email the link to this address** checked. Without
+  an email server, it starts on **Set a password**, and **Invite** makes a link to copy.
+- An account's page has **Send invitation**, which emails a new link to the account's address, and
+  **Create invitation link**, which makes a new link and emails nothing.
+
+Either way, the account's page then shows the link with **Copy**, for the global admin to send
+another way. When the email isn't sent, the page shows the email server's error. The link
+still works. The audit log records each invitation, and each email sent or failed.
+
+A new link replaces the account's open one, which stops working, including in an email already
+sent. While a link is open, the account's page asks before making a new one. Each global admin can
+email 5 invitations in 15 minutes, and all of them together 20, before invitation emails stop for 15
+minutes. Creating a link to copy has no limit.
 
 ## Groups
 
