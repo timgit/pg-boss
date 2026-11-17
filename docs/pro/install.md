@@ -79,6 +79,10 @@ Each Pro instance opens at most 35 connections to this database, however many sc
 
 Allow 35 per instance in the database's `max_connections`, beside whatever else uses the server.
 
+A pooler in front of this database, such as PgBouncer, must be in session mode. The alert evaluator
+holds a session lock for each pass and listens for notifications, which transaction mode breaks.
+`doctor` checks for it.
+
 ## Configuration
 
 Pro reads these settings at startup:
@@ -330,7 +334,7 @@ npx pg-boss-pro doctor
 It reports each check as passed or failed, with the fix for each failure:
 
 - The secret key, the log format when `PGBOSS_PRO_LOG_FORMAT` is set, and the setup token when one is set.
-- The connection to Pro's database.
+- The connection to Pro's database, and that it keeps one Postgres session per connection, which a pooler in transaction mode doesn't.
 - Pro's tables, against the version this Pro uses. Tables from a later Pro mean the install is older than the release that last migrated the database.
 - Each schema whose connection is Pro's own database, which Pro doesn't monitor.
 - The stored secrets, decrypted with the current key. See [key changes](./administration.md#key-changes).
