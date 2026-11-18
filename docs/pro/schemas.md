@@ -30,9 +30,10 @@ has no schemas, and its first global admin is sent to its **Add a schema** page.
 The schema menu in the top bar ends with the same **Add schema** for a global admin. Once the schema
 is added, the page goes back to **Settings › Schemas**, and the schema menu lists the new schema.
 
-**Test connection** connects and reads the schema's pg-boss version. A schema that doesn't exist yet
-is fine, because the application's pg-boss creates it when it first starts. Pro refuses its own
-database, and a pg-boss schema that is already added under another name.
+**Test connection** connects and reads the schema's pg-boss version. Adding a schema runs the same
+check, and so does saving a changed connection. Pro adds a pg-boss schema only once it exists and
+doesn't create one, so start the application's pg-boss once before adding its schema. Pro also
+refuses its own database, and a pg-boss schema that is already added under another name.
 
 Pro stores each connection encrypted with [`PGBOSS_PRO_SECRET_KEY`](./administration.md#secrets) and
 doesn't send its password back to the browser. The list shows each schema's host and database.

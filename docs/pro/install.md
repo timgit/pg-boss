@@ -124,7 +124,7 @@ The other settings for Pro's database default to the role and database above:
 
 In each pg-boss schema it monitors, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Pro doesn't install pg-boss in a schema's database, supervise it, run its schedules or migrate it.
 
-The application's pg-boss creates its schema when it first starts. pg-boss's [CLI](../cli.md) can also create the schema ahead of time. Until then, the Pro Console says pg-boss isn't installed in the schema.
+The application's pg-boss creates its schema when it first starts. pg-boss's [CLI](../cli.md) can also create the schema ahead of time. Pro adds a schema only once pg-boss's schema exists there, and doesn't create it.
 
 Connect as the role that owns pg-boss's schema, because some of Pro's changes need the owner. Creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner.
 
