@@ -10,21 +10,21 @@ maintenance, security response and support that its one maintainer provides.
 ## Advisory sponsors
 
 <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">
-  <a href="https://supabase.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/54469796?s=256&amp;v=4" alt="Supabase" title="Supabase" width="128" height="128" style="border-radius: 8px;"></a>
+  <a href="https://supabase.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/54469796?s=256&amp;v=4" alt="Supabase" title="Supabase" width="128" height="128" style="border-radius: 8px; box-shadow: 0 0 0 1px var(--vp-c-divider);"></a>
 </div>
 
 ## Production sponsors
 
 <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">
-  <a href="https://superpower.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/114334709?s=256&amp;v=4" alt="Superpower" title="Superpower" width="96" height="96" style="border-radius: 8px;"></a>
+  <a href="https://superpower.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/114334709?s=256&amp;v=4" alt="Superpower" title="Superpower" width="96" height="96" style="border-radius: 8px; box-shadow: 0 0 0 1px var(--vp-c-divider);"></a>
 </div>
 
 ## Sponsors
 
 <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">
-  <a href="https://altruistiq.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/88195975?s=256&amp;v=4" alt="Altruistiq" title="Altruistiq" width="64" height="64" style="border-radius: 8px;"></a>
-  <a href="https://wasp.sh/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/55102317?s=256&amp;v=4" alt="wasp-lang" title="wasp-lang" width="64" height="64" style="border-radius: 8px;"></a>
-  <a href="https://github.com/Ferry-Health" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/158637456?s=256&amp;v=4" alt="Ferry Health" title="Ferry Health" width="64" height="64" style="border-radius: 8px;"></a>
+  <a href="https://altruistiq.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/88195975?s=256&amp;v=4" alt="Altruistiq" title="Altruistiq" width="64" height="64" style="border-radius: 8px; box-shadow: 0 0 0 1px var(--vp-c-divider);"></a>
+  <a href="https://wasp.sh/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/55102317?s=256&amp;v=4" alt="wasp-lang" title="wasp-lang" width="64" height="64" style="border-radius: 8px; box-shadow: 0 0 0 1px var(--vp-c-divider);"></a>
+  <a href="https://github.com/Ferry-Health" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/158637456?s=256&amp;v=4" alt="Ferry Health" title="Ferry Health" width="64" height="64" style="border-radius: 8px; box-shadow: 0 0 0 1px var(--vp-c-divider);"></a>
 </div>
 
 ## Backers

@@ -186,7 +186,8 @@ function escapeAttribute (text) {
   return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-// A flex grid with inline styles, so the page needs no custom theme CSS. Each
+// A flex grid with inline styles, so the page needs no custom theme CSS. The
+// hairline ring outlines logos whose background matches the page. Each
 // logo is sized by its rung, which is what keeps a $250 sponsor from rendering
 // pixel-identical to a $50 one.
 function renderLogos (sponsors) {
@@ -194,7 +195,7 @@ function renderLogos (sponsors) {
     const alt = escapeAttribute(name)
     const size = tier.logoSize
     return `  <a href="${escapeAttribute(href)}" target="_blank" rel="noopener">` +
-      `<img src="${escapeAttribute(avatar)}" alt="${alt}" title="${alt}" width="${size}" height="${size}" style="border-radius: 8px;"></a>`
+      `<img src="${escapeAttribute(avatar)}" alt="${alt}" title="${alt}" width="${size}" height="${size}" style="border-radius: 8px; box-shadow: 0 0 0 1px var(--vp-c-divider);"></a>`
   })
 
   return `<div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">\n${items.join('\n')}\n</div>`
