@@ -13,7 +13,8 @@ between them. For a global admin, [Pro's own queues](#pro-queues) are one more c
 ## Adding
 
 **Settings › Schemas** is visible only to [global admins](./roles.md#global-admin). A new install
-has no schemas, and its first global admin is sent to this page. **Add schema** asks for:
+has no schemas, and its first global admin is sent to its **Add a schema** page. **Add schema** on
+**Settings › Schemas** opens the same page, which asks for:
 
 - **Name**, such as Production or Billing. Pro makes the schema's id from the name it is first
   given, such as `production` for Production, and shows it under the name as it's typed. The id
@@ -27,7 +28,7 @@ has no schemas, and its first global admin is sent to this page. **Add schema** 
   pg-boss uses another.
 
 The schema menu in the top bar ends with the same **Add schema** for a global admin. Once the schema
-is added, the console switches to it.
+is added, the page goes back to **Settings › Schemas**, and the schema menu lists the new schema.
 
 **Test connection** connects and reads the schema's pg-boss version. A schema that doesn't exist yet
 is fine, because the application's pg-boss creates it when it first starts. Pro refuses its own
@@ -42,7 +43,7 @@ admin edits its connection or removes it.
 
 ## Editing a schema
 
-**Edit** in a schema's menu opens its name, color and connection. The connection's fields show what
+**Edit** in a schema's menu opens a page with its name, color and connection. The connection's fields show what
 is stored, except the password. A blank password keeps the stored one while the host, port,
 database, user and sslmode stay the same. Changing any of them needs the password entered again,
 for **Test connection** too. A stored password doesn't go to a server it wasn't entered for. The
