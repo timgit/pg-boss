@@ -25,9 +25,6 @@ has no schemas, and its first global admin is sent to this page. **Add schema** 
   [schema permissions](./install.md#schema-permissions).
 - **Schema**, the pg-boss schema's name in Postgres. It's `pgboss` unless the application's
   pg-boss uses another.
-- **Read-only role**, optional: a user and password on the same server and database. Pages, alerts
-  and metrics read as this role, and changes still use the owner. See
-  [read-only role](./install.md#read-only-role).
 
 The schema menu in the top bar ends with the same **Add schema** for a global admin. Once the schema
 is added, the console switches to it.

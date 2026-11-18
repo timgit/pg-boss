@@ -134,20 +134,6 @@ Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` see
 GRANT pg_read_all_stats TO <role>;
 ```
 
-### Read-only role
-
-A schema can also have a read-only role, set under **Settings › Schemas**. Pages, the alert
-evaluator and `/metrics` then read as that role. Changes, operations and the Pro API still use the
-owner. The read-only role connects to the same server and database as the owner, and needs to read
-every table in pg-boss's schema, including the tables pg-boss adds for a partitioned queue later:
-
-```sql
-GRANT USAGE ON SCHEMA pgboss TO <reader>;
-GRANT SELECT ON ALL TABLES IN SCHEMA pgboss TO <reader>;
-ALTER DEFAULT PRIVILEGES FOR ROLE <owner> IN SCHEMA pgboss GRANT SELECT ON TABLES TO <reader>;
-GRANT pg_read_all_stats TO <reader>;
-```
-
 ## Run
 
 Keep Pro's settings in a `.env` file in the project, where the secret key stays out of shell history and survives a restart. The following commands write the settings above to the file with a new secret key, and keep the file out of version control:
