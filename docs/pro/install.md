@@ -9,7 +9,7 @@
 
 ## Install
 
-Pro is installed from a private registry, not from npmjs. To create a project for Pro, install Pro and start it, run:
+Pro is installed from a private registry, not from npmjs. To create a project for Pro and install Pro, run:
 
 ```bash
 npm init @pg-boss/pro
@@ -20,7 +20,7 @@ The command asks for the license key and for Pro's database, which is either an 
 1. Checks the license key with the registry.
 2. Points the project's `.npmrc` at Pro's registry, and saves the license key in the user's npm config, as `npm login` does.
 3. Writes `.env` with Pro's database, a new secret key and a setup token. `.gitignore` keeps the file out of version control.
-4. Installs Pro, starts it and opens the setup page, where you create the first global administrator.
+4. Installs Pro, then prints how to start it and the address of the setup page, where you create the first global administrator.
 
 Keep a copy of `PGBOSS_PRO_SECRET_KEY` from `.env` in another secret store, because Pro's database backups don't hold it. See [Backup](#backup).
 
@@ -28,7 +28,7 @@ To run it without prompts, as in a script, pass the answers after `--`:
 
 ```bash
 npm init @pg-boss/pro -- pgboss-pro --yes --license "<your license key>" \
-  --database-url "postgres://pgboss_pro:<password>@localhost:5432/pgboss_pro" --no-start
+  --database-url "postgres://pgboss_pro:<password>@localhost:5432/pgboss_pro"
 ```
 
 `--admin-url` in place of `--database-url` creates the database. `--token-in-env` leaves the user's npm config alone and has the project's `.npmrc` read the license key from `PGBOSS_PRO_LICENSE`, as a CI runner needs. `npm init @pg-boss/pro -- --help` lists every option.
