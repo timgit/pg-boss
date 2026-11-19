@@ -99,6 +99,16 @@ export default defineConfig(({ command }) => {
     optimizeDeps: {
       exclude: SERVER_ONLY_PACKAGES,
     },
+    // Pro's barrels (`app/lib/pro-api.ts` and its siblings) only re-export. Marked free of side
+    // effects, an import through one reaches only the modules it names. Otherwise every component
+    // a barrel lists lands in the chunk of the first page that imports it, which is the root.
+    build: {
+      rolldownOptions: {
+        treeshake: {
+          moduleSideEffects: [{ test: /\/app\/(lib\/pro-api(\.server)?|components\/pro-ui)\.ts$/, sideEffects: false }],
+        },
+      },
+    },
     resolve: {
       alias: {
         '~': '/app',
