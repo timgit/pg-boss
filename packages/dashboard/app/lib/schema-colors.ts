@@ -11,8 +11,9 @@ export type SchemaColor = keyof typeof SCHEMA_COLORS
 
 const ORDER = Object.keys(SCHEMA_COLORS) as SchemaColor[]
 
+/** Whether `value` names one of the colors. Its own keys only: `in` would also take `constructor`. */
 export function isSchemaColor (value: unknown): value is SchemaColor {
-  return typeof value === 'string' && value in SCHEMA_COLORS
+  return typeof value === 'string' && Object.hasOwn(SCHEMA_COLORS, value)
 }
 
 /**
