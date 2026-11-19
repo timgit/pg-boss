@@ -4,7 +4,7 @@ An organization with a Pro subscription may install and use Pro, and download ea
 under the terms in [`LICENSE`](https://npm.pgboss.io/terms), which also ships in the package. Read it before buying. One
 subscription covers the organization that holds it and every company in which it holds more than
 half the voting interests. Pro checks no license at runtime.
-The registry decides which versions the [license key](./install.md#install) may install.
+The registry decides which versions the [license key](./install.md#install-with-the-cli) may install.
 
 ## Cancellation
 
@@ -43,7 +43,7 @@ Nothing is owed for the time between.
 ## Access grants
 
 An organization can also receive Pro without a purchase, for example as a pg-boss sponsor or for a
-trial. An access grant comes with its own license key. The [install steps](./install.md#install) are
+trial. An access grant comes with its own license key. The [install steps](./install.md#install-with-the-cli) are
 the same as for a purchase. The grant lasts until the license key expires or is revoked, and it can
 be revoked at any time. The conditions sent with the license key can also change.
 

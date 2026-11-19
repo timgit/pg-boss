@@ -4,7 +4,7 @@ Support is by email at [support@pgboss.io](mailto:support@pgboss.io), while a su
 
 ## What support covers
 
-- Installing, configuring, upgrading and running any Pro release in the setups these docs describe: [`npm init @pg-boss/pro`](./install.md#install), an [install by hand](./install.md#install-by-hand), [Docker and Docker Compose](./install.md#docker), and a reverse proxy in front.
+- Installing, configuring, upgrading and running any Pro release in the setups these docs describe: [`npm init @pg-boss/pro`](./install.md#install-with-the-cli), an [install by hand](./install.md#install-by-hand), [Docker and Docker Compose](./install.md#docker), and a reverse proxy in front.
 - Bugs in Pro, and Pro on the pg-boss schemas its release supports. See [pg-boss versions](./versions.md). A fix ships in a new Pro release.
 - Pro's side of single sign-on, email, webhooks, PagerDuty and the Pro API.
 

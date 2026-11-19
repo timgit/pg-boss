@@ -7,15 +7,15 @@
 - pg-boss 12.36 or later in each schema Pro monitors. The schemas are added in the Pro Console once Pro is running. See [Schemas](./schemas.md) and [pg-boss versions](./versions.md).
 - A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
-## Install
+## Install with the CLI
 
-Pro is installed from a private registry, not from npmjs. To create a project for Pro and install Pro, run:
+Pro is installed from a private registry, not from npmjs. `npm init @pg-boss/pro` runs `@pg-boss/create-pro`, Pro's setup CLI on npmjs. It creates a project for Pro and installs Pro:
 
 ```bash
 npm init @pg-boss/pro
 ```
 
-The command asks for the license key and for Pro's database, which is either an existing database or a new one it creates from an admin connection. It doesn't keep the admin connection. It then:
+The CLI asks for the license key and for Pro's database, which is either an existing database or a new one it creates from an admin connection. It doesn't keep the admin connection. It then:
 
 1. Checks the license key with the registry.
 2. Points the project's `.npmrc` at Pro's registry, and saves the license key in the user's npm config, as `npm login` does.
@@ -309,7 +309,7 @@ docker load < pgboss-pro.tar.gz
 
 ### Project copy
 
-On a machine that reaches npm.pgboss.io and npmjs, install Pro in a project as [Install](#install) or [Install by hand](#install-by-hand) shows. Copy the project directory into the network with its `node_modules`, and start Pro there with `npx pg-boss-pro`, as in [Run](#run). None of Pro's dependencies is a native module. The copy runs on any operating system and processor with Node.js 22.12 or later.
+On a machine that reaches npm.pgboss.io and npmjs, install Pro in a project as [Install with the CLI](#install-with-the-cli) or [Install by hand](#install-by-hand) shows. Copy the project directory into the network with its `node_modules`, and start Pro there with `npx pg-boss-pro`, as in [Run](#run). None of Pro's dependencies is a native module. The copy runs on any operating system and processor with Node.js 22.12 or later.
 
 To upgrade, run `npm update @pg-boss/pro` in the project outside the network, then copy the project again.
 
