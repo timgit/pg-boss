@@ -28,7 +28,7 @@ queue and a send queue for each destination. The metrics of a send queue
 carry a `destination` label with the destination's name. Pro's queues have no `pgboss_alerts_open`.
 A token whose roles each name one schema doesn't get them.
 
-Pro leaves out any figure pg-boss hasn't recorded instead of reporting it as 0. Rates and health need `persistQueueStats`. Wait times, run times and the instance metrics need pg-boss 12.36. The 0.99 quantile appears once the hour holds 100 finished jobs.
+Each Pro instance reads a schema at most once every 30 seconds and answers the scrapes in between from that read. A metric can be up to 30 seconds old. Pro leaves out any figure pg-boss hasn't recorded instead of reporting it as 0. Rates and health need `persistQueueStats`. Wait times, run times and the instance metrics need pg-boss 12.36. The 0.99 quantile appears once the hour holds 100 finished jobs.
 
 ## Prometheus
 
