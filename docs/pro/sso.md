@@ -49,6 +49,9 @@ group claim when none of the person's groups passes its filter. A claim holding 
 counts as that one group. Membership changes only at sign-in. A person
 removed at the provider leaves the mapped group at their next sign-in.
 
+Renaming a Pro group carries its rows to the new name. To delete a group that a
+row maps to, remove the row here first.
+
 Two cases change no membership. One is a token where Entra ID says it left the
 groups out past its group limit (`_claim_names` or `hasgroups`). The other is a
 sign-in that would take the last global admin out of the group that makes them

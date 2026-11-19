@@ -112,7 +112,8 @@ either allows, as [Roles](./roles.md) explains. A group's page lists its
 members ten at a time, with a search and a way to remove each member. **View in Accounts** opens the
 Accounts list filtered to the group, with each member's roles and last activity.
 **History** opens the audit log filtered to the group's changes. When
-[SSO](./sso.md) maps a provider group to the Pro group, the page names the provider group too. Service accounts can't join a group.
+[SSO](./sso.md) maps a provider group to the Pro group, the page names the provider group too. A rename
+keeps that mapping. The group can't be deleted until the mapping is removed. Service accounts can't join a group.
 
 ![A group's page](../images/pro/group.webp){.light-only}
 ![A group's page](../images/pro/group-dark.webp){.dark-only}
