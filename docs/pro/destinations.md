@@ -28,7 +28,8 @@ An alert that fires while its rule has no destination shows only in the Pro Cons
 when the rule gets a destination later. Adding the first destination doesn't send a backlog of
 open alerts.
 
-Each rule sends to one destination, chosen on the rule's page. When a new destination is added
+A rule sends every fire and resolve to each destination chosen under **Notifications** on its page.
+A rule can page PagerDuty and email a team list with the same alert. When a new destination is added
 while rules that are on have none, Pro offers to send those rules to it. Accepting gives every one
 of them the new destination. **Not now** leaves them as they are.
 
@@ -40,7 +41,7 @@ staging schema destinations of its own.
 ![The offer to send the rules that are on to a new destination](../images/pro/destination-routing-dark.webp){.dark-only}
 
 The switch on each destination's row turns it off and on. Rules that send to a destination that's
-off still open alerts in the Pro Console. An alert that fires while the destination is off isn't sent
+off still open alerts in the Pro Console and send them to their other destinations. An alert that fires while the destination is off isn't sent
 to it once it's on again. **Send test** still works on a destination that's off, to try it before
 turning it on.
 

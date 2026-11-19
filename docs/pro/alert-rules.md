@@ -71,7 +71,7 @@ as a restart loop. Call `stop()` before the script exits.
 
 No rule sends a notification until it has a [destination](./destinations.md).
 Alerts from a rule with no destination still open and appear on the [Alerts](./alerts.md) page. A destination
-set later gets only the alerts that fire after it is set. Turning on a rule
+added later gets only the alerts that fire after it is added. Turning on a rule
 that has no destination asks for a destination for its alerts, and offers a destination
 that is on. A default
 rule can be edited and turned off,
@@ -182,7 +182,7 @@ A check rule names its check by id:
 
 Pro keeps every change to what a rule decides as a version. A version can't
 be changed afterward. Only the definition is versioned. Changing the name,
-destination, notification interval, on or off state, or silence adds no version.
+destinations, notification interval, on or off state, or silence adds no version.
 Saving the same definition again adds nothing. Reordering conditions or leaving out a default value adds nothing
 either, because Pro compares definitions after filling in defaults and sorting. Going back to an earlier
 definition adds a new version, which the rule's history marks as the same as the earlier
@@ -224,8 +224,8 @@ that point at them.
   job for that schema's next minute. A pass reads first, then decides in one transaction
   on Pro's database that holds a lock for its schema. Pro replicas decide one pass per schema at a
   time between them, and a pass whose reads are older than another's finished pass stops without
-  deciding. Each pass queues a notification once to its destination's
-  [send queue](./destinations.md#send-queues). Behind a pooler in transaction mode, without LISTEN, a
+  deciding. Each pass queues a notification once to the
+  [send queue](./destinations.md#send-queues) of each destination the rule has. Behind a pooler in transaction mode, without LISTEN, a
   pass can start up to 30 seconds into its minute, and its sends still go out at once.
 - Pro starts the evaluator when its server starts, whether or not anyone opens
   the Pro Console, and tries again each minute until it runs.
