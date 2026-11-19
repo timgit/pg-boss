@@ -28,6 +28,11 @@ one of these changes:
 - the SMTP server or user
 - the SSO issuer or client id
 
+Pro stores three kinds of configuration whole, each as one ciphertext: a webhook or PagerDuty
+destination's settings, the SMTP server with its user and password, and the SSO issuer, client id and
+client secret. Someone who can write to Pro's database can't point a stored secret at another server
+without the key.
+
 ### Key changes
 
 Without the key it was encrypted with, Pro can't read a stored secret. To rotate the key, start Pro
@@ -43,15 +48,16 @@ the secrets that fail. Pro logs them, and every global admin sees a banner on ea
 them and where to enter them again:
 
 - each schema's connection, in Settings › Schemas
-- each destination's secrets, in Settings › Destinations
-- the email server's password or API key, in Settings › Email
-- the SSO client secret, in Settings › SSO
+- each destination's configuration or secrets, in Settings › Destinations
+- the email server's configuration or password, in Settings › Email
+- the SSO provider configuration or client secret, in Settings › SSO
 
-Settings › Schemas, Settings › Destinations and Settings › Email mark each secret that doesn't decrypt. Until it's
-entered again, Pro doesn't monitor the schema, and the destination can't send. A delivery that fails
-for that reason names the secret and isn't retried. SSO sign-in fails until the client secret is
-entered again, and password sign-in keeps working. Restarting Pro with the earlier key also brings
-the secrets back.
+Settings › Schemas, Destinations, Email and SSO mark each secret that doesn't decrypt. When a whole
+configuration doesn't decrypt, its form opens with every field blank. Until the secret or
+configuration is entered again, Pro doesn't monitor the schema, and the destination can't send. A delivery that fails for that
+reason names the secret and isn't retried. SSO sign-in fails until the provider and client secret
+are entered again, and password sign-in keeps working. Restarting Pro with the earlier key also
+brings the secrets back.
 
 To try a key before starting Pro with it, run `npx pg-boss-pro doctor` with the key set. The doctor
 lists the same secrets and changes nothing. See [check the install](./install.md#check-the-install).
