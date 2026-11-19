@@ -143,6 +143,8 @@ Each JSON object has `level`, `time`, `app` and `msg`. A line about a schema, al
 {"level":"error","time":"2026-11-16T16:19:34.306Z","app":"pg-boss Pro","err":{"type":"Error","message":"connect ECONNREFUSED 10.0.0.7:5432","stack":"Error: connect ECONNREFUSED 10.0.0.7:5432\n    at …","code":"ECONNREFUSED"},"schema":"billing","msg":"could not read billing for /metrics"}
 ```
 
+Pro also logs each audit log entry as a line that carries the entry in an `audit` field. See [log lines](./audit-log.md#log-lines).
+
 Default: `text`
 
 ## Monitoring

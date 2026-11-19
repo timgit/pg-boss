@@ -18,6 +18,18 @@ Pro writes each change to the log in the same transaction as the change itself. 
 - A change made with an API token names the service account and the token.
 - Pro keeps the log forever unless a global admin sets a number of days (30 or more) with **Change** under the page title. See [retention](./administration.md#retention).
 
+## Log lines
+
+Pro also writes each entry to its own log as one line once the change commits. Pro writes no line for a change that rolls back. For a change pg-boss makes, Pro writes the line once pg-boss answers. The line carries the outcome the entry records, such as the number of jobs changed. Retention doesn't remove lines Pro has already logged.
+
+With [`PGBOSS_PRO_LOG_FORMAT`](./environment.md#pgboss-pro-log-format) set to `json`, each line carries the whole entry in an `audit` field for a log shipper to send to a SIEM. The line for a queue created in the Pro Console reads:
+
+```json
+{"level":"info","time":"2026-11-19T16:20:05.112Z","app":"pg-boss Pro","audit":{"id":"4182","occurredOn":"2026-11-19T16:20:05.104Z","action":"queue.created","actor":{"id":"0517fe0d-7a31-4763-a37c-1d08dbd10216","email":"sam@example.com","ip":"10.4.20.15","tokenId":null},"schemaId":"production","target":{"type":"queue","id":"emails"},"before":null,"after":{"options":{}},"queues":["emails"]},"msg":"audit queue.created by sam@example.com on queue emails"}
+```
+
+In `text`, the line is the message alone: `pg-boss Pro: audit queue.created by sam@example.com on queue emails`.
+
 ## Address
 
 An entry records the address the connection came from. When that connection comes from a trusted proxy, Pro reads the `X-Forwarded-For` header from its right end, where each proxy adds the address it saw. Pro takes the first address there that isn't a trusted proxy. The trusted proxies are loopback unless [`PGBOSS_PRO_TRUSTED_PROXIES`](./environment.md#pgboss-pro-trusted-proxies) lists others, such as the address of a proxy in another container. From any other connection the header is ignored. A client can't choose the address recorded.
