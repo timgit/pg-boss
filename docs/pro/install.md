@@ -33,7 +33,7 @@ npm init @pg-boss/pro -- pgboss-pro --yes --license "<your license key>" \
 
 `--admin-url` in place of `--database-url` creates the database. `--token-in-env` leaves the user's npm config alone and has the project's `.npmrc` read the license key from `PGBOSS_PRO_LICENSE`, as a CI runner needs. `--package 1.0.0` installs that version of Pro in place of the latest release. `npm init @pg-boss/pro -- --help` lists every option.
 
-Pro runs as its own server, apart from your application's. To serve it under a path of an existing site, such as `https://example.com/admin/queues`, put it behind that site's reverse proxy and set [`PGBOSS_PRO_BASE_PATH`](./environment.md#pgboss-pro-base-path) to the path.
+Pro runs as its own server, apart from your application's, at the root of a host name of its own, such as `console.example.com`. A reverse proxy in front of Pro passes it every path on that host. Pro doesn't serve under a path of another site.
 
 Served over HTTPS, Pro sends `Strict-Transport-Security` with a one-year `max-age` and no `includeSubDomains`. A browser that has opened the Pro Console over HTTPS then uses only HTTPS on that host for a year, for every path on it.
 

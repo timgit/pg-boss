@@ -1,6 +1,6 @@
 # Pro API
 
-The Pro API serves pg-boss's own methods over HTTP with [`@pg-boss/proxy`](../proxy.md), at `/pro/api/v1/<schema>` for each schema. Every call needs an [API token](./api-tokens.md). `<schema>` is the id Pro gave the schema, shown under **Settings › Schemas**, such as `production` for a schema first named Production. The id stays the same when the schema is renamed. Under a base path, the API is under it too: `/pgboss/pro/api/v1/…`.
+The Pro API serves pg-boss's own methods over HTTP with [`@pg-boss/proxy`](../proxy.md), at `/pro/api/v1/<schema>` for each schema. Every call needs an [API token](./api-tokens.md). `<schema>` is the id Pro gave the schema, shown under **Settings › Schemas**, such as `production` for a schema first named Production. The id stays the same when the schema is renamed.
 
 ```bash
 curl -X POST https://console.example.com/pro/api/v1/production/send \

@@ -10,7 +10,6 @@ Pro reads its settings from the environment, and from a `.env` file in the direc
 | - | - |
 | [`PORT`](#port) | `3000` |
 | [`HOST`](#host) | `0.0.0.0` |
-| [`PGBOSS_PRO_BASE_PATH`](#pgboss-pro-base-path) | `/` |
 | [`PGBOSS_PRO_SITE_URL`](#pgboss-pro-site-url) | |
 | [`PGBOSS_PRO_QUERY_TIMEOUT`](#pgboss-pro-query-timeout) | `60000` |
 | [`PGBOSS_PRO_DB_HOST`](#pgboss-pro-db-host) | *Required without a connection string* |
@@ -42,15 +41,9 @@ The interface Pro listens on.
 
 Default: `0.0.0.0`
 
-### `PGBOSS_PRO_BASE_PATH`
-
-The path prefix Pro serves under, such as `/pgboss`. Set it when a reverse proxy serves Pro under a path of an existing site. Changing it needs no rebuild, because Pro reads it at startup.
-
-Default: `/`
-
 ### `PGBOSS_PRO_SITE_URL`
 
-The public address of a Pro Console behind a reverse proxy that ends HTTPS, as `https://host[:port]`. Links in alerts use it with the base path. Without it, alerts carry no link. The Pro API examples on a service account's page fall back to the address the page was opened at. See [reverse proxy](../dashboard.md#reverse-proxy).
+The public address of a Pro Console behind a reverse proxy that ends HTTPS, as `https://host[:port]`. Links in alerts use it. Without it, alerts carry no link. The Pro API examples on a service account's page fall back to the address the page was opened at. See [reverse proxy](../dashboard.md#reverse-proxy).
 
 ### `PGBOSS_PRO_QUERY_TIMEOUT`
 
@@ -163,7 +156,9 @@ GET, through `HTTPS_PROXY` when it's set. See [health check](./metrics.md#health
 
 ## Dashboard variables
 
-The dashboard's names for three of these settings do nothing in Pro: `PGBOSS_DASHBOARD_BASE_PATH`, `PGBOSS_DASHBOARD_SITE_URL` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT`. Set `PGBOSS_PRO_BASE_PATH`, `PGBOSS_PRO_SITE_URL` and `PGBOSS_PRO_QUERY_TIMEOUT` instead.
+The dashboard's names for two of these settings do nothing in Pro: `PGBOSS_DASHBOARD_SITE_URL` and `PGBOSS_DASHBOARD_QUERY_TIMEOUT`. Set `PGBOSS_PRO_SITE_URL` and `PGBOSS_PRO_QUERY_TIMEOUT` instead.
+
+Pro serves only at the root of its own host. It doesn't start with `PGBOSS_DASHBOARD_BASE_PATH` or `PGBOSS_PRO_BASE_PATH` set to a path.
 
 `PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` do nothing in Pro, which has its own accounts. `PGBOSS_DASHBOARD_READ_ONLY` does nothing either, since roles decide who may change jobs.
 

@@ -45,9 +45,8 @@ to it once it's on again. **Send test** still works on a destination that's off,
 turning it on.
 
 **Links in alerts.** Emails, webhooks and PagerDuty link each alert to its page
-when Pro knows the Pro Console's public address. Pro builds that address from [`PGBOSS_PRO_SITE_URL`](./environment.md#pgboss-pro-site-url)
-and the base path. Without
-that address, the notifications carry no link. The page shows the address the links use.
+when Pro knows the Pro Console's public address. Pro takes that address from [`PGBOSS_PRO_SITE_URL`](./environment.md#pgboss-pro-site-url).
+Without that address, the notifications carry no link. The page shows the address the links use.
 
 ## Send queues
 
@@ -123,7 +122,7 @@ receive Pro's alerts with no relay:
   "groupLabels": { "alertname": "Queue stalled or falling behind" },
   "commonLabels": { "...": "the alert's labels" },
   "commonAnnotations": { "...": "the alert's annotations" },
-  "externalURL": "https://console.example.com/pgboss",
+  "externalURL": "https://console.example.com",
   "truncatedAlerts": 0,
   "alerts": [{
     "status": "firing",
@@ -142,7 +141,7 @@ receive Pro's alerts with no relay:
     "annotations": { "summary": "payments is stalled", "description": "Nothing has finished for 10 minutes." },
     "startsAt": "2026-10-14T21:00:00Z",
     "endsAt": "0001-01-01T00:00:00Z",
-    "generatorURL": "https://console.example.com/pgboss/pro/alerts/<alert id>",
+    "generatorURL": "https://console.example.com/pro/alerts/<alert id>",
     "fingerprint": "<alert id>"
   }],
   "pgboss": { "alertId": "…", "ruleId": "…", "ruleVersion": 3, "...": "the alert's typed data" }

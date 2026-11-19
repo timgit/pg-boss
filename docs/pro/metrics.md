@@ -1,6 +1,6 @@
 # Metrics
 
-`/metrics` serves Prometheus metrics for the schemas an [API token](./api-tokens.md)'s service account can see. No metric counts the job table. The metrics come only from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry. Under a base path, the endpoint moves under it too, as in `/pgboss/metrics`.
+`/metrics` serves Prometheus metrics for the schemas an [API token](./api-tokens.md)'s service account can see. No metric counts the job table. The metrics come only from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry.
 
 Pro's queue health, Status page and alerts don't need `/metrics`. The endpoint is for a team that already
 collects metrics with Prometheus, or with another tool that reads the Prometheus format.
@@ -47,7 +47,7 @@ scrape_configs:
 
 ## Health check
 
-`/healthz` answers 200 with `ok` once Pro has reached its database and brought its tables up to date. Until then it answers 503. It needs no sign-in. Pro doesn't check the database again for each probe after that. Under a base path, the endpoint moves under it too, as in `/pgboss/healthz`.
+`/healthz` answers 200 with `ok` once Pro has reached its database and brought its tables up to date. Until then it answers 503. It needs no sign-in. Pro doesn't check the database again for each probe after that.
 
 `/healthz?ready=evaluator` also answers 503 until this instance's alert evaluator has started.
 Use it for an orchestrator that should restart an instance whose alerting never started.
