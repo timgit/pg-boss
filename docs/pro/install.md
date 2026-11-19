@@ -37,7 +37,7 @@ Pro runs as its own server, apart from your application's, at the root of a host
 
 Served over HTTPS, Pro sends `Strict-Transport-Security` with a one-year `max-age` and no `includeSubDomains`. A browser that has opened the Pro Console over HTTPS then uses only HTTPS on that host for a year, for every path on it.
 
-## Install by hand
+## Install manually
 
 To set up the project yourself, point npm at Pro's registry:
 
@@ -58,7 +58,7 @@ npm install @pg-boss/pro
 
 Then create Pro's database, set its configuration and start it, as the next sections describe.
 
-## Database setup
+### Database setup
 
 Pro keeps its accounts, rules, alerts and audit log in a database of its own. Create it, owned by the role Pro connects to it as:
 
@@ -67,29 +67,7 @@ CREATE ROLE pgboss_pro LOGIN PASSWORD '<password>';
 CREATE DATABASE pgboss_pro OWNER pgboss_pro;
 ```
 
-Pro uses pg-boss internally to run its alert evaluator and send notifications. Pro's own tables go in `public` and pg-boss uses its default schema `pgboss`. As the database's owner, the role has the permissions to create Pro's tables and run the migrations in later upgrades.
-
-Each Pro instance opens at most 35 connections to this database, however many schemas it monitors:
-
-- 10 for pages, sign-ins and the Pro API
-- 4 for sending alerts
-- 8 for the alert evaluator, which runs at most 8 schemas' passes at once and starts the rest as those finish
-- 2 for keeping a running operation alive
-- 11 for Pro's pg-boss, a pool of 10 and its listener
-
-Allow 35 per instance in the database's `max_connections`, beside whatever else uses the server.
-
-A pooler in front of this database, such as PgBouncer or a managed service's pooled endpoint, may be
-in session or transaction mode. In transaction mode, without LISTEN, a schema's pass can start up to
-30 seconds into its minute. Its sends still go out at once, because Pro wakes its own send workers
-when a pass commits. Set the query timeout on Pro's role too, because a `SET` on a pooled
-connection can reach another session:
-
-```sql
-ALTER ROLE pgboss_pro SET statement_timeout = '60s';
-```
-
-`doctor` says which mode it finds.
+As the database's owner, the role has the permissions to create Pro's tables and run the migrations in later upgrades.
 
 ## Configuration
 
@@ -194,7 +172,7 @@ See [destinations](./destinations.md) for each kind.
 
 ## Docker
 
-The image reads the license key from `PGBOSS_PRO_LICENSE`, which the `.npmrc` from [Install by hand](#install-by-hand) names. A project from `npm init @pg-boss/pro -- --token-in-env` has the same `.npmrc`. Pass the license key as a build secret so that no image layer keeps it.
+The image reads the license key from `PGBOSS_PRO_LICENSE`, which the `.npmrc` from [Install manually](#install-manually) names. A project from `npm init @pg-boss/pro -- --token-in-env` has the same `.npmrc`. Pass the license key as a build secret so that no image layer keeps it.
 The image copies `package-lock.json`. Run `npm install` in the project once before the first build:
 
 ```dockerfile
@@ -309,7 +287,7 @@ docker load < pgboss-pro.tar.gz
 
 ### Project copy
 
-On a machine that reaches npm.pgboss.io and npmjs, install Pro in a project as [Install with the CLI](#install-with-the-cli) or [Install by hand](#install-by-hand) shows. Copy the project directory into the network with its `node_modules`, and start Pro there with `npx pg-boss-pro`, as in [Run](#run). None of Pro's dependencies is a native module. The copy runs on any operating system and processor with Node.js 22.12 or later.
+On a machine that reaches npm.pgboss.io and npmjs, install Pro in a project as [Install with the CLI](#install-with-the-cli) or [Install manually](#install-manually) shows. Copy the project directory into the network with its `node_modules`, and start Pro there with `npx pg-boss-pro`, as in [Run](#run). None of Pro's dependencies is a native module. The copy runs on any operating system and processor with Node.js 22.12 or later.
 
 To upgrade, run `npm update @pg-boss/pro` in the project outside the network, then copy the project again.
 
