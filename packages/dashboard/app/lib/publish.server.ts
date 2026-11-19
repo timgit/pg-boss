@@ -1,4 +1,4 @@
-import { resolveSchemaHref } from '~/components/schema-link'
+import { resolveSchemaHref } from '~/lib/schema-href'
 import type { PublishRequest } from './publish-form'
 import { getSubscription } from './queries.server'
 import { SchemaVersionMismatch, withBoss } from './pg-boss.server'
