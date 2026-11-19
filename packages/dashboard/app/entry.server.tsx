@@ -5,6 +5,8 @@ import { ServerRouter } from 'react-router'
 import { isbot } from 'isbot'
 import type { RenderToPipeableStreamOptions } from 'react-dom/server'
 import { renderToPipeableStream } from 'react-dom/server'
+import { cspNonceContext } from '~/lib/csp-nonce'
+import { CspNonce } from '~/components/csp-nonce'
 
 /**
  * React Router's default Node entry, plus one export: the Pro overlay's server
@@ -24,7 +26,7 @@ export default function handleRequest (
   responseStatusCode: number,
   responseHeaders: Headers,
   routerContext: EntryContext,
-  _loadContext: RouterContextProvider
+  loadContext: RouterContextProvider
 ) {
   // https://httpwg.org/specs/rfc9110.html#HEAD
   if (request.method.toUpperCase() === 'HEAD') {
@@ -50,9 +52,16 @@ export default function handleRequest (
       streamTimeout + 1000
     )
 
+    // Set by a server hook that sends a script CSP. Each inline script React and React Router write
+    // carries it, and so does the theme script in root.tsx.
+    const nonce = loadContext.get(cspNonceContext) ?? undefined
+
     const { pipe, abort } = renderToPipeableStream(
-      <ServerRouter context={routerContext} url={request.url} />,
+      <CspNonce.Provider value={nonce}>
+        <ServerRouter context={routerContext} url={request.url} nonce={nonce} />
+      </CspNonce.Provider>,
       {
+        nonce,
         [readyOption] () {
           shellRendered = true
           const body = new PassThrough({

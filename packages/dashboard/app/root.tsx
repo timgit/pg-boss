@@ -11,6 +11,7 @@ import {
 } from "react-router";
 import type { Route } from "./+types/root";
 import { DocumentTitle } from "~/components/document-title";
+import { useCspNonce } from "~/components/csp-nonce";
 // Geist and Geist Mono ship with the dashboard, so a page asks no other host for its fonts.
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
@@ -180,6 +181,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   // mark changes, under new names, because assets/ is cached for a year.
   const touchIcon = useHref("assets/apple-touch-icon.png");
   const manifest = useHref("assets/manifest.webmanifest");
+  // A server hook's script CSP nonce, or undefined when it sends none.
+  const nonce = useCspNonce();
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -192,8 +195,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <link rel="manifest" href={manifest} crossOrigin="use-credentials" />
         <DocumentTitle />
         <Meta />
-        <Links />
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <Links nonce={nonce} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="bg-[var(--surface-app)]">
         <ThemeProvider>
@@ -203,8 +206,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <MainContent>{children}</MainContent>
           </SidebarProvider>
         </ThemeProvider>
-        <ScrollRestoration />
-        <Scripts />
+        <ScrollRestoration nonce={nonce} />
+        <Scripts nonce={nonce} />
       </body>
     </html>
   );
