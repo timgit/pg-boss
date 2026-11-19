@@ -289,6 +289,39 @@ Pro's database in the volume and the secret key in `.env` are on the same machin
 
 To upgrade, run `npm update @pg-boss/pro`, build the image again with the `docker build` command above, and run `docker compose up -d`.
 
+## Offline install
+
+Pro runs without internet access. The registry checks the license key when it serves the package. Once installed, Pro doesn't check its license or contact pgboss.io. A network that can't reach npm.pgboss.io gets Pro from a machine that can, in one of three ways. Keep every copy inside your organization, because the [license](./license.md) doesn't allow making Pro available to anyone outside it.
+
+### Docker image
+
+On a machine that reaches npm.pgboss.io, build the image as [Docker](#docker) shows. Push the image to the network's container registry, or save it to a file to carry in:
+
+```bash
+docker save pgboss-pro | gzip > pgboss-pro.tar.gz
+```
+
+Inside the network, load the image from the file:
+
+```bash
+docker load < pgboss-pro.tar.gz
+```
+
+### Project copy
+
+On a machine that reaches npm.pgboss.io and npmjs, install Pro in a project as [Install](#install) or [Install by hand](#install-by-hand) shows. Copy the project directory into the network with its `node_modules`, and start Pro there with `npx pg-boss-pro`, as in [Run](#run). None of Pro's dependencies is a native module. The copy runs on any operating system and processor with Node.js 22.12 or later.
+
+To upgrade, run `npm update @pg-boss/pro` in the project outside the network, then copy the project again.
+
+### Internal registry
+
+An internal npm registry, such as Artifactory, Nexus or Verdaccio, can proxy Pro's registry for the projects inside the network. Give it two upstream registries:
+
+- `https://npm.pgboss.io` for `@pg-boss/pro` alone, sending the license key as a bearer token (`Authorization: Bearer <license key>`)
+- npmjs for every other package, including the rest of the `@pg-boss` scope
+
+Pro's registry serves only `@pg-boss/pro`. It redirects a request for any other package to npmjs, which a proxy may not follow. Projects inside the network then install Pro from the internal registry with no `.npmrc` entry for npm.pgboss.io.
+
 ## Backup
 
 Back up Pro's database like any other, with `pg_dump` or the host's snapshots:
