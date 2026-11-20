@@ -103,25 +103,34 @@ minutes. Creating a link to copy has no limit.
 
 ## Global admin recovery
 
-A change made directly in the database, or SSO turned off while every global admin signs in
-through SSO alone, can leave no global admin who can sign in. Pro logs a warning at startup when
-that happens. To make an account a global admin again, run the doctor in a terminal, in Pro's
-project:
+A person locked out of their account gets back in through another global admin, who sets a new
+password with **Set a password** on the account's page, or makes a link with **Create a link to
+copy**. For that reason, keep at least two global admins.
+
+When no global admin can sign in, recover from the server. Run the doctor in a terminal, in Pro's
+project, with an email no account has:
 
 ```bash
-npx pg-boss-pro doctor
+npx pg-boss-pro doctor --admin recovery@example.com
 ```
 
-The doctor's **Global admin** check fails, and the doctor asks for the email of an account to make a
-global admin. For that account, it:
+The doctor creates that account as a global admin and prints a link that sets its password, for
+1 hour. Sign in with it, then fix the locked-out account on its page with **Set a password** or
+**Create a link to copy**. Disable or delete the recovery account afterward. The locked-out account
+doesn't change until a global admin changes it.
 
-- creates the account when no account has the email
-- enables the account when it's disabled
-- grants the global admin role
-- prints an invitation link that sets the account's password, for 7 days
+`--admin` with the email of an existing account makes that account a global admin, enables it when
+it's disabled, and prints a link that sets a new password for it.
 
-Enter skips and changes nothing. The audit log records each change, with `pg-boss-pro doctor` as
-the actor. Outside a terminal, as in a script, the doctor reports the check and asks nothing.
+A forgotten password isn't the only way to end up with no global admin who can sign in. A change
+made directly in the database, or SSO turned off while every global admin signs in through SSO alone,
+does it too. Pro logs a warning at startup in those two cases, and the doctor's **Global admin**
+check fails. Run without `--admin` in a terminal, the doctor then asks for an email and does the
+same as `--admin`. Enter skips and changes nothing.
+
+The audit log records each change, with `pg-boss-pro doctor` as the actor. The doctor writes only in
+a terminal, because its link sets a password. Outside one, as in a script, it reports the check and
+asks nothing, and `--admin` refuses.
 
 ## Groups
 

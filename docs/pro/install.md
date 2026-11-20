@@ -455,7 +455,7 @@ It reports each check as passed or failed, with the fix for each failure:
 - Whether a global admin can sign in, with a password or through SSO. See [global admin recovery](./accounts.md#global-admin-recovery).
 - The stored secrets, decrypted with the current key. See [key changes](./administration.md#key-changes).
 
-The doctor exits with status 1 when a check fails. It writes to the database only when you make an account a global admin after a failed **Global admin** check. It doesn't connect to the schemas Pro monitors, which Settings › Schemas checks. See [Schemas](./schemas.md).
+The doctor exits with status 1 when a check fails. It writes to the database only to make an account a global admin, as [global admin recovery](./accounts.md#global-admin-recovery) describes. It doesn't connect to the schemas Pro monitors, which Settings › Schemas checks. See [Schemas](./schemas.md).
 
 ```
 pg-boss Pro 1.0.0
