@@ -16,10 +16,12 @@ between them. For a global admin, [Pro internal queues](#pro-internal-queues) ar
 has no schemas, and its first global admin is sent to its **Add a schema** page. **Add schema** on
 **Settings › Schemas** opens the same page, which asks for:
 
-- **Name**, such as Production or Billing. Pro makes the schema's id from the name it is first
-  given, such as `production` for Production, and shows it under the name as it's typed. The id
-  doesn't change.
-- **Color**, for the dot beside the name in the top bar and the schema menu. Until one is picked,
+- **Name**, such as Production or Billing.
+- **Id**, which links, rules and the Pro API use. The name fills in the id as you type the name,
+  such as `production` for Production, until you type your own. An id is lowercase letters, digits
+  and single dashes. A check mark shows once the form finds the id free. The id doesn't change after
+  the schema is added.
+- **Color**, from the dot after the name, for the dot beside the name in the top bar and the schema menu. Until one is picked,
   the color follows the schema's place in the list.
 - **Connection**: host, port, database, user, password and SSL mode. Connect as the role that owns
   the pg-boss schema. See [permissions](#permissions).
@@ -29,11 +31,11 @@ has no schemas, and its first global admin is sent to its **Add a schema** page.
 The schema menu in the top bar ends with the same **Add schema** for a global admin. Once the schema
 is added, the page goes back to **Settings › Schemas**, and the schema menu lists the new schema.
 
-**Test connection** connects and reads the schema's pg-boss version. Adding a schema runs the same
-check, and so does saving a changed connection. Pro adds a pg-boss schema only once it exists and
+**Check connection** connects and reads the schema's pg-boss version. Adding a schema runs the same
+check, and so does saving a changed connection. The answer shows beside the button either way. Pro adds a pg-boss schema only once it exists and
 doesn't create one. Start the application's pg-boss once, or create the schema ahead of time with
-pg-boss's [CLI](../cli.md), before adding it. **Add schema** also
-refuses a connection to Pro's database, and a pg-boss schema that is already added under another name.
+pg-boss's [CLI](../cli.md), then add the schema here. The check also refuses a connection to Pro's
+database, and a pg-boss schema another schema already monitors, under any host name for its server.
 
 Pro stores each connection encrypted with [`PGBOSS_PRO_SECRET_KEY`](./administration.md#secrets) and
 doesn't send its password back to the browser. The list shows each schema's host and database.
@@ -59,7 +61,7 @@ GRANT pg_read_all_stats TO <role>;
 **Edit** in a schema's menu opens a page with its name, color and connection. The connection's fields show what
 is stored, except the password. A blank password keeps the stored one while the host, port,
 database, user and sslmode stay the same. Changing any of them needs the password entered again,
-for **Test connection** too. A stored password doesn't go to a server it wasn't entered for. The
+for **Check connection** too. A stored password doesn't go to a server it wasn't entered for. The
 stored connection is written again only when a field of it changes. Names show in the schema menu, in alert emails
 and webhook payloads, and in the audit log. A webhook payload holds the name in `schema_label` and the
 id in `schema`. Renaming keeps every link, alert rule and history row, because they all refer to the

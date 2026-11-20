@@ -6,7 +6,7 @@ The page runs in the order you set it up:
 
 - **Login page** names the **Sign in with…** button.
 - **1 Provider**: copy the redirect URI into the provider, then paste
-  the issuer, the client id and the client secret it gives you. **Test
+  the issuer, the client id and the client secret it gives you. **Check
   connection** checks that the issuer answers.
 - **2 Accounts**: existing accounts only, or also new accounts for the
   email domains you name.
