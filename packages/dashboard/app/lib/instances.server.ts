@@ -24,8 +24,6 @@ export interface InstancePageData {
   /** Every registered instance, for an overlay that reads one row against the rest. */
   instances: Instance[]
   checkedOn: Date
-  /** The server's connections now; null where `pg_stat_activity` cannot be read. */
-  connections: Connections | null
 }
 
 /**
@@ -40,7 +38,5 @@ export async function loadInstancePage (dbUrl: string, schema: string, id: strin
     throw new Response('Instance not found', { status: 404 })
   }
 
-  const connections = await readConnections((sql) => query(dbUrl, sql)).catch(() => null)
-
-  return { instance, instances, checkedOn, connections }
+  return { instance, instances, checkedOn }
 }

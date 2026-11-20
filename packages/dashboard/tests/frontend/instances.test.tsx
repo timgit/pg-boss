@@ -228,13 +228,14 @@ describe('InstanceSummaryTiles', () => {
     expect(live).toHaveTextContent('1 went quiet · 1 stopped cleanly in the last 24h')
   })
 
-  it('splits the connections into pg-boss and other apps, or says it cannot read them', () => {
-    const { unmount } = tiles([instance()], { max: 100, used: 20, byApp: { pgboss: { total: 6, active: 1, idle: 5, idleInTransaction: 0, oldestIdleInTransactionSeconds: null } } })
+  it('shows the connections in use and free against the server\'s limit, or says it cannot read them', () => {
+    const { unmount } = tiles([instance()], { max: 100, used: 20 })
 
     const connections = screen.getByRole('region', { name: 'Database connections' })
     expect(connections).toHaveTextContent('20of 100')
-    expect(connections).toHaveTextContent('pg-boss 6')
-    expect(connections).toHaveTextContent('other apps 14')
+    expect(connections).toHaveTextContent('in use 20')
+    expect(connections).toHaveTextContent('free 80')
+    expect(connections).not.toHaveTextContent('pg-boss')
     unmount()
 
     tiles([instance()], null)
@@ -256,10 +257,10 @@ describe('InstanceSummaryTiles', () => {
 })
 
 describe('InstancePage', () => {
-  function renderPage (i: Instance, connections: Connections | null = null) {
+  function renderPage (i: Instance) {
     return render(
       <MemoryRouter>
-        <InstancePage data={{ instance: i, instances: [i], checkedOn: NOW, connections }} />
+        <InstancePage data={{ instance: i, instances: [i], checkedOn: NOW }} />
       </MemoryRouter>
     )
   }
@@ -315,25 +316,15 @@ describe('InstancePage', () => {
     expect(screen.getByRole('region', { name: 'Process' })).not.toHaveTextContent('Pool')
   })
 
-  it('says what Postgres has open under the instance\'s name now, and its crash restarts', () => {
+  it('shows the process\'s connection name and crash restarts, and no count of its connections', () => {
     const named = instance({ applicationName: 'pgboss:abc', crashRestarts: 2, crashRestartsSince: secondsAgo(7200) })
-    const connections = { max: 100, used: 12, byApp: { 'pgboss:abc': { total: 4, active: 2, idle: 1, idleInTransaction: 1, oldestIdleInTransactionSeconds: 240 } } }
-    renderPage(named, connections)
+    renderPage(named)
 
     const process = screen.getByRole('region', { name: 'Process' })
-    expect(process).toHaveTextContent('4 open, 2 active, 1 idle1 idle in a transaction for 4m')
+    expect(process).toHaveTextContent('pgboss:abc')
     expect(process).toHaveTextContent(/Crash restarts2 since .*counted by name on this host/)
+    expect(process).not.toHaveTextContent('in Postgres now')
     expect(screen.getByRole('button', { name: 'Copy id' })).toBeInTheDocument()
-  })
-
-  it('says none open when Postgres has nothing under the name, and why it cannot tell without one', () => {
-    const connections = { max: 100, used: 12, byApp: {} }
-    const { unmount } = renderPage(instance({ applicationName: 'pgboss:abc' }), connections)
-    expect(screen.getByRole('region', { name: 'Process' })).toHaveTextContent('in Postgres nownone open')
-    unmount()
-
-    renderPage(instance({ applicationName: null }), connections)
-    expect(screen.getByText('not named, so not traceable')).toBeInTheDocument()
   })
 
   it('folds its options away', () => {

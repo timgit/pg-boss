@@ -66,12 +66,12 @@ describe('OverviewSections', () => {
 
   it('shows the instances beside the queues: live and quiet, the connections, and the hosts and versions', () => {
     renderSections(undefined, {
-      instances: { summary: { live: 3, quiet: 1, hosts: 2, versions: ['12.38.0', '12.36.1'], connections: { max: 100, boss: 6, other: 14 } } },
+      instances: { summary: { live: 3, quiet: 1, hosts: 2, versions: ['12.38.0', '12.36.1'], connections: { max: 100, used: 20 } } },
     })
 
     const card = screen.getByRole('region', { name: 'Instances' })
     expect(card).toHaveTextContent('3live 1quiet')
-    expect(card).toHaveTextContent('pg-boss 6 · other apps 14 · free 80 of 100')
+    expect(card).toHaveTextContent('connections in use 20 · free 80 of 100')
     expect(card).toHaveTextContent('On 2 hosts, 12.38.0, 12.36.1.')
   })
 

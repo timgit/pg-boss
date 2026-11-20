@@ -91,7 +91,7 @@ function Key ({ color, children }: { color: string, children: ReactNode }) {
   )
 }
 
-/** The server's connections in use against `max_connections`, pg-boss's apart from every other app's. */
+/** The server's connections in use against `max_connections`. */
 export function ConnectionsTile ({ connections }: { connections: Connections | null }) {
   if (!connections) {
     return (
@@ -100,18 +100,15 @@ export function ConnectionsTile ({ connections }: { connections: Connections | n
       </SummaryTile>
     )
   }
-  const boss = Object.values(connections.byApp).reduce((a, b) => a + b.total, 0)
-  const other = Math.max(0, connections.used - boss)
-  const width = (n: number) => `${Math.min(100, (n / Math.max(1, connections.max)) * 100)}%`
+  const free = Math.max(0, connections.max - connections.used)
   return (
     <SummaryTile label="Database connections" value={<>{connections.used}<Small>of {connections.max}</Small></>}>
-      <div className="flex h-1.5 overflow-hidden rounded bg-[var(--surface-sunken)]" role="img" aria-label={`${boss} pg-boss, ${other} other apps, of ${connections.max}`}>
-        <span style={{ width: width(boss), background: 'var(--conn-pgboss)' }} />
-        <span style={{ width: width(other), background: 'var(--conn-other)' }} />
+      <div className="flex h-1.5 overflow-hidden rounded bg-[var(--surface-sunken)]" role="img" aria-label={`${connections.used} in use, ${free} free, of ${connections.max}`}>
+        <span style={{ width: `${Math.min(100, (connections.used / Math.max(1, connections.max)) * 100)}%`, background: 'var(--conn-used)' }} />
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11.5px] text-[var(--text-tertiary)]">
-        <Key color="var(--conn-pgboss)">pg-boss {boss}</Key>
-        <Key color="var(--conn-other)">other apps {other}</Key>
+        <Key color="var(--conn-used)">in use {connections.used}</Key>
+        <span>free {free}</span>
       </div>
     </SummaryTile>
   )
@@ -173,7 +170,7 @@ export function InstanceSummaryTiles ({ instances, checkedOn, connections, live,
   )
 }
 
-/** The overview's Instances card: live and quiet, pg-boss's share of the connections, and the hosts and versions. */
+/** The overview's Instances card: live and quiet, the server's connections, and the hosts and versions. */
 export function InstancesCard ({ summary, aside }: { summary: InstanceSummary | null, aside?: ReactNode }) {
   if (!summary) {
     return (
@@ -183,7 +180,6 @@ export function InstancesCard ({ summary, aside }: { summary: InstanceSummary | 
     )
   }
   const c = summary.connections
-  const width = (n: number) => `${c ? Math.min(100, (n / Math.max(1, c.max)) * 100) : 0}%`
   return (
     <Panel label="Instances" title="Instances" link={{ to: '/instances', text: 'Open' }}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -195,12 +191,11 @@ export function InstancesCard ({ summary, aside }: { summary: InstanceSummary | 
       </div>
       {c && (
         <>
-          <div className="flex h-2 overflow-hidden rounded bg-[var(--surface-sunken)]" role="img" aria-label={`${c.boss} pg-boss connections, ${c.other} other, of ${c.max}`}>
-            <span style={{ width: width(c.boss), background: 'var(--conn-pgboss)' }} />
-            <span style={{ width: width(c.other), background: 'var(--conn-other)' }} />
+          <div className="flex h-2 overflow-hidden rounded bg-[var(--surface-sunken)]" role="img" aria-label={`${c.used} connections in use, of ${c.max}`}>
+            <span style={{ width: `${Math.min(100, (c.used / Math.max(1, c.max)) * 100)}%`, background: 'var(--conn-used)' }} />
           </div>
           <p className="text-[11.5px] text-[var(--text-secondary)]">
-            pg-boss {c.boss} · other apps {c.other} · free {Math.max(0, c.max - c.boss - c.other)} of {c.max}
+            connections in use {c.used} · free {Math.max(0, c.max - c.used)} of {c.max}
           </p>
         </>
       )}

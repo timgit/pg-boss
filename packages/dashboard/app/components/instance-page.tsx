@@ -1,6 +1,6 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
-import type { Connections, Instance } from '~/lib/types'
+import type { Instance } from '~/lib/types'
 import type { InstancePageData } from '~/lib/instances.server'
 import {
   formatAgo,
@@ -293,30 +293,11 @@ function Stacked ({ label, action, children }: { label: ReactNode, action?: Reac
   )
 }
 
-/** What Postgres has open under the instance's `application_name` now. */
-function PostgresConnections ({ instance: i, connections }: { instance: Instance, connections: Connections | null }) {
-  if (!i.applicationName) return <Muted>not named, so not traceable</Muted>
-  if (!connections) return <Muted>—</Muted>
-  const b = connections.byApp[i.applicationName]
-  if (!b) return <>none open</>
-  return (
-    <>
-      {b.total} open, {b.active} active, {b.idle} idle
-      {b.idleInTransaction > 0 && (
-        <b className="block font-medium text-[var(--state-failed-fg)]">
-          {b.idleInTransaction} idle in a transaction
-          {b.oldestIdleInTransactionSeconds != null && ` for ${formatSpan(b.oldestIdleInTransactionSeconds * 1000)}`}
-        </b>
-      )}
-    </>
-  )
-}
-
 /**
- * The process: its id and connection name, when it started and last beat, what Postgres has open
- * under its name now, and its crash restarts. Its pool is a tile, as pg-boss reported it.
+ * The process: its id and connection name, when it started and last beat, and its crash
+ * restarts. Its pool is a tile, as pg-boss reported it.
  */
-export function ProcessCard ({ instance: i, checkedOn, connections }: { instance: Instance, checkedOn: Date, connections: Connections | null }) {
+export function ProcessCard ({ instance: i, checkedOn }: { instance: Instance, checkedOn: Date }) {
   const beat = ago(i.heartbeatOn, checkedOn)
 
   return (
@@ -331,7 +312,6 @@ export function ProcessCard ({ instance: i, checkedOn, connections }: { instance
           rows={[
             ['Started', <When key="started" at={i.startedOn} sub={ago(i.startedOn, checkedOn)} />],
             ['Last heartbeat', <When key="beat" at={i.heartbeatOn} sub={i.stoppedOn ? beat : `${beat}, expected every ${i.heartbeatSeconds}s`} />],
-            [<>Connections<br />in Postgres now</>, <PostgresConnections key="connections" instance={i} connections={connections} />],
             ...(i.crashRestarts > 0
               ? [['Crash restarts', (
                   <span key="crashes">
@@ -498,7 +478,7 @@ export function OptionsCard ({ instance: i }: { instance: Instance }) {
 
 /** One registered instance: its resources, what it works and its options, with its process beside them. */
 export function InstancePage ({ data }: { data: InstancePageData }) {
-  const { instance, checkedOn, connections } = data
+  const { instance, checkedOn } = data
 
   return (
     <div className="grid gap-4">
@@ -510,7 +490,7 @@ export function InstancePage ({ data }: { data: InstancePageData }) {
           <OptionsCard instance={instance} />
         </div>
         <aside aria-label="Process" className="grid min-w-0 gap-4">
-          <ProcessCard instance={instance} checkedOn={checkedOn} connections={connections} />
+          <ProcessCard instance={instance} checkedOn={checkedOn} />
         </aside>
       </div>
     </div>

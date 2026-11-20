@@ -4,25 +4,16 @@ import type { WarningTypeValue } from './utils'
 import type { SchemaColor } from './schema-colors'
 export type { Instance, InstanceMetrics, InstanceWorker, JobWithMetadata, QueuePolicy, ScheduleKind }
 
-/** The connections Postgres has open under one `application_name`. */
-export interface Backends {
-  /** Every connection with the name, including those whose state this login cannot see. */
-  total: number
-  active: number
-  idle: number
-  idleInTransaction: number
-  /** How long the oldest idle-in-transaction connection has been so, in seconds. */
-  oldestIdleInTransactionSeconds: number | null
-}
-
-/** The server's connections, from `pg_stat_activity`. */
+/**
+ * The server's connections, from `pg_stat_activity`. Totals only: behind a pooler in transaction
+ * mode, Postgres sees a client's connection only while a statement runs on it, so counts by
+ * `application_name` would read low.
+ */
 export interface Connections {
   /** The server's `max_connections`. */
   max: number
-  /** Every client connection to the server, pg-boss or not. */
+  /** Every client connection to the server, a pooler's included. */
   used: number
-  /** Connections by `application_name`, for the names that start `pgboss`. */
-  byApp: Record<string, Backends>
 }
 
 // SendOptions type from pg-boss (defined locally for compatibility)

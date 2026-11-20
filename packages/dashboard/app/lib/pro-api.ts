@@ -35,7 +35,6 @@ export { schemaContext } from '~/lib/schema-context'
 export { niceMax } from '~/lib/stats'
 export { parseSubscriptionForm } from '~/lib/subscription-form'
 export type {
-  Backends,
   Connections,
   Instance,
   QueueResult,

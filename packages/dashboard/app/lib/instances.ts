@@ -260,14 +260,14 @@ function compareVersions (a: string, b: string): number {
   return 0
 }
 
-/** The overview's count of the instances: live and quiet, the hosts and versions, and pg-boss's share of the connections. */
+/** The overview's count of the instances: live and quiet, the hosts and versions, and the server's connections. */
 export interface InstanceSummary {
   live: number
   /** Quiet rows that are the newest for their name and host, so a restart that came back is not counted. */
   quiet: number
   hosts: number
   versions: string[]
-  connections: { max: number, boss: number, other: number } | null
+  connections: Connections | null
 }
 
 export function instanceSummary (instances: Instance[], connections: Connections | null): InstanceSummary {
@@ -278,12 +278,11 @@ export function instanceSummary (instances: Instance[], connections: Connections
     if (!head || time(i.startedOn) > time(head.startedOn)) newest.set(slot(i), i)
   }
   const live = instances.filter((i) => i.live)
-  const boss = connections ? Object.values(connections.byApp).reduce((a, b) => a + b.total, 0) : 0
   return {
     live: live.length,
     quiet: instances.filter((i) => instanceStatus(i) === 'quiet' && newest.get(slot(i)) === i).length,
     hosts: new Set(live.map((i) => i.host)).size,
     versions: liveVersions(instances).map((v) => v.version),
-    connections: connections ? { max: connections.max, boss, other: Math.max(0, connections.used - boss) } : null,
+    connections,
   }
 }
