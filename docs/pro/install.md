@@ -98,20 +98,6 @@ The other settings for Pro's database default to the role and database above:
 
 `PGBOSS_PRO_DB_CONNECTION_STRING` replaces them all, for a host that gives out a connection string. [Environment variables](./environment.md) lists every variable.
 
-## Schema permissions
-
-In each pg-boss schema it monitors, Pro reads what its pages show and makes changes through pg-boss's own methods, such as `createQueue()`, `retry()` and `deleteJob()`. Pro doesn't install pg-boss in a schema's database, supervise it, run its schedules or migrate it.
-
-The application's pg-boss creates its schema when it first starts. pg-boss's [CLI](../cli.md) can also create the schema ahead of time. Pro adds a schema only once pg-boss's schema exists there, and doesn't create it.
-
-Connect as the role that owns pg-boss's schema, because some of Pro's changes need the owner. Creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner.
-
-Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state. For that role, the connection counts by state can read low. The following script grants `pg_read_all_stats` to the role Pro connects as:
-
-```sql
-GRANT pg_read_all_stats TO <role>;
-```
-
 ## Run
 
 Keep Pro's settings in a `.env` file in the project, where the secret key stays out of shell history and survives a restart. The following commands write the settings above to the file with a new secret key, and keep the file out of version control:

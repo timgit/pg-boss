@@ -22,8 +22,7 @@ has no schemas, and its first global admin is sent to its **Add a schema** page.
 - **Color**, for the dot beside the name in the top bar and the schema menu. Until one is picked,
   the color follows the schema's place in the list.
 - **Connection**: host, port, database, user, password and SSL mode. Connect as the role that owns
-  the pg-boss schema. See
-  [schema permissions](./install.md#schema-permissions).
+  the pg-boss schema. See [permissions](#permissions).
 - **Schema**, the pg-boss schema's name in Postgres. It's `pgboss` unless the application's
   pg-boss uses another.
 
@@ -32,7 +31,8 @@ is added, the page goes back to **Settings › Schemas**, and the schema menu li
 
 **Test connection** connects and reads the schema's pg-boss version. Adding a schema runs the same
 check, and so does saving a changed connection. Pro adds a pg-boss schema only once it exists and
-doesn't create one, so start the application's pg-boss once before adding its schema. Pro also
+doesn't create one. Start the application's pg-boss once, or create the schema ahead of time with
+pg-boss's [CLI](../cli.md), before adding it. Pro also
 refuses its own database, and a pg-boss schema that is already added under another name.
 
 Pro stores each connection encrypted with [`PGBOSS_PRO_SECRET_KEY`](./administration.md#secrets) and
@@ -41,6 +41,18 @@ doesn't send its password back to the browser. The list shows each schema's host
 If the `PGBOSS_PRO_DB_` settings are changed to name the database of a schema already added, Pro
 stops monitoring that schema. The list marks it **Pro's own database, not monitored** until a global
 admin edits its connection or removes it.
+
+## Permissions
+
+To show a schema, Pro reads its tables. To change anything in it, such as creating a queue or retrying a job, Pro calls pg-boss's own methods, like `createQueue()` and `retry()`. Pro doesn't install pg-boss in a schema's database, supervise it, run its schedules or migrate it.
+
+Connect as the role that owns pg-boss's schema, because some of Pro's changes need the owner. Creating or deleting a queue with [`partition`](../api/queues.md#createqueue-name-queue) attaches or drops a table, which Postgres allows only to the table's owner.
+
+Instance health reads `pg_stat_activity`. A role without `pg_read_all_stats` sees other roles' sessions without their state. For that role, the connection counts by state can read low. The following script grants `pg_read_all_stats` to the role Pro connects as:
+
+```sql
+GRANT pg_read_all_stats TO <role>;
+```
 
 ## Editing a schema
 
