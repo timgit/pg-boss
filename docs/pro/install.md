@@ -15,9 +15,10 @@ Pro is installed from a private registry, not from npmjs. Use the setup CLI to i
 npm init @pg-boss/pro
 ```
 
-The CLI will prompt for the license key, database connection details, and other setup details. When the CLI finishes, it prints how to start Pro and a link to create the first global administrator.
+The CLI will prompt for the license key, database connection details, and other setup details. It will then write settings, including a generated secret key, `PGBOSS_PRO_SECRET_KEY`, to the `.env` file. 
 
-The CLI writes the settings, including a generated secret key, `PGBOSS_PRO_SECRET_KEY`, to the `.env` file. Keep a copy of the secret key in another secret store, just in case you need to restore the database. See [Backup](#backup).
+> [!IMPORTANT]
+> Keep a copy of the secret key in another secret store, just in case you need to restore the database. See [Backup](#backup).
 
 To run the CLI without prompts, as in a script, pass the answers after `--`:
 
@@ -27,6 +28,33 @@ npm init @pg-boss/pro -- pgboss-pro --yes --license "<your license key>" \
 ```
 
 `npm init @pg-boss/pro -- --help` lists every option.
+
+When the CLI finishes, it prints how to start Pro and a link to create the first global administrator:
+
+```
+✓ Pro is installed in /home/you/pgboss-pro.
+
+Secret key
+
+  PGBOSS_PRO_SECRET_KEY in pgboss-pro/.env encrypts the secrets Pro stores.
+  Keep a copy of it apart from the database backups, which don't hold it.
+  See https://pgboss.io/pro/administration#secrets
+
+Next steps
+
+  1. Start Pro:
+
+       cd pgboss-pro
+       node .
+
+  2. Open this link to create the first global administrator:
+
+       http://localhost:3000/setup?token=…
+
+  When Pro doesn't start, this command checks its settings and database:
+
+       npm run doctor
+```
 
 ## Install manually
 
@@ -53,7 +81,7 @@ Set the project's `main` to Pro's binary, which `node .` then starts, as [Run](#
 npm pkg set main=node_modules/@pg-boss/pro/bin/cli.js
 ```
 
-Then create Pro's database and set its configuration, as the next two sections describe. [Run](#run) then starts Pro.
+Then create the database and set the configuration, as the next two sections describe. [Run](#run) then starts Pro.
 
 ### Database setup
 
@@ -72,7 +100,7 @@ In a manual install, set these settings yourself:
 
 | Variable | Needed | What |
 | - | - | - |
-| `PGBOSS_PRO_DB_HOST` | Always | The host of Pro's database. |
+| `PGBOSS_PRO_DB_HOST` | Always | The database host. |
 | `PGBOSS_PRO_DB_PASSWORD` | Always | The password of the role Pro connects to its database as. |
 | `PGBOSS_PRO_SECRET_KEY` | Always | The encryption key. This is used to encrypt secrets such as each schema's connection settings, webhook URLs, and email password. This should be at least 32 characters. You can generate one with `openssl rand -base64 32`. |
 | `PGBOSS_PRO_SITE_URL` | In production | The public address of the Pro Console and Pro API. Without it, emails, webhooks and PagerDuty carry no link to the alert. Behind a reverse proxy that ends HTTPS, actions need it too. See [reverse proxy](../dashboard.md#reverse-proxy). |
@@ -84,7 +112,7 @@ Store the encryption key in another secret store. Rotating the secret key requir
 
 Pro doesn't read `DATABASE_URL`, which the dashboard reads. The schemas Pro monitors are added in the Pro Console. See [Schemas](./schemas.md).
 
-The other settings for Pro's database default to the role and database above:
+The other database settings default to the role and database above:
 
 | Setting | Default |
 | - | - |
@@ -104,7 +132,8 @@ echo "PGBOSS_PRO_SECRET_KEY=$(openssl rand -base64 32)" >> .env
 echo ".env" >> .gitignore
 ```
 
-Keep a copy of the secret key in another secret store, just in case you need to restore the database. See [Backup](#backup).
+> [!IMPORTANT]
+> Keep a copy of the secret key in another secret store, just in case you need to restore the database. See [Backup](#backup).
 
 ## Run
 
@@ -133,8 +162,7 @@ Open the setup link and create the first global administrator. Whoever reaches a
 
 ## Email server
 
-After setup, Pro opens **Settings › Email**, an optional step. Pro sends alert email and invitations
-through this server, which is any SMTP server Pro can reach. Set it up and press **Save**, or press
+After setup, Pro opens **Settings › Email**, an optional step. Alert email and invitations go out through this server, which can be any SMTP server Pro reaches. Set it up and press **Save**, or press
 **Skip** and set it up later from Settings. Either way, Pro goes on to **Settings › Schemas**.
 See [email](./destinations.md#email).
 
@@ -254,7 +282,7 @@ Pro waits for Postgres to report healthy before it starts. The database publishe
 
 `extra_hosts` makes `host.docker.internal` resolve on Linux as it does on macOS and Windows. A schema whose database runs on the Docker host is added in the Pro Console with `host.docker.internal` as its host.
 
-Pro's database in the volume and the secret key in `.env` are on the same machine. Keep a copy of the key somewhere else. See [Backup](#backup).
+The database in the volume and the secret key in `.env` are on the same machine. Keep a copy of the key somewhere else. See [Backup](#backup).
 
 To upgrade, run `npm update @pg-boss/pro`, build the image again with the `docker build` command above, and run `docker compose up -d`.
 
@@ -293,7 +321,7 @@ Pro's registry serves only `@pg-boss/pro`. It redirects a request for any other 
 
 ## Production
 
-Pro runs as its own server, apart from your application's, at the root of a host name of its own, such as `console.example.com`. Before other people use it, put HTTPS in front of it, keep it running, and point your monitoring at it. Back up Pro's database and keep a copy of the secret key, as [Backup](#backup) describes.
+Pro runs as its own server, apart from your application's, at the root of a host name of its own, such as `console.example.com`. Before other people use it, put HTTPS in front of it, keep it running, and point your monitoring at it. Back up the database and keep a copy of the secret key, as [Backup](#backup) describes.
 
 ### HTTPS
 
@@ -363,7 +391,7 @@ Several instances of Pro behind one load balancer evaluate each schema's rules o
 
 ## Backup
 
-Back up Pro's database like any other, with `pg_dump` or the host's snapshots:
+Back up the database like any other, with `pg_dump` or the host's snapshots:
 
 ```bash
 pg_dump --format=custom --file=pgboss_pro.dump --host=localhost --username=pgboss_pro pgboss_pro
@@ -391,7 +419,7 @@ Each Pro release is built with one pg-boss release, and installs that release wh
 
 ## Check the install
 
-The `doctor` command checks Pro's settings and its database without starting Pro. Run it in the project, where it reads the same `.env` file:
+The `doctor` command checks Pro's settings and database without starting the server. Run it in the project, where it reads the same `.env` file:
 
 ```bash
 npx pg-boss-pro doctor
@@ -400,18 +428,20 @@ npx pg-boss-pro doctor
 It reports each check as passed or failed, with the fix for each failure:
 
 - The secret key, the log format when `PGBOSS_PRO_LOG_FORMAT` is set, and the setup token when one is set.
-- The connection to Pro's database, and whether it's behind a pooler in transaction mode.
-- Pro's tables, against the version this Pro uses. Tables from a later Pro mean the install is older than the release that last migrated the database.
-- Each schema whose connection is Pro's own database, which Pro doesn't monitor.
+- The connection to the database, and whether it's behind a pooler in transaction mode.
+- Pro's tables, against the version this release uses. Tables from a later Pro mean the install is older than the release that last migrated the database.
+- Each schema whose connection is Pro's database, which isn't monitored.
+- Whether a global admin can sign in, with a password or through SSO. See [global admin recovery](./accounts.md#global-admin-recovery).
 - The stored secrets, decrypted with the current key. See [key changes](./administration.md#key-changes).
 
-The doctor doesn't write to Pro's database, and it exits with status 1 when a check fails. It doesn't connect to the schemas Pro monitors, which Settings › Schemas checks. See [Schemas](./schemas.md).
+The doctor exits with status 1 when a check fails. It writes to the database only when you make an account a global admin after a failed **Global admin** check. It doesn't connect to the schemas Pro monitors, which Settings › Schemas checks. See [Schemas](./schemas.md).
 
 ```
 pg-boss Pro 1.0.0
 
 ✓ Secret key: PGBOSS_PRO_SECRET_KEY is set.
-✓ Pro's database: Connected to localhost:5432/pgboss_pro.
+✓ Database: Connected to localhost:5432/pgboss_pro.
 ✓ Pro's tables: At version 1, which this Pro uses.
+✓ Global admin: A global admin can sign in with a password.
 ✓ Stored secrets: They were saved with this PGBOSS_PRO_SECRET_KEY.
 ```
