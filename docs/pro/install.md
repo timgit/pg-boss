@@ -17,7 +17,7 @@ npm init @pg-boss/pro
 
 The CLI will prompt for the license key, database connection details, and other setup details. When the CLI finishes, it prints how to start Pro and a link to create the first global administrator.
 
-The CLI writes the settings, including the a generated secret key, `PGBOSS_PRO_SECRET_KEY`, to `.env` file. Keep a copy of the secret key in another secret store, just in case you need to restore the database. See [Backup](#backup).
+The CLI writes the settings, including a generated secret key, `PGBOSS_PRO_SECRET_KEY`, to the `.env` file. Keep a copy of the secret key in another secret store, just in case you need to restore the database. See [Backup](#backup).
 
 To run the CLI without prompts, as in a script, pass the answers after `--`:
 
