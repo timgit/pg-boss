@@ -20,7 +20,7 @@ export default defineConfig({
     coverage: {
       reporter: ['lcov', 'text-summary', 'text'],
       include: ['src/**/*.ts'],
-      // cli.ts is tested via subprocess execution (child_process.exec), which runs
+      // cli.ts is tested via subprocess execution (child_process), which runs
       // in a separate Node.js process not instrumented by vitest's coverage tools
       exclude: ['src/cli.ts']
     }
