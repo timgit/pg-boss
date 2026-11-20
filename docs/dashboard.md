@@ -26,7 +26,7 @@ The [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) pac
 
 ### Overview
 
-The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been cancelled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar splits the server's connection limit between pg-boss, other applications and the connections still free. The most recent warnings are under it.
+The landing page has one row of figures across all queues: jobs ready to run (with how many are queued in all, deferred or blocked), active, failed, and stored in total (with how many of those have completed or been cancelled). Below it are the five queues holding the most jobs, each with a ready-count trend sparkline and a status badge. The badge reads backlogged when the queue holds more queued jobs than its `warningQueueSize`, processing when it has active jobs, ready when it has ready jobs and none active, and idle otherwise. In a column beside the figures and the top queues, the **Instances** card shows how many [instances](#instances) are live and how many have gone quiet, the hosts they run on and the pg-boss versions they run. A bar shows the server's connections in use against its connection limit. The most recent warnings are under it.
 
 ![Overview page](./images/dashboard-overview.webp){.light-only}
 ![Overview page](./images/dashboard-overview-dark.webp){.dark-only}
@@ -112,12 +112,12 @@ Subscribing, unsubscribing and publishing have the same version requirement as t
 
 ### Instances
 
-Every pg-boss instance registered in the schema's [instance registry](./api/ops.md#getinstances-options). Each row shows an instance's status (live, quiet or stopped), the pg-boss version it runs, which of `supervise` and `schedule` it has on, and the queues it works. Filter by status, or by **Recent** for the instances that started, stopped or went quiet in the last 24 hours. An instance's page shows its pool, CPU, memory and event loop at its last heartbeat against the limits it read. Its workers and options follow, with non-default options listed first. Beside those cards, a process card shows the instance's id, connection name, start and last heartbeat, the connections Postgres has open under that name now, and any crash restarts (instances with the same name on the same host that ended without `stop()` in a row before this instance started). The registry needs pg-boss 12.36 or later (schema 44). On an older schema the page says so.
+Every pg-boss instance registered in the schema's [instance registry](./api/ops.md#getinstances-options). Each row shows an instance's status (live, quiet or stopped), the pg-boss version it runs, which of `supervise` and `schedule` it has on, and the queues it works. Filter by status, or by **Recent** for the instances that started, stopped or went quiet in the last 24 hours. An instance's page shows its pool, CPU, memory and event loop at its last heartbeat against the limits it read. Its workers and options follow, with non-default options listed first. Beside those cards, a process card shows the instance's id, connection name, start and last heartbeat, and any crash restarts (instances with the same name on the same host that ended without `stop()` in a row before this instance started). The registry needs pg-boss 12.36 or later (schema 44). On an older schema the page says so.
 
 Three tiles sit above the list:
 
 - **Live** counts the live instances and their hosts, and how many went quiet or stopped cleanly in the last 24 hours.
-- **Database connections** counts the server's connections out of `max_connections` and separates pg-boss's connections from other applications'.
+- **Database connections** counts the server's connections in use out of `max_connections`, a pooler's included.
 - **Versions and options** lists the pg-boss versions live and which live instances have `supervise` and `schedule` on.
 
 ![Instances page](./images/dashboard-instances.webp){.light-only}
