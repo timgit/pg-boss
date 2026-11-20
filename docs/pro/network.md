@@ -14,7 +14,6 @@ set up, Pro talks only to its Postgres database.
 | A PagerDuty alert | only once a PagerDuty destination exists, at the same moments | `events.pagerduty.com`, or `events.eu.pagerduty.com` for a destination in the EU region |
 | An email alert | only once an email destination exists, at the same moments, or when a global admin presses **Send test** under **Settings › Email** | the configured SMTP server |
 | An invitation email | when a global admin sends an invitation from an account's page, or adds a person with **Email the link to this address** checked | the configured SMTP server |
-| A heartbeat | only with `PGBOSS_PRO_HEARTBEAT_URL` set, once a minute while every schema's pass is current | that URL |
 | A schema's database | only once a schema is added, when a page, the alert evaluator or an operation reads or changes it | the host in that schema's connection |
 | Single sign-on | when a user signs in or presses **Test connection** | the provider's issuer, token and key endpoints |
 
@@ -36,7 +35,7 @@ internal network. The provider's endpoints must use https, or http on localhost.
 
 ## Egress proxy
 
-Set `HTTPS_PROXY`, or `HTTP_PROXY`, to send webhooks, PagerDuty, single sign-on, the heartbeat and
+Set `HTTPS_PROXY`, or `HTTP_PROXY`, to send webhooks, PagerDuty, single sign-on and
 SMTP through a proxy. Hosts in `NO_PROXY` are reached directly, such as an internal identity provider. Through a
 proxy, the proxy resolves and connects. With `PGBOSS_PRO_BLOCK_PRIVATE_ADDRESSES` also set, Pro checks
 a webhook's host before it sends, but the proxy makes the connection. SMTP goes through the proxy

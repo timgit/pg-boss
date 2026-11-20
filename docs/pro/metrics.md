@@ -47,15 +47,24 @@ scrape_configs:
 
 ## Health check
 
-`/healthz` answers 200 with `ok` once Pro has reached its database and brought its tables up to date. Until then it answers 503. It needs no sign-in. Pro doesn't check the database again for each probe after that.
+`/healthz` and `/alertz` need no sign-in. Each answers 200 with `ok`, or 503 with the reason:
 
-`/healthz?ready=evaluator` also answers 503 until this instance's alert evaluator has started.
-Use it for an orchestrator that should restart an instance whose alerting never started.
+| Probe | Answers 503 while |
+|---|---|
+| `/healthz` | Pro is starting, or its database doesn't answer |
+| `/alertz` | the same, or a schema has had no alert evaluator pass for 3 minutes |
 
-When the evaluator stops, only the Pro Console warns. Alert on `pgboss_evaluator_pass_age_seconds`
-from Prometheus too, such as when it passes 180 seconds, which is when the Pro Console starts
-warning that alerts are behind.
-Without Prometheus, set [`PGBOSS_PRO_HEARTBEAT_URL`](./environment.md#pgboss-pro-heartbeat-url) to a
-dead man's switch, which raises the alarm when Pro's requests to it stop.
+Each probe checks the database again at most every 5 seconds.
 
-Point a load balancer's or an orchestrator's health check at `/healthz`. The image in [Docker](./install.md#docker) uses it for its `HEALTHCHECK`.
+Point a load balancer's health check at `/healthz`. The image in [Docker](./install.md#docker) uses
+it for its `HEALTHCHECK`.
+
+Pro sends every alert itself. When it stops, or its passes fall behind, nothing inside reports that.
+Point the monitoring you already run at `/alertz`. It fails in all three cases, which are
+the process or its host down, the database down, and the passes behind. The Pro Console
+warns that alerts are behind at the same 3 minutes. With Prometheus, an alert on
+`pgboss_evaluator_pass_age_seconds` gives the same signal for each schema.
+
+Passes are shared between instances, and every instance answers `/alertz` the same
+way. Use it for monitoring, not for a load balancer or a restart, which can't bring the passes
+back. A schema added less than a minute ago counts as behind until its first pass.

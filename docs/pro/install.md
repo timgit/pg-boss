@@ -385,9 +385,9 @@ Several instances of Pro behind one load balancer evaluate each schema's rules o
 ### Monitoring
 
 - Keep [`PGBOSS_PRO_LOG_FORMAT`](./environment.md#pgboss-pro-log-format) at `json`, as the CLI sets it, for a log collector.
-- Point the load balancer's or orchestrator's health check at [`/healthz`](./metrics.md#health-check).
+- Point the load balancer's health check at [`/healthz`](./metrics.md#health-check).
 - Scrape [`/metrics`](./metrics.md#prometheus) with Prometheus.
-- Set [`PGBOSS_PRO_HEARTBEAT_URL`](./environment.md#pgboss-pro-heartbeat-url) to a dead man's switch, which raises the alarm when Pro stops.
+- Point the monitoring you already run at [`/alertz`](./metrics.md#health-check), which answers 503 when Pro is down or its alerts fall behind.
 
 ## Backup
 
