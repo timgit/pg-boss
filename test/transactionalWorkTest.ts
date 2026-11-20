@@ -650,10 +650,22 @@ describeTransactional('transactional work', function () {
     expect(applied).toBe(35000)
   })
 
-  it('should honour an explicit transactionTimeoutSeconds', async function () {
+  it('should require an explicit transaction timeout for multi-day jobs', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const jobId = await ctx.boss.send(ctx.schema, null, { expireInSeconds: 86401, retryLimit: 0 })
+    helper.assertTruthy(jobId)
+    let called = false
+    await ctx.boss.work(ctx.schema, { transactional: true }, async () => { called = true })
+    await until(async () => (await ctx.boss!.getJobById(ctx.schema, jobId))?.state === 'failed')
+    expect(called).toBe(false)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect(job?.output).toMatchObject({ message: 'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds' })
+  })
+
+  it('should honour an explicit transactionTimeoutSeconds for a multi-day job', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 30 })
+    const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 14 * 86400 })
     helper.assertTruthy(jobId)
 
     let applied: number | null | undefined

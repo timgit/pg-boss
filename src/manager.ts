@@ -759,6 +759,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_ON_BATCH)
 
       if (transactional) {
+        assert(maxExpiration <= 86400 || transactionTimeoutSeconds !== undefined,
+          'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds')
         const timeoutMs = transactionTimeoutSeconds !== undefined
           ? transactionTimeoutSeconds * 1000
           : maxExpiration * 1000 + TRANSACTION_ROLLBACK_TIMEOUT_MS
