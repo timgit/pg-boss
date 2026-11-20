@@ -6,6 +6,23 @@ subscription covers the organization that holds it and every company in which it
 half the voting interests. Pro checks no license at runtime.
 The registry decides which versions the [license key](./install.md#install-with-the-cli) may install.
 
+## Replacing the license key
+
+A license key changes when an organization subscribes again, when an access grant is reissued, or
+when a key leaks. Write to [support@pgboss.io](mailto:support@pgboss.io) about a leaked key, to have
+it revoked and a new one issued. The installed Pro keeps running on the old key, because nothing
+checks a key at runtime. Installs need the new key wherever they read one:
+
+- The user npm config, `~/.npmrc`, where the [setup CLI](./install.md#install-with-the-cli) saves the
+  key on the line that starts with `//npm.pgboss.io/:_authToken=`. Edit that line in place. Running
+  `npm config set` with the key instead leaves the key in the shell history.
+- `PGBOSS_PRO_LICENSE`, wherever a CI runner or a shell sets it for a project whose `.npmrc` reads it.
+- The build secret a [Docker](./install.md#docker) build passes.
+
+To confirm the new key, run `npx pg-boss-pro doctor` in the project. The report's second line shows
+the key npm sends, masked to its last 6 characters. The help menu in the Pro Console shows the same
+masked key, read when the server starts, and shows the new one after a restart.
+
 ## Cancellation
 
 A subscription renews until it's cancelled. A cancelled subscription lasts until the end of the period
