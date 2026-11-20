@@ -126,12 +126,12 @@ npx pg-boss-pro doctor --admin recovery@example.com
 ```
 
 The doctor creates that account as a global admin and prints a link that sets its password, for
-1 hour. Sign in with it, then fix the locked-out account on its page with **Set a password** or
-**Create a link to copy**. Disable or delete the recovery account afterward. The locked-out account
-doesn't change until a global admin changes it.
+1 hour. Sign in with that link, then fix the locked-out account on its page with **Set a password** or
+**Create a link to copy**. Disable or delete the recovery account afterward. The doctor leaves the
+locked-out account as it is.
 
-`--admin` with the email of an existing account makes that account a global admin, enables it when
-it's disabled, and prints a link that sets a new password for it.
+`--admin` with the email of an existing account makes that account a global admin, enables the
+account when it's disabled, and prints a link that sets a new password for the account.
 
 A forgotten password isn't the only way to end up with no global admin who can sign in. A change
 made directly in the database, or SSO turned off while every global admin signs in through SSO alone,
