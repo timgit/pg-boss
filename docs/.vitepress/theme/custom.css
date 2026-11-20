@@ -162,3 +162,8 @@ html:not(.dark) .vp-doc img.dark-only {
   float: right;
   margin: 0 0 0 16px;
 }
+
+/* The Pro pages' site title. */
+.pro-site-title {
+  margin-left: 0.3em;
+}

@@ -100,12 +100,11 @@ export default defineConfig({
           text: 'Reference',
           items: [
             { text: 'Pro API', link: '/pro/api' },
-            { text: 'Metrics', link: '/pro/metrics' },
+            { text: 'Prometheus metrics', link: '/pro/metrics' },
             { text: 'Environment variables', link: '/pro/environment' },
             { text: 'Release notes', link: '/pro/releases' }
           ]
-        },
-        { text: 'pg-boss', link: '/introduction' }
+        }
       ],
       '/': [
         { text: 'Getting Started', link: '/introduction' },
