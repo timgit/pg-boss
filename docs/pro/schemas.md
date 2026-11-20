@@ -28,6 +28,9 @@ has no schemas, and its first global admin is sent to its **Add a schema** page.
 - **Schema**, the pg-boss schema's name in Postgres. It's `pgboss` unless the application's
   pg-boss uses another.
 
+![Adding a schema](../images/pro/schema-new.webp){.light-only}
+![Adding a schema](../images/pro/schema-new-dark.webp){.dark-only}
+
 The schema menu in the top bar ends with the same **Add schema** for a global admin. Once the schema
 is added, the page goes back to **Settings › Schemas**, and the schema menu lists the new schema.
 
