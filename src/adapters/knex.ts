@@ -6,6 +6,11 @@ export interface KnexTransactionLike {
   raw<T = any>(sql: string, bindings?: readonly unknown[]): Promise<{ rows: T[] } | { rows: any[] }[]>
 }
 
+/**
+ * Wraps a Knex transaction as an {@link IDatabase} for scoping job operations inside an existing transaction.
+ *
+ * @see https://pgboss.io/api/adapters#knex
+ */
 export function fromKnex (trx: KnexTransactionLike): IDatabase {
   return {
     async executeSql (text: string, values?: unknown[]) {
