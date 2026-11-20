@@ -17,6 +17,10 @@ export default defineConfig({
     }
   },
   head: [
+    // The Console's mark in its default cobalt, copied from packages/dashboard/app/assets/pg-boss-favicon.svg
+    // and public/assets/apple-touch-icon.png. Copy them again if the mark changes.
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+    ['link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }],
     ['meta', { name: 'theme-color', content: '#2f7cf6' }],
     ['script', {}, `(function(){
       var hash = window.location.hash;
