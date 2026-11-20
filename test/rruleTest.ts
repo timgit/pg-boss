@@ -492,13 +492,15 @@ RRULE:FREQ=SECONDLY;COUNT=500000`
     // Both passes name the slot the occurrence falls in, so the second job collapses into the first
     // instead of being sent as a job of its own. A slot rather than an offset from the insert's own
     // clock, so nothing the round trip costs can move it.
-    for (const name of ['rule', 'half']) {
-      const [first, second] = filed(name)
+    const [first, second] = filed('rule')
 
-      expect(first.__singletonSlot).toBe(slotOf(occurrence))
-      expect(second.__singletonSlot).toBe(slotOf(occurrence))
-      expect(first.singletonSeconds).toBeUndefined()
-    }
+    expect(first.__singletonSlot).toBe(slotOf(occurrence))
+    expect(second.__singletonSlot).toBe(slotOf(occurrence))
+    expect(first.singletonSeconds).toBeUndefined()
+
+    // A cron expression with a seconds field is filed under the second it falls in, and only once:
+    // the second pass reads on from where the first left off rather than the whole window again.
+    expect(filed('half').map(job => job.__singletonSlot)).toEqual([new Date(occurrence).toISOString().replace('T', ' ').slice(0, 19)])
 
     // An occurrence on the minute falls in the slot the pass finding it runs in, so naming it
     // changes nothing about where a 5-placeholder expression's jobs go: one a minute, in that minute.

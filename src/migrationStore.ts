@@ -2411,6 +2411,21 @@ AS $function$
             ]),
         `ALTER TABLE ${schema}.queue DROP COLUMN retained_on, DROP COLUMN retained_count`
       ]
+    },
+    {
+      release: '12.39.0',
+      version: 47,
+      previous: 46,
+      // sent_on is the latest occurrence an instance has sent for a `missed: 'once'` schedule, which a
+      // catch-up reads so it does not send that occurrence again. Nullable with no default, so adding
+      // it rewrites nothing, and a row nothing has recorded reads as the claim alone, which is what
+      // every earlier release caught up from.
+      install: [
+        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS sent_on timestamp with time zone`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.schedule DROP COLUMN sent_on`
+      ]
     }
   ]
 }
