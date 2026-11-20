@@ -3,39 +3,30 @@
 ## Requirements
 
 - Node.js 22.12 or later.
-- A Postgres database for Pro.
+- A Postgres database for Pro, on PostgreSQL 13 or later.
 - pg-boss 12.36 or later in each schema Pro monitors. The schemas are added in the Pro Console once Pro is running. See [Schemas](./schemas.md) and [pg-boss versions](./versions.md).
 - A [Pro subscription](https://buy.polar.sh/polar_cl_YGSAhTFmC6APdILc2m8MtIABaLUbAJjSIjooL0pP4lc), which comes with a license key.
 
 ## Install with the CLI
 
-Pro is installed from a private registry, not from npmjs. `npm init @pg-boss/pro` runs `@pg-boss/create-pro`, Pro's setup CLI on npmjs. It creates a project for Pro and installs Pro:
+Pro is installed from a private registry, not from npmjs. Use the setup CLI to install Pro in a new project directory:
 
 ```bash
 npm init @pg-boss/pro
 ```
 
-The CLI asks for the license key and for Pro's database, which is either an existing database or a new one it creates from an admin connection. It doesn't keep the admin connection. It then:
+The CLI will prompt for the license key, database connection details, and other setup details. When the CLI finishes, it prints how to start Pro and a link to create the first global administrator.
 
-1. Checks the license key with the registry.
-2. Points the project's `.npmrc` at Pro's registry, and saves the license key in the user's npm config, as `npm login` does.
-3. Writes `.env` with Pro's database, a new secret key and a setup token. `.gitignore` keeps the file out of version control.
-4. Installs Pro, then prints how to start it and the address of the setup page, where you create the first global administrator.
+The CLI writes the settings, including the a generated secret key, `PGBOSS_PRO_SECRET_KEY`, to `.env` file. Keep a copy of the secret key in another secret store, just in case you need to restore the database. See [Backup](#backup).
 
-Keep a copy of `PGBOSS_PRO_SECRET_KEY` from `.env` in another secret store, because Pro's database backups don't hold it. See [Backup](#backup).
-
-To run it without prompts, as in a script, pass the answers after `--`:
+To run the CLI without prompts, as in a script, pass the answers after `--`:
 
 ```bash
 npm init @pg-boss/pro -- pgboss-pro --yes --license "<your license key>" \
   --database-url "postgres://pgboss_pro:<password>@localhost:5432/pgboss_pro"
 ```
 
-`--admin-url` in place of `--database-url` creates the database. `--token-in-env` leaves the user's npm config alone and has the project's `.npmrc` read the license key from `PGBOSS_PRO_LICENSE`, as a CI runner needs. `--package 1.0.0` installs that version of Pro in place of the latest release. `npm init @pg-boss/pro -- --help` lists every option.
-
-Pro runs as its own server, apart from your application's, at the root of a host name of its own, such as `console.example.com`. A reverse proxy in front of Pro passes it every path on that host. Pro doesn't serve under a path of another site.
-
-Served over HTTPS, Pro sends `Strict-Transport-Security` with a one-year `max-age` and no `includeSubDomains`. A browser that has opened the Pro Console over HTTPS then uses only HTTPS on that host for a year, for every path on it.
+`npm init @pg-boss/pro -- --help` lists every option.
 
 ## Install manually
 
@@ -56,7 +47,13 @@ PGBOSS_PRO_LICENSE="<your license key>" \
 npm install @pg-boss/pro
 ```
 
-Then create Pro's database, set its configuration and start it, as the next sections describe.
+Set the project's `main` to Pro's binary, which `node .` then starts, as [Run](#run) explains:
+
+```bash
+npm pkg set main=node_modules/@pg-boss/pro/bin/cli.js
+```
+
+Then create Pro's database and set its configuration, as the next two sections describe. [Run](#run) then starts Pro.
 
 ### Database setup
 
@@ -69,9 +66,9 @@ CREATE DATABASE pgboss_pro OWNER pgboss_pro;
 
 As the database's owner, the role has the permissions to create Pro's tables and run the migrations in later upgrades.
 
-## Configuration
+### Configuration
 
-Pro reads these settings at startup:
+In a manual install, set these settings yourself:
 
 | Variable | Needed | What |
 | - | - | - |
@@ -98,8 +95,6 @@ The other settings for Pro's database default to the role and database above:
 
 `PGBOSS_PRO_DB_CONNECTION_STRING` replaces them all, for a host that gives out a connection string. [Environment variables](./environment.md) lists every variable.
 
-## Run
-
 Keep Pro's settings in a `.env` file in the project, where the secret key stays out of shell history and survives a restart. The following commands write the settings above to the file with a new secret key, and keep the file out of version control:
 
 ```bash
@@ -109,23 +104,29 @@ echo "PGBOSS_PRO_SECRET_KEY=$(openssl rand -base64 32)" >> .env
 echo ".env" >> .gitignore
 ```
 
-Keep a copy of the secret key in another secret store as well, because Pro's database backups don't hold it. See [Backup](#backup).
+Keep a copy of the secret key in another secret store, just in case you need to restore the database. See [Backup](#backup).
+
+## Run
 
 Start Pro in the project. Pro reads the `.env` file in the directory it starts in:
 
 ```bash
-npx pg-boss-pro
+node .
 ```
+
+`node .` is preferred since the node process itself receives SIGTERM directly from systemd, Docker or a process manager. Pro uses signals to finish an alert evaluator pass and gracefully close its connections before stopping. npm and npx don't pass SIGTERM on to the process they start. Don't run Pro through them under a supervisor.
+
+In a terminal, however, where Ctrl-C reaches every process, `npx pg-boss-pro` starts Pro too, as does `npm start`. `npm run doctor` runs [the doctor](#check-the-install).
 
 A variable set in the environment takes precedence over the same variable in `.env`. Pro doesn't start without `PGBOSS_PRO_SECRET_KEY` and its database settings, or with a setting it can't use, such as a port that isn't a number. It logs one line that names the setting and exits with status 1. When Pro doesn't start, [check the install](#check-the-install).
 
-On first run there are no accounts. Pro prints a setup link to its log:
+On first run there are no accounts. Pro will print a setup link to its log:
 
 ```
-pg-boss Pro: no account yet. Open http://localhost:3000/setup?token=… to create the first global administrator. The link works until this process restarts.
+pg-boss Pro: no global admin found. Open http://localhost:3000/setup?token=… to create the first global admin. The link works until this process restarts.
 ```
 
-Open the setup link and create the first global administrator. Whoever reaches a new install first can't take it, because the page refuses anyone without the token. The token is new each time the process starts. With several instances behind a load balancer, set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md#pgboss-pro-setup-token) so they share one token, and open `/setup?token=` followed by its value. The token needs 32 characters or more, such as the output of `openssl rand -base64 32`. After five wrong tokens from one address in fifteen minutes, or fifty from every address together, the page refuses tokens for fifteen minutes. The page closes for good once the first account exists.
+Open the setup link and create the first global administrator. Whoever reaches a new install first can't take it, because the page refuses anyone without the token. Without `PGBOSS_PRO_SETUP_TOKEN`, the token is new each time the process starts. The link then works until the process restarts. The CLI sets the variable. The link it prints keeps working across restarts until the first account exists. With several instances behind a load balancer, set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md#pgboss-pro-setup-token) so they share one token, and open `/setup?token=` followed by its value. The token needs 32 characters or more, such as the output of `openssl rand -base64 32`. After five wrong tokens from one address in fifteen minutes, or fifty from every address together, the page refuses tokens for fifteen minutes. The page closes for good once the first account exists.
 
 ![Creating the first global administrator](../images/pro/setup.webp){.light-only}
 ![Creating the first global administrator](../images/pro/setup-dark.webp){.dark-only}
@@ -170,8 +171,10 @@ RUN --mount=type=secret,id=pgboss_pro_license \
 ENV PORT=3000
 EXPOSE 3000
 HEALTHCHECK CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
-ENTRYPOINT ["./node_modules/.bin/pg-boss-pro"]
+ENTRYPOINT ["node", "."]
 ```
+
+The `ENTRYPOINT` starts Pro with `node .`. Pro then receives Docker's SIGTERM itself, as [Run](#run) explains.
 
 ```bash
 PGBOSS_PRO_LICENSE=<your license key> docker build --secret id=pgboss_pro_license,env=PGBOSS_PRO_LICENSE -t pgboss-pro .
@@ -186,6 +189,8 @@ docker run -p 3000:3000 \
   -e PGBOSS_PRO_SECRET_KEY="<your secret key>" \
   pgboss-pro
 ```
+
+A project from the CLI can pass its settings with `--env-file .env` in place of the `-e` options. In a container, `localhost` is the container itself. The database host in `.env` has to be one the container reaches, such as `host.docker.internal`.
 
 To [check the install](#check-the-install) in a container, add `doctor` after the image name, with the same settings.
 
@@ -273,7 +278,7 @@ docker load < pgboss-pro.tar.gz
 
 ### Project copy
 
-On a machine that reaches npm.pgboss.io and npmjs, install Pro in a project as [Install with the CLI](#install-with-the-cli) or [Install manually](#install-manually) shows. Copy the project directory into the network with its `node_modules`, and start Pro there with `npx pg-boss-pro`, as in [Run](#run). None of Pro's dependencies is a native module. The copy runs on any operating system and processor with Node.js 22.12 or later.
+On a machine that reaches npm.pgboss.io and npmjs, install Pro in a project as [Install with the CLI](#install-with-the-cli) or [Install manually](#install-manually) shows. Copy the project directory into the network with its `node_modules`, and start Pro there as [Run](#run) shows. None of Pro's dependencies is a native module. The copy runs on any operating system and processor with Node.js 22.12 or later.
 
 To upgrade, run `npm update @pg-boss/pro` in the project outside the network, then copy the project again.
 
@@ -285,6 +290,76 @@ An internal npm registry, such as Artifactory, Nexus or Verdaccio, can proxy Pro
 - npmjs for every other package, including the rest of the `@pg-boss` scope
 
 Pro's registry serves only `@pg-boss/pro`. It redirects a request for any other package to npmjs, which a proxy may not follow. Projects inside the network then install Pro from the internal registry with no `.npmrc` entry for npm.pgboss.io.
+
+## Production
+
+Pro runs as its own server, apart from your application's, at the root of a host name of its own, such as `console.example.com`. Before other people use it, put HTTPS in front of it, keep it running, and point your monitoring at it. Back up Pro's database and keep a copy of the secret key, as [Backup](#backup) describes.
+
+### HTTPS
+
+Pro serves plain HTTP. Put a reverse proxy in front of it that ends HTTPS and passes Pro every path on its host name. Pro doesn't serve under a path of another site. This Nginx configuration forwards the client's address and scheme, which Pro reads for sign-in limits, the audit log and its cookies:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name console.example.com;
+    ssl_certificate /etc/ssl/certs/console.example.com.pem;
+    ssl_certificate_key /etc/ssl/private/console.example.com.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Set [`PGBOSS_PRO_SITE_URL`](./environment.md#pgboss-pro-site-url) to the address people open, such as `https://console.example.com`. Links in alerts use it. Actions behind the proxy need it too. Pro trusts the address a proxy on the same machine forwards. For a proxy on another host, list its address in [`PGBOSS_PRO_TRUSTED_PROXIES`](./environment.md#pgboss-pro-trusted-proxies).
+
+Served over HTTPS, Pro sends `Strict-Transport-Security` with a one-year `max-age` and no `includeSubDomains`. A browser that has opened the Pro Console over HTTPS then uses only HTTPS on that host for a year, for every path on it.
+
+### Service
+
+Docker Compose restarts Pro with `restart: unless-stopped`. On a server without Docker, run Pro as a systemd service. Save the following as `/etc/systemd/system/pgboss-pro.service`, with the project's directory and the path `command -v node` prints:
+
+```ini
+[Unit]
+Description=pg-boss Pro
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pgboss-pro
+WorkingDirectory=/opt/pgboss-pro
+ExecStart=/usr/bin/node .
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`node .` makes Pro the service's main process, which systemd stops with SIGTERM. Pro reads `.env` from its working directory. The file is readable by its owner alone. `User` names the account that owns the project. Then start Pro, and start it again at each boot:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now pgboss-pro
+```
+
+`journalctl -u pgboss-pro` shows Pro's log.
+
+### Several instances
+
+Several instances of Pro behind one load balancer evaluate each schema's rules once between them and send from every destination's queue. Give every instance the same Pro database and the same `PGBOSS_PRO_SECRET_KEY`. With the same key, each instance decrypts the secrets the others stored and finishes an SSO sign-in another one started. Set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md#pgboss-pro-setup-token) on all of them too, for a setup link that works on any one.
+
+### Monitoring
+
+- Keep [`PGBOSS_PRO_LOG_FORMAT`](./environment.md#pgboss-pro-log-format) at `json`, as the CLI sets it, for a log collector.
+- Point the load balancer's or orchestrator's health check at [`/healthz`](./metrics.md#health-check).
+- Scrape [`/metrics`](./metrics.md#prometheus) with Prometheus.
+- Set [`PGBOSS_PRO_HEARTBEAT_URL`](./environment.md#pgboss-pro-heartbeat-url) to a dead man's switch, which raises the alarm when Pro stops.
 
 ## Backup
 
