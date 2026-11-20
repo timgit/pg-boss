@@ -5,6 +5,70 @@ import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 
 describe('pubsub', function () {
+  it('getSubscriptions() lists subscriptions by event and queue name', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.createQueue(`${ctx.schema}_a`)
+    await ctx.boss.createQueue(`${ctx.schema}_b`)
+    await ctx.boss.subscribe('event-b', `${ctx.schema}_a`)
+    await ctx.boss.subscribe('event-a', `${ctx.schema}_b`)
+    await ctx.boss.subscribe('event-a', `${ctx.schema}_a`)
+
+    const subscriptions = await ctx.boss.getSubscriptions()
+
+    expect(subscriptions.map(({ event, name }) => ({ event, name }))).toEqual([
+      { event: 'event-a', name: `${ctx.schema}_a` },
+      { event: 'event-a', name: `${ctx.schema}_b` },
+      { event: 'event-b', name: `${ctx.schema}_a` }
+    ])
+    expect(new Date(subscriptions[0].createdOn).getTime()).not.toBeNaN()
+    expect(new Date(subscriptions[0].updatedOn).getTime()).not.toBeNaN()
+
+    const byEvent = await ctx.boss.getSubscriptions('event-a')
+    expect(byEvent.map(s => s.name)).toEqual([`${ctx.schema}_a`, `${ctx.schema}_b`])
+    expect(await ctx.boss.getSubscriptions('no-such-event')).toEqual([])
+  })
+
+  it('getSubscriptions() reflects unsubscribe()', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.subscribe('event', ctx.schema)
+    await ctx.boss.unsubscribe('event', ctx.schema)
+
+    expect(await ctx.boss.getSubscriptions('event')).toEqual([])
+  })
+
+  it('getSubscriptions() pages in its order, with or without an event', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.createQueue(`${ctx.schema}_a`)
+    await ctx.boss.createQueue(`${ctx.schema}_b`)
+    await ctx.boss.subscribe('event-a', `${ctx.schema}_a`)
+    await ctx.boss.subscribe('event-a', `${ctx.schema}_b`)
+    await ctx.boss.subscribe('event-b', `${ctx.schema}_a`)
+
+    const first = await ctx.boss.getSubscriptions(undefined, { limit: 2 })
+    expect(first.map(s => [s.event, s.name])).toEqual([
+      ['event-a', `${ctx.schema}_a`],
+      ['event-a', `${ctx.schema}_b`]
+    ])
+    const second = await ctx.boss.getSubscriptions(undefined, { limit: 2, after: first[1] })
+    expect(second.map(s => [s.event, s.name])).toEqual([['event-b', `${ctx.schema}_a`]])
+
+    const firstOfEvent = await ctx.boss.getSubscriptions('event-a', { limit: 1 })
+    expect(firstOfEvent.map(s => s.name)).toEqual([`${ctx.schema}_a`])
+    const nextOfEvent = await ctx.boss.getSubscriptions('event-a', { after: firstOfEvent[0] })
+    expect(nextOfEvent.map(s => s.name)).toEqual([`${ctx.schema}_b`])
+  })
+
+  it('getSubscriptions() rejects an invalid limit or after', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await expect(ctx.boss.getSubscriptions(undefined, { limit: 0 })).rejects.toThrow('getSubscriptions: limit')
+    // @ts-ignore
+    await expect(ctx.boss.getSubscriptions(undefined, { after: 'event' })).rejects.toThrow('getSubscriptions: after')
+  })
+
   it('should fail with no arguments', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
