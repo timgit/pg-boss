@@ -382,12 +382,33 @@ sudo systemctl enable --now pgboss-pro
 
 Several instances of Pro behind one load balancer evaluate each schema's rules once between them and send from every destination's queue. Give every instance the same Pro database and the same `PGBOSS_PRO_SECRET_KEY`. With the same key, each instance decrypts the secrets the others stored and finishes an SSO sign-in another one started. Set [`PGBOSS_PRO_SETUP_TOKEN`](./environment.md#pgboss-pro-setup-token) on all of them too, for a setup link that works on any one.
 
-### Monitoring
+### Health checks
 
-- Keep [`PGBOSS_PRO_LOG_FORMAT`](./environment.md#pgboss-pro-log-format) at `json`, as the CLI sets it, for a log collector.
-- Point the load balancer's health check at [`/healthz`](./metrics.md#health-check).
-- Scrape [`/metrics`](./metrics.md#prometheus) with Prometheus.
-- Point the monitoring you already run at [`/alertz`](./metrics.md#health-check), which answers 503 when Pro is down or its alerts fall behind.
+`/healthz` and `/alertz` need no sign-in. Each answers 200 with `ok`, or 503 with the reason:
+
+| Probe | Answers 503 while |
+|---|---|
+| `/healthz` | Pro is starting, or its database doesn't answer |
+| `/alertz` | the same, or a schema has had no alert evaluator pass for 3 minutes |
+
+Each probe checks the database again at most every 5 seconds.
+
+Point a load balancer's health check at `/healthz`. The image in [Docker](#docker) uses
+it for its `HEALTHCHECK`.
+
+Pro sends every alert itself. When it stops, or its passes fall behind, nothing inside reports that.
+Point the monitoring you already run at `/alertz`. It fails in all three cases, which are
+the process or its host down, the database down, and the passes behind. The Pro Console
+warns that alerts are behind at the same 3 minutes. With Prometheus, an alert on
+`pgboss_evaluator_pass_age_seconds` gives the same signal for each schema.
+
+Passes are shared between instances, and every instance answers `/alertz` the same
+way. Use it for monitoring, not for a load balancer or a restart, which can't bring the passes
+back. A schema added less than a minute ago counts as behind until its first pass.
+
+### Logs and metrics
+
+Keep [`PGBOSS_PRO_LOG_FORMAT`](./environment.md#pgboss-pro-log-format) at `json`, as the CLI sets it, for a log collector. Prometheus scrapes [`/metrics`](./metrics.md#scrape-configuration).
 
 ## Backup
 

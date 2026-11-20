@@ -1,4 +1,4 @@
-# Metrics
+# Prometheus metrics
 
 `/metrics` serves Prometheus metrics for the schemas an [API token](./api-tokens.md)'s service account can see. No metric counts the job table. The metrics come only from what pg-boss already records: the counts it caches on each monitor pass, the last hour of its stats, the health Pro judges each queue to have, open alerts, and the instance registry.
 
@@ -30,7 +30,7 @@ A token whose roles each name one schema doesn't get them.
 
 Each Pro instance reads a schema at most once every 30 seconds and answers the scrapes in between from that read. A metric can be up to 30 seconds old. Pro leaves out any figure pg-boss hasn't recorded instead of reporting it as 0. Rates and health need `persistQueueStats`. Wait times, run times and the instance metrics need pg-boss 12.36. The 0.99 quantile appears once the hour holds 100 finished jobs.
 
-## Prometheus
+## Scrape configuration
 
 Prometheus needs a token from a [service account](./api-tokens.md) with only the viewer role:
 
@@ -44,27 +44,3 @@ scrape_configs:
     static_configs:
       - targets: ['console.example.com']
 ```
-
-## Health check
-
-`/healthz` and `/alertz` need no sign-in. Each answers 200 with `ok`, or 503 with the reason:
-
-| Probe | Answers 503 while |
-|---|---|
-| `/healthz` | Pro is starting, or its database doesn't answer |
-| `/alertz` | the same, or a schema has had no alert evaluator pass for 3 minutes |
-
-Each probe checks the database again at most every 5 seconds.
-
-Point a load balancer's health check at `/healthz`. The image in [Docker](./install.md#docker) uses
-it for its `HEALTHCHECK`.
-
-Pro sends every alert itself. When it stops, or its passes fall behind, nothing inside reports that.
-Point the monitoring you already run at `/alertz`. It fails in all three cases, which are
-the process or its host down, the database down, and the passes behind. The Pro Console
-warns that alerts are behind at the same 3 minutes. With Prometheus, an alert on
-`pgboss_evaluator_pass_age_seconds` gives the same signal for each schema.
-
-Passes are shared between instances, and every instance answers `/alertz` the same
-way. Use it for monitoring, not for a load balancer or a restart, which can't bring the passes
-back. A schema added less than a minute ago counts as behind until its first pass.
