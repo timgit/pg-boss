@@ -101,6 +101,28 @@ sent. While a link is open, the account's page asks before making a new one. Eac
 email 5 invitations in 15 minutes, and all of them together 20, before invitation emails stop for 15
 minutes. Creating a link to copy has no limit.
 
+## Global admin recovery
+
+A change made directly in the database, or SSO turned off while every global admin signs in
+through SSO alone, can leave no global admin who can sign in. Pro logs a warning at startup when
+that happens. To make an account a global admin again, run the doctor in a terminal, in Pro's
+project:
+
+```bash
+npx pg-boss-pro doctor
+```
+
+The doctor's **Global admin** check fails, and the doctor asks for the email of an account to make a
+global admin. For that account, it:
+
+- creates the account when no account has the email
+- enables the account when it's disabled
+- grants the global admin role
+- prints an invitation link that sets the account's password, for 7 days
+
+Enter skips and changes nothing. The audit log records each change, with `pg-boss-pro doctor` as
+the actor. Outside a terminal, as in a script, the doctor reports the check and asks nothing.
+
 ## Groups
 
 An account can hold a role directly or through a group. Groups

@@ -21,4 +21,4 @@ The accounts list answers the question people ask during an outage, which is the
 ![Who can act on a schema](../images/pro/access.webp){.light-only}
 ![Who can act on a schema](../images/pro/access-dark.webp){.dark-only}
 
-Pro always refuses two changes, and says so. It won't remove the last global admin, by demotion, disabling or deletion, because nobody would be left to undo it. An account also can't disable or delete itself.
+Pro always refuses two changes, and says so. It won't remove the last global admin, by demotion, disabling or deletion, because nobody would be left to undo it. An account also can't disable or delete itself. When no global admin can sign in anyway, see [global admin recovery](./accounts.md#global-admin-recovery).
