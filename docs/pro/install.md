@@ -168,7 +168,7 @@ See [email](./destinations.md#email).
 
 ## First schema
 
-On **Settings › Schemas**, press **Add schema** and enter a name, the connection to the database the application's pg-boss uses, and the name of its pg-boss schema. **Test connection** checks the connection before you add the schema. Add one schema for each pg-boss Pro monitors, such as Production and Staging. See [Schemas](./schemas.md).
+On **Settings › Schemas**, press **Add schema** and enter a name, the connection to the database the application's pg-boss uses, and the name of its pg-boss schema. **Check connection** checks the connection before you add the schema. Add one schema for each pg-boss Pro monitors, such as Production and Staging. See [Schemas](./schemas.md).
 
 ## First alert
 
@@ -446,7 +446,9 @@ The `doctor` command checks Pro's settings and database without starting the ser
 npx pg-boss-pro doctor
 ```
 
-It reports each check as passed or failed, with the fix for each failure:
+Under the Pro version, it shows the license key npm sends to Pro's registry, masked to its last 6
+characters, for a [support request](./support.md#what-to-send). Then it reports each check as passed or
+failed, with the fix for each failure:
 
 - The secret key, the log format when `PGBOSS_PRO_LOG_FORMAT` is set, and the setup token when one is set.
 - The connection to the database, and whether it's behind a pooler in transaction mode.
@@ -459,6 +461,7 @@ The doctor exits with status 1 when a check fails. It writes to the database onl
 
 ```
 pg-boss Pro 1.0.0
+License: ****-a1b2c3, from the user npm config
 
 ✓ Secret key: PGBOSS_PRO_SECRET_KEY is set.
 ✓ Database: Connected to localhost:5432/pgboss_pro.

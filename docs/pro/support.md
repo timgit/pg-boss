@@ -21,6 +21,9 @@ Pro signs in through any provider that follows OpenID Connect. The [single sign-
 
 ## What to send
 
-- The output of `npx pg-boss-pro doctor`, run in the project where Pro runs. It names the Pro version, and it prints no password or key. See [check the install](./install.md#check-the-install).
+- The output of `npx pg-boss-pro doctor`, run in the project where Pro runs. It names the Pro version and the license, with the key masked. It prints no password or full key. See [check the install](./install.md#check-the-install).
+- When the doctor shows no license, as in a container built without the key, the email address the license was bought with.
 - How Pro runs: `npm init @pg-boss/pro`, by hand, Docker or Compose, and what sits in front of it.
 - What happened, what you expected, and the log lines from around the time.
+
+Never send the license key itself. Anyone holding it can install Pro.
