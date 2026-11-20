@@ -40,7 +40,18 @@ grant each role comes from. The **Activity** link after the date the account was
 
 Edit the account's name here too, or disable or delete the account. Disabling, deleting or changing a
 password ends that account's sessions immediately. An open invitation link stops working when the
-account is disabled, its password is set or changed another way, or the person signs in by SSO.
+account is disabled, its password is set or changed another way, its email changes, or the person
+signs in by SSO.
+
+**Edit email** changes the address the account signs in with. Saving ends the account's sessions
+and cancels an open invitation link, since the link went to the old address. A global admin who
+changes their own address keeps the session they're using. With **Settings › Email** set up, a notice
+goes to the old address. The audit log keeps both addresses. An account linked through
+[single sign-on](./sso.md) takes its address from the provider. Its page has no **Edit email**.
+
+After a move to a new email domain, accounts linked through SSO take their new address at the next
+sign-in. Change the others with **Edit email**. When **Settings › SSO** names email domains, add the
+new one there too.
 
 A session lasts 12 hours from sign-in. It ends sooner after an hour in which the person doesn't
 click, type, scroll or open a page. A page that refreshes itself doesn't count, which means a browser

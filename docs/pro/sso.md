@@ -21,7 +21,7 @@ whether the button is on the login page.
 ![The single sign-on page](../images/pro/sso.webp){.light-only}
 ![The single sign-on page](../images/pro/sso-dark.webp){.dark-only}
 
-Pro matches users on their **verified** email address. A user invited here first
+Pro matches users on their **verified** email address the first time they sign in. A user invited here first
 who later signs in through the provider lands on the same account, with the
 roles they already had. Pro refuses an address the provider hasn't verified.
 Creating an account for an unknown address is off by default and is turned on
@@ -35,9 +35,12 @@ as admin.
 The first sign-in through the provider links the account to that person's id at
 the provider (the token's `sub`). After that, someone else the provider gives the
 same address can't sign in as the account. The person keeps the account if the
-provider changes their address. When the provider replaces a person's own
-account, a global admin presses **Forget SSO link** on the account's page so
-the next sign-in links the account again. Pointing Pro at a new issuer links each account
+provider changes their address. The account takes the new address at the next sign-in. When
+another account already has the new address, the account keeps its old one. The audit log's entry
+for that sign-in names both addresses. With **Settings › Email** set up, a notice goes to the old
+address.
+When the provider replaces a person's own account, a global admin presses **Forget SSO link** on the
+account's page so the next sign-in links the account again. Pointing Pro at a new issuer links each account
 again by its address. With email domains named, Pro links an existing account by its address only
 when the address is in one of them. A user outside them signs in with their password.
 
