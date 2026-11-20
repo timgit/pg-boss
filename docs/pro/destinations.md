@@ -51,7 +51,7 @@ Without that address, the notifications carry no link. The page shows the addres
 
 ## Send queues
 
-Each destination has a pg-boss queue of its own among [Pro queues](./schemas.md#pro-queues). The
+Each destination has a pg-boss queue of its own among [Pro internal queues](./schemas.md#pro-internal-queues). The
 evaluator queues every fire and resolve to it, and every Pro replica sends from it. A destination
 gets one send at a time, which keeps a slow or rate-limited destination from holding up any other's.
 

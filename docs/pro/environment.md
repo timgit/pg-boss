@@ -47,7 +47,7 @@ The public address of a Pro Console behind a reverse proxy that ends HTTPS, as `
 
 ### `PGBOSS_PRO_QUERY_TIMEOUT`
 
-A statement timeout in milliseconds for the pages' reads, for the connections the alert evaluator and Operations open, and for every connection to Pro's own database.
+A statement timeout in milliseconds for the pages' reads, for the connections the alert evaluator and Operations open, and for every connection to Pro's database.
 
 Default: `60000`
 

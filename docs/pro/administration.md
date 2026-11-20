@@ -30,7 +30,7 @@ one of these changes:
 
 Pro stores three kinds of configuration whole, each as one ciphertext: a webhook or PagerDuty
 destination's settings, the SMTP server with its user and password, and the SSO issuer, client id and
-client secret. Someone who can write to Pro's database can't point a stored secret at another server
+client secret. Someone who can write to the database can't point a stored secret at another server
 without the key.
 
 ### Key changes
@@ -60,7 +60,7 @@ are entered again, and password sign-in keeps working. Restarting Pro with the e
 brings the secrets back.
 
 To try a key before starting Pro with it, run `npx pg-boss-pro doctor` in the project with the key set. The doctor
-lists the same secrets and changes nothing. See [check the install](./install.md#check-the-install).
+lists the same secrets. See [check the install](./install.md#check-the-install).
 
 A check value that fails while every stored secret decrypts is stored again with the current key,
 and Pro reports nothing. After each save in Settings › Schemas, Destinations, Email or SSO, Pro tries every

@@ -18,4 +18,4 @@ The dashboard sends, retries, cancels, resumes and deletes jobs, adds and remove
 
 For many jobs at once, use [Operations](./operations.md).
 
-On a schema that isn't on the version this Pro is built for, these controls are gone and a banner names the schema's version and the version this Pro is built for. See [pg-boss versions](./versions.md).
+On a schema that isn't on the version this Pro is built for, these controls are gone. A banner names both versions. See [pg-boss versions](./versions.md).

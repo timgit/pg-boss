@@ -43,7 +43,7 @@ The [audit log](./audit-log.md) records each change with the method, the queue o
 
 ## Alerts
 
-Beside pg-boss's methods, the Pro API serves Pro's own alerts:
+Beside pg-boss's methods, the Pro API serves alerts:
 
 - `GET /pro/api/v1/alerts`: the open alerts on every schema the service account can see, or on one schema with `?schema=<id>`. Each has its id, schema, severity, title, why, when it opened, and who acknowledged it.
 - `POST /pro/api/v1/alerts/<id>/acknowledge`: takes the alert off the needs-attention list for every user, as an operator does in the Pro Console. Send `{ "minutes": 60 }`, `240` or `1440` to acknowledge it for that long, or nothing for as long as it stays open. Needs the operator or admin role on the alert's schema.

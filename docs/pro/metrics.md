@@ -21,7 +21,7 @@ collects metrics with Prometheus, or with another tool that reads the Prometheus
 | `pgboss_instance_memory_bytes` | `schema`, `instance`, `name`, `host` | Its process's resident memory. |
 | `pgboss_evaluator_pass_age_seconds` | `schema` | Seconds since Pro's alert evaluator last finished a pass over the schema. Missing until the first pass. |
 
-A service account with a role on all schemas also gets [Pro's own queues](./schemas.md#pro-queues).
+A service account with a role on all schemas also gets [Pro internal queues](./schemas.md#pro-internal-queues).
 The schema menu shows them only to a [global admin](./roles.md#global-admin), which a service account
 can't be. They come under `schema="pro_queues"`: a pass queue for each schema, the housekeeping
 queue and a send queue for each destination. The metrics of a send queue

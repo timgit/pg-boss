@@ -5,7 +5,7 @@ from its environment.
 
 The Pro Console shows one schema at a time. Every page about a schema shows its name and a colored
 dot at the start of the top bar. With more than one schema to choose from, a menu there switches
-between them. For a global admin, [Pro's own queues](#pro-queues) are one more choice.
+between them. For a global admin, [Pro internal queues](#pro-internal-queues) are one more choice.
 
 ![The schemas page](../images/pro/schemas.webp){.light-only}
 ![The schemas page](../images/pro/schemas-dark.webp){.dark-only}
@@ -32,14 +32,14 @@ is added, the page goes back to **Settings › Schemas**, and the schema menu li
 **Test connection** connects and reads the schema's pg-boss version. Adding a schema runs the same
 check, and so does saving a changed connection. Pro adds a pg-boss schema only once it exists and
 doesn't create one. Start the application's pg-boss once, or create the schema ahead of time with
-pg-boss's [CLI](../cli.md), before adding it. Pro also
-refuses its own database, and a pg-boss schema that is already added under another name.
+pg-boss's [CLI](../cli.md), before adding it. **Add schema** also
+refuses a connection to Pro's database, and a pg-boss schema that is already added under another name.
 
 Pro stores each connection encrypted with [`PGBOSS_PRO_SECRET_KEY`](./administration.md#secrets) and
 doesn't send its password back to the browser. The list shows each schema's host and database.
 
 If the `PGBOSS_PRO_DB_` settings are changed to name the database of a schema already added, Pro
-stops monitoring that schema. The list marks it **Pro's own database, not monitored** until a global
+stops monitoring that schema. The list marks it **Pro's database, not monitored** until a global
 admin edits its connection or removes it.
 
 ## Permissions
@@ -76,7 +76,7 @@ Until then, the [Schema unreachable](./alert-rules.md#default-rules) alert opens
 A schema whose connection was saved under an earlier `PGBOSS_PRO_SECRET_KEY` shows **Connection
 can't be decrypted** in the list, and a banner on every page names it to global admins. Pro leaves
 the schema out of every page, alert rule and metric until a global admin enters its connection again
-with **Edit**, or Pro restarts with the earlier key.
+with **Edit**, or until a restart with the earlier key.
 
 ## Removal
 
@@ -108,10 +108,9 @@ names no schema, such as Settings, leads back to it. The address of every other 
 schema with `?schema=`, and a change made on that page goes to that schema, even after another tab
 switches to a different one.
 
-## Pro queues
+## Pro internal queues
 
-Pro runs its own background work on pg-boss queues in the `pgboss` schema of
-[Pro's database](./install.md#database-setup). A global admin finds them as **Pro queues** under
+Pro runs its background work on pg-boss queues in the `pgboss` schema of [its database](./install.md#database-setup). A global admin finds them as **Pro internal queues** under
 **Internal** in the schema menu, after the schemas and before **Add schema**. They aren't one of the schemas added under **Settings ›
 Schemas**. A banner on each of their pages says which database holds them.
 
