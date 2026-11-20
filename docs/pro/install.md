@@ -410,6 +410,25 @@ back. A schema added less than a minute ago counts as behind until its first pas
 
 Keep [`PGBOSS_PRO_LOG_FORMAT`](./environment.md#pgboss-pro-log-format) at `json`, as the CLI sets it, for a log collector. Prometheus scrapes [`/metrics`](./metrics.md#scrape-configuration).
 
+### Moving to a new host name
+
+Every user signs in again after the move, because a session cookie belongs to one host name.
+Before the move:
+
+1. Give the reverse proxy and its certificate the new host name.
+2. Set [`PGBOSS_PRO_SITE_URL`](./environment.md#pgboss-pro-site-url) to the new address and restart.
+   Links in alerts then name the new host.
+3. With single sign-on on, add the new redirect URI, `https://<new host>/auth/sso/callback`, to the
+   provider. Settings › SSO shows the URI when opened on the new host. Remove the old URI after the
+   move.
+4. Point monitoring, the Prometheus scrape and scripts that call the [Pro API](./api.md) at the new
+   host. API tokens keep working.
+
+Invitation links sent before the move name the old host. Make new links for the accounts still
+waiting. Alerts sent before the move link to the old host too, and a redirect from the old host to
+the new one on the proxy keeps those links working. The sign-in limits treat each browser as new on
+the new host until it signs in there, as [sign-in locks](./accounts.md#managing-accounts) describe.
+
 ## Backup
 
 Back up the database like any other, with `pg_dump` or the host's snapshots:
@@ -456,8 +475,11 @@ failed, with the fix for each failure:
 - Each schema whose connection is Pro's database, which isn't monitored.
 - Whether a global admin can sign in, with a password or through SSO. See [global admin recovery](./accounts.md#global-admin-recovery).
 - The stored secrets, decrypted with the current key. See [key changes](./administration.md#key-changes).
+- Each schema Pro monitors: whether its database answers, its pg-boss schema's version against the
+  one this release makes changes on, and when its last [alert pass](./alerts.md#stopped-passes)
+  finished. The checks connect to every schema at once and only read.
 
-The doctor exits with status 1 when a check fails. It writes to the database only to make an account a global admin, as [global admin recovery](./accounts.md#global-admin-recovery) describes. It doesn't connect to the schemas Pro monitors, which Settings › Schemas checks. See [Schemas](./schemas.md).
+The doctor exits with status 1 when a check fails. It writes to the database only to make an account a global admin, as [global admin recovery](./accounts.md#global-admin-recovery) describes.
 
 ```
 pg-boss Pro 1.0.0
@@ -468,4 +490,5 @@ License: ****-a1b2c3, from the user npm config
 ✓ Pro's tables: At version 1, which this Pro uses.
 ✓ Global admin: A global admin can sign in with a password.
 ✓ Stored secrets: They were saved with this PGBOSS_PRO_SECRET_KEY.
+✓ Schema Production: Connected to db.internal:5432/orders. pg-boss schema pgboss is at version 46, which this release makes changes on. The last alert pass finished 40 seconds ago.
 ```
