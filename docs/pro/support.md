@@ -11,7 +11,7 @@ Support is by email at [support@pgboss.io](mailto:support@pgboss.io), while a su
 ## What it doesn't cover
 
 - The application's own use of pg-boss: its workers, its queue design and its code.
-- Setups the docs don't describe, such as Pro shown in a frame on another site. Pro can't be mounted inside another application's server: `createDashboardHandler()` refuses a Pro build.
+- Setups the docs don't describe, such as Pro shown in a frame on another site.
 - Backports to earlier releases, custom development and on-call cover.
 - Another system's own configuration: an identity provider, an SMTP server or relay, or a service that receives webhooks.
 
