@@ -470,6 +470,7 @@ function createTableSchedule (schema: string) {
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
       last_job_id uuid,
+      sent_on timestamp with time zone,
       PRIMARY KEY (name, key)
     )
   `
@@ -1888,9 +1889,13 @@ const SCHEDULE_COLUMNS = `
 // `limited` and `after` are for the public getSchedules(). The cron pass reads every schedule.
 // `after` takes two parameters, the name and key of the previous page's last schedule, and the
 // limit follows them.
-export function getSchedules (schema: string, limited = false, after = false) {
+//
+// `includeSentOn` is the cron pass reading its own bookkeeping beside the rows, as "__sentOn": the
+// latest occurrence sent for a `missed: 'once'` schedule, which only the pass's catch-up reads, so
+// it is not part of what getSchedules() hands a caller.
+export function getSchedules (schema: string, limited = false, after = false, includeSentOn = false) {
   return `
-    SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule
+    SELECT ${SCHEDULE_COLUMNS}${includeSentOn ? ', sent_on as "__sentOn"' : ''} FROM ${schema}.schedule
     ${after ? 'WHERE (name, key) > ($1, $2)' : ''}
     ORDER BY name, key
     ${limited ? `LIMIT $${after ? 3 : 1}` : ''}
@@ -1932,6 +1937,29 @@ export function setScheduleLastJobIds (schema: string) {
 }
 
 /**
+ * Moves each schedule's sent_on up to the latest occurrence a pass or the per-second evaluation has
+ * just inserted for it, so a catch-up does not send it again once its send-it job has been deleted.
+ *
+ * GREATEST, so a write carrying an older occurrence never moves it back. Matched on the expression
+ * and zone as well as the primary key, in the terms getSchedules() reads them: the per-second
+ * evaluation keeps sending the definition its claim read until the lease runs out, and an occurrence
+ * of that definition is no bound on a new one, which schedule() clears the column for.
+ *
+ * `updated_on` is left alone, as it is for last_job_id.
+ */
+export function setScheduleSentOn (schema: string) {
+  return `
+    UPDATE ${schema}.schedule s
+    SET sent_on = GREATEST(s.sent_on, x."sentOn")
+    FROM json_to_recordset($1::text::json) AS x (name text, key text, cron text, timezone text, "sentOn" timestamptz)
+    WHERE s.name = x.name
+      AND COALESCE(s.key, '') = x.key
+      AND s.cron = x.cron
+      AND COALESCE(s.timezone, 'UTC') = x.timezone
+  `
+}
+
+/**
  * Relabels the kind of one or more schedules, as the cron pass does when a row's stored kind
  * disagrees with the expression beside it.
  *
@@ -1953,6 +1981,9 @@ export function setScheduleKinds (schema: string) {
   `
 }
 
+// sent_on is an occurrence of the definition it was sent under, so a new expression or zone clears
+// it and a catch-up of the new one reads its gap from the last claim. Anything else leaves it, which
+// is what lets a deployment that registers its schedules on every boot keep it across restarts.
 export function schedule (schema: string) {
   return `
     INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, created_on, updated_on)
@@ -1963,7 +1994,12 @@ export function schedule (schema: string) {
       timezone = EXCLUDED.timezone,
       data = EXCLUDED.data,
       options = EXCLUDED.options,
-      updated_on = ${schema}.job_now()
+      updated_on = ${schema}.job_now(),
+      sent_on = CASE
+        WHEN ${schema}.schedule.cron = EXCLUDED.cron
+          AND COALESCE(${schema}.schedule.timezone, 'UTC') = COALESCE(EXCLUDED.timezone, 'UTC')
+        THEN ${schema}.schedule.sent_on
+      END
   `
 }
 
@@ -1990,6 +2026,32 @@ export function unsubscribe (schema: string) {
   return `
     DELETE FROM ${schema}.subscription
     WHERE event = $1 and name = $2
+  `
+}
+
+const SUBSCRIPTION_COLUMNS = `
+  event,
+  name,
+  created_on as "createdOn",
+  updated_on as "updatedOn"
+`
+
+export function getSubscriptions (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SUBSCRIPTION_COLUMNS} FROM ${schema}.subscription
+    ${after ? 'WHERE (event, name) > ($1, $2)' : ''}
+    ORDER BY event, name
+    ${limited ? `LIMIT $${after ? 3 : 1}` : ''}
+  `
+}
+
+export function getSubscriptionsByEvent (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SUBSCRIPTION_COLUMNS} FROM ${schema}.subscription
+    WHERE event = $1
+      ${after ? 'AND (event, name) > ($2, $3)' : ''}
+    ORDER BY name
+    ${limited ? `LIMIT $${after ? 4 : 2}` : ''}
   `
 }
 
@@ -2634,6 +2696,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     'j.id',
     singletonFetch ? 'j.singleton_key' : '',
     hasGroupConcurrency ? 'j.group_id, j.group_tier' : '',
+    // group_ranking picks jobs within a group, so it needs the order of next
+    hasGroupConcurrency ? 'j.priority, j.created_on' : '',
     hasActiveGroupCounts ? `${activeGroupCountExpression} as active_cnt` : ''
   ].filter(Boolean).join(', ')
 
@@ -2759,7 +2823,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
-        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}${hasActiveGroupCounts ? 'active_cnt, ' : ''}
+        SELECT id, ${hasGroupConcurrency ? 'priority, created_on, group_id, group_tier, ' : ''}${hasActiveGroupCounts ? 'active_cnt, ' : ''}
           row_number() OVER (PARTITION BY singleton_key) as singleton_rn
         FROM next
       )`
@@ -2772,7 +2836,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
           , t.group_id
           , t.group_tier
           ${singletonFetch ? ', singleton_rn' : ''}
-          , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.id) as group_rn
+          , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.priority desc, t.created_on) as group_rn
           , ${hasActiveGroupCounts ? 't.active_cnt' : '0'} as active_cnt
         FROM ${singletonFetch ? 'singleton_ranking' : 'next'} t
         ${singletonFetch ? 'WHERE singleton_rn = 1' : ''}

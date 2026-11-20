@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { createHonoApp } from '~/server'
 import type { ServerBuild } from 'react-router'
 
@@ -71,7 +72,7 @@ describe('static assets under a base path', () => {
 
   beforeEach(() => {
     // serveStatic resolves `root` against the working directory.
-    process.chdir(new URL('../..', import.meta.url).pathname)
+    process.chdir(fileURLToPath(new URL('../..', import.meta.url)))
   })
 
   afterEach(() => {

@@ -759,6 +759,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_ON_BATCH)
 
       if (transactional) {
+        assert(maxExpiration <= 86400 || transactionTimeoutSeconds !== undefined,
+          'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds')
         const timeoutMs = transactionTimeoutSeconds !== undefined
           ? transactionTimeoutSeconds * 1000
           : maxExpiration * 1000 + TRANSACTION_ROLLBACK_TIMEOUT_MS
@@ -1679,6 +1681,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     assert(name, 'Missing required argument')
     const sql = plans.unsubscribe(this.config.schema)
     await this.db.executeSql(sql, [event, name])
+  }
+
+  async getSubscriptions (event?: string, limit?: number, after?: Pick<types.Subscription, 'event' | 'name'>): Promise<types.Subscription[]> {
+    const limited = limit !== undefined
+    const paging = [...(after ? [after.event, after.name] : []), ...(limited ? [limit] : [])]
+    const sql = event
+      ? plans.getSubscriptionsByEvent(this.config.schema, limited, !!after)
+      : plans.getSubscriptions(this.config.schema, limited, !!after)
+    const { rows } = await this.db.executeSql(sql, event ? [event, ...paging] : paging)
+    return rows
   }
 
   publish (event: string, data?: object, options?: types.SendOptions): Promise<void>

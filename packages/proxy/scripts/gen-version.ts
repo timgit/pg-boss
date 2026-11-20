@@ -1,7 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const root = resolve(new URL('.', import.meta.url).pathname, '..')
+const root = fileURLToPath(new URL('..', import.meta.url))
 const packagePath = resolve(root, 'package.json')
 const versionPath = resolve(root, 'src', 'version.ts')
 
