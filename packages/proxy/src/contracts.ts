@@ -92,6 +92,9 @@ export const scheduleOptionsSchema = sendOptionsSchemaBase.extend({
   tz: z.string().optional(),
   key: z.string().optional(),
   missed: z.enum(scheduleMissedPolicies).optional(),
+  // Listed here until the proxy's pg-boss floor is 12.39.0, the first release exporting
+  // schedulePrecisions. Then take it from the core like the two enums above.
+  precision: z.enum(['minute', 'second']).optional(),
 }) satisfies z.ZodType<types.HttpScheduleOptions>
 
 export const fetchOptionsSchema = z.object({
