@@ -344,7 +344,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
   it('keeps sending through the repeated hour for multiple minutes across multiple hours', async function () {
     const expression = '*/30 0-3 * * *'
 
-    expect(await slotsOverRepeatedHour(expression, true, true)).toEqual(['05:30', '06:00', '06:30'])
+    expect(await slotsOverRepeatedHour(expression, true, true)).toEqual(['05:30:00', '06:00:00', '06:30:00'])
 
     // previewSchedule() walks forwards past the repeated hour, so it lists less than the passes sent.
     const listed = ctx.boss!.previewSchedule(expression, { tz: 'America/New_York', from: new Date('2026-11-01T05:29:45Z'), count: 2 })
@@ -353,14 +353,14 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
   })
 
   it('keeps sending through the repeated hour for an expression naming every hour', async function () {
-    expect(await slotsOverRepeatedHour('30 * * * *', true)).toEqual(['05:30', '06:30'])
+    expect(await slotsOverRepeatedHour('30 * * * *', true)).toEqual(['05:30:00', '06:30:00'])
   })
 
   it('sends a repeated local time once for multiple minutes in one hour', async function () {
-    expect(await slotsOverRepeatedHour('0,30 1 * * *', false)).toEqual(['05:30'])
+    expect(await slotsOverRepeatedHour('0,30 1 * * *', false)).toEqual(['05:30:00'])
   })
 
   it('sends a repeated local time once for one minute across multiple hours', async function () {
-    expect(await slotsOverRepeatedHour('30 0-3 * * *', false)).toEqual(['05:30'])
+    expect(await slotsOverRepeatedHour('30 0-3 * * *', false)).toEqual(['05:30:00'])
   })
 })
