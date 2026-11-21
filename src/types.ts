@@ -129,6 +129,10 @@ export interface DatabaseOptions {
 export interface SchedulingOptions {
   schedule?: boolean;
   clockMonitorIntervalSeconds?: number;
+  /**
+   * Does nothing since 12.40, which sends scheduled jobs without the send-it worker this polled for.
+   * @deprecated Rejected in the next major.
+   */
   cronWorkerIntervalSeconds?: number;
   cronMonitorIntervalSeconds?: number;
 }

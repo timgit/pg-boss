@@ -725,8 +725,7 @@ describe('claim timer', function () {
         noDefault: true,
         supervise: false,
         schedule: true,
-        cronMonitorIntervalSeconds: seconds,
-        cronWorkerIntervalSeconds: 1
+        cronMonitorIntervalSeconds: seconds
       }
 
       const holder = await helper.start(config)

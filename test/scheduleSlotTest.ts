@@ -25,7 +25,7 @@ const T0 = Date.parse('2026-01-01T12:00:15Z')
  * between PGlite and postgres rather than one this file is about.
  */
 async function startScheduling (clock: TestClock, interval = 30): Promise<PgBoss> {
-  const boss = await helper.start({ ...ctx.bossConfig, clock, schedule: true, cronMonitorIntervalSeconds: interval, cronWorkerIntervalSeconds: 1 })
+  const boss = await helper.start({ ...ctx.bossConfig, clock, schedule: true, cronMonitorIntervalSeconds: interval })
 
   passes.set(boss, watchPasses(boss))
 
@@ -44,12 +44,12 @@ const passes = new WeakMap<PgBoss, Passes>()
  * Watches the statements an instance's database object runs, which is the one its timekeeper
  * holds, for the two that mark a pass.
  *
- * A pass reads every schedule and, when anything came due, inserts it with the statement that
- * declares the slot column, and nothing else runs that statement. So a pass that owes a job is
- * over once its insert has resolved, and one that owes nothing is over once its read has: what
- * follows the read is synchronous, and finishes before a poll in a later macrotask can look.
- * Numbered by issue so a statement a pass before the tick left in flight cannot stand in for one
- * of the pass after it.
+ * A pass reads every schedule and, when anything new came due, sends it with the cron statement,
+ * the only one that declares the bridge slot column. So a pass that sends is over once that
+ * statement has resolved, and one that sends nothing is over once its read has: what follows the
+ * read is synchronous up to the send-it drain, which tests wait for on its own. Numbered by issue
+ * so a statement a pass before the tick left in flight cannot stand in for one of the pass after
+ * it.
  */
 function watchPasses (boss: PgBoss): Passes {
   const db = boss.getDb()
@@ -59,7 +59,7 @@ function watchPasses (boss: PgBoss): Passes {
 
   db.executeSql = async (sql: string, values?: unknown[]) => {
     const readIndex = sql === read ? counts.reads++ : -1
-    const insertIndex = sql.includes('"__singletonSlot" text') ? counts.inserts++ : -1
+    const insertIndex = sql.includes('"bridgeSlot" text') ? counts.inserts++ : -1
 
     const result = await executeSql(sql, values)
 
@@ -74,7 +74,8 @@ function watchPasses (boss: PgBoss): Passes {
 
 /**
  * The throttle slots the send-it queue holds, oldest first, as `HH:MM:SS`. A slot a minute wide
- * reads as the minute's first second.
+ * reads as the minute's first second. Each job the cron statement sends leaves a completed row in
+ * its slot, and an older instance's job holds one too.
  */
 async function slotsFiled (boss: PgBoss): Promise<string[]> {
   const { rows } = await boss.getDb().executeSql(
@@ -83,6 +84,11 @@ async function slotsFiled (boss: PgBoss): Promise<string[]> {
   )
 
   return rows.map(row => row.slot)
+}
+
+/** How many jobs a queue holds. */
+async function jobsIn (name: string): Promise<number> {
+  return await helper.countJobs(ctx.schema, 'job', 'name = $1', [name])
 }
 
 /** How many send-it rows were filed at or after `since`, on the clock the inserts read. */
@@ -114,10 +120,9 @@ async function until (predicate: () => Promise<boolean>, ms = 5000): Promise<voi
 /**
  * Moves the clock to `to` and waits for the pass that runs there to be over.
  *
- * `inserts` says whether that pass owes a job, which decides what its end looks like: the slot
- * insert resolving, or the schedule read resolving when there is nothing to insert. An insert
- * whose slot is already held still runs and resolves, so a pass that collapses into an earlier
- * job is waited for the same way as one that files a new one.
+ * `inserts` says whether that pass sends, which decides what its end looks like: the cron
+ * statement resolving, or the schedule read resolving when there is nothing new to send. A pass
+ * that finds an occurrence this instance already sent runs no statement.
  */
 async function passAt (clock: TestClock, boss: PgBoss, to: number, inserts = true): Promise<void> {
   const counts = passes.get(boss)!
@@ -154,9 +159,9 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await passAt(clock, ctx.boss, T0 + 30 * SECOND)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
-    // 12:01:15, in the next minute, while the occurrence is still inside the 60-second window.
-    // Filed from insert time this lands in a slot of its own and is sent a second time.
-    await passAt(clock, ctx.boss, T0 + 60 * SECOND)
+    // 12:01:15, in the next minute, while the occurrence is still inside the 60-second window. The
+    // cursor has passed it, so nothing is sent a second time.
+    await passAt(clock, ctx.boss, T0 + 60 * SECOND, false)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
     // On to the occurrence at 12:02:30, a tick at a time: a tick worth more than one interval runs
@@ -165,6 +170,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await passAt(clock, ctx.boss, T0 + 120 * SECOND, false)
     await passAt(clock, ctx.boss, T0 + 150 * SECOND)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:02:00'])
+    expect(await jobsIn(ctx.schema)).toBe(2)
   })
 
   it('catches up on an occurrence in the middle of a minute', async function () {
@@ -180,17 +186,17 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     // Two passes either side of the minute boundary after 12:00:30, then nothing until 12:03:05.
     await passAt(clock, ctx.boss, T0 + 30 * SECOND)
-    await passAt(clock, ctx.boss, T0 + 60 * SECOND)
+    await passAt(clock, ctx.boss, T0 + 60 * SECOND, false)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
-    // The pass that ends the gap owes the occurrence due now, 12:02:30, and the newest one the gap
-    // held, 12:01:30, which the policy files under the minute it fell in. A repeat send of
-    // 12:00:30 filed under 12:01 would already hold that slot, and the catch-up would be dropped.
+    // The pass that ends the gap owes the newest occurrence since it opened, 12:02:30, which is
+    // due now. The policy sends one job for it rather than one for 12:01:30 as well.
     await clock.setTime(T0 + 170 * SECOND)
     await passAt(clock, ctx.boss, T0 + 180 * SECOND)
 
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:01:00', '12:02:00'])
-    expect(await filedSince(ctx.boss, T0 + 170 * SECOND)).toBe(2)
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:02:00'])
+    expect(await filedSince(ctx.boss, T0 + 170 * SECOND)).toBe(1)
+    expect(await jobsIn(ctx.schema)).toBe(2)
   })
 
   it('collapses into the job an older instance filed from insert time', async function () {
@@ -213,10 +219,38 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
     // A pass of this instance in the next minute names the slot the occurrence falls in, which is
-    // the one the older instance's insert computed, so the two agree and the occurrence is sent
-    // once.
+    // the one the older instance's insert computed. The send-it job there keeps this instance from
+    // sending the occurrence itself, and the pass forwards that job instead, so the occurrence is
+    // sent once.
     await passAt(clock, ctx.boss, T0 + 65 * SECOND)
+    await until(async () => await jobsIn('q') === 1)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
+
+    const [forwarded] = await ctx.boss.findJobs(QUEUES.SEND_IT)
+    expect(forwarded.state).toBe('completed')
+  })
+
+  it('drops an older instance\'s send-it job for an occurrence it already sent', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await startScheduling(clock)
+
+    await until(async () => await lastPass(ctx.boss!) === T0)
+
+    await ctx.boss.createQueue('q')
+    await ctx.boss.schedule('q', '30 */2 * * * *')
+
+    // 12:00:45, this instance sends 12:00:30 and leaves a completed send-it row in its slot.
+    await passAt(clock, ctx.boss, T0 + 30 * SECOND)
+    expect(await jobsIn('q')).toBe(1)
+
+    // 12:00:55, an older instance files the same occurrence from insert time, in the same minute.
+    // Its insert conflicts with the completed row and is dropped, so nothing is left to forward.
+    await clock.setTime(T0 + 40 * SECOND)
+    await ctx.boss.insert(QUEUES.SEND_IT, [{ data: { name: 'q', key: '', data: null, options: {} }, singletonKey: 'q__', singletonSeconds: 60 }])
+    expect(await helper.countJobs(ctx.schema, 'job', 'name = $1 AND state = $2', [QUEUES.SEND_IT, 'created'])).toBe(0)
+
+    await passAt(clock, ctx.boss, T0 + 60 * SECOND, false)
+    expect(await jobsIn('q')).toBe(1)
   })
 
   it('sends no more beside an older instance filing after it than two older instances send', async function () {
@@ -243,9 +277,10 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await ctx.boss.insert(QUEUES.SEND_IT, [{ data: { name: 'q', key: '', data: null, options: {} }, singletonKey: 'q__', singletonSeconds: 60 }])
     expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:01:00'])
 
-    // 12:01:15, this instance finds the occurrence again and names 12:00, which it already holds,
-    // so the older instance's job is the only extra one.
-    await passAt(clock, ctx.boss, T0 + 60 * SECOND)
+    // 12:01:15, this instance finds the occurrence again behind its cursor and sends nothing, so
+    // the older instance's job, which the pass forwards, is the only extra one.
+    await passAt(clock, ctx.boss, T0 + 60 * SECOND, false)
+    await until(async () => await jobsIn('q') === 2)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:01:00'])
   })
 
@@ -270,8 +305,8 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await passAt(clock, ctx.boss, T0 + 60 * SECOND)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00'])
 
-    // 12:01:45, answered with 12:01:00 again, in the minute already filed.
-    await passAt(clock, ctx.boss, T0 + 90 * SECOND)
+    // 12:01:45, answered with 12:01:00 again, which this instance already sent.
+    await passAt(clock, ctx.boss, T0 + 90 * SECOND, false)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00'])
 
     // 12:02:15, a window holding 12:01:59 and 12:02:00, two occurrences a second apart in minutes
@@ -280,12 +315,14 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await passAt(clock, ctx.boss, T0 + 120 * SECOND)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00', '12:02:00'])
 
-    // 12:03:15, answered with 12:02:59, which adds nothing for the same reason. Four occurrences
-    // in two minutes are two jobs, which is the resolution the docs promise, and neither minute
-    // was skipped by a read that answered with one occurrence out of two.
-    await passAt(clock, ctx.boss, T0 + 150 * SECOND)
+    // 12:03:15, answered with 12:02:59, which moves the cursor and adds no job for the same
+    // reason. Four occurrences in two minutes are two jobs, which is the resolution the docs
+    // promise, and neither minute was skipped by a read that answered with one occurrence out of
+    // two.
+    await passAt(clock, ctx.boss, T0 + 150 * SECOND, false)
     await passAt(clock, ctx.boss, T0 + 180 * SECOND)
     expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00', '12:02:00'])
+    expect(await jobsIn(ctx.schema)).toBe(2)
   })
 
   /**
@@ -294,8 +331,8 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
    * 01:30 comes round twice, at 05:30 and at 06:30 UTC. `sendsSecond` says whether the expression
    * sends the second one.
    *
-   * The hour between the two jumps with setTime(). Ticking through it costs a send-it poll a second
-   * and a pass every thirty, each a database round trip. The rule for every expression is covered
+   * The hour between the two jumps with setTime(). Ticking through it costs a pass every thirty
+   * seconds, each a database round trip. The rule for every expression is covered
    * over a mocked database in scheduleSecondTest, and these two run it through real passes.
    */
   async function slotsOverRepeatedHour (expression: string, sendsSecond: boolean): Promise<string[]> {
@@ -317,7 +354,8 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     // schedule under the default `missed`.
     await clock.setTime(start + 3600 * SECOND)
     await passAt(clock, ctx.boss, start + 3630 * SECOND, sendsSecond)
-    await passAt(clock, ctx.boss, start + 3660 * SECOND, sendsSecond)
+    // The second 01:30 again, which the cursor has passed.
+    await passAt(clock, ctx.boss, start + 3660 * SECOND, false)
 
     const counts = passes.get(ctx.boss)!
     await until(async () => counts.insertDone === counts.inserts - 1)

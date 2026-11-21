@@ -5,6 +5,7 @@ import Timekeeper from '../src/timekeeper.ts'
 import { systemClock } from '../src/clock.ts'
 import { isRrule, latestOccurrenceBefore, nextOccurrence, occurrencesInWindow, assertRrule, assertRruleSends } from '../src/rrule.ts'
 import { ctx } from './hooks.ts'
+import { cursorManager } from './cursorManager.ts'
 
 // Most of this needs no database: an expression is read by a pure function of (expression, after,
 // tz), and the cron pass decides due-ness from the clock, both of which a bare Timekeeper answers.
@@ -48,7 +49,7 @@ async function pass (tk: ReturnType<typeof makeTk>, databaseTime: number, schedu
   const inserted: any[] = []
 
   ;(tk as any).stopped = false
-  ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+  ;(tk as any).manager = cursorManager(inserted).manager
   ;(tk as any).getSchedules = async () => schedules
 
   tk.clockSkew = databaseTime - Date.now()
@@ -463,7 +464,7 @@ RRULE:FREQ=SECONDLY;COUNT=500000`
     ;(tk as any).stopped = false
 
     const inserted: any[] = []
-    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+    ;(tk as any).manager = cursorManager(inserted).manager
 
     // Occurrences on the half minute, in both formats, so two passes can find the same one inside
     // the window from opposite sides of a slot boundary. And one on the minute, which every pass
@@ -489,19 +490,19 @@ RRULE:FREQ=SECONDLY;COUNT=500000`
 
     const filed = (name: string) => inserted.filter(job => job.singletonKey === `${name}__`)
 
-    // Both passes name the slot the occurrence falls in, so the second job collapses into the first
-    // instead of being sent as a job of its own. A slot rather than an offset from the insert's own
-    // clock, so nothing the round trip costs can move it.
+    // The first pass sends the occurrence and files its send-it row in the slot the occurrence
+    // falls in, a slot rather than an offset from the insert's own clock, so nothing the round trip
+    // costs can move it. The second pass finds the same occurrence behind the cursor and sends
+    // nothing more.
     for (const name of ['rule', 'half']) {
-      const [first, second] = filed(name)
+      const rows = filed(name)
 
-      expect(first.__singletonSlot).toBe(slotOf(occurrence))
-      expect(second.__singletonSlot).toBe(slotOf(occurrence))
-      expect(first.singletonSeconds).toBeUndefined()
+      expect(rows.map(job => job.__singletonSlot)).toEqual([slotOf(occurrence)])
+      expect(rows[0].singletonSeconds).toBeUndefined()
     }
 
-    // An occurrence on the minute falls in the slot the pass finding it runs in, so naming it
-    // changes nothing about where a 5-placeholder expression's jobs go: one a minute, in that minute.
+    // An occurrence on the minute falls in the slot the pass finding it runs in: one a minute, in
+    // that minute.
     expect(filed('cron').map(job => job.__singletonSlot)).toEqual([slotOf(occurrence - 30_000), slotOf(occurrence + 30_000)])
   })
 
@@ -581,15 +582,16 @@ RRULE:FREQ=SECONDLY;COUNT=500000`
     const config = {
       ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
     ctx.boss = await helper.start(config)
 
-    // Minutely, so an occurrence is always inside the window and the first pass sends a job, the
-    // same way `* * * * *` does.
+    // Minutely, so an occurrence is always inside the window. A schedule owes nothing from before
+    // it was stored, so its cursor goes back a minute for the first pass to send a job, the same
+    // way `* * * * *` does.
     await ctx.boss.schedule(ctx.schema, 'FREQ=MINUTELY')
+    await ctx.boss.getDb().executeSql(`UPDATE ${ctx.schema}.schedule SET sent_on = sent_on - interval '1 minute'`)
 
     await delay(4000)
 

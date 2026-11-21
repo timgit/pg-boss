@@ -179,7 +179,7 @@ describe('TestClock', function () {
 
   it('a cron schedule enqueues after ticking through its next occurrence', async function () {
     const clock = new TestClock(T0)
-    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, schedule: true, cronMonitorIntervalSeconds: 1, cronWorkerIntervalSeconds: 1 })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, schedule: true, cronMonitorIntervalSeconds: 1 })
 
     await ctx.boss.schedule(ctx.schema, '* * * * *')
 

@@ -937,8 +937,21 @@ function applyScheduleConfig (config: any) {
   assert(!('cronWorkerIntervalSeconds' in config) || (config.cronWorkerIntervalSeconds >= 1 && config.cronWorkerIntervalSeconds <= 45),
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
+  // Still checked, so a value that was refused before is refused until v13 removes the option.
+  if ('cronWorkerIntervalSeconds' in config && config.cronWorkerIntervalSeconds !== undefined && !cronWorkerIntervalWarned) {
+    cronWorkerIntervalWarned = true
+    process.emitWarning(
+      'cronWorkerIntervalSeconds is deprecated and does nothing. Schedules no longer go through a send-it worker. The option will be rejected in the next major. See https://pgboss.io/api/scheduling',
+      'DeprecationWarning',
+      'PGBOSS_DEP_CRON_WORKER_INTERVAL'
+    )
+  }
+
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
 }
+
+// Once per process, as Node warns once for a deprecated API of its own.
+let cronWorkerIntervalWarned = false
 
 function applyBamConfig (config: any) {
   const minInterval = config.__test__bypass_bam_interval_check ? 1 : 10

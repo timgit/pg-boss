@@ -3311,9 +3311,9 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
 
 // Sends schedules' jobs and moves their cursors in one statement. $1 is a recordset of schedules,
 // each with the definition it was read under and the cursor value it moves to (`through`). $2 is
-// their jobs, each naming its schedule by queue and `scheduleKey` and carrying the occurrence it is
-// for. A second recordset rather than one per schedule, since CockroachDB takes no column list on
-// a lateral json_to_recordset().
+// their jobs, each naming its schedule by `scheduleName` (or its own name) and `scheduleKey` and
+// carrying the occurrence it is for. A second recordset rather than one per schedule, since
+// CockroachDB takes no column list on a lateral json_to_recordset().
 //
 // `due` reads each cursor from the statement's snapshot, since RETURNING sees the row as the UPDATE
 // leaves it. `claimed` is a compare-and-set on that value. A writer that blocked on the row lock
@@ -3321,28 +3321,52 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
 // both send an occurrence. Matching the definition as well means a schedule removed or changed
 // since it was read claims nothing. Only occurrences after the cursor it replaced are inserted.
 //
+// A minute-precision job carries the throttle slot its occurrence falls in and the send-it key a
+// release before 12.40 files it under. It is skipped when a live send-it job already holds that
+// slot, which an older instance queued and forwards itself. Beside it goes a send-it row born
+// completed in the same slot, so an older instance's later insert for the occurrence conflicts on
+// job_i4 and is dropped. Both kinds of row go in through one INSERT, since CockroachDB refuses a
+// statement that writes one table twice.
+//
 // The insert goes to the job table's parent, which routes each job to its queue's partition. ON
 // CONFLICT DO NOTHING applies the job's own singleton options and its queue's policy, as for send().
 // Its jobs go in sorted by queue and key, for the reason insertJobs() sorts its rows.
 //
-// The result has a row per matched schedule (`prev`, and `claimed`), then a row per inserted job.
+// The result has a row per matched schedule (`prev`, and `claimed`), then a row per inserted job
+// (`inserted` true). With `nextSlot`, it also has a row (`inserted` false) for each job asking for
+// singletonNextSlot that was due to go in, which tells the caller which of them a conflict dropped.
 // It reads the schedules through a join of its own: a second reader of `due` sees a row twice once
 // the UPDATE has waited on that row's lock and re-checked it.
-export function sendScheduledJobs (schema: string, notify: string[] = []) {
-  const ins = `
-    INSERT INTO ${schema}.job (
-      ${JOB_INSERT_COLUMNS}
-    )
-    SELECT
-      ${jobInsertValues(schema, 'j.name')}
-    FROM (
+export function sendScheduledJobs (schema: string, notify: string[] = [], { nextSlot = false }: { nextSlot?: boolean } = {}) {
+  const sendIt = '__pgboss__send-it'
+
+  const eligible = `
       SELECT x.*, ${jobStartAfter(schema)}
       FROM json_to_recordset($2::text::json) as x (
-        ${jobRecordsetColumns('name text, "scheduleKey" text, occurrence timestamptz,')}
+        ${jobRecordsetColumns('name text, "scheduleName" text, "scheduleKey" text, occurrence timestamptz, slot text, "bridgeKey" text, "bridgeSlot" text, state text, "nextSlot" boolean,')}
       )
-      JOIN claimed c ON c.name = x.name AND c.key = x."scheduleKey"
-      WHERE c.prev IS NULL OR x.occurrence > c.prev
-    ) j
+      JOIN claimed c ON c.name = COALESCE(x."scheduleName", x.name) AND c.key = x."scheduleKey"
+      WHERE (c.prev IS NULL OR x.occurrence > c.prev)
+        AND (x."bridgeKey" IS NULL OR NOT EXISTS (
+          SELECT 1 FROM ${schema}.job b
+          WHERE b.name = '${sendIt}'
+            AND b.singleton_on = CAST(x.slot as timestamp)
+            AND COALESCE(b.singleton_key, '') = x."bridgeKey"
+            AND b.state <> '${JOB_STATES.cancelled}'
+        ))
+  `
+
+  const ins = `
+    INSERT INTO ${schema}.job (
+      ${JOB_INSERT_COLUMNS},
+      state,
+      completed_on
+    )
+    SELECT
+      ${jobInsertValues(schema, 'j.name', 'WHEN "bridgeSlot" IS NOT NULL THEN CAST("bridgeSlot" as timestamp)')},
+      CAST(COALESCE(j.state, '${JOB_STATES.created}') as ${schema}.job_state),
+      CASE WHEN j.state = '${JOB_STATES.completed}' THEN ${schema}.job_now() END
+    FROM ${nextSlot ? 'eligible' : `(${eligible})`} j
     LEFT JOIN ${schema}.queue q ON q.name = j.name
     ORDER BY j.name, j."singletonKey"
     ON CONFLICT DO NOTHING
@@ -3382,11 +3406,15 @@ export function sendScheduledJobs (schema: string, notify: string[] = []) {
         AND s.sent_on IS NOT DISTINCT FROM d.prev
         AND (d.prev IS NULL OR d.prev < d.through)
       RETURNING d.name, d.key, d.prev
-    ), ins AS (${ins})${notified}
-    SELECT r.name, r.key, r.prev, EXISTS (SELECT 1 FROM claimed c WHERE c.name = r.name AND c.key = r.key) as claimed, NULL::uuid as id
+    )${nextSlot ? `, eligible AS (${eligible})` : ''}, ins AS (${ins})${notified}
+    SELECT r.name, r.key, r.prev, EXISTS (SELECT 1 FROM claimed c WHERE c.name = r.name AND c.key = r.key) as claimed, NULL::uuid as id, NULL::boolean as inserted
     FROM report r
     UNION ALL
-    SELECT name, NULL, NULL, NULL, id FROM ins${notify.length > 0 ? ' WHERE (SELECT count(*) FROM notified) >= 0' : ''}
+    SELECT name, NULL, NULL, NULL, id, true FROM ins${notify.length > 0 ? ' WHERE (SELECT count(*) FROM notified) >= 0' : ''}${nextSlot
+      ? `
+    UNION ALL
+    SELECT name, NULL, NULL, NULL, id, false FROM eligible WHERE "nextSlot" IS TRUE`
+      : ''}
   `
 }
 

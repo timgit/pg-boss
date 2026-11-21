@@ -45,7 +45,6 @@ describe('schedule with a database adapter', function () {
       ...ctx.bossConfig,
       clock: new TestClock(),
       cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
@@ -55,7 +54,7 @@ describe('schedule with a database adapter', function () {
     await ctx.boss.schedule(ctx.schema, '* * * * *', null, { db: _db })
     await _db.close()
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 70; i++) {
       await config.clock.tick(1000)
       if ((await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])) >= 1) break
     }
@@ -72,7 +71,6 @@ describe('schedule with a database adapter', function () {
       ...ctx.bossConfig,
       clock: new TestClock(),
       cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
@@ -85,7 +83,7 @@ describe('schedule with a database adapter', function () {
     await db.executeSql(`UPDATE ${ctx.schema}.schedule SET options = '{"db":{}}'::jsonb`)
     await db.close()
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 70; i++) {
       await config.clock.tick(1000)
       if ((await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])) >= 1) break
     }

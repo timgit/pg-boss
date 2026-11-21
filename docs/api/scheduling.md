@@ -14,9 +14,11 @@ and the 6-placeholder format adds a seconds field in front, so this runs at 3:30
 30 30 3 * * *
 ```
 
-To change how often schedules are checked, you can set `cronMonitorIntervalSeconds`. To change how often cron jobs are run, you can set `cronWorkerIntervalSeconds`.
+To change how often schedules are checked, you can set `cronMonitorIntervalSeconds`. `cronWorkerIntervalSeconds` is deprecated and has no effect.
 
-In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sent even if multiple instances are running.
+A schedule owes nothing from before it was stored, or from before its expression, time zone or precision last changed. A `* * * * *` schedule stored at 12:00:30 sends its first job for 12:01. Storing the same definition again, as a deployment does on every boot, changes nothing.
+
+In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Each schedule records the latest occurrence it has sent, and the statement that sends a job moves that record in the same step. Two instances therefore cannot send the same occurrence.
 
 If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds`. Cron evaluation reads the time from the instance's [`clock`](./constructor.md#clock) option, so a [`TestClock`](./testing.md#controlling-time) can move a schedule to its next occurrence without waiting for it. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
 
@@ -117,7 +119,7 @@ A pass sends the occurrences of the preceding 60 seconds, so an occurrence that 
 | `missed` | What a schedule sends for a gap |
 | --- | --- |
 | `skip` | Nothing. The default, and what every earlier release did |
-| `once` | One job, for the most recent missed occurrence, however many were missed |
+| `once` | One job, for the most recent occurrence since the gap opened, however many were missed |
 
 ```js
 // a nightly report reads the current state of the world, so three missed nights are one report
@@ -136,9 +138,13 @@ Worth knowing before choosing `once`:
 
 * **One job for the whole gap, and it looks like any other.** It carries the schedule's `data` unchanged, so a handler cannot tell it is late or which occurrence it stands for. Three days down sends one job for last night's occurrence and nothing for the two nights before it.
 
-* **It can arrive beside the occurrence that is due now.** Those are two jobs, filed under different minutes, unless the missed occurrence happens to share a minute with the due one. A schedule with second precision sends the one job only. A `singletonKey`, or a queue policy that allows one queued job (`short`, `stately`, `exclusive`), collapses them like any other pair.
+* **It includes the occurrence that is due now.** When an occurrence is due as the gap closes, the one job is for that occurrence rather than for an older one.
 
 * **A gap is closed by the pass that reads it.** An occurrence lost to a pass that claimed and then failed is not caught up by the next one, and an instance on a release without catch-up closes gaps without catching up on them.
+
+## Rolling upgrades
+
+Releases before 12.40 send a schedule's jobs through an internal queue, `__pgboss__send-it`, with a worker on every instance. Later releases insert them directly. While both run, a later instance skips an occurrence an older one has already queued there, and forwards any queued occurrence left behind. It also leaves a completed row there for each occurrence it sends, which keeps an older instance from queuing it again. An upgrade from a release before 12.31.0 can still send an occurrence twice while both run.
 
 ## Managing schedules
 
