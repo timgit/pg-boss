@@ -62,7 +62,7 @@ Creates a new job and returns the job id.
 
 * **retentionSeconds**, number
 
-  Default: 14 days. How many seconds a job may be in created or retry state before it's deleted, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. Must be >=1
+  Default: 14 days. How many seconds a job may be in created or retry state before it's deleted, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. A job sent 30 days ahead with the default retention is kept until 14 days after its start time. Must be >=1
 
 * **deleteAfterSeconds**, int
 
