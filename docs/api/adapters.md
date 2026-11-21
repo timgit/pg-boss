@@ -13,8 +13,6 @@ interface Db {
 }
 ```
 
-These adapters are intended for per-call operations (`options.db`). They are not suitable as the constructor `db` in `new PgBoss({ db })` when `migrate: true` (the default) or supervisor maintenance sweeps run. Multi-statement queries used in background migrations and maintenance sweeps require returning intermediate statement results, which ORM drivers like Kysely and Prisma discard. To share a connection pool with pg-boss, pass `{ executeSql: (text, values) => pool.query(text, values) }` or a connection string instead.
-
 ## Knex
 
 ```ts
@@ -41,7 +39,7 @@ await db.transaction().execute(async (trx) => {
 })
 ```
 
-`fromKysely` wraps a transaction for per-call operations. It cannot be used as the instance `db` in `new PgBoss({ db })` with `migrate: true` or supervisor maintenance sweeps, because Kysely's driver does not return intermediate rows from multi-statement queries. To run pg-boss on the same pool as Kysely, pass `{ executeSql: (text, values) => pool.query(text, values) }` or a connection string to `new PgBoss()` instead.
+`fromKysely` wraps a transaction for per-call operations. It can't be the constructor `db` in `new PgBoss({ db })` while `migrate: true` or `supervise: true` (both the default) is set, because Kysely's driver returns no rows from a multi-statement query. To run pg-boss on the same pool as Kysely, pass `{ executeSql: (text, values) => pool.query(text, values) }` or a connection string to `new PgBoss()` instead.
 
 ## Drizzle
 
@@ -72,7 +70,7 @@ await prisma.$transaction(async (tx) => {
 })
 ```
 
-`fromPrisma` wraps a transaction for per-call operations. It cannot be used as the instance `db` in `new PgBoss({ db })` with `migrate: true` or supervisor maintenance sweeps, because Prisma does not return intermediate rows from multi-statement queries.
+`fromPrisma` wraps a transaction for per-call operations. It can't be the constructor `db` in `new PgBoss({ db })` while `migrate: true` or `supervise: true` (both the default) is set, because Prisma rejects a multi-statement query.
 
 ## Rollback behaviour
 

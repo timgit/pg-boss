@@ -83,7 +83,7 @@ const { rows } = await executeSql(text, values)
 assert(rows[0].input === 'arg1')
 ```
 
-Some of pg-boss's statements are several statements in one text, and pg-boss reads rows from statements before the last. For those, `executeSql` must return every statement's result, as an array of results the way `pg` does, not only the last one. ORM transaction adapters such as [`fromKysely()`](./adapters.md#kysely) wrap transactions for per-call operations (`options.db`) and do not return intermediate rows from multi-statement queries. They are not suitable as the constructor `db` when `migrate: true` (the default) or when supervisor maintenance sweeps run.
+Some of pg-boss's statements are several statements in one text, and pg-boss reads rows from statements before the last. For those, `executeSql` must return every statement's result, as an array of results the way `pg` does, not only the last one. The ORM transaction adapters [`fromKysely()`](./adapters.md#kysely) and [`fromPrisma()`](./adapters.md#prisma) wrap transactions for per-call operations (`options.db`), and can't be the constructor `db` while `migrate` or `supervise` is on (both are by default). Kysely's driver returns no rows from a multi-statement query. Prisma rejects a multi-statement query.
 
 See [Custom type parsers](#custom-type-parsers) for how a global `pg-types` parser interacts with pg-boss, whether you bring your own pool or not.
 

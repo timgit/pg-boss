@@ -7,7 +7,7 @@ export interface PrismaTransactionLike {
 /**
  * Wraps a Prisma transaction as an {@link IDatabase} for scoping job operations inside an existing transaction.
  *
- * Use as the per-call `db` option, not as the instance `db` or with `migrate: true` because Prisma does not return rows from multi-statement queries.
+ * Use as the per-call `db` option, not as the constructor `db` while `migrate` or `supervise` is on, since Prisma rejects a multi-statement query.
  *
  * @see https://pgboss.io/api/adapters#prisma
  */

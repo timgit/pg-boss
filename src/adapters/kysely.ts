@@ -12,7 +12,7 @@ export interface KyselyTransactionLike {
 /**
  * Wraps a Kysely transaction as an {@link IDatabase} for scoping job operations inside an existing transaction.
  *
- * Use as the per-call `db` option, not as the instance `db` or with `migrate: true` because Kysely does not return rows from multi-statement queries.
+ * Use as the per-call `db` option, not as the constructor `db` while `migrate` or `supervise` is on, since Kysely returns no rows from a multi-statement query.
  *
  * @see https://pgboss.io/api/adapters#kysely
  */

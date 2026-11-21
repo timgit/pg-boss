@@ -159,6 +159,9 @@ Schedules a job to be sent to the specified queue based on a cron expression or 
   sending every five minutes through the repeated hour. A schedule can send more that night than
   `previewSchedule()` lists.
 
+  `0,30 1,13 * * *` names multiple minutes across multiple hours, and sends its 01:00 and 01:30
+  twice that night. Written as `FREQ=DAILY;BYHOUR=1,13;BYMINUTE=0,30`, it sends each once.
+
 * **key**
   
   An optional unique key if more than schedule is needed for this queue.

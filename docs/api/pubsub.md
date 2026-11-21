@@ -52,7 +52,7 @@ for (const { event, name } of subscriptions) {
 const signedUp = await boss.getSubscriptions('user.signed-up')
 ```
 
-Each subscription carries the following properties.
+A subscription has these properties:
 
 | Property | Description |
 | --- | --- |
