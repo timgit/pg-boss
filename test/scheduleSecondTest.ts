@@ -229,6 +229,15 @@ describe('schedule seconds', function () {
     expect(tk.sent).toEqual([now + SECOND, now + 2 * SECOND])
   })
 
+  it('sends the latest occurrence of a twice-daily expression for a gap ending the day the clocks skipped its time', async function () {
+    // 00:30 was skipped in America/Havana on 2026-03-08, and prev() throws from any time up to the
+    // next occurrence. The gap holds 12:30:30 CST on the 7th, which a read a whole day back passes.
+    const now = Date.parse('2026-03-08T06:45:40Z')
+    const options = { timezone: 'America/Havana', options: { precision: 'second', missed: 'once' } }
+
+    expect(await pass(makeTk(), now, Date.parse('2026-03-07T06:00:00Z'), [row('30 30 0,12 * * *', options)])).toEqual([slotOf(Date.parse('2026-03-07T17:30:30Z'))])
+  })
+
   it('sends the latest occurrence for a gap under once, however many came due', async function () {
     const now = Math.floor(Date.now() / MINUTE) * MINUTE + 30 * SECOND
     const once = { options: { precision: 'second', missed: 'once' } }

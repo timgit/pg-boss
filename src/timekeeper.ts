@@ -208,6 +208,27 @@ function previousOccurrence (interval: CronExpression, tz: string): Date {
 }
 
 /**
+ * The latest occurrence of a cron expression in (after, until], walking forwards, for a range that
+ * prev() cannot read back across. The forward walk moves a skipped time's occurrence into the hour
+ * the clocks landed on, which the expression does not name, so that one is left out as the
+ * backward read leaves it out.
+ */
+function latestOccurrenceForward (expression: string, tz: string, after: number, until: number): Date | null {
+  const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(after) })
+  let latest: Date | null = null
+
+  for (;;) {
+    const occurrence = interval.next().toDate()
+
+    if (occurrence.getTime() > until) return latest
+
+    if (interval.includesDate(occurrence) && !passedOver(interval, occurrence, tz)) {
+      latest = occurrence
+    }
+  }
+}
+
+/**
  * Whether an occurrence is one a repeated local time holds no job for: the second instant, in an
  * expression that names neither every hour nor multiple minutes across multiple hours.
  *
@@ -1261,21 +1282,19 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     //
     // prev() throws for up to a day after a time the clocks skipped, as `30 30 0 * * *` has in
     // America/Havana, since it looks past the skipped occurrence for one that does not exist. That
-    // day holds no occurrence, so the read starts a day earlier, as far back as `after`.
+    // day is read forwards instead, and each day before it the same way, as far back as `after`.
     for (let reference = until.getTime(); reference > after.getTime(); reference -= DAY_MS) {
       const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(reference + 1) })
 
-      let occurrence: Date
-
       try {
-        occurrence = previousOccurrence(interval, tz)
-      } catch (err) {
-        if (reference - DAY_MS > after.getTime()) continue
+        const occurrence = previousOccurrence(interval, tz)
 
-        throw err
+        return occurrence.getTime() > after.getTime() ? occurrence : null
+      } catch {
+        const latest = latestOccurrenceForward(expression, tz, Math.max(after.getTime(), reference - DAY_MS), reference)
+
+        if (latest !== null) return latest
       }
-
-      return occurrence.getTime() > after.getTime() ? occurrence : null
     }
 
     return null
