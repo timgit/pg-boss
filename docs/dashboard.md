@@ -72,6 +72,7 @@ Each dashboard release is built with a specific pg-boss and only works against a
 
 | Dashboard | pg-boss | Schema version |
 | - | - | - |
+| 1.14.x | 12.39.x | 47 |
 | 1.13.x | 12.38.x | 46 |
 | 1.12.x | 12.38.x | 46 |
 | 1.11.x | 12.37.x | 45 |

@@ -1,6 +1,6 @@
 {
   "name": "@pg-boss/proxy",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "HTTP proxy for pg-boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -42,7 +42,7 @@
     "@logtape/hono": "^2.4.2",
     "@logtape/logtape": "^2.4.2",
     "hono": "^4.13.19",
-    "pg-boss": "^12.38.2",
+    "pg-boss": "^12.39.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
