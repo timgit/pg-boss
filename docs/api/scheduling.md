@@ -30,7 +30,7 @@ For more cron documentation and examples see the docs for the [cron-parser packa
 
 ## Schedules finer than a minute
 
-A schedule set to `precision: 'second'` sends a job for every occurrence of a cron expression whose seconds field names a second other than 0, such as `*/5 * * * * *` or `@secondly`. Each job is filed under the second its occurrence falls in.
+A schedule set to `precision: 'second'` sends a job for every occurrence of a cron expression whose seconds field names a second other than 0, such as `*/5 * * * * *` or `@secondly`. Each occurrence is its own job, created straight on the schedule's queue.
 
 ```js
 await boss.schedule('heartbeat', '*/5 * * * * *', null, { precision: 'second' })
@@ -43,12 +43,13 @@ The instance that wins a check holds it for one check interval and evaluates the
 * A schedule that was just stored is first read at the next check, up to one check interval later, and sends the occurrences since it was stored then.
 * When the instance holding the check stops, the next instance takes the check over within one check interval and a second, and sends what came due in between.
 
+Each schedule records the latest occurrence it has sent, and an occurrence is sent in the same statement that moves that record past it. Two instances therefore never send the same occurrence, and `unschedule()` or a change from `schedule()` takes effect from the next second.
+
 Worth knowing before using one:
 
-* **Delivery is in batches.** A job is created on the internal send-it queue first, and moved to its own queue by a worker polling every `cronWorkerIntervalSeconds` (5 by default). Occurrences closer together than that arrive together, and a queue policy that allows one queued job (`short`, `stately`, `exclusive`) can keep only the first of them.
-* **Changes take up to one check interval.** The instance holding the check keeps the schedules it read, so `unschedule()` and a new definition from `schedule()` take effect at its next check, and the occurrences in between are sent under the definition it read.
 * **Intervals restart every minute.** `*/17 * * * * *` runs at :00, :17, :34 and :51, then :00 again.
-* **Each occurrence is a send-it job.** `* * * * * *` adds 86,400 jobs a day to that queue, which are deleted on its retention like any other.
+* **Every occurrence is a job.** `* * * * * *` adds 86,400 jobs a day to its queue. The job's own `singletonKey`, throttling options and the queue's policy apply to each, as they do for `send()`. `singletonNextSlot` is not supported and `schedule()` rejects it.
+* **An occurrence that fails to send is retried every second while it is due.** One that cannot be sent for the whole 60-second window is not sent, and the schedule is reported with a `warning` event.
 * **A rolling upgrade can send an occurrence twice.** An instance on an earlier release files these by the minute, so while both releases run, an occurrence can be sent once by each when the check passes from one to the other. Rolling back to an earlier release can do the same once.
 
 ## RRULE expressions
@@ -127,13 +128,15 @@ The gap runs from the last time any instance ran a cron pass, which pg-boss reco
 
 A schedule never reaches back past its own row. `created_on` bounds the range, so a schedule written while nothing was running starts from when it was written rather than from the start of the outage. Re-running `schedule()` for an existing `(name, key)` leaves that bound where it is, which is what lets a deployment that registers its schedules on every boot still catch up on the outage it just ended.
 
-The option applies to both formats, and a rule is read backwards over the gap the same way a cron expression is. A [schedule finer than a minute](#schedules-finer-than-a-minute) is owed every occurrence of the 60-second window as well, under either policy, so the pass that ends a gap sends up to a minute of its occurrences at once.
+The option applies to both formats, and a rule is read backwards over the gap the same way a cron expression is.
+
+A [schedule finer than a minute](#schedules-finer-than-a-minute) treats the 60-second window as part of the gap. Under `skip` it sends nothing for the gap, and under `once` it sends one job, for its latest occurrence. Either way it carries on with the next occurrence. A gap of 60 seconds or less is not a gap, and every occurrence in it is sent.
 
 Worth knowing before choosing `once`:
 
 * **One job for the whole gap, and it looks like any other.** It carries the schedule's `data` unchanged, so a handler cannot tell it is late or which occurrence it stands for. Three days down sends one job for last night's occurrence and nothing for the two nights before it.
 
-* **It can arrive beside the occurrence that is due now.** Those are two jobs, filed under different minutes (different seconds, for a schedule finer than a minute), unless the missed occurrence happens to share a minute with the due one. A `singletonKey`, or a queue policy that allows one queued job (`short`, `stately`, `exclusive`), collapses them like any other pair.
+* **It can arrive beside the occurrence that is due now.** Those are two jobs, filed under different minutes, unless the missed occurrence happens to share a minute with the due one. A schedule finer than a minute sends the one job only. A `singletonKey`, or a queue policy that allows one queued job (`short`, `stately`, `exclusive`), collapses them like any other pair.
 
 * **A gap is closed by the pass that reads it.** An occurrence lost to a pass that claimed and then failed is not caught up by the next one, and an instance on a release without catch-up closes gaps without catching up on them.
 

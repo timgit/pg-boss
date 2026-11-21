@@ -1657,7 +1657,9 @@ export function trySetCronTime (schema: string, seconds: number) {
     ), claim AS (
       ${trySetTimestamp(schema, 'cron_on', seconds)}
     )
-    SELECT prior.cron_on as "priorCronOn", prior.elapsed as "elapsed", EXISTS (SELECT 1 FROM claim) as "claimed" FROM prior
+    SELECT prior.cron_on as "priorCronOn", prior.elapsed as "elapsed", EXISTS (SELECT 1 FROM claim) as "claimed",
+      (SELECT claimed_on FROM claim) as "claimedOn"
+    FROM prior
   `
 }
 
@@ -1692,7 +1694,7 @@ function trySetTimestamp (schema: string, column: string, seconds: number) {
     UPDATE ${schema}.version
     SET ${column} = ${schema}.job_now()
     WHERE EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
-    RETURNING true
+    RETURNING ${column} as claimed_on
   `
 }
 
@@ -3300,6 +3302,84 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       FROM ins WHERE start_after <= ${schema}.job_now() LIMIT 1
     )
     SELECT id FROM ins WHERE (SELECT count(*) FROM notified) ${comparator}
+  `
+}
+
+// Sends schedules' jobs and moves their cursors in one statement. $1 is a recordset of schedules,
+// each with the definition it was read under and the cursor value it moves to (`through`). $2 is
+// their jobs, each naming its schedule by queue and `scheduleKey` and carrying the occurrence it is
+// for. A second recordset rather than one per schedule, since CockroachDB takes no column list on
+// a lateral json_to_recordset().
+//
+// `due` reads each cursor from the statement's snapshot, since RETURNING sees the row as the UPDATE
+// leaves it. `claimed` is a compare-and-set on that value. A writer that blocked on the row lock
+// re-checks it once the other commits and drops out, so two instances racing on one schedule cannot
+// both send an occurrence. Matching the definition as well means a schedule removed or changed
+// since it was read claims nothing. Only occurrences after the cursor it replaced are inserted.
+//
+// The insert goes to the job table's parent, which routes each job to its queue's partition. ON
+// CONFLICT DO NOTHING applies the job's own singleton options and its queue's policy, as for send().
+//
+// The result has a row per matched schedule (`prev`, and `claimed`), then a row per inserted job.
+// It reads the schedules through a join of its own: a second reader of `due` sees a row twice once
+// the UPDATE has waited on that row's lock and re-checked it.
+export function sendScheduledJobs (schema: string, notify: string[] = []) {
+  const ins = `
+    INSERT INTO ${schema}.job (
+      ${JOB_INSERT_COLUMNS}
+    )
+    SELECT
+      ${jobInsertValues(schema, 'j.name')}
+    FROM (
+      SELECT x.*, ${jobStartAfter(schema)}
+      FROM json_to_recordset($2::text::json) as x (
+        ${jobRecordsetColumns('name text, "scheduleKey" text, occurrence timestamptz,')}
+      )
+      JOIN claimed c ON c.name = x.name AND c.key = x."scheduleKey"
+      WHERE c.prev IS NULL OR x.occurrence > c.prev
+    ) j
+    LEFT JOIN ${schema}.queue q ON q.name = j.name
+    ON CONFLICT DO NOTHING
+    RETURNING id, name, start_after
+  `
+
+  const notified = notify.length > 0
+    ? `, notified AS (
+      SELECT pg_notify(${notifyChannelSql(schema)}, n.name)
+      FROM (SELECT DISTINCT name FROM ins WHERE start_after <= ${schema}.job_now() AND name = ANY(${serializeArrayParam(notify)})) n
+    )`
+    : ''
+
+  const matched = `
+      SELECT d.*, s.sent_on as prev
+      FROM json_to_recordset($1::text::json) as d (name text, key text, cron text, timezone text, data jsonb, options jsonb, through timestamptz)
+      JOIN ${schema}.schedule s
+        ON s.name = d.name
+        AND s.key = d.key
+        AND s.cron = d.cron
+        AND COALESCE(s.timezone, 'UTC') = d.timezone
+        AND s.data IS NOT DISTINCT FROM d.data
+        AND s.options IS NOT DISTINCT FROM d.options
+  `
+
+  return `
+    WITH due AS (${matched}), report AS (${matched}), claimed AS (
+      UPDATE ${schema}.schedule s
+      SET sent_on = d.through
+      FROM due d
+      WHERE s.name = d.name
+        AND s.key = d.key
+        AND s.cron = d.cron
+        AND s.options IS NOT DISTINCT FROM d.options
+        AND s.data IS NOT DISTINCT FROM d.data
+        AND s.sent_on IS NOT DISTINCT FROM d.prev
+        AND (d.prev IS NULL OR d.prev < d.through)
+      RETURNING d.name, d.key, d.prev
+    ), ins AS (${ins})${notified}
+    SELECT r.name, r.key, r.prev, EXISTS (SELECT 1 FROM claimed c WHERE c.name = r.name AND c.key = r.key) as claimed, NULL::uuid as id
+    FROM report r
+    UNION ALL
+    SELECT name, NULL, NULL, NULL, id FROM ins${notify.length > 0 ? ' WHERE (SELECT count(*) FROM notified) >= 0' : ''}
   `
 }
 

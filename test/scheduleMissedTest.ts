@@ -42,11 +42,6 @@ function slotOf (epochMs: number) {
   return new Date(Math.floor(epochMs / MINUTE) * MINUTE).toISOString().replace('T', ' ').slice(0, 19)
 }
 
-/** The one-second throttle slot a cron expression with a seconds field files an occurrence in. */
-function secondSlotOf (epochMs: number) {
-  return new Date(Math.floor(epochMs / 1000) * 1000).toISOString().replace('T', ' ').slice(0, 19)
-}
-
 /** The iCalendar spelling of an instant, for a DTSTART built around the clock. */
 function ical (epochMs: number) {
   return new Date(epochMs).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
@@ -258,16 +253,6 @@ describe('schedule missed', function () {
       const inserted = await pass(tk, now, new Date(now - seconds * 1000), [row('* * * * *', 'once')])
 
       expect(slots(inserted)).toEqual([slotOf(minute)])
-    }
-
-    // An expression with a seconds field is owed every occurrence since the last pass, filed by the
-    // second, and still nothing from before the window. A fresh Timekeeper for each, since one that
-    // has evaluated the row reads on from where it left off.
-    for (const seconds of [1, 30, 45, 60]) {
-      const inserted = await pass(makeTk(), now, new Date(now - seconds * 1000), [row('* * * * * *', 'once', { options: { missed: 'once', precision: 'second' } })])
-      const owed = Array.from({ length: seconds }, (_, i) => secondSlotOf(now - (seconds - 1 - i) * 1000))
-
-      expect(slots(inserted)).toEqual(owed)
     }
   })
 

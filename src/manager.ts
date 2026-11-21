@@ -2009,6 +2009,36 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  /**
+   * The job fields a schedule's jobs are inserted with, resolved from its data and options as
+   * send() resolves them. The cron statement inserts them for every occurrence it sends.
+   */
+  scheduledJobFields (name: string, data: unknown, options: types.SendOptions = {}) {
+    const request = Attorney.checkSendArgs([name, data ?? null, options])
+
+    return this.#toJobPayload(request.name, request.data ?? null, request.options ?? {})
+  }
+
+  /**
+   * Runs the cron statement that sends schedules' jobs, under the same telemetry as send(), and
+   * hands the jobs it inserted to the spies. `build` receives the trace context to store on each job.
+   */
+  async sendScheduled (count: number, build: (traceContext: TraceCarrier | null) => { text: string, values: unknown[], data: Map<string, unknown> }): Promise<any[]> {
+    return this.#telemetry.send('send', null, count, async carrier => {
+      const { text, values, data } = build(carrier)
+      const { rows } = await this.db.executeSql(text, values)
+
+      if (this.config.__test__enableSpies) {
+        for (const row of rows) {
+          const spy = row.id ? this.#spies.get(row.name) : undefined
+          spy?.addJob(row.id, row.name, (data.get(row.id) ?? {}) as object, 'created')
+        }
+      }
+
+      return rows
+    }, rows => rows.filter(row => row.id).map(row => row.id))
+  }
+
   async createJob (request: types.Request): Promise<string | null> {
     return this.#telemetry.send('send', request.name, 1, carrier => this.#createJob(request, carrier), id => id ? [id] : null)
   }
