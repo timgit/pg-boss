@@ -12,12 +12,15 @@ import * as plans from './plans.ts'
 import { percentile } from './latency.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
-import { delay, resolveWithinSeconds } from './tools.ts'
+import { delay, isConnectionError, resolveWithinSeconds } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
 import { JobSpy, type JobSpyInterface } from './spy.ts'
 import { persistWarning } from './warning.ts'
 import Telemetry, { type TraceCarrier } from './telemetry.ts'
+
+// The waits before each retry of a worker's complete() or fail() that lost its connection.
+const SETTLE_RETRY_DELAYS_MS = [250, 1000]
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
 
@@ -496,6 +499,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  // Runs a worker's complete() or fail() again on a fresh pooled connection when the connection
+  // it ran on went away. Each one is fenced to the fetched attempt, so a retry after a statement
+  // that landed before the drop settles nothing. Any other error, or the last retry's, is thrown.
+  async #settleRetrying<R> (settle: () => Promise<R>): Promise<R> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await settle()
+      } catch (err) {
+        if (attempt >= SETTLE_RETRY_DELAYS_MS.length || !isConnectionError(err)) throw err
+
+        await delay(SETTLE_RETRY_DELAYS_MS[attempt])
+      }
+    }
+  }
+
   // Per-job settlement for `perJobResults` batch handlers. The handler resolves with a JobResult[]
   // describing each job's outcome; we settle completed and failed jobs individually, each with its
   // own output. All completed jobs are settled in a single statement and all failed jobs in another
@@ -509,7 +527,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
       outcome.failed = jobs.length
-      await this.fail(name, jobs, err)
+      await this.#settleRetrying(() => this.fail(name, jobs, err))
       await this.#trackJobsFailed(name, jobs, err)
       return err
     }
@@ -550,13 +568,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const ids = (entries: { job: types.Job<T> }[]) => entries.map(({ job }) => job.id)
 
     const completedIds = completed.length > 0
-      ? await this.#telemetry.settle('complete', name, ids(completed), () => this.#completeWithOutputs(name, items(completed)))
+      ? await this.#telemetry.settle('complete', name, ids(completed), () => this.#settleRetrying(() => this.#completeWithOutputs(name, items(completed))))
       : null
     const failedIds = failed.length > 0
-      ? await this.#telemetry.settle('fail', name, ids(failed), () => this.#failWithOutputs(name, items(failed)))
+      ? await this.#telemetry.settle('fail', name, ids(failed), () => this.#settleRetrying(() => this.#failWithOutputs(name, items(failed))))
       : null
     const deadLetteredIds = deadLettered.length > 0
-      ? await this.#telemetry.settle('fail', name, ids(deadLettered), () => this.#failWithOutputs(name, items(deadLettered), true))
+      ? await this.#telemetry.settle('fail', name, ids(deadLettered), () => this.#settleRetrying(() => this.#failWithOutputs(name, items(deadLettered), true)))
       : null
 
     // Only the jobs each statement actually settled: the attempt fence leaves a job whose claim
@@ -857,7 +875,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // otherwise record pg-boss's own settle as one the handler made.
         const settledByHandler = transaction ? this.#takeHandlerSettles(transaction) : null
 
-        const completion = await this.complete(name, jobs, jobIds.length === 1 ? result : undefined, transaction ? { db: transaction.db } : undefined)
+        // A transaction's completion is not retried. Its connection held the handler's writes, and a
+        // completion on another connection would land without them.
+        const output = jobIds.length === 1 ? result : undefined
+        const completion = transaction
+          ? await this.complete(name, jobs, output, { db: transaction.db })
+          : await this.#settleRetrying(() => this.complete(name, jobs, output))
         completedResult = result
         completedAffected = completion.affected
 
@@ -885,7 +908,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       outcome.failed = jobs.length
-      await this.fail(name, jobs, err)
+      await this.#settleRetrying(() => this.fail(name, jobs, err))
       failedError = err
       didFail = true
     } finally {

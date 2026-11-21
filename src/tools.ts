@@ -138,9 +138,46 @@ function normalizeSchemaName (schema: string): string {
   return REDUNDANTLY_QUOTED_SCHEMA_REGEX.test(schema) ? schema.slice(1, -1) : schema
 }
 
+// SQLSTATEs for a backend the server ended or would not start: admin_shutdown, crash_shutdown and
+// cannot_connect_now. Class 08 (connection_exception) is matched by prefix.
+const CONNECTION_SQLSTATES = new Set(['57P01', '57P02', '57P03'])
+
+// Socket errors from Node, and the closed-connection codes postgres.js and Bun.SQL report.
+const CONNECTION_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'EPIPE',
+  'ETIMEDOUT',
+  'ENOTCONN',
+  'CONNECTION_CLOSED',
+  'CONNECTION_ENDED',
+  'CONNECTION_DESTROYED',
+  'ERR_POSTGRES_CONNECTION_CLOSED'
+])
+
+// node-postgres reports a socket that closed under a query with no code, only these messages.
+const CONNECTION_ERROR_MESSAGE = /Connection terminated|not queryable/
+
+// Whether an error says the connection went away, so the statement can be run again on another
+// connection. Bun.SQL puts the SQLSTATE in errno and its own code in code.
+function isConnectionError (err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+
+  const { code, errno, message } = err as { code?: unknown, errno?: unknown, message?: unknown }
+
+  for (const value of [code, errno]) {
+    if (typeof value !== 'string') continue
+    if (CONNECTION_SQLSTATES.has(value) || CONNECTION_ERROR_CODES.has(value)) return true
+    if (/^08[0-9A-Z]{3}$/.test(value)) return true
+  }
+
+  return typeof message === 'string' && CONNECTION_ERROR_MESSAGE.test(message)
+}
+
 export {
   clockDelay,
   delay,
+  isConnectionError,
   normalizeSchemaName,
   resolveSchemaName,
   resolveWithinSeconds,
