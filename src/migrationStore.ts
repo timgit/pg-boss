@@ -2416,8 +2416,6 @@ AS $function$
       release: '12.39.0',
       version: 47,
       previous: 46,
-      // Nullable with no default, so adding it rewrites nothing. Existing rows read NULL until
-      // schedule() next changes their definition.
       install: [
         `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS sent_on timestamp with time zone`
       ],
