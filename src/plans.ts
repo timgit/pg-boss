@@ -3138,6 +3138,99 @@ function isDateTimeString (expression: string) {
   return `(right(${expression}, 1) = 'Z' OR ${expression} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}')`
 }
 
+// The columns a job insert writes, and how each is read off a recordset row (`j`, with
+// start_after resolved by jobStartAfter()) and its queue (`q`). insertJobs() and the cron
+// statement share them, so a scheduled job is built exactly as one from send().
+const JOB_INSERT_COLUMNS = `
+      id,
+      name,
+      data,
+      priority,
+      start_after,
+      created_on,
+      singleton_key,
+      singleton_on,
+      group_id,
+      group_tier,
+      expire_seconds,
+      deletion_seconds,
+      keep_until,
+      retry_limit,
+      retry_delay,
+      retry_backoff,
+      retry_delay_max,
+      policy,
+      dead_letter,
+      heartbeat_seconds,
+      blocked,
+      blocking,
+      pending_dependencies,
+      trace_context`
+
+function jobInsertValues (schema: string, name: string, slotClause = '') {
+  return `COALESCE(id, gen_random_uuid()) as id,
+      ${name} as name,
+      data,
+      COALESCE(priority, 0) as priority,
+      j.start_after,
+      ${schema}.job_now() as created_on,
+      "singletonKey",
+      CASE
+        ${slotClause}
+        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds"::float8 * floor(( date_part('epoch', ${schema}.job_now()) + COALESCE("singletonOffset",0)::float8) / "singletonSeconds"::float8 ))
+        ELSE NULL
+        END as singleton_on,
+      "groupId" as group_id,
+      "groupTier" as group_tier,
+      COALESCE("expireInSeconds", q.expire_seconds, ${QUEUE_DEFAULTS.expire_seconds}) as expire_seconds,
+      COALESCE("deleteAfterSeconds", q.deletion_seconds, ${QUEUE_DEFAULTS.deletion_seconds}) as deletion_seconds,
+      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds, ${QUEUE_DEFAULTS.retention_seconds}) * interval '1s') as keep_until,
+      COALESCE("retryLimit", q.retry_limit, ${QUEUE_DEFAULTS.retry_limit}) as retry_limit,
+      COALESCE("retryDelay", q.retry_delay, ${QUEUE_DEFAULTS.retry_delay}) as retry_delay,
+      COALESCE("retryBackoff", q.retry_backoff, ${QUEUE_DEFAULTS.retry_backoff}) as retry_backoff,
+      COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
+      q.policy,
+      COALESCE("deadLetter", q.dead_letter) as dead_letter,
+      COALESCE("heartbeatSeconds", q.heartbeat_seconds) as heartbeat_seconds,
+      COALESCE(blocked, false) as blocked,
+      COALESCE(blocking, false) as blocking,
+      COALESCE("pendingDependencies", 0) as pending_dependencies,
+      "__traceContext" as trace_context`
+}
+
+function jobStartAfter (schema: string) {
+  return `CASE
+          WHEN ${isDateTimeString('"startAfter"')} THEN CAST("startAfter" as timestamp with time zone)
+          ELSE ${schema}.job_now() + CAST(COALESCE("startAfter",'0') as interval)
+          END as start_after`
+}
+
+function jobRecordsetColumns (extra = '') {
+  return `id uuid,
+        priority integer,
+        data jsonb,
+        "startAfter" text,
+        "retryLimit" integer,
+        "retryDelay" integer,
+        "retryDelayMax" integer,
+        "retryBackoff" boolean,
+        "singletonKey" text,
+        "singletonSeconds" integer,
+        "singletonOffset" integer,
+        ${extra}
+        "groupId" text,
+        "groupTier" text,
+        "expireInSeconds" integer,
+        "deleteAfterSeconds" integer,
+        "retentionSeconds" integer,
+        "deadLetter" text,
+        "heartbeatSeconds" integer,
+        blocked boolean,
+        blocking boolean,
+        "pendingDependencies" integer,
+        "__traceContext" jsonb`
+}
+
 interface InsertJobsOptions {
   table: string
   name: string
@@ -3172,90 +3265,14 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
 
   const insert = `
     INSERT INTO ${schema}.${table} (
-      id,
-      name,
-      data,
-      priority,
-      start_after,
-      created_on,
-      singleton_key,
-      singleton_on,
-      group_id,
-      group_tier,
-      expire_seconds,
-      deletion_seconds,
-      keep_until,
-      retry_limit,
-      retry_delay,
-      retry_backoff,
-      retry_delay_max,
-      policy,
-      dead_letter,
-      heartbeat_seconds,
-      blocked,
-      blocking,
-      pending_dependencies,
-      trace_context${upsertByKey ? ', upsert_by_key' : ''}
+      ${JOB_INSERT_COLUMNS}${upsertByKey ? ', upsert_by_key' : ''}
     )
     SELECT
-      COALESCE(id, gen_random_uuid()) as id,
-      '${name}' as name,
-      data,
-      COALESCE(priority, 0) as priority,
-      j.start_after,
-      ${schema}.job_now() as created_on,
-      "singletonKey",
-      CASE
-        ${slotClause}
-        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds"::float8 * floor(( date_part('epoch', ${schema}.job_now()) + COALESCE("singletonOffset",0)::float8) / "singletonSeconds"::float8 ))
-        ELSE NULL
-        END as singleton_on,
-      "groupId" as group_id,
-      "groupTier" as group_tier,
-      COALESCE("expireInSeconds", q.expire_seconds, ${QUEUE_DEFAULTS.expire_seconds}) as expire_seconds,
-      COALESCE("deleteAfterSeconds", q.deletion_seconds, ${QUEUE_DEFAULTS.deletion_seconds}) as deletion_seconds,
-      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds, ${QUEUE_DEFAULTS.retention_seconds}) * interval '1s') as keep_until,
-      COALESCE("retryLimit", q.retry_limit, ${QUEUE_DEFAULTS.retry_limit}) as retry_limit,
-      COALESCE("retryDelay", q.retry_delay, ${QUEUE_DEFAULTS.retry_delay}) as retry_delay,
-      COALESCE("retryBackoff", q.retry_backoff, ${QUEUE_DEFAULTS.retry_backoff}) as retry_backoff,
-      COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
-      q.policy,
-      COALESCE("deadLetter", q.dead_letter) as dead_letter,
-      COALESCE("heartbeatSeconds", q.heartbeat_seconds) as heartbeat_seconds,
-      COALESCE(blocked, false) as blocked,
-      COALESCE(blocking, false) as blocking,
-      COALESCE("pendingDependencies", 0) as pending_dependencies,
-      "__traceContext" as trace_context${upsertByKey ? ', true as upsert_by_key' : ''}
+      ${jobInsertValues(schema, `'${name}'`, slotClause)}${upsertByKey ? ', true as upsert_by_key' : ''}
     FROM (
-      SELECT *,
-        CASE
-          WHEN ${isDateTimeString('"startAfter"')} THEN CAST("startAfter" as timestamp with time zone)
-          ELSE ${schema}.job_now() + CAST(COALESCE("startAfter",'0') as interval)
-          END as start_after
+      SELECT *, ${jobStartAfter(schema)}
       FROM json_to_recordset($1::text::json) as x (
-        id uuid,
-        priority integer,
-        data jsonb,
-        "startAfter" text,
-        "retryLimit" integer,
-        "retryDelay" integer,
-        "retryDelayMax" integer,
-        "retryBackoff" boolean,
-        "singletonKey" text,
-        "singletonSeconds" integer,
-        "singletonOffset" integer,
-        ${slots ? '"__singletonSlot" text,' : ''}
-        "groupId" text,
-        "groupTier" text,
-        "expireInSeconds" integer,
-        "deleteAfterSeconds" integer,
-        "retentionSeconds" integer,
-        "deadLetter" text,
-        "heartbeatSeconds" integer,
-        blocked boolean,
-        blocking boolean,
-        "pendingDependencies" integer,
-        "__traceContext" jsonb
+        ${jobRecordsetColumns(slots ? '"__singletonSlot" text,' : '')}
       )
     ) j
     LEFT JOIN ${schema}.queue q ON q.name = '${name}'
