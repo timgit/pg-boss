@@ -546,6 +546,39 @@ describe('schedule seconds on the database', { timeout: blockTimeout }, function
     expect(await slotsFiled(ctx.boss, 'unprecise')).toEqual([T0, T0 + MINUTE, T0 + 2 * MINUTE])
   })
 
+  it('starts the cursor when a definition is stored or changed, and keeps it otherwise', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, schedule: false })
+
+    const sentOn = async () => {
+      const { rows } = await ctx.boss!.getDb().executeSql(`SELECT sent_on FROM ${ctx.schema}.schedule WHERE name = 'q'`)
+
+      return new Date(rows[0].sent_on).getTime()
+    }
+
+    await ctx.boss.createQueue('q')
+    await ctx.boss.schedule('q', '* * * * * *')
+    expect(await sentOn()).toBe(T0)
+
+    // New data, or the same definition stored again on a boot, keeps the cursor where it is.
+    await clock.setTime(T0 + MINUTE)
+    await ctx.boss.schedule('q', '* * * * * *', { new: 'data' })
+    await ctx.boss.schedule('q', '* * * * * *', null, { precision: 'minute' })
+    expect(await sentOn()).toBe(T0)
+
+    // Opting in is a new definition, which owes nothing from before it.
+    await ctx.boss.schedule('q', '* * * * * *', null, { precision: 'second' })
+    expect(await sentOn()).toBe(T0 + MINUTE)
+
+    await clock.setTime(T0 + 2 * MINUTE)
+    await ctx.boss.schedule('q', '*/5 * * * * *', null, { precision: 'second' })
+    expect(await sentOn()).toBe(T0 + 2 * MINUTE)
+
+    await clock.setTime(T0 + 3 * MINUTE)
+    await ctx.boss.schedule('q', '*/5 * * * * *', null, { precision: 'second', tz: 'Europe/Paris' })
+    expect(await sentOn()).toBe(T0 + 3 * MINUTE)
+  })
+
   it('sends each occurrence once across two instances when the one holding the claim stops', async function () {
     const clock = new TestClock(T0)
     const x = await helper.start({ ...ctx.bossConfig, clock, schedule: true })

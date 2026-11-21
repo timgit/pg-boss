@@ -469,6 +469,11 @@ function createTableQueue (schema: string) {
 // release can write a null during a rolling upgrade, which is what the read-side COALESCE covers.
 /* eslint-enable no-restricted-syntax */
 
+// sent_on is the latest occurrence sent for this definition, not the time it was sent. Every
+// occurrence at or before it has been sent or is not owed. Never set it from job_now() in the send
+// statement: an occurrence after the holder's evaluated bound but before the statement ran would
+// be skipped. schedule() sets it to job_now() when a definition is created or changed, which marks
+// the time before it as not owed.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableSchedule (schema: string) {
   return `
@@ -1902,13 +1907,9 @@ const SCHEDULE_COLUMNS = `
 // `limited` and `after` are for the public getSchedules(). The cron pass reads every schedule.
 // `after` takes two parameters, the name and key of the previous page's last schedule, and the
 // limit follows them.
-//
-// `includeSentOn` is the cron pass reading its own bookkeeping beside the rows, as "__sentOn": the
-// latest occurrence sent for a `missed: 'once'` schedule, which only the pass's catch-up reads, so
-// it is not part of what getSchedules() hands a caller.
-export function getSchedules (schema: string, limited = false, after = false, includeSentOn = false) {
+export function getSchedules (schema: string, limited = false, after = false) {
   return `
-    SELECT ${SCHEDULE_COLUMNS}${includeSentOn ? ', sent_on as "__sentOn"' : ''} FROM ${schema}.schedule
+    SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule
     ${after ? 'WHERE (name, key) > ($1, $2)' : ''}
     ORDER BY name, key
     ${limited ? `LIMIT $${after ? 3 : 1}` : ''}
@@ -1950,29 +1951,6 @@ export function setScheduleLastJobIds (schema: string) {
 }
 
 /**
- * Moves each schedule's sent_on up to the latest occurrence a pass or the per-second evaluation has
- * just inserted for it, so a catch-up does not send it again once its send-it job has been deleted.
- *
- * GREATEST, so a write carrying an older occurrence never moves it back. Matched on the expression
- * and zone as well as the primary key, in the terms getSchedules() reads them: the per-second
- * evaluation keeps sending the definition its claim read until the lease runs out, and an occurrence
- * of that definition is no bound on a new one, which schedule() clears the column for.
- *
- * `updated_on` is left alone, as it is for last_job_id.
- */
-export function setScheduleSentOn (schema: string) {
-  return `
-    UPDATE ${schema}.schedule s
-    SET sent_on = GREATEST(s.sent_on, x."sentOn")
-    FROM json_to_recordset($1::text::json) AS x (name text, key text, cron text, timezone text, "sentOn" timestamptz)
-    WHERE s.name = x.name
-      AND COALESCE(s.key, '') = x.key
-      AND s.cron = x.cron
-      AND COALESCE(s.timezone, 'UTC') = x.timezone
-  `
-}
-
-/**
  * Relabels the kind of one or more schedules, as the cron pass does when a row's stored kind
  * disagrees with the expression beside it.
  *
@@ -1994,13 +1972,13 @@ export function setScheduleKinds (schema: string) {
   `
 }
 
-// sent_on is an occurrence of the definition it was sent under, so a new expression or zone clears
-// it and a catch-up of the new one reads its gap from the last claim. Anything else leaves it, which
-// is what lets a deployment that registers its schedules on every boot keep it across restarts.
+// A new row, or a new expression, zone or precision, starts sent_on at job_now(): nothing before it
+// is owed under that definition. Anything else leaves it, which is what lets a deployment that
+// registers its schedules on every boot keep its place across restarts.
 export function schedule (schema: string) {
   return `
-    INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, created_on, updated_on)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, ${schema}.job_now(), ${schema}.job_now())
+    INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, created_on, updated_on, sent_on)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now())
     ON CONFLICT (name, key) DO UPDATE SET
       kind = EXCLUDED.kind,
       cron = EXCLUDED.cron,
@@ -2011,7 +1989,9 @@ export function schedule (schema: string) {
       sent_on = CASE
         WHEN ${schema}.schedule.cron = EXCLUDED.cron
           AND COALESCE(${schema}.schedule.timezone, 'UTC') = COALESCE(EXCLUDED.timezone, 'UTC')
+          AND COALESCE(${schema}.schedule.options->>'precision', '${SCHEDULE_PRECISIONS.minute}') = COALESCE(EXCLUDED.options->>'precision', '${SCHEDULE_PRECISIONS.minute}')
         THEN ${schema}.schedule.sent_on
+        ELSE ${schema}.job_now()
       END
   `
 }

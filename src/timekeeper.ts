@@ -63,14 +63,6 @@ type ScheduledRequest = types.Request & { key?: string, slot?: string }
 // into SQL is shaped.
 type FiredSchedule = { name: string, key: string, jobId: string }
 
-// A schedule row as the cron pass reads it: what getSchedules() hands a caller, and the latest
-// occurrence sent for it, which only the pass's catch-up reads.
-type PassSchedule = types.Schedule & { __sentOn?: unknown }
-
-// One schedule's latest sent occurrence, as handed to plans.setScheduleSentOn, with the expression
-// and zone it was read from so a write for a definition schedule() has since replaced does not land.
-type SentOccurrence = { name: string, key: string, cron: string, timezone: string, sentOn: string }
-
 // How long an occurrence stays due, and the width of the throttle slot a forwarded job is filed in.
 // One value because the two have to agree: a window wider than the slot lets two slots claim the
 // same occurrence and send it twice, and a slot wider than the window collapses two occurrences a
@@ -406,7 +398,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   // won: the instance holding it keeps the cron expressions with a seconds field that its pass read,
   // and evaluates them every second until the lease runs out. No other instance reads or evaluates
   // them, so the per-second evaluation is serialized by the claim the way the pass is.
-  private secondCronCache: PassSchedule[] = []
+  private secondCronCache: types.Schedule[] = []
   private leaseUntil = 0
   private secondTickTimer: types.ClockTimer | null | undefined
   private secondTickOrigin = 0
@@ -554,10 +546,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       const databaseTime = this.databaseTime
       const scheduled: ForwardedJob[] = []
       const evaluated = new Map<string, number>()
-      const sent: SentOccurrence[] = []
 
       for (const schedule of this.secondCronCache) {
-        const { name, key, data, options, cron, timezone } = schedule
+        const { name, key, data, options } = schedule
 
         let occurrences: Date[]
 
@@ -575,18 +566,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
           scheduled.push({ data: { name, key, data, options, slot }, singletonKey: occurrenceKey(name, key), __singletonSlot: slot })
         }
-
-        if (occurrences.length > 0 && missedPolicy(options) === plans.SCHEDULE_MISSED_POLICIES.once) {
-          sent.push({ name, key, cron, timezone, sentOn: occurrences[occurrences.length - 1].toISOString() })
-        }
       }
 
       if (scheduled.length > 0 && !this.stopped) {
         await this.manager.insert(QUEUES.SEND_IT, scheduled, { __singletonSlots: true })
-
-        // Before the range moves on, so a failed write is made again by the next tick, which reads
-        // the same range.
-        await this.recordSent(sent)
       }
 
       this.secondCronEvaluatedTo = evaluated
@@ -714,7 +697,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
           //
           // The rows are read once for the lease: the pass evaluates them, and the per-second tick
           // keeps evaluating the ones isSecondCron() accepts until the lease runs out.
-          const schedules = await this.getSchedules(undefined, undefined, undefined, undefined, { includeSentOn: true })
+          const schedules = await this.getSchedules()
 
           this.secondCronCache = schedules.filter(({ cron, options }) => isSecondCron(cron, options))
 
@@ -769,8 +752,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    *
    * `cached` is the rows onCron() read for the lease, and the pass reads them itself without it.
    */
-  async cron (priorCronOn: unknown = null, cached?: PassSchedule[]) {
-    const schedules: PassSchedule[] = cached ?? await this.getSchedules(undefined, undefined, undefined, undefined, { includeSentOn: true })
+  async cron (priorCronOn: unknown = null, cached?: types.Schedule[]) {
+    const schedules: types.Schedule[] = cached ?? await this.getSchedules()
 
     const scheduled: ForwardedJob[] = []
     const stillBroken = new Set<string>()
@@ -793,9 +776,6 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     // The schedules isSecondCron() accepts that this pass evaluated, and up to when.
     const evaluated = new Map<string, number>()
-
-    // Per `missed: 'once'` schedule, the latest occurrence this pass sends.
-    const sent: SentOccurrence[] = []
 
     for (const schedule of schedules) {
       const { name, key, data, options, kind, cron, timezone } = schedule
@@ -912,23 +892,12 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       for (const slot of slots) {
         scheduled.push({ ...forwarded, data: { ...forwarded.data, slot }, __singletonSlot: slot })
       }
-
-      // What a later catch-up must not send again: this pass's newest occurrence, due or missed.
-      if (missedPolicy(options) === plans.SCHEDULE_MISSED_POLICIES.once) {
-        const latest = Math.max(missed?.getTime() ?? -Infinity, ...occurrences.map(occurrence => occurrence.getTime()))
-
-        if (Number.isFinite(latest)) {
-          sent.push({ name, key, cron, timezone, sentOn: new Date(latest).toISOString() })
-        }
-      }
     }
 
     this.warnedSchedules = stillBroken
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled, { __singletonSlots: true })
-
-      await this.recordSent(sent)
     }
 
     // After the insert, so one that fails leaves the range to be read again.
@@ -952,19 +921,12 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * new row would otherwise send everything since the claim before it, up to a minute of jobs at
    * once.
    */
-  private secondCronDue (schedule: PassSchedule, databaseTime: number, floor: number | null = null): Date[] {
+  private secondCronDue (schedule: types.Schedule, databaseTime: number, floor: number | null = null): Date[] {
     const { name, key, cron, timezone, createdOn } = schedule
     const windowStart = databaseTime - OCCURRENCE_WINDOW_SECONDS * 1000
     const after = Math.max(this.secondCronEvaluatedTo.get(JSON.stringify([name, key])) ?? windowStart, floor ?? windowStart, windowStart, toTime(createdOn) ?? windowStart)
 
     return cronOccurrencesBetween(cron, timezone, after, databaseTime)
-  }
-
-  // Recorded only for `missed: 'once'`, the one policy whose catch-up reads it.
-  private async recordSent (sent: SentOccurrence[]): Promise<void> {
-    if (sent.length > 0 && !this.stopped) {
-      await this.db.executeSql(plans.setScheduleSentOn(this.config.schema), [JSON.stringify(sent)])
-    }
   }
 
   shouldSendIt (expression: string, tz: string, kind: types.ScheduleKind = plans.SCHEDULE_KINDS.cron) {
@@ -1037,20 +999,15 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * not start life owing an occurrence of an expression that was not in the table yet. Not by
    * `updated_on`, which a deployment calling schedule() on every boot rewrites on the way up: that
    * would leave the policy with nothing to catch up on in precisely the case it exists for.
-   *
-   * And by the latest occurrence any instance has sent for the row, since the claim is not where
-   * sending stopped: the instance holding it sends on every second until its lease runs out, and a
-   * pass sends what its own clock reads past the claim. Without it an occurrence sent after the last
-   * claim lies in the gap, and once its send-it job has been deleted nothing collapses a second one.
    */
-  private missedOccurrence (schedule: PassSchedule, kind: types.ScheduleKind, lastPass: number | null, windowStart: number): Date | null {
-    const { cron, timezone, options, createdOn, __sentOn } = schedule
+  private missedOccurrence (schedule: types.Schedule, kind: types.ScheduleKind, lastPass: number | null, windowStart: number): Date | null {
+    const { cron, timezone, options, createdOn } = schedule
 
     if (missedPolicy(options) === plans.SCHEDULE_MISSED_POLICIES.skip || lastPass === null) {
       return null
     }
 
-    const from = Math.max(lastPass, toTime(createdOn) ?? lastPass, toTime(__sentOn) ?? lastPass)
+    const from = Math.max(lastPass, toTime(createdOn) ?? lastPass)
 
     if (from >= windowStart) {
       return null
@@ -1213,10 +1170,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   // Every schedule unless `limit` is passed: the public getSchedules() passes its limit and `after`,
   // and the cron pass reads them all. A name and key read one row by the primary key, so it needs
   // neither.
-  async getSchedules (name?: string, key?: string, limit?: number, after?: Pick<types.Schedule, 'name' | 'key'>, { includeSentOn = false } = {}): Promise<PassSchedule[]> {
+  async getSchedules (name?: string, key?: string, limit?: number, after?: Pick<types.Schedule, 'name' | 'key'>): Promise<types.Schedule[]> {
     const limited = limit !== undefined
     const paging = [...(after ? [after.name, after.key] : []), ...(limited ? [limit] : [])]
-    let sql = plans.getSchedules(this.config.schema, limited, !!after, includeSentOn)
+    let sql = plans.getSchedules(this.config.schema, limited, !!after)
     let params: unknown[] = paging
 
     if (name && key !== undefined) {

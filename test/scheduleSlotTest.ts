@@ -54,7 +54,7 @@ const passes = new WeakMap<PgBoss, Passes>()
 function watchPasses (boss: PgBoss): Passes {
   const db = boss.getDb()
   const executeSql = db.executeSql.bind(db)
-  const read = plans.getSchedules(ctx.schema, false, false, true)
+  const read = plans.getSchedules(ctx.schema)
   const counts = { reads: 0, inserts: 0, readDone: -1, insertDone: -1 }
 
   db.executeSql = async (sql: string, values?: unknown[]) => {
