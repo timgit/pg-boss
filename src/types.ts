@@ -1410,7 +1410,7 @@ export interface Schedule {
   data?: object;
   /**
    * The options blob `schedule()` stored, which is every option it was given: the `send()` options
-   * each job is created with, and `tz`, `key` and `missed` beside them.
+   * each job is created with, and `tz`, `key`, `missed` and `precision` beside them.
    */
   options?: ScheduleOptions;
   createdOn: Date;

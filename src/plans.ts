@@ -103,13 +103,12 @@ export const SCHEDULE_MISSED_POLICIES = Object.freeze({
   once: 'once'
 } as const)
 
+// Stored in the options blob rather than a column of its own, like the missed policy: the pass
+// reads every schedule row anyway.
 /**
- * How finely a schedule's occurrences are sent. `minute` sends one job per minute an expression
- * matches, which is what every schedule did before per-second schedules existed. `second` sends a
- * job for each occurrence of a cron expression with a seconds field.
- *
- * Part of the options blob rather than a column of its own, like the missed policy: the pass reads
- * every schedule row anyway.
+ * How finely a schedule's occurrences are sent: `minute` sends at most one job a minute, and
+ * `second` a job for each occurrence of a cron expression with a seconds field.
+ * @see https://pgboss.io/api/scheduling#schedules-finer-than-a-minute
  */
 export const SCHEDULE_PRECISIONS = Object.freeze({
   minute: 'minute',

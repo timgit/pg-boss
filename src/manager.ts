@@ -50,11 +50,12 @@ function overrunMessage (name: string, expireInSeconds: number) {
 
 const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
+const TRANSACTIONAL_LONG_EXPIRATION = 'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds'
+
 // The same refusal from inside a batch, where the queue passed work()'s check and the heartbeat
 // arrived afterwards: on the job itself (heartbeatSeconds on send()), or on the queue, through
 // updateQueue() or through a createQueue() that work() ran ahead of. Pointing at the queue's
 // configuration there would send the user to a setting that is not the one they need to drop.
-const TRANSACTIONAL_LONG_EXPIRATION = 'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds'
 const TRANSACTIONAL_HEARTBEAT_ON_BATCH = 'this backend cannot run a transactional handler over a job with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. The queue carried no heartbeat when this worker registered, so it came from the job (heartbeatSeconds on send()) or from the queue after registration. Drop it there and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
 // Candidates for bounding a transactional handler's transaction from the database side, best

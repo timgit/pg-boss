@@ -244,7 +244,7 @@ Each schedule carries the following properties.
 | `cron` | Cron expression or recurrence rule |
 | `timezone` | Time zone the expression is evaluated in, `UTC` when the row never named one |
 | `data` | Payload sent with each job |
-| `options` | The options `schedule()` was given: the `send()` options each job is created with, and `tz`, `key` and `missed` beside them |
+| `options` | The options `schedule()` was given: the `send()` options each job is created with, and `tz`, `key`, `missed` and `precision` beside them |
 | `createdOn` | When the schedule was first stored |
 | `updatedOn` | When the definition was last changed |
 | `lastJobId` | Id of the job the schedule most recently created |
