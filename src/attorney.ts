@@ -474,9 +474,12 @@ function checkWorkArgs (name: string, args: any[]): {
 // one of the two features. Everything else about a worker (fetching, batching, concurrency, group
 // limits, heartbeats) is untouched by the option, because the transaction covers only the handler
 // and the completion.
+const MAX_TRANSACTION_TIMEOUT_SECONDS = Math.floor((2 ** 31 - 1) / 1000)
+
 function validateTransactionalConfig (options: any) {
-  assert(!('transactionTimeoutSeconds' in options) || (Number.isInteger(options.transactionTimeoutSeconds) && options.transactionTimeoutSeconds >= 0),
-    'transactionTimeoutSeconds must be an integer >= 0')
+  // The bound is set in milliseconds, which Postgres holds in a 32-bit integer.
+  assert(!('transactionTimeoutSeconds' in options) || (Number.isInteger(options.transactionTimeoutSeconds) && options.transactionTimeoutSeconds >= 0 && options.transactionTimeoutSeconds <= MAX_TRANSACTION_TIMEOUT_SECONDS),
+    `transactionTimeoutSeconds must be an integer from 0 to ${MAX_TRANSACTION_TIMEOUT_SECONDS}`)
 
   if (!options.transactional) {
     // Rejected rather than ignored: the bound only exists for a transaction pg-boss opened.

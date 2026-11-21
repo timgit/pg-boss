@@ -1283,8 +1283,9 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
    */
   transactional?: boolean;
   /**
-   * Transaction timeout in seconds for transactional workers; required when job expiration exceeds 86400 seconds.
-   * Defaults to `expireInSeconds` plus 5; `0` removes the bound.
+   * How long the database gives the handler's transaction before it ends it, in seconds, up to
+   * 2147483. Only valid with `transactional`, required when a job's `expireInSeconds` is above 86400,
+   * and defaults to `expireInSeconds` plus 5; `0` removes the bound.
    * @see https://pgboss.io/api/workers#work-name-options-handler
    */
   transactionTimeoutSeconds?: number;

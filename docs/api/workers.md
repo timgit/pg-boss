@@ -81,9 +81,9 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **transactionTimeoutSeconds**, int, *(default=`expireInSeconds` + 5)*
 
-  How long the database gives the handler's transaction before it kills the connection under it. Only valid alongside `transactional`; `0` removes the bound.
+  How long the database gives the handler's transaction before it kills the connection under it. Only valid alongside `transactional`; `0` removes the bound. The maximum is 2147483 (about 24.8 days).
 
-  Transactional jobs whose `expireInSeconds` exceeds 24 hours require an explicit `transactionTimeoutSeconds`. A multi-day job deadline must not implicitly allow a multi-day database transaction.
+  Transactional jobs whose `expireInSeconds` exceeds 24 hours require an explicit `transactionTimeoutSeconds`. `work()` rejects the worker when its queue's `expireInSeconds` exceeds 24 hours. A job whose own `expireInSeconds` exceeds 24 hours fails when it is fetched. This keeps a multi-day job deadline from setting a multi-day transaction bound by default.
 
   This is not the timer that ends a slow handler. `expireInSeconds` is, and it fires first by design. What this covers is the case no timer inside the process can: the process itself failing under an open transaction (a starved event loop, a driver wedged below the promise). That transaction goes on advertising `backend_xmin` and holding vacuum off every table in the database until something closes it, which is the condition [`monitorVacuum`](./constructor.md#monitorvacuum) reports as an `xmin_horizon` warning.
 

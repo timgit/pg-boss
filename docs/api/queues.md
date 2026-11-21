@@ -145,7 +145,7 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 
   Default: 15 minutes. How many seconds a job may be in active state before being retried or failed. Must be >=1 and <= 1209600 (14 days).
 
-  The policy maximum leaves margin below Node.js's approximately 24.8-day timer limit. Heartbeats do not extend the deadline, and expiration does not stop external work. When tracking external work with `fetch()` and `complete()`, include its queueing time in the bound and reconcile an existing execution before retrying it.
+  The policy maximum leaves margin below Node.js's approximately 24.8-day timer limit. Heartbeats do not extend the deadline, and expiration does not stop external work. When tracking external work with `fetch()` and `complete()`, include its queueing time in the bound. Before retrying, check whether the external work from the last attempt is still running.
 
 **Retention options**
 

@@ -54,6 +54,7 @@ const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transacti
 // arrived afterwards: on the job itself (heartbeatSeconds on send()), or on the queue, through
 // updateQueue() or through a createQueue() that work() ran ahead of. Pointing at the queue's
 // configuration there would send the user to a setting that is not the one they need to drop.
+const TRANSACTIONAL_LONG_EXPIRATION = 'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds'
 const TRANSACTIONAL_HEARTBEAT_ON_BATCH = 'this backend cannot run a transactional handler over a job with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. The queue carried no heartbeat when this worker registered, so it came from the job (heartbeatSeconds on send()) or from the queue after registration. Drop it there and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
 // Candidates for bounding a transactional handler's transaction from the database side, best
@@ -793,8 +794,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_ON_BATCH)
 
       if (transactional) {
-        assert(maxExpiration <= 86400 || transactionTimeoutSeconds !== undefined,
-          'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds')
+        assert(maxExpiration <= 86400 || transactionTimeoutSeconds !== undefined, TRANSACTIONAL_LONG_EXPIRATION)
         const timeoutMs = transactionTimeoutSeconds !== undefined
           ? transactionTimeoutSeconds * 1000
           : maxExpiration * 1000 + TRANSACTION_ROLLBACK_TIMEOUT_MS
@@ -1402,6 +1402,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
         'transactional workers require a database connection pg-boss can open a transaction on: the built-in pool, or a db adapter implementing beginTransaction')
 
       await this.#assertTransactionalHeartbeatSupported(name)
+
+      if (transactionTimeoutSeconds === undefined) {
+        // The queue's expiration is the common source of a multi-day job, and checked here it fails
+        // the call rather than each job's attempts. A job's own expireInSeconds is checked per batch.
+        const queue = await this.getQueue(name).catch(() => null)
+
+        assert(!((queue?.expireInSeconds ?? 0) > 86400), TRANSACTIONAL_LONG_EXPIRATION)
+      }
 
       // A stop() during that await has already looked for workers, and would not see this one.
       if (this.stopped) {

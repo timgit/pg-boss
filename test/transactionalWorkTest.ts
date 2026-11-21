@@ -1103,7 +1103,27 @@ describe('transactional work options', function () {
 
     await expect(async () => {
       await ctx.boss!.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 1.5 } as any, async () => {})
-    }).rejects.toThrow(/transactionTimeoutSeconds must be an integer >= 0/)
+    }).rejects.toThrow(/transactionTimeoutSeconds must be an integer from 0 to 2147483/)
+  })
+
+  it('should reject a transactionTimeoutSeconds whose milliseconds the database cannot hold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 2147484 }, async () => {}))
+      .rejects.toThrow(/transactionTimeoutSeconds must be an integer from 0 to 2147483/)
+
+    await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 2147483 }, async () => {})).resolves.toBeTypeOf('string')
+  })
+
+  it('should reject a transactional worker on a queue whose expiration is above a day without a transaction timeout', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.updateQueue(ctx.schema, { expireInSeconds: 86401 })
+
+    await expect(ctx.boss.work(ctx.schema, { transactional: true }, async () => {}))
+      .rejects.toThrow('transactional jobs with expiration above 24 hours require transactionTimeoutSeconds')
+
+    await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 90000 }, async () => {})).resolves.toBeTypeOf('string')
   })
 
   it('should reject transactionTimeoutSeconds without transactional', async function () {
