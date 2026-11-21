@@ -79,6 +79,7 @@ const OCCURRENCE_WINDOW_SECONDS = 60
 
 /** The policy names, for the check schedule() performs and the one the pass performs. */
 const MISSED_POLICIES = Object.values(plans.SCHEDULE_MISSED_POLICIES)
+const PRECISIONS = Object.values(plans.SCHEDULE_PRECISIONS)
 
 // __singletonSlot is an internal field of the pass's own insert rather than a documented send
 // option, so the forwarded job widens JobInsert here rather than the type widening for everyone.
@@ -130,8 +131,13 @@ function throttleSlot (instant: Date, widthSeconds = OCCURRENCE_WINDOW_SECONDS):
 const SECOND_SLOT_SECONDS = 1
 
 /**
- * Whether a cron expression is evaluated every second rather than by the pass alone, which is
- * whether its seconds field, as cron-parser reads it, names anything other than 0.
+ * Whether a schedule is evaluated every second rather than by the pass alone: it asks for
+ * `precision: 'second'`, and its expression's seconds field, as cron-parser reads it, names
+ * anything other than 0.
+ *
+ * Opt-in, because `schedule()` has always stored 6-placeholder expressions and sent them a job a
+ * minute. Reading the seconds field alone would turn a stored `* * * * * *` from 1,440 jobs a day
+ * into 86,400 on upgrade.
  *
  * Read off the parsed field rather than by counting placeholders, so an alias is judged by what it
  * expands to (`@secondly` is every second) and a 6-placeholder expression whose seconds field is 0
@@ -141,7 +147,11 @@ const SECOND_SLOT_SECONDS = 1
  * expressions that need it. An expression that does not parse as cron stays with the pass, which
  * is every rule, since no cron field contains `=`, `:` or `;`, and every row the pass warns about.
  */
-function isSecondCron (expression: string): boolean {
+function isSecondCron (expression: string, options: types.ScheduleOptions | undefined): boolean {
+  if (options?.precision !== plans.SCHEDULE_PRECISIONS.second) {
+    return false
+  }
+
   try {
     const seconds = CronExpressionParser.parse(expression, { strict: false }).fields.second.values
 
@@ -321,6 +331,13 @@ function assertMissedPolicy (missed: unknown): void {
   // row keeps whatever it was given, and the pass reads it as `skip` either way.
   assert(missed === undefined || missed === null || MISSED_POLICIES.includes(missed as types.ScheduleMissedPolicy),
     `missed must be one of: ${MISSED_POLICIES.join(', ')}`)
+}
+
+// Nullish is the default, as for the missed policy. A value no pass recognizes would send a job a
+// minute, which is a schedule silently not doing what its caller asked.
+function assertPrecision (precision: unknown): void {
+  assert(precision === undefined || precision === null || PRECISIONS.includes(precision as types.SchedulePrecision),
+    `precision must be one of: ${PRECISIONS.join(', ')}`)
 }
 
 /**
@@ -699,7 +716,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
           // keeps evaluating the ones isSecondCron() accepts until the lease runs out.
           const schedules = await this.getSchedules(undefined, undefined, undefined, undefined, { includeSentOn: true })
 
-          this.secondCronCache = schedules.filter(({ cron }) => isSecondCron(cron))
+          this.secondCronCache = schedules.filter(({ cron, options }) => isSecondCron(cron, options))
 
           await this.cron(rows[0].priorCronOn, schedules)
 
@@ -799,7 +816,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       let due: DueOccurrences
 
       try {
-        due = this.dueOccurrences(cron, kind, timezone, databaseTime)
+        due = this.dueOccurrences(cron, kind, timezone, databaseTime, isSecondCron(cron, options))
       } catch (err) {
         // Evaluating one row must not decide the fate of the others. schedule() now rejects an
         // unusable time zone, but a row written by an earlier release, or straight into the table,
@@ -834,7 +851,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
       // A cron expression with a seconds field is owed every occurrence since it was last
       // evaluated, each in a slot of its own, rather than the newest in the window.
-      const secondCron = due.kind === plans.SCHEDULE_KINDS.cron && isSecondCron(cron)
+      const secondCron = due.kind === plans.SCHEDULE_KINDS.cron && isSecondCron(cron, options)
       const width = secondCron ? SECOND_SLOT_SECONDS : OCCURRENCE_WINDOW_SECONDS
       let occurrences = due.occurrences
 
@@ -972,11 +989,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * An empty expression is refused first, as schedule() refuses it. cron-parser would read one as
    * every minute, and a row stored before schedule() checked for it would keep firing that often.
    */
-  private dueOccurrences (expression: string, kind: types.ScheduleKind, tz: string, databaseTime = this.databaseTime): DueOccurrences {
+  private dueOccurrences (expression: string, kind: types.ScheduleKind, tz: string, databaseTime = this.databaseTime, second = false): DueOccurrences {
     assertExpression(expression)
 
     try {
-      return { kind, occurrences: this.readOccurrences(expression, kind, tz, databaseTime) }
+      return { kind, occurrences: this.readOccurrences(expression, kind, tz, databaseTime, second) }
     } catch (err) {
       const detected: types.ScheduleKind = isRrule(expression) ? plans.SCHEDULE_KINDS.rrule : plans.SCHEDULE_KINDS.cron
 
@@ -986,7 +1003,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         throw err
       }
 
-      return { kind: detected, occurrences: this.readOccurrences(expression, detected, tz, databaseTime) }
+      return { kind: detected, occurrences: this.readOccurrences(expression, detected, tz, databaseTime, second) }
     }
   }
 
@@ -1083,7 +1100,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * that minute and files the job under it. An occurrence this read passes over falls in a minute
    * a pass before it answered for.
    */
-  private readOccurrences (expression: string, kind: types.ScheduleKind, tz: string, databaseTime: number): Date[] {
+  private readOccurrences (expression: string, kind: types.ScheduleKind, tz: string, databaseTime: number, second: boolean): Date[] {
     const window = new Date(databaseTime - OCCURRENCE_WINDOW_SECONDS * 1000)
 
     if (kind === plans.SCHEDULE_KINDS.rrule) {
@@ -1092,7 +1109,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     // The pass reads this before the per-second evaluation does, and prev() throwing here would have
     // it warn about a usable row for up to a day and leave that row out of what it evaluated.
-    if (isSecondCron(expression)) {
+    if (second) {
       return cronOccurrencesBetween(expression, tz, window.getTime(), databaseTime)
     }
 
@@ -1128,8 +1145,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       // key and slot are the pass's own bookkeeping, read below rather than sent: send() takes the
       // request the schedule row described and nothing else.
       const { key, slot, ...request } = data
-      // A row written before 12.37.0 may still carry `db` from schedule(); it is never a send option here.
-      const { db, ...options } = request.options ?? {}
+      // A row written before 12.37.0 may still carry `db` from schedule(). It, `missed` and
+      // `precision` are never send options here.
+      const { db, missed, precision, ...options }: types.ScheduleOptions = request.options ?? {}
       return await this.manager.send({ ...request, options })
     }))
 
@@ -1315,9 +1333,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     // stored on the row, and later handed to send() by the cron pass, never carries a connection.
     const { db, ...persisted } = options
 
-    // `missed` comes out with tz and key: it tells the pass what to do about a gap and is no more a
-    // send option than they are, so the send-option check below is not handed it.
-    const { tz: requestedTz, key = '', missed, ...rest } = persisted
+    // `missed` and `precision` come out with tz and key: they tell the pass what to do about a gap
+    // and how finely to send, and are no more send options than they are, so the send-option check
+    // below is not handed them.
+    const { tz: requestedTz, key = '', missed, precision, ...rest } = persisted
 
     // Any falsy zone is "none specified", not a zone to be judged: a destructuring default only
     // covers `undefined`, and a value threaded out of a config object or read back off the nullable
@@ -1346,6 +1365,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     Attorney.checkSendArgs([name, data, { ...rest }])
     Attorney.assertKey(key)
     assertMissedPolicy(missed)
+    assertPrecision(precision)
 
     try {
       const sql = plans.schedule(this.config.schema)

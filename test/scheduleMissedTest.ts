@@ -273,7 +273,7 @@ describe('schedule missed', function () {
     // second, and still nothing from before the window. A fresh Timekeeper for each, since one that
     // has evaluated the row reads on from where it left off.
     for (const seconds of [1, 30, 45, 60]) {
-      const inserted = await pass(makeTk(), now, new Date(now - seconds * 1000), [row('* * * * * *', 'once')])
+      const inserted = await pass(makeTk(), now, new Date(now - seconds * 1000), [row('* * * * * *', 'once', { options: { missed: 'once', precision: 'second' } })])
       const owed = Array.from({ length: seconds }, (_, i) => secondSlotOf(now - (seconds - 1 - i) * 1000))
 
       expect(slots(inserted)).toEqual(owed)
@@ -696,7 +696,7 @@ describe('schedule missed', function () {
 
     try {
       await ctx.boss.createQueue(QUEUES.SEND_IT, { deleteAfterSeconds: 3600 })
-      await ctx.boss.schedule(ctx.schema, '30 0 3 * * *', null, { missed: 'once' })
+      await ctx.boss.schedule(ctx.schema, '30 0 3 * * *', null, { missed: 'once', precision: 'second' })
 
       // X claims at 03:00:15, sends 03:00:30 on the second while it holds the claim, and stops at
       // 03:00:40, before its next claim: the claim still reads 03:00:15.

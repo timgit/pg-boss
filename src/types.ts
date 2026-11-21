@@ -1127,6 +1127,13 @@ export type ScheduleOptions = SendOptions & {
    * @default 'skip'
    */
   missed?: ScheduleMissedPolicy
+  /**
+   * `second` sends a job for every occurrence of a cron expression with a seconds field. `minute`
+   * sends at most one job a minute.
+   * @default 'minute'
+   * @see https://pgboss.io/api/scheduling#schedules-finer-than-a-minute
+   */
+  precision?: SchedulePrecision
 }
 
 export interface PreviewScheduleOptions {
@@ -1376,6 +1383,9 @@ export type ScheduleKind = 'cron' | 'rrule'
 
 /** What a schedule does about occurrences that came due while no cron pass ran. */
 export type ScheduleMissedPolicy = 'skip' | 'once'
+
+/** How finely a schedule's occurrences are sent. */
+export type SchedulePrecision = 'minute' | 'second'
 
 /**
  * A queue's subscription to an event, as returned by `getSubscriptions()`.

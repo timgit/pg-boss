@@ -41,9 +41,9 @@ function makeTk (clock: Clock = systemClock) {
   return Object.assign(tk, { executed, inserted })
 }
 
-/** One schedule row, as getSchedules() hands it to the pass. */
+/** One schedule row asking for per-second precision, as getSchedules() hands it to the pass. */
 function row (cron: string, extra: Record<string, unknown> = {}) {
-  return { name: 'q', key: '', data: null, options: {}, kind: plans.SCHEDULE_KINDS.cron, cron, timezone: 'UTC', ...extra }
+  return { name: 'q', key: '', data: null, options: { precision: 'second' }, kind: plans.SCHEDULE_KINDS.cron, cron, timezone: 'UTC', ...extra }
 }
 
 /** A pass at `databaseTime` after the one at `priorCronOn`, answering with the slots it filed. */
@@ -85,6 +85,26 @@ describe('schedule seconds', function () {
     const filed = await pass(tk, now, now - 30 * SECOND, [row('*/15 * * * * *')])
 
     expect(filed).toEqual([slotOf(minute + 15 * SECOND), slotOf(minute + 30 * SECOND)])
+  })
+
+  it('files a seconds field by the minute unless the schedule asks for per-second precision', async function () {
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    // The options every schedule stored before `precision` existed, and the ones naming the default.
+    for (const options of [{}, { precision: 'minute' }, { precision: 'unknown' }]) {
+      for (const cron of ['* * * * * *', '*/15 * * * * *', '@secondly']) {
+        expect(await pass(makeTk(), now, now - 2 * SECOND, [row(cron, { options })]), `${cron} ${JSON.stringify(options)}`).toEqual([slotOf(minute, 60)])
+      }
+    }
+  })
+
+  it('rejects a precision no pass would honor, and reads a nullish one as none given', async function () {
+    const tk = makeTk()
+
+    await expect(tk.schedule('q', '* * * * * *', null, { precision: 'millisecond' } as any))
+      .rejects.toThrow(/precision must be one of: minute, second/)
+    await expect(tk.schedule('q', '* * * * * *', null, { precision: null } as any)).resolves.toBeUndefined()
   })
 
   it('keeps an expression whose seconds field is only 0 with the pass, and reads an alias by what it expands to', async function () {
@@ -508,8 +528,10 @@ describe('schedule seconds on the database', { timeout: blockTimeout }, function
 
     await ctx.boss.createQueue('every5')
     await ctx.boss.createQueue('minute')
-    await ctx.boss.schedule('every5', '*/5 * * * * *')
-    await ctx.boss.schedule('minute', '0 * * * * *')
+    await ctx.boss.createQueue('unprecise')
+    await ctx.boss.schedule('every5', '*/5 * * * * *', null, { precision: 'second' })
+    await ctx.boss.schedule('minute', '0 * * * * *', null, { precision: 'second' })
+    await ctx.boss.schedule('unprecise', '* * * * * *')
 
     await stepTo(clock, T0 + 150 * SECOND)
 
@@ -518,6 +540,10 @@ describe('schedule seconds on the database', { timeout: blockTimeout }, function
     // instant it was stored: the pass sends the newest occurrence in the window.
     expect(await slotsFiled(ctx.boss, 'every5')).toEqual(every(T0, T0 + 150 * SECOND, 5 * SECOND))
     expect(await slotsFiled(ctx.boss, 'minute')).toEqual([T0, T0 + MINUTE, T0 + 2 * MINUTE])
+
+    // Without `precision: 'second'`, a seconds field sends a job a minute, as every release before
+    // per-second schedules did.
+    expect(await slotsFiled(ctx.boss, 'unprecise')).toEqual([T0, T0 + MINUTE, T0 + 2 * MINUTE])
   })
 
   it('sends each occurrence once across two instances when the one holding the claim stops', async function () {
@@ -531,7 +557,7 @@ describe('schedule seconds on the database', { timeout: blockTimeout }, function
 
     try {
       await x.createQueue('every')
-      await x.schedule('every', '* * * * * *')
+      await x.schedule('every', '* * * * * *', null, { precision: 'second' })
 
       // X holds the claim. It stops partway through a lease, and Y takes the claim once the row
       // comes due, reading on from where X's lease began.

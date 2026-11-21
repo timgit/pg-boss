@@ -148,7 +148,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     // Every other minute on the half minute, so the two occurrences in the run are further apart
     // than the window and a repeat send of either cannot hide behind the other.
-    await ctx.boss.schedule(ctx.schema, '30 */2 * * * *')
+    await ctx.boss.schedule(ctx.schema, '30 */2 * * * *', null, { precision: 'second' })
 
     // 12:00:45, a pass in the same minute as the occurrence at 12:00:30.
     await passAt(clock, ctx.boss, T0 + 30 * SECOND)
@@ -179,7 +179,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await until(async () => await lastPass(ctx.boss!) === T0)
 
     // Stored after that pass, so the only occurrences in play are the ones the ticks below reach.
-    await ctx.boss.schedule(ctx.schema, '30 * * * * *', null, { missed: 'once' })
+    await ctx.boss.schedule(ctx.schema, '30 * * * * *', null, { missed: 'once', precision: 'second' })
 
     // Two passes either side of the minute boundary after 12:00:30, then nothing until 12:03:05.
     await passAt(clock, ctx.boss, T0 + 30 * SECOND)
@@ -205,7 +205,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await until(async () => await lastPass(ctx.boss!) === T0)
 
     await ctx.boss.createQueue('q')
-    await ctx.boss.schedule('q', '30 */2 * * * *')
+    await ctx.boss.schedule('q', '30 */2 * * * *', null, { precision: 'second' })
 
     // What an instance on a release that files a cron occurrence from insert time puts on the
     // send-it queue when it finds 12:00:30 in the same minute: the 60-second throttle, and the
@@ -231,7 +231,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await until(async () => await lastPass(ctx.boss!) === T0)
 
     await ctx.boss.createQueue('q')
-    await ctx.boss.schedule('q', '30 */2 * * * *')
+    await ctx.boss.schedule('q', '30 */2 * * * *', null, { precision: 'second' })
 
     // 12:00:45, this instance files 12:00:30 under the second it falls in.
     await passAt(clock, ctx.boss, T0 + 30 * SECOND)
@@ -258,7 +258,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     // Two occurrences a second apart either side of a minute, and in those two minutes only, so
     // the pass that runs on start reads an empty window whether or not it beats this insert.
-    await ctx.boss.schedule(ctx.schema, '0,59 1,2 * * * *')
+    await ctx.boss.schedule(ctx.schema, '0,59 1,2 * * * *', null, { precision: 'second' })
 
     // That pass stamps the version row off the test clock, so waiting for the stamp keeps the
     // first tick below from being taken for it.

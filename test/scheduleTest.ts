@@ -748,6 +748,15 @@ describe('timekeeper clock domain', function () {
     expect(errors.some(e => e.message === 'forward failed')).toBe(true)
   })
 
+  it('onSendIt sends without the schedule-only options', async function () {
+    const sent: any[] = []
+    const tk = makeTk(0, {}, { send: async (request: any) => { sent.push(request); return null } })
+
+    await (tk as any).onSendIt([{ data: { name: 'q', key: '', data: null, options: { missed: 'once', precision: 'second', priority: 3 } } }])
+
+    expect(sent.map(request => request.options)).toEqual([{ priority: 3 }])
+  })
+
   it('onSendIt skips a payload queued before the schedule key was carried', async function () {
     const tk = makeTk(0, {}, sendingManager(['00000000-0000-0000-0000-000000000001']))
 

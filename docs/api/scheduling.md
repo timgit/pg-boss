@@ -1,6 +1,6 @@
 # Scheduling
 
-Jobs may be created automatically based on a cron expression or an [RRULE](#rrule-expressions). As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds and a job is filed under the minute its occurrence falls in. A schedule therefore sends at most one job a minute, and a job can be created up to one check interval after its occurrence. The exception is a cron expression whose seconds field names a second other than 0, which sends a job for every occurrence: see [Schedules finer than a minute](#schedules-finer-than-a-minute).
+Jobs may be created automatically based on a cron expression or an [RRULE](#rrule-expressions). As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds and a job is filed under the minute its occurrence falls in. A schedule therefore sends at most one job a minute, and a job can be created up to one check interval after its occurrence. The exception is a schedule set to `precision: 'second'` whose cron expression names a second other than 0, which sends a job for every occurrence. See [Schedules finer than a minute](#schedules-finer-than-a-minute).
 
 The 5-placeholder cron format runs on the minute, so this runs at 3:30 am every day
 
@@ -30,7 +30,13 @@ For more cron documentation and examples see the docs for the [cron-parser packa
 
 ## Schedules finer than a minute
 
-A cron expression whose seconds field names a second other than 0, such as `*/5 * * * * *` or `@secondly`, sends a job for every occurrence, each filed under the second it falls in. One whose seconds field is only 0, such as `0 * * * * *`, runs on the minute and is handled like the 5-placeholder format.
+A schedule set to `precision: 'second'` sends a job for every occurrence of a cron expression whose seconds field names a second other than 0, such as `*/5 * * * * *` or `@secondly`. Each job is filed under the second its occurrence falls in.
+
+```js
+await boss.schedule('heartbeat', '*/5 * * * * *', null, { precision: 'second' })
+```
+
+Without the option, a seconds field narrows which instant in the minute an occurrence falls on, and the schedule sends at most one job a minute like any other. An expression whose seconds field is only 0, such as `0 * * * * *`, runs on the minute and is handled like the 5-placeholder format under either precision. A rule is always filed by the minute.
 
 The instance that wins a check holds it for one check interval and evaluates these expressions every second while it does, so a job is normally created within about a second of its occurrence. Two cases wait longer, and neither loses an occurrence:
 
@@ -82,7 +88,7 @@ await boss.schedule('standup', [
 
 * **Resolution**
 
-  Schedules are checked every 30 seconds, and a job is filed under the minute its occurrence falls in, so a rule finer than a minute, such as `FREQ=SECONDLY` or a `BYSECOND` list, sends one job for each minute that holds an occurrence. Only a cron expression with a seconds field is [evaluated every second](#schedules-finer-than-a-minute). Two occurrences in separate minutes both send, however close together they are: an `RDATE` seconds before one of an hourly rule's own occurrences produces two jobs, not one.
+  Schedules are checked every 30 seconds, and a job is filed under the minute its occurrence falls in, so a rule finer than a minute, such as `FREQ=SECONDLY` or a `BYSECOND` list, sends one job for each minute that holds an occurrence. Only a cron expression with a seconds field, on a schedule set to `precision: 'second'`, is [evaluated every second](#schedules-finer-than-a-minute). Two occurrences in separate minutes both send, however close together they are: an `RDATE` seconds before one of an hourly rule's own occurrences produces two jobs, not one.
 
 * **Stored format**
 
@@ -171,6 +177,12 @@ Schedules a job to be sent to the specified queue based on a cron expression or 
   What the schedule sends for occurrences that came due while no cron pass ran: `skip` (the
   default) or `once`. See [Catch-up after an outage](#catch-up-after-an-outage). A `null` policy
   reads as none given, like a `null` zone; any other value is rejected.
+
+* **precision**
+
+  `minute` (the default) or `second`. With `second`, a cron expression with a seconds field sends
+  a job for every occurrence. See [Schedules finer than a minute](#schedules-finer-than-a-minute).
+  A `null` precision reads as none given; any other value is rejected.
 
 * **db**
 
