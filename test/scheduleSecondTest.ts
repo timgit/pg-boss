@@ -393,7 +393,7 @@ describe('schedule seconds', function () {
     expect(warnings[0].message).toMatch(/schedule for queue "broken" \(key ""\) could not be evaluated and was skipped/)
   })
 
-  it('sends a repeated local time once unless the expression names every hour', async function () {
+  it('sends a repeated local time once unless the expression keeps running through that hour', async function () {
     const zone = { timezone: 'America/New_York' }
     const first = Date.parse('2026-11-01T05:30:25Z')
     const second = first + 60 * MINUTE
@@ -406,9 +406,9 @@ describe('schedule seconds', function () {
     expect(await sentAt('*/10 30 * * * *', first)).toBe(3)
     expect(await sentAt('*/10 30 * * * *', second)).toBe(3)
 
-    // The rule follows the hours the expression names, however often it sends within them.
+    // Multiple minutes across multiple hours make a run, which keeps sending through the repeated hour.
     expect(await sentAt('*/10 * 0-6 * * *', first)).toBe(3)
-    expect(await sentAt('*/10 * 0-6 * * *', second)).toBe(0)
+    expect(await sentAt('*/10 * 0-6 * * *', second)).toBe(3)
 
     // 01:45 comes round twice half an hour apart in a zone that goes back by half an hour.
     const lordHowe = { timezone: 'Australia/Lord_Howe' }

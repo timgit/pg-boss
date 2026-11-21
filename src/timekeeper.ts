@@ -177,15 +177,15 @@ function cronOccurrencesBetween (expression: string, tz: string, after: number, 
 
 /**
  * The occurrence before an interval's cursor, passing over the second instant of a local time the
- * clocks went back over.
+ * clocks went back over, unless the expression keeps running through that hour.
  *
  * Walking forwards, cron-parser runs a repeated hour once unless the expression names every hour,
  * so `30 1 * * *` in America/New_York sends at the first 01:30 on the night the clocks go back and
  * `0 * * * *` stays hourly. Walking backwards it answers with both instants, an hour apart and so
  * in throttle slots of their own, and a pass reading backwards would send the daily job twice. This
- * reads backwards the way the forward walk, and previewSchedule() with it, reads forwards. A rule
- * gets the same answer from rrule-temporal, which resolves a repeated local time to its first
- * instant.
+ * reads backwards the way the forward walk, and previewSchedule() with it, reads forwards, and
+ * `FREQ=DAILY;BYHOUR=1;BYMINUTE=30` gets the same answer from rrule-temporal, which resolves a
+ * repeated local time to its first instant.
  */
 function previousOccurrence (interval: CronExpression, tz: string): Date {
   for (;;) {
@@ -199,10 +199,18 @@ function previousOccurrence (interval: CronExpression, tz: string): Date {
 
 /**
  * Whether an occurrence is one a repeated local time holds no job for: the second instant, in an
- * expression that does not name every hour.
+ * expression that names neither every hour nor multiple minutes across multiple hours.
+ *
+ * An expression naming multiple minutes across multiple hours is a run rather than a time of day,
+ * and passing over the repeated hour would leave `0,15,30,45 0-3 * * *` sending nothing for an hour
+ * and a quarter. It reads both instants, as a `FREQ=MINUTELY` rule does, and previewSchedule(),
+ * walking forwards, can list fewer than the pass sends.
  */
 function passedOver (interval: CronExpression, instant: Date, tz: string): boolean {
-  return interval.fields.hour.values.length !== 24 && repeatsLocalTime(instant, tz)
+  const { hour, minute } = interval.fields
+  const keepsRepeatedHour = hour.values.length === 24 || (hour.values.length > 1 && minute.values.length > 1)
+
+  return !keepsRepeatedHour && repeatsLocalTime(instant, tz)
 }
 
 /**
