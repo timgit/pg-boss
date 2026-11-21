@@ -405,7 +405,9 @@ describe('TestClock', function () {
     }
   })
 
-  it('a clock that is never released is reported as drift, with the override named', async function () {
+  // Postgres only. The drift report reads functions through pg_get_functiondef, which CockroachDB
+  // does not support, and the next test covers the override there.
+  helper.itPostgresOnly('a clock that is never released is reported as drift, with the override named', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig })
     await ctx.boss.stop({ graceful: false })
     ctx.boss = undefined
