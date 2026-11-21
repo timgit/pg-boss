@@ -1112,10 +1112,13 @@ describe('transactional work options', function () {
     await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 2147484 }, async () => {}))
       .rejects.toThrow(/transactionTimeoutSeconds must be an integer from 0 to 2147483/)
 
-    await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 2147483 }, async () => {})).resolves.toBeTypeOf('string')
+    // PGlite cannot open the transaction, so it refuses the worker for that instead.
+    if (!helper.isPglite) {
+      await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 2147483 }, async () => {})).resolves.toBeTypeOf('string')
+    }
   })
 
-  it('should reject a transactional worker on a queue whose expiration is above a day without a transaction timeout', async function () {
+  it.skipIf(helper.isPglite)('should reject a transactional worker on a queue whose expiration is above a day without a transaction timeout', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await ctx.boss.updateQueue(ctx.schema, { expireInSeconds: 86401 })
