@@ -34,6 +34,7 @@ import {
   getQueuesResponseSchema,
   getScheduleResponseSchema,
   getSchedulesResponseSchema,
+  getSubscriptionsResponseSchema,
   previewScheduleResponseSchema,
   insertRequestSchema,
   insertResponseSchema,
@@ -187,6 +188,16 @@ const schedulesQuerySchema = z.object({
   afterKey: z.string().optional()
 }).refine((q) => (q.afterName === undefined) === (q.afterKey === undefined), {
   message: 'afterName and afterKey go together'
+})
+
+// Subscriptions page by the pair they sort on, sent as afterEvent with afterName.
+const subscriptionsQuerySchema = z.object({
+  event: z.string().min(1).optional(),
+  limit: limitQuery,
+  afterEvent: afterQuery,
+  afterName: z.string().optional()
+}).refine((q) => (q.afterEvent === undefined) === (q.afterName === undefined), {
+  message: 'afterEvent and afterName go together'
 })
 
 // getSchedule reads one row by its primary key, so unlike getSchedules the name is required. The
@@ -346,6 +357,12 @@ export const getMethods: RouteEntry[] = [
     if (q.from !== undefined) options.from = q.from
     if (q.count !== undefined) options.count = q.count
     return Object.keys(options).length > 0 ? [q.cron, options] : [q.cron]
+  }),
+  get('events', 'getSubscriptions', getSubscriptionsResponseSchema, subscriptionsQuerySchema, (q) => {
+    const after = q.afterEvent !== undefined && q.afterName !== undefined ? { event: q.afterEvent, name: q.afterName } : undefined
+    const options = listOptions(q, after)
+    if (q.event) return [q.event, ...options]
+    return options.length ? [undefined, ...options] : []
   }),
   get('jobs', 'getDependencies', getDependenciesResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q, afterPair(q.afterName, q.afterId, 'id'))]),
   get('jobs', 'getDependents', getDependentsResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q, afterPair(q.afterName, q.afterId, 'id'))]),

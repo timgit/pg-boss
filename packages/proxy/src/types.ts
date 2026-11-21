@@ -88,6 +88,8 @@ export type HttpSchedule = Omit<types.Schedule, 'data' | 'options'> & {
 
 export type HttpBamStatusSummary = types.BamStatusSummary
 
+export type HttpSubscription = types.Subscription
+
 export type HttpMetaResult = {
   states: Record<string, string>
   policies: Record<string, string>
@@ -202,6 +204,11 @@ export type HttpSubscribeResponse = {
 export type HttpUnsubscribeRequest = HttpSubscribeRequest
 
 export type HttpUnsubscribeResponse = HttpSubscribeResponse
+
+export type HttpGetSubscriptionsResponse = {
+  ok: true
+  result: HttpSubscription[]
+}
 
 export type HttpPublishRequest = {
   event: HttpEventName

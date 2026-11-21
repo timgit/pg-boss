@@ -444,6 +444,18 @@ export const unsubscribeResponseSchema: z.ZodType<types.HttpUnsubscribeResponse>
   result: z.null()
 })
 
+export const subscriptionSchema = z.object({
+  event: z.string(),
+  name: z.string(),
+  createdOn: z.iso.datetime().transform((val) => new Date(val)),
+  updatedOn: z.iso.datetime().transform((val) => new Date(val)),
+}) satisfies z.ZodType<types.HttpSubscription>
+
+export const getSubscriptionsResponseSchema: z.ZodType<types.HttpGetSubscriptionsResponse> = z.object({
+  ok: z.literal(true),
+  result: z.array(subscriptionSchema)
+})
+
 export const publishRequestSchema: z.ZodType<types.HttpPublishRequest> = z.object({
   event: eventNameSchema,
   data: nullableJsonRecordSchema.optional(),

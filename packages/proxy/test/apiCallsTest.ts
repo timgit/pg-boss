@@ -558,6 +558,8 @@ describe('proxy api routes', () => {
       { method: 'getSchedules', expected: [] },
       { method: 'getSchedule', query: 'name=queue&key=k', expected: ['queue', 'k'] },
       { method: 'getSchedule', query: 'name=queue', expected: ['queue'] },
+      { method: 'getSubscriptions', query: 'event=order.placed', expected: ['order.placed'] },
+      { method: 'getSubscriptions', expected: [] },
       { method: 'previewSchedule', query: 'cron=0+3+*+*+*', expected: ['0 3 * * *'] },
       {
         method: 'previewSchedule',
@@ -616,6 +618,8 @@ describe('proxy api routes', () => {
       ['getQueues', 'after=a', [undefined, { after: 'a' }]],
       ['getBlockedKeys', 'name=q&limit=5&after=k', ['q', { limit: 5, after: 'k' }]],
       ['getSchedules', 'afterName=q&afterKey=k', [undefined, undefined, { after: { name: 'q', key: 'k' } }]],
+      ['getSubscriptions', 'limit=5', [undefined, { limit: 5 }]],
+      ['getSubscriptions', 'event=e&limit=5&afterEvent=e&afterName=q', ['e', { limit: 5, after: { event: 'e', name: 'q' } }]],
       ['getDependencies', 'name=q&id=1&afterName=p&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', '1', { after: { name: 'p', id: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' } }]],
       ['findJobs', 'name=q&limit=5&after=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', { limit: 5, after: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]]
     ]
@@ -635,7 +639,7 @@ describe('proxy api routes', () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
-    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0', 'getSchedules?afterName=q', 'getDependents?name=q&id=1&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7']) {
+    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0', 'getSchedules?afterName=q', 'getSubscriptions?afterEvent=e', 'getSubscriptions?limit=0', 'getDependents?name=q&id=1&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7']) {
       const res = await app.fetch(new Request(`http://local/api/${query}`, { method: 'GET' }))
       expect(res.status, query).toBe(400)
     }
