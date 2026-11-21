@@ -801,22 +801,21 @@ await boss.complete('report-generation', job, { reportUrl: report.url })
 
 * **db**, object, see notes in `send()`
 
-The promise will resolve on a successful completion, or reject if the job could not be completed.
+Resolves with `{ jobs, requested, affected }`. A job that could not be completed does not reject the promise. That covers a job that is already completed, cancelled or failed, an id with no job in this queue, and a fetched job whose claim lapsed (see [passing jobs instead of ids](#passing-jobs-instead-of-ids)). `affected` is then lower than `requested`. Compare the two to find out. The promise rejects on errors such as a queue that does not exist or a failed query.
+
+When you complete a job inside your own transaction with `{ db }`, check `affected` before you commit. If it is short, roll back, or your other writes commit without the job being completed. Pass the job `fetch()` returned in place of its id. A lapsed claim then comes back short too. A [`transactional`](./workers.md#work-name-options-handler) worker runs this check for you.
 
 ### `complete(name, [ids], options)`
 
 Completes a set of active jobs (or queued jobs when `includeQueued: true` is specified).
 
-The promise will resolve on a successful completion, or reject if not all of the requested jobs could not be marked as completed.
-
-> [!NOTE]
-> See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
+Like `cancel([ids])`, this is a best-effort batch. Jobs that cannot be completed are skipped, and `affected` counts the jobs that were. The promise resolves as it does for a single job.
 
 ### `fail(name, id, data, options)`
 
 Marks an active job as failed.
 
-The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
+Resolves with `{ jobs, requested, affected }`, as [`complete()`](#complete-name-id-data-options) does. A job that is already completed, cancelled or failed, an id with no job in this queue, or a fetched job whose claim lapsed does not reject the promise. `affected` is then lower than `requested`.
 
 `data` is stored as the job's output and accepts a value of any type, such as the error a `catch` block receives. An `Error` is stored with its name, message and stack. A plain object is stored as it is. An array, a string or a number is stored as `{ value }`. `null`, `undefined` or a function leaves the output empty.
 
@@ -842,10 +841,7 @@ const jobs = await boss.fetch('email-send', { batchSize: 10 })
 await boss.fail('email-send', jobs, { message: 'smtp outage' })
 ```
 
-The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.
-
-> [!NOTE]
-> See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
+Like `cancel([ids])`, this is a best-effort batch. Jobs that cannot be marked as failed are skipped, and `affected` counts the jobs that were. The promise resolves as it does for a single job.
 
 
 ### `touch(name, id, options)`
