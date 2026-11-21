@@ -167,3 +167,21 @@ html:not(.dark) .vp-doc img.dark-only {
 .pro-site-title {
   margin-left: 0.3em;
 }
+
+/* The network page's table. What gets a width that keeps its labels on one line, and When and Where
+   split the rest equally, so the long When text can't squeeze the other two. On a narrow screen
+   the table keeps a minimum width and the wrapper scrolls. */
+.vp-doc .network-table {
+  overflow-x: auto;
+}
+
+.vp-doc .network-table table {
+  display: table;
+  width: 100%;
+  min-width: 36em;
+  table-layout: fixed;
+}
+
+.vp-doc .network-table th:first-child {
+  width: 12.5em;
+}

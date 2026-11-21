@@ -7,6 +7,8 @@ any time after.
 Each connection below starts from a setting or a command a user ran. With none
 set up, Pro talks only to its Postgres database.
 
+<div class="network-table">
+
 | What | When | Where |
 |---|---|---|
 | `npm install` | at install or upgrade | `npm.pgboss.io`, the configured registry |
@@ -16,6 +18,8 @@ set up, Pro talks only to its Postgres database.
 | An invitation email | when a global admin sends an invitation from an account's page, or adds a person with **Email the link to this address** checked | the configured SMTP server |
 | A schema's database | only once a schema is added, when a page, the alert evaluator or an operation reads or changes it | the host in that schema's connection |
 | Single sign-on | when a user signs in or presses **Check connection** | the provider's issuer, token and key endpoints |
+
+</div>
 
 Alert deliveries carry no job payloads, only what the alert is about: the rule
 name, the warning type and message, the queue and schema it names, and the
