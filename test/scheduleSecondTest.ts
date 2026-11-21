@@ -367,6 +367,71 @@ describe('schedule seconds', function () {
     expect(tk.sent).toEqual([now])
   })
 
+  it('warns about a schedule on a key_strict_fifo queue without a singletonKey, as send() refuses it', async function () {
+    const tk = makeTk()
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    tk.manager.getQueueCache = async () => ({ notify: false, policy: plans.QUEUE_POLICIES.key_strict_fifo }) as any
+
+    await cache(tk, [row('* * * * * *')])
+
+    expect((tk as any).secondCronCache).toEqual([])
+    expect(warnings.map(warning => warning.message)).toEqual([expect.stringMatching(/key_strict_fifo queues require a singletonKey/)])
+  })
+
+  it('sends each schedule of a chunk again after a lost race on CockroachDB', async function () {
+    const tk = makeTk()
+    const now = Math.floor(Date.now() / MINUTE) * MINUTE + 30 * SECOND
+
+    tk.clockSkew = now - Date.now()
+
+    await cache(tk, [row('* * * * * *'), row('* * * * * *', { name: 'other' })])
+    tk.cursors.set(JSON.stringify(['q', '']), now - SECOND)
+    tk.cursors.set(JSON.stringify(['other', '']), now - SECOND)
+    ;(tk as any).leaseUntil = Date.now() + 10 * SECOND
+
+    const sendScheduled = tk.manager.sendScheduled
+    let calls = 0
+    tk.manager.sendScheduled = async (count: number, build: any) => {
+      if (calls++ === 0) throw Object.assign(new Error('restart transaction'), { code: '40001' })
+
+      return await sendScheduled(count, build)
+    }
+
+    await tk.onSecond()
+
+    expect(tk.sent).toEqual([now, now])
+    expect(calls).toBe(3)
+  })
+
+  it('reports a failed last job id write without sending the chunk again', async function () {
+    const tk = makeTk()
+    const now = Math.floor(Date.now() / MINUTE) * MINUTE + 30 * SECOND
+
+    tk.clockSkew = now - Date.now()
+
+    await cache(tk, [row('* * * * * *')])
+    tk.cursors.set(JSON.stringify(['q', '']), now - SECOND)
+    ;(tk as any).leaseUntil = Date.now() + 10 * SECOND
+
+    const executeSql = tk.db.executeSql
+    tk.db.executeSql = async (sql: string, params?: unknown[]) => {
+      if (sql === plans.setScheduleLastJobIds('test')) throw new Error('update failed')
+
+      return await executeSql(sql, params)
+    }
+
+    const errors: any[] = []
+    tk.on('error', err => errors.push(err))
+
+    await tk.onSecond()
+
+    expect(tk.statements).toHaveLength(1)
+    expect(tk.sent).toEqual([now])
+    expect(errors.map(err => err.message)).toEqual([expect.stringMatching(/last job id could not be recorded for "q" \(key ""\): update failed/)])
+  })
+
   it('drops a schedule changed or removed since the lease read it, and sends the others', async function () {
     const tk = makeTk()
     const now = Math.floor(Date.now() / MINUTE) * MINUTE + 30 * SECOND

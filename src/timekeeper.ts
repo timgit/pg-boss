@@ -980,7 +980,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         const { db, missed, precision, ...sendOptions }: types.ScheduleOptions = options ?? {}
         const interval = CronExpressionParser.parse(cron, { tz: timezone || 'UTC', strict: false })
         const job = this.manager.scheduledJobFields(name, data, sendOptions)
-        const { notify } = await this.manager.getQueueCache(name)
+        const { notify, policy } = await this.manager.getQueueCache(name)
+
+        // send() refuses the job up front, where the cron statement would fail on the CHECK.
+        assert(policy !== plans.QUEUE_POLICIES.key_strict_fifo || job.singletonKey, `${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
 
         entries.set(id, { schedule, id, interval, job, notify: !!notify && !this.config.noListenNotify })
       } catch (err) {
@@ -1039,9 +1042,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
       try {
         await this.sendSecondChunk(chunk)
-      } catch (err) {
-        if (lostRace(err)) continue
-
+      } catch {
+        // Each schedule again, after a lost race as well: the race was on one of the chunk's rows,
+        // and the others have still sent nothing.
         for (const send of chunk) {
           try {
             await this.sendSecondChunk([send])
@@ -1158,7 +1161,15 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     if (latest.size > 0 && !this.stopped) {
       const fired: FiredSchedule[] = [...latest.values()].map(({ name, key, jobId }) => ({ name, key, jobId }))
 
-      await this.db.executeSql(plans.setScheduleLastJobIds(this.config.schema), [JSON.stringify(fired)])
+      // Caught here, since the jobs are sent: a throw would send the chunk again a schedule at a
+      // time, and each of those statements inserts nothing.
+      try {
+        await this.db.executeSql(plans.setScheduleLastJobIds(this.config.schema), [JSON.stringify(fired)])
+      } catch (err) {
+        const schedules = fired.map(({ name, key }) => `"${name}" (key "${key}")`).join(', ')
+
+        this.emit(this.events.error, new Error(`Warning: schedules fired but their last job id could not be recorded for ${schedules}: ${(err as Error).message}`, { cause: err }))
+      }
     }
   }
 

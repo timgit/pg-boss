@@ -3370,6 +3370,7 @@ export function sendScheduledJobs (schema: string, notify: string[] = []) {
       WHERE s.name = d.name
         AND s.key = d.key
         AND s.cron = d.cron
+        AND COALESCE(s.timezone, 'UTC') = d.timezone
         AND s.options IS NOT DISTINCT FROM d.options
         AND s.data IS NOT DISTINCT FROM d.data
         AND s.sent_on IS NOT DISTINCT FROM d.prev
