@@ -118,24 +118,26 @@ class Navigator extends EventEmitter implements types.EventsMixin {
   // On-demand, ungated resolution pass. Like boss.supervise(), it is callable whether or not the
   // background poll is running, so tests and apps can resolve flows deterministically. It skips
   // the version-table cadence gate but still serializes against an in-flight poll via #working.
-  async resolveNow (): Promise<void> {
+  // Resolves with how many completed parents the pass resolved.
+  async resolveNow (): Promise<number> {
     while (this.#working) {
       await delay(10)
     }
 
-    if (this.#stopping) return
+    if (this.#stopping) return 0
 
     this.#working = true
 
     try {
-      await this.#resolve()
+      return await this.#resolve()
     } finally {
       this.#working = false
     }
   }
 
-  async #resolve (): Promise<void> {
+  async #resolve (): Promise<number> {
     const queues = await this.#manager.getQueues()
+    let total = 0
 
     // Group queues by partition table so each audit statement targets a single table and prunes to
     // the chunk's queue names (mirrors boss.supervise()'s grouping).
@@ -146,13 +148,13 @@ class Navigator extends EventEmitter implements types.EventsMixin {
     }, {})
 
     for (const group of Object.values(queueGroups)) {
-      if (this.#stopping) return
+      if (this.#stopping) return total
 
       const { table } = group
       const names = [...group.names]
 
       while (names.length) {
-        if (this.#stopping) return
+        if (this.#stopping) return total
 
         const chunk = names.splice(0, 100)
 
@@ -160,11 +162,13 @@ class Navigator extends EventEmitter implements types.EventsMixin {
         let resolved = 0
 
         do {
-          if (this.#stopping) return
+          if (this.#stopping) return total
 
           resolved = this.#config.noMultiMutationCte
             ? await this.#manager.resolveFlowJobsDistributed(table, chunk)
             : await this.#resolveStandard(table, chunk)
+
+          total += resolved
 
           if (resolved > 0) {
             this.emit(events.flow, { table, resolved })
@@ -172,6 +176,8 @@ class Navigator extends EventEmitter implements types.EventsMixin {
         } while (resolved >= plans.FLOW_BATCH_SIZE && ++batches < MAX_BATCHES_PER_PASS && !this.#stopping)
       }
     }
+
+    return total
   }
 
   async #resolveStandard (table: string, names: string[]): Promise<number> {

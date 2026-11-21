@@ -133,6 +133,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const bam = new Bam(db, config)
 
     const navigator = new Navigator(db, manager, config)
+    manager.navigator = navigator
 
     const notifier = new Notifier(db, manager, config)
     manager.notifier = notifier
@@ -677,8 +678,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   // Force an immediate flow-resolution pass (unblock dependents of completed jobs) instead of
   // waiting for the next background poll. Mirrors supervise() for on-demand maintenance.
-  resolveFlow (): Promise<void> {
-    return this.#navigator.resolveNow()
+  async resolveFlow (): Promise<void> {
+    await this.#navigator.resolveNow()
   }
 
   getWipData (options?: { includeInternal?: boolean }): types.WipData[] {

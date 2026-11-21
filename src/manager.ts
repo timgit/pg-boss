@@ -6,6 +6,7 @@ import * as Attorney from './attorney.ts'
 import { untracked } from './activity.ts'
 import type Db from './db.ts'
 import { TRANSACTION_ROLLBACK_TIMEOUT_MS } from './db.ts'
+import type Navigator from './navigator.ts'
 import type Notifier from './notifier.ts'
 import * as plans from './plans.ts'
 import { percentile } from './latency.ts'
@@ -266,6 +267,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   wipInterval: types.ClockTimer | undefined
   timekeeper: Timekeeper | undefined
   notifier: Notifier | undefined
+  navigator: Navigator | undefined
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
@@ -1727,7 +1729,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
    * last handled batch comes back empty, and the drain ends when every worker it covers is idle at
    * once. A batch handled by any of them sends the others back for another look, since its handler
    * may have sent jobs to their queues. Deferred jobs, including retries waiting out a backoff, are
-   * not ready and are not waited for.
+   * not ready and are not waited for. A round that handled jobs ends with one flow pass, and the
+   * drain runs another round when that pass resolved a parent, which picks up its released children.
    *
    * Overlapping calls each wait for their own idle point and each count what their workers handled
    * while they ran. With timeoutSeconds, the drain resolves at the deadline without waiting for the
@@ -1745,6 +1748,35 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     assert(timeoutSeconds === undefined || (typeof timeoutSeconds === 'number' && timeoutSeconds > 0), 'timeoutSeconds must be a number > 0')
 
+    const deadline = timeoutSeconds === undefined ? null : this.config.clock.now() + timeoutSeconds * 1000
+    const result: types.DrainResult = { processed: 0, failed: 0, timedOut: false }
+
+    // A parent completed during a round leaves its children blocked until a flow pass releases
+    // them. A round that handled jobs ends with one pass, and another round follows when the pass
+    // resolved a parent.
+    while (true) {
+      const remainingMs = deadline === null ? null : deadline - this.config.clock.now()
+
+      if (remainingMs !== null && remainingMs <= 0) {
+        result.timedOut = true
+        return result
+      }
+
+      const round = await this.#drainRound(name, remainingMs)
+
+      result.processed += round.processed
+      result.failed += round.failed
+
+      if (round.timedOut || round.processed === 0 || !this.navigator) {
+        result.timedOut = round.timedOut
+        return result
+      }
+
+      if (await this.navigator.resolveNow() === 0) return result
+    }
+  }
+
+  async #drainRound (name: string | null, timeoutMs: number | null): Promise<types.DrainResult> {
     let closed!: () => void
     const done = new Promise<void>(resolve => { closed = resolve })
 
@@ -1764,8 +1796,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     this.#drains.add(run)
 
-    const timer = timeoutSeconds !== undefined
-      ? this.config.clock.setTimeout(() => run.close(true), timeoutSeconds * 1000)
+    const timer = timeoutMs !== null
+      ? this.config.clock.setTimeout(() => run.close(true), timeoutMs)
       : null
 
     try {

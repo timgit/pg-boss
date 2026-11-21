@@ -68,6 +68,49 @@ describe('drain', function () {
     expect(nextHandled).toBe(2)
   })
 
+  it('should run the children of a flow parent it completes', async function () {
+    // The test config leaves supervise off, so no background flow pass releases the children.
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const next = ctx.schema + '_next'
+    await ctx.boss.createQueue(next)
+
+    const handled: string[] = []
+
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async ([job]) => { handled.push(job.id) })
+    await ctx.boss.work(next, { pollingIntervalSeconds }, async ([job]) => { handled.push(job.id) })
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: next, dependsOn: ['parent'] },
+      { ref: 'grandchild', name: ctx.schema, dependsOn: ['child'] }
+    ])
+
+    const result = await ctx.boss.drain()
+
+    expect(result).toEqual({ processed: 3, failed: 0, timedOut: false })
+    expect(handled).toEqual([flow.parent, flow.child, flow.grandchild])
+  })
+
+  it('should leave a child blocked when its parent fails', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.updateQueue(ctx.schema, { retryLimit: 0 })
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => { throw new Error('parent fails') })
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+    ])
+
+    const result = await ctx.boss.drain()
+
+    expect(result).toEqual({ processed: 1, failed: 1, timedOut: false })
+
+    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    expect(child?.blocked).toBe(true)
+  })
+
   it('should count failed jobs without throwing', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
