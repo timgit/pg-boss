@@ -36,20 +36,20 @@ A schedule set to `precision: 'second'` sends a job for every occurrence of a cr
 await boss.schedule('heartbeat', '*/5 * * * * *', null, { precision: 'second' })
 ```
 
-Without the option, a seconds field narrows which instant in the minute an occurrence falls on, and the schedule sends at most one job a minute like any other. An expression whose seconds field is only 0, such as `0 * * * * *`, runs on the minute and is handled like the 5-placeholder format under either precision. A rule is always filed by the minute.
+Without the option, a schedule with a seconds field sends at most one job a minute, like any other schedule. The seconds field sets the instant in the minute that its occurrence falls on. An expression whose seconds field is only 0, such as `0 * * * * *`, runs on the minute and is handled like the 5-placeholder format under either precision. A rule is always filed by the minute.
 
 The instance that wins a check holds it for one check interval and evaluates these expressions every second while it does, so a job is normally created within about a second of its occurrence. Two cases wait longer, and neither loses an occurrence:
 
 * A schedule that was just stored is first read at the next check, up to one check interval later, and sends the occurrences since it was stored then.
 * When the instance holding the check stops, the next instance takes the check over within one check interval and a second, and sends what came due in between.
 
-Each schedule records the latest occurrence it has sent, and an occurrence is sent in the same statement that moves that record past it. Two instances therefore never send the same occurrence, and `unschedule()` or a change from `schedule()` takes effect from the next second.
+Each schedule records the latest occurrence it has sent. The statement that sends an occurrence moves that record past it, which keeps two instances from sending the same occurrence. `unschedule()` and a change from `schedule()` take effect from the next second.
 
 Worth knowing before using one:
 
 * **Intervals restart every minute.** `*/17 * * * * *` runs at :00, :17, :34 and :51, then :00 again.
 * **Every occurrence is a job.** `* * * * * *` adds 86,400 jobs a day to its queue. The job's own `singletonKey`, throttling options and the queue's policy apply to each, as they do for `send()`. `singletonNextSlot` is not supported and `schedule()` rejects it.
-* **An occurrence that fails to send is retried every second while it is due.** One that cannot be sent for the whole 60-second window is not sent, and the schedule is reported with a `warning` event.
+* **An occurrence that fails to send is retried every second while it is due.** An occurrence that can't be sent for the whole 60-second window is not sent. The schedule is reported with a `warning` event.
 * **A rolling upgrade can send an occurrence twice.** An instance on an earlier release files these by the minute, so while both releases run, an occurrence can be sent once by each when the check passes from one to the other. Rolling back to an earlier release can do the same once.
 
 ## RRULE expressions
@@ -130,7 +130,7 @@ A schedule never reaches back past its own row. `created_on` bounds the range, s
 
 The option applies to both formats, and a rule is read backwards over the gap the same way a cron expression is.
 
-A [schedule finer than a minute](#schedules-finer-than-a-minute) treats the 60-second window as part of the gap. Under `skip` it sends nothing for the gap, and under `once` it sends one job, for its latest occurrence. Either way it carries on with the next occurrence. A gap of 60 seconds or less is not a gap, and every occurrence in it is sent.
+A [schedule finer than a minute](#schedules-finer-than-a-minute) treats the 60-second window as part of the gap. Under `skip` it sends nothing for the gap. Under `once` it sends one job, for its latest occurrence. Either way it carries on with the next occurrence. When no pass ran for 60 seconds or less, every occurrence in between is sent.
 
 Worth knowing before choosing `once`:
 
