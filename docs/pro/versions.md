@@ -10,9 +10,9 @@ A Pro release follows each pg-boss release with a new schema version. Upgrade th
 
 ```bash
 node -p "require('./node_modules/@pg-boss/pro/package.json').pgBoss.schema"
-# { min: 44, max: 46 }
+# { min: 44, max: 47 }
 ```
 
 | Pro | pg-boss | Schemas read | Changes on |
 | - | - | - | - |
-| 1.0.x | 12.38.x | 44 to 46 | 46 |
+| 1.0.x | 12.39.x | 44 to 47 | 47 |
