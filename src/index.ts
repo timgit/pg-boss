@@ -509,8 +509,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.notifyWorker(workerId)
   }
 
-  drain (options?: types.DrainOptions): Promise<types.DrainResult> {
-    return this.#manager.drain(options)
+  drain (options?: types.DrainOptions): Promise<types.DrainResult>
+  drain (name: string, options?: types.DrainOptions): Promise<types.DrainResult>
+  drain (nameOrOptions?: string | types.DrainOptions, options?: types.DrainOptions): Promise<types.DrainResult> {
+    return this.#manager.drain(nameOrOptions, options)
   }
 
   subscribe (event: string, name: string): Promise<void> {

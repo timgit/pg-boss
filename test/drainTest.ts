@@ -182,7 +182,7 @@ describe('drain', function () {
     expect(result).toEqual({ processed: 4, failed: 0, timedOut: false })
   })
 
-  it('should stop at the timeout and wait for the batch in flight', async function () {
+  it('should resolve at the timeout without waiting for the batch in flight', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await ctx.boss.send(ctx.schema)
@@ -193,28 +193,66 @@ describe('drain', function () {
     const gate = new Promise<void>(resolve => { release = resolve })
     let started!: () => void
     const handlerStarted = new Promise<void>(resolve => { started = resolve })
-    let calls = 0
 
     await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => {
-      calls++
       started()
       await gate
     })
 
-    let settled = false
-    const draining = ctx.boss.drain({ timeoutSeconds: 1 }).finally(() => { settled = true })
+    const draining = ctx.boss.drain({ timeoutSeconds: 1 })
 
     await handlerStarted
-    await delay(1500)
 
-    expect(settled).toBe(false)
+    try {
+      // The handler is still blocked, so the batch it holds is left to stop().
+      expect(await draining).toEqual({ processed: 0, failed: 0, timedOut: true })
+    } finally {
+      release()
+    }
+  })
 
-    release()
+  it('should drain only the named queue, waking and counting its workers alone', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const result = await draining
+    const other = ctx.schema + '_other'
+    await ctx.boss.createQueue(other)
 
-    expect(result).toEqual({ processed: 1, failed: 0, timedOut: true })
-    expect(calls).toBe(1)
+    let otherCalls = 0
+
+    // The other queue's worker fetches once on start, finds nothing, and then waits out its 30-second
+    // poll. Only a drain that covers it wakes it for the job sent after.
+    await ctx.boss.work(other, { pollingIntervalSeconds }, async () => { otherCalls++ })
+    await delay(200)
+    await ctx.boss.send(other)
+
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => {})
+
+    const result = await ctx.boss.drain(ctx.schema, { timeoutSeconds: 10 })
+
+    expect(result).toEqual({ processed: 2, failed: 0, timedOut: false })
+    expect(otherCalls).toBe(0)
+
+    // Unnamed, the drain covers it.
+    expect(await ctx.boss.drain({ timeoutSeconds: 10 })).toEqual({ processed: 1, failed: 0, timedOut: false })
+    expect(otherCalls).toBe(1)
+  })
+
+  it('should resolve at once for a queue with no registered worker', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => {})
+
+    expect(await ctx.boss.drain(ctx.schema + '_idle')).toEqual({ processed: 0, failed: 0, timedOut: false })
+  })
+
+  it('should reject a queue name that is not valid', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await expect(ctx.boss.drain('')).rejects.toThrow('Name is required')
+    await expect(ctx.boss.drain('not a name')).rejects.toThrow()
   })
 
   it('should resolve overlapping calls at the same idle point', async function () {

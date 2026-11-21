@@ -113,14 +113,15 @@ interface OverrunTally {
   timer: types.ClockTimer
 }
 
-// One drain() call. closedAt is the batch sequence number at the moment it stopped waiting, so a
-// batch that started after that is not counted, and inFlight holds the batches it still waits for.
+// One drain() call. `name` is the queue it drains, or null for every queue with a worker. closedAt
+// is the batch sequence number at the moment it stopped waiting, so a batch that started after that
+// is not counted.
 interface DrainRun {
+  name: string | null
   processed: number
   failed: number
   timedOut: boolean
   closedAt: number | null
-  inFlight: Promise<unknown>[]
   close: (timedOut: boolean) => void
 }
 
@@ -303,7 +304,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #drainEpoch: number
   #drainIdle: Map<string, number>
   #batchSeq: number
-  #batchesInFlight: Set<Promise<unknown>>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions, instanceId: string = randomUUID()) {
     super()
@@ -334,7 +334,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#drainEpoch = 0
     this.#drainIdle = new Map()
     this.#batchSeq = 0
-    this.#batchesInFlight = new Set()
   }
 
   // The id getInstances() reports, for the warnings other components write about this instance.
@@ -1474,14 +1473,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const processing = this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
           this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds, outcome))
 
-        this.#batchesInFlight.add(processing)
-
         try {
           await processing
           failed = outcome.failed ?? 0
         } finally {
-          this.#batchesInFlight.delete(processing)
-          this.#countDrained(seq, batch.length, failed)
+          this.#countDrained(name, seq, batch.length, failed)
           await outcome.wait?.()
         }
       }
@@ -1539,10 +1535,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       // An empty fetch is how drain() learns the worker found nothing ready, and a batch handled means
       // every worker has to look again, since it may have sent jobs or freed a group slot.
+      //
+      // A fetch that returns jobs clears the worker's mark, whatever woke it: LISTEN/NOTIFY,
+      // notifyWorker() and its own polling interval all fetch outside the epoch. Left in place, a
+      // drain could close while that batch runs, before the jobs its handler sends are picked up.
       const fetchForDrain = async () => {
         const epoch = this.#drainEpoch
         const jobs = await fetch()
-        if (!jobs.length) this.#markDrainIdle(workerId, epoch)
+        if (jobs.length) this.#drainIdle.delete(workerId)
+        else this.#markDrainIdle(workerId, epoch)
         return jobs
       }
 
@@ -1718,22 +1719,26 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   /**
    * Runs the registered workers back to back until a pass over all of them finds nothing ready, then
-   * resolves with how many jobs they handled.
+   * resolves with how many jobs they handled. With a queue name, only that queue's workers.
    *
    * The workers do the fetching and settling exactly as they do under work(). drain() only skips
    * their polling delay and watches their fetches: a worker is idle once a fetch it began after the
-   * last handled batch comes back empty, and the drain ends when every worker is idle at once. A
-   * batch handled by any worker sends the others back for another look, since its handler may have
-   * sent jobs to their queues. Deferred jobs, including retries waiting out a backoff, are not ready
-   * and are not waited for.
+   * last handled batch comes back empty, and the drain ends when every worker it covers is idle at
+   * once. A batch handled by any of them sends the others back for another look, since its handler
+   * may have sent jobs to their queues. Deferred jobs, including retries waiting out a backoff, are
+   * not ready and are not waited for.
    *
-   * Overlapping calls each wait for the same idle point and each count what was handled while they
-   * ran. With timeoutSeconds, the drain stops waiting at the deadline but still waits for the batches
-   * already running, which are bounded by their expiration. The workers keep polling afterwards as
-   * usual until they are stopped.
+   * Overlapping calls each wait for their own idle point and each count what their workers handled
+   * while they ran. With timeoutSeconds, the drain resolves at the deadline without waiting for the
+   * batches still running, which stop() waits for. The workers keep polling afterwards as usual
+   * until they are stopped.
    */
-  async drain (options: types.DrainOptions = {}): Promise<types.DrainResult> {
-    const { timeoutSeconds } = options ?? {}
+  async drain (nameOrOptions?: string | types.DrainOptions, maybeOptions?: types.DrainOptions): Promise<types.DrainResult> {
+    const name = typeof nameOrOptions === 'string' ? nameOrOptions : null
+    const options = (typeof nameOrOptions === 'string' ? maybeOptions : nameOrOptions) ?? {}
+    const { timeoutSeconds } = options
+
+    if (name !== null) Attorney.assertQueueName(name)
 
     assert(timeoutSeconds === undefined || (typeof timeoutSeconds === 'number' && timeoutSeconds > 0), 'timeoutSeconds must be a number > 0')
 
@@ -1741,16 +1746,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const done = new Promise<void>(resolve => { closed = resolve })
 
     const run: DrainRun = {
+      name,
       processed: 0,
       failed: 0,
       timedOut: false,
       closedAt: null,
-      inFlight: [],
       close: (timedOut: boolean) => {
         if (run.closedAt !== null) return
         run.closedAt = this.#batchSeq
         run.timedOut = timedOut
-        run.inFlight = [...this.#batchesInFlight]
         closed()
       }
     }
@@ -1766,7 +1770,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
       this.#checkDrained()
 
       await done
-      await Promise.allSettled(run.inFlight)
     } finally {
       if (timer) this.config.clock.clearTimeout(timer)
       this.#drains.delete(run)
@@ -1783,18 +1786,33 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return false
   }
 
-  // The workers a drain waits on: not stopping, and not one of pg-boss's own.
-  #drainWorkers (): Worker<any>[] {
-    return this.getWorkers().filter(worker => !INTERNAL_QUEUES[worker.name] && !worker.stopping && !worker.stopped)
+  // Whether a run covers a queue: its own, or every queue but pg-boss's for a run with no name.
+  #drainCovers (run: DrainRun, queue: string): boolean {
+    return run.name === null ? !INTERNAL_QUEUES[queue] : run.name === queue
   }
 
-  // Invalidates every idle mark and sends the workers to fetch now instead of after their delay.
+  // The workers a run waits on: in its scope, and not stopping.
+  #drainWorkers (run: DrainRun): Worker<any>[] {
+    return this.getWorkers().filter(worker => this.#drainCovers(run, worker.name) && !worker.stopping && !worker.stopped)
+  }
+
+  // Invalidates every idle mark and sends the workers an open run covers to fetch now instead of
+  // after their delay. The epoch is shared: a batch outside a run's scope costs that run one extra
+  // empty fetch.
   #advanceDrain (): void {
     if (!this.#isDraining()) return
 
     this.#drainEpoch++
 
-    for (const worker of this.#drainWorkers()) {
+    const woken = new Set<Worker<any>>()
+
+    for (const run of this.#drains) {
+      if (run.closedAt !== null) continue
+
+      for (const worker of this.#drainWorkers(run)) woken.add(worker)
+    }
+
+    for (const worker of woken) {
       worker.notify()
     }
   }
@@ -1806,21 +1824,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#checkDrained()
   }
 
+  // Closes each open run whose workers are all idle in the current epoch.
   #checkDrained (): void {
-    if (!this.#isDraining()) return
-
-    const idle = this.#drainWorkers().every(worker => this.#drainIdle.get(worker.id) === this.#drainEpoch)
-
-    if (!idle) return
-
     for (const run of this.#drains) {
-      run.close(false)
+      if (run.closedAt !== null) continue
+
+      const idle = this.#drainWorkers(run).every(worker => this.#drainIdle.get(worker.id) === this.#drainEpoch)
+
+      if (idle) run.close(false)
     }
   }
 
-  #countDrained (seq: number, processed: number, failed: number): void {
+  #countDrained (queue: string, seq: number, processed: number, failed: number): void {
     for (const run of this.#drains) {
-      if (run.closedAt === null || seq < run.closedAt) {
+      if ((run.closedAt === null || seq < run.closedAt) && this.#drainCovers(run, queue)) {
         run.processed += processed
         run.failed += failed
       }

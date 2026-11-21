@@ -1636,9 +1636,9 @@ export interface OffWorkOptions {
 
 export interface DrainOptions {
   /**
-   * Seconds to keep draining before giving up. Batches already running still finish, and no new
-   * pass is started. Default none.
-   * @see https://pgboss.io/api/workers#drain-options
+   * Seconds to keep draining before giving up. drain() then resolves without waiting for batches
+   * still running, which stop() waits for. Default none.
+   * @see https://pgboss.io/api/workers#drain-name-options
    */
   timeoutSeconds?: number
 }
