@@ -1,6 +1,6 @@
 # Scheduling
 
-Jobs may be created automatically based on a cron expression or an [RRULE](#rrule-expressions). As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds and a job is filed under the minute its occurrence falls in. A schedule therefore sends at most one job a minute, and a job can be created up to one check interval after its occurrence. The exception is a schedule set to `precision: 'second'` whose cron expression names a second other than 0, which sends a job for every occurrence. See [Schedules finer than a minute](#schedules-finer-than-a-minute).
+Jobs may be created automatically based on a cron expression or an [RRULE](#rrule-expressions). As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds and a job is filed under the minute its occurrence falls in. A schedule therefore sends at most one job a minute, and a job can be created up to one check interval after its occurrence. The exception is a schedule set to `precision: 'second'` whose cron expression names a second other than 0, which sends a job for every occurrence. See [Schedules with second precision](#schedules-with-second-precision).
 
 The 5-placeholder cron format runs on the minute, so this runs at 3:30 am every day
 
@@ -28,7 +28,7 @@ If needed, the default clock monitoring interval can be adjusted using `clockMon
 
 For more cron documentation and examples see the docs for the [cron-parser package](https://www.npmjs.com/package/cron-parser).
 
-## Schedules finer than a minute
+## Schedules with second precision
 
 A schedule set to `precision: 'second'` sends a job for every occurrence of a cron expression whose seconds field names a second other than 0, such as `*/5 * * * * *` or `@secondly`. Each occurrence is its own job, created straight on the schedule's queue.
 
@@ -89,7 +89,7 @@ await boss.schedule('standup', [
 
 * **Resolution**
 
-  Schedules are checked every 30 seconds, and a job is filed under the minute its occurrence falls in, so a rule finer than a minute, such as `FREQ=SECONDLY` or a `BYSECOND` list, sends one job for each minute that holds an occurrence. Only a cron expression with a seconds field, on a schedule set to `precision: 'second'`, is [evaluated every second](#schedules-finer-than-a-minute). Two occurrences in separate minutes both send, however close together they are: an `RDATE` seconds before one of an hourly rule's own occurrences produces two jobs, not one.
+  Schedules are checked every 30 seconds, and a job is filed under the minute its occurrence falls in, so a rule finer than a minute, such as `FREQ=SECONDLY` or a `BYSECOND` list, sends one job for each minute that holds an occurrence. Only a cron expression with a seconds field, on a schedule set to `precision: 'second'`, is [evaluated every second](#schedules-with-second-precision). Two occurrences in separate minutes both send, however close together they are: an `RDATE` seconds before one of an hourly rule's own occurrences produces two jobs, not one.
 
 * **Stored format**
 
@@ -130,13 +130,13 @@ A schedule never reaches back past its own row. `created_on` bounds the range, s
 
 The option applies to both formats, and a rule is read backwards over the gap the same way a cron expression is.
 
-A [schedule finer than a minute](#schedules-finer-than-a-minute) treats the 60-second window as part of the gap. Under `skip` it sends nothing for the gap. Under `once` it sends one job, for its latest occurrence. Either way it carries on with the next occurrence. When no pass ran for 60 seconds or less, every occurrence in between is sent.
+A [schedule with second precision](#schedules-with-second-precision) treats the 60-second window as part of the gap. Under `skip` it sends nothing for the gap. Under `once` it sends one job, for its latest occurrence. Either way it carries on with the next occurrence. When no pass ran for 60 seconds or less, every occurrence in between is sent.
 
 Worth knowing before choosing `once`:
 
 * **One job for the whole gap, and it looks like any other.** It carries the schedule's `data` unchanged, so a handler cannot tell it is late or which occurrence it stands for. Three days down sends one job for last night's occurrence and nothing for the two nights before it.
 
-* **It can arrive beside the occurrence that is due now.** Those are two jobs, filed under different minutes, unless the missed occurrence happens to share a minute with the due one. A schedule finer than a minute sends the one job only. A `singletonKey`, or a queue policy that allows one queued job (`short`, `stately`, `exclusive`), collapses them like any other pair.
+* **It can arrive beside the occurrence that is due now.** Those are two jobs, filed under different minutes, unless the missed occurrence happens to share a minute with the due one. A schedule with second precision sends the one job only. A `singletonKey`, or a queue policy that allows one queued job (`short`, `stately`, `exclusive`), collapses them like any other pair.
 
 * **A gap is closed by the pass that reads it.** An occurrence lost to a pass that claimed and then failed is not caught up by the next one, and an instance on a release without catch-up closes gaps without catching up on them.
 
@@ -184,7 +184,7 @@ Schedules a job to be sent to the specified queue based on a cron expression or 
 * **precision**
 
   `minute` (the default) or `second`. With `second`, a cron expression with a seconds field sends
-  a job for every occurrence. See [Schedules finer than a minute](#schedules-finer-than-a-minute).
+  a job for every occurrence. See [Schedules with second precision](#schedules-with-second-precision).
   A `null` precision reads as none given; any other value is rejected.
 
 * **db**

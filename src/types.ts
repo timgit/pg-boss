@@ -1131,7 +1131,7 @@ export type ScheduleOptions = SendOptions & {
    * `second` sends a job for every occurrence of a cron expression with a seconds field. `minute`
    * sends at most one job a minute.
    * @default 'minute'
-   * @see https://pgboss.io/api/scheduling#schedules-finer-than-a-minute
+   * @see https://pgboss.io/api/scheduling#schedules-with-second-precision
    */
   precision?: SchedulePrecision
 }

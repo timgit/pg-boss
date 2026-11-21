@@ -108,7 +108,7 @@ export const SCHEDULE_MISSED_POLICIES = Object.freeze({
 /**
  * How finely a schedule's occurrences are sent: `minute` sends at most one job a minute, and
  * `second` a job for each occurrence of a cron expression with a seconds field.
- * @see https://pgboss.io/api/scheduling#schedules-finer-than-a-minute
+ * @see https://pgboss.io/api/scheduling#schedules-with-second-precision
  */
 export const SCHEDULE_PRECISIONS = Object.freeze({
   minute: 'minute',
