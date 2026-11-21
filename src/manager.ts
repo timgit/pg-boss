@@ -1735,7 +1735,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
    */
   async drain (nameOrOptions?: string | types.DrainOptions, maybeOptions?: types.DrainOptions): Promise<types.DrainResult> {
     const name = typeof nameOrOptions === 'string' ? nameOrOptions : null
-    const options = (typeof nameOrOptions === 'string' ? maybeOptions : nameOrOptions) ?? {}
+    // drain(undefined, options) is the unnamed form with options, as from a caller passing an
+    // optional name through.
+    const options = (typeof nameOrOptions === 'string' || nameOrOptions === undefined ? maybeOptions : nameOrOptions) ?? {}
     const { timeoutSeconds } = options
 
     if (name !== null) Attorney.assertQueueName(name)

@@ -248,6 +248,25 @@ describe('drain', function () {
     expect(await ctx.boss.drain(ctx.schema + '_idle')).toEqual({ processed: 0, failed: 0, timedOut: false })
   })
 
+  it('should take its options in the second argument when the name is undefined', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema)
+
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => { await gate })
+
+    try {
+      // As from a caller passing an optional name through.
+      const name: string | undefined = undefined
+      expect(await ctx.boss.drain(name as any, { timeoutSeconds: 1 })).toEqual({ processed: 0, failed: 0, timedOut: true })
+    } finally {
+      release()
+    }
+  })
+
   it('should reject a queue name that is not valid', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
