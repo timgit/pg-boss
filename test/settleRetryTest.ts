@@ -8,25 +8,47 @@ import { ctx } from './hooks.ts'
 const pollingIntervalSeconds = 30
 
 const isComplete = (sql: string) => sql.includes('SET completed_on')
-const isFail = (sql: string) => sql.includes('deleted_jobs AS') && sql.includes('$2::uuid[]')
+// The fail statement, or on a backend without multi-mutation CTEs the select that opens its split
+// form, where a drop leaves nothing written.
+const isFail = (sql: string) => sql.includes('$2::uuid[]') &&
+  (sql.includes('deleted_jobs AS') || (/^\s*SELECT \*,/.test(sql) && sql.includes("state < 'completed'")))
 
 // Makes the next `times` statements that match fail as a connection the server closed would,
-// before they reach the database. Counts every matching statement, failed or run.
+// before they reach the database. Counts every matching statement, failed or run. Covers the
+// statements of a transaction pg-boss opens itself too, which a backend without multi-mutation
+// CTEs runs fail() in.
 function dropConnection (db: IDatabase, match: (sql: string) => boolean, times: number) {
-  const executeSql = db.executeSql.bind(db)
   const state = { remaining: times, calls: 0 }
 
-  db.executeSql = async (sql: string, values?: unknown[]) => {
-    if (match(sql)) {
-      state.calls++
+  const intercept = (target: IDatabase) => {
+    const executeSql = target.executeSql.bind(target)
 
-      if (state.remaining > 0) {
-        state.remaining--
-        throw Object.assign(new Error('terminating connection due to administrator command'), { code: '57P01' })
+    target.executeSql = async (sql: string, values?: unknown[]) => {
+      if (match(sql)) {
+        state.calls++
+
+        if (state.remaining > 0) {
+          state.remaining--
+          throw Object.assign(new Error('terminating connection due to administrator command'), { code: '57P01' })
+        }
       }
-    }
 
-    return await executeSql(sql, values)
+      return await executeSql(sql, values)
+    }
+  }
+
+  intercept(db)
+
+  const pooled = db as IDatabase & { withTransaction?: <T>(fn: (tx: IDatabase) => Promise<T>) => Promise<T> }
+
+  if (pooled.withTransaction) {
+    const withTransaction = pooled.withTransaction.bind(pooled)
+
+    pooled.withTransaction = async <T>(fn: (tx: IDatabase) => Promise<T>) => await withTransaction(async (tx: IDatabase) => {
+      intercept(tx)
+
+      return await fn(tx)
+    })
   }
 
   return state
