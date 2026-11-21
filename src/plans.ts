@@ -3246,6 +3246,10 @@ interface InsertJobsOptions {
   upsertByKey?: boolean
 }
 
+// Rows go in sorted by singletonKey. An insert that meets another transaction's uncommitted row on a
+// unique key index waits for it, and two batches taking the same keys in opposite orders would each
+// wait on the other until Postgres aborted one as a deadlock (#1015).
+//
 // The queue is LEFT JOINed and every NOT NULL column it supplies falls back to the schema default, so
 // a job for a queue deleted after the caller cached it still reaches q_fkey and fails there (23503),
 // rather than producing no row, which would read the same as a singleton or throttle refusal. The
@@ -3277,6 +3281,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       )
     ) j
     LEFT JOIN ${schema}.queue q ON q.name = '${name}'
+    ORDER BY "singletonKey"
     ON CONFLICT DO NOTHING
     ${returning}
   `
@@ -3318,6 +3323,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
 //
 // The insert goes to the job table's parent, which routes each job to its queue's partition. ON
 // CONFLICT DO NOTHING applies the job's own singleton options and its queue's policy, as for send().
+// Its jobs go in sorted by queue and key, for the reason insertJobs() sorts its rows.
 //
 // The result has a row per matched schedule (`prev`, and `claimed`), then a row per inserted job.
 // It reads the schedules through a join of its own: a second reader of `due` sees a row twice once
@@ -3338,6 +3344,7 @@ export function sendScheduledJobs (schema: string, notify: string[] = []) {
       WHERE c.prev IS NULL OR x.occurrence > c.prev
     ) j
     LEFT JOIN ${schema}.queue q ON q.name = j.name
+    ORDER BY j.name, j."singletonKey"
     ON CONFLICT DO NOTHING
     RETURNING id, name, start_after
   `

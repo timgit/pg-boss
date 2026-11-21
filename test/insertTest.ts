@@ -5,6 +5,36 @@ import { ctx } from './hooks.ts'
 import type { JobInsert } from '../src/types.ts'
 
 describe('insert', function () {
+  // Two batches taking the same keys in opposite orders. Each insert waits on the other's uncommitted
+  // row for a key, and unsorted they deadlock in a third of the rounds or more (#1015). PGlite has one
+  // connection, and CockroachDB reports the same race as a retry error.
+  const deadlockCases = [
+    { policy: 'short', options: {} },
+    { policy: 'stately', options: {} },
+    { policy: 'exclusive', options: {} },
+    { policy: 'standard', options: { singletonSeconds: 60 } }
+  ] as const
+
+  for (const { policy, options } of deadlockCases) {
+    it.skipIf(helper.isPglite || helper.isCockroachDb)(`should not deadlock two batches taking the same keys in opposite orders on a ${policy} queue ${JSON.stringify(options)}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, max: 4, supervise: false, schedule: false, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy })
+
+      for (let round = 0; round < 20; round++) {
+        const a = { singletonKey: `a-${round}`, ...options }
+        const b = { singletonKey: `b-${round}`, ...options }
+
+        const results = await Promise.allSettled([
+          ctx.boss.insert(ctx.schema, [a, b]),
+          ctx.boss.insert(ctx.schema, [b, a])
+        ])
+
+        expect(results.filter(result => result.status === 'rejected').map(result => (result as PromiseRejectedResult).reason.message)).toEqual([])
+      }
+    })
+  }
+
   it('should create jobs from an array', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

@@ -1059,7 +1059,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  private async sendSecondChunk (sends: SecondSend[]): Promise<void> {
+  private async sendSecondChunk (unsorted: SecondSend[]): Promise<void> {
+    // In key order, so two statements at a lease handoff take the schedules' row locks the same way.
+    const sends = [...unsorted].sort((a, b) => a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0)
     const jobsOf = new Map<string, { entry: SecondSchedule, occurrence: number }>()
     const data = new Map<string, unknown>()
     const notify = new Set<string>()
