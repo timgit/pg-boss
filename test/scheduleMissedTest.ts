@@ -271,6 +271,22 @@ describe('schedule missed', function () {
     }
   })
 
+  it('catches up across the day after the clocks skipped the time an expression names', async function () {
+    const tk = makeTk()
+
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    // 00:30 was skipped in America/Havana on 2026-03-08. Read back from the due window on the 9th,
+    // prev() throws, since the occurrence before it does not exist. The gap still holds 00:30 on
+    // the 7th, sent beside the one due now.
+    const now = Date.parse('2026-03-09T04:30:40Z')
+    const inserted = await pass(tk, now, new Date(Date.parse('2026-03-06T12:00:00Z')), [row('30 0 * * *', 'once', { timezone: 'America/Havana' })])
+
+    expect(slots(inserted)).toEqual([slotOf(Date.parse('2026-03-07T05:30:00Z')), slotOf(Date.parse('2026-03-09T04:30:00Z'))])
+    expect(warnings).toEqual([])
+  })
+
   it('does not reach back past the moment the schedule was created', async function () {
     const tk = makeTk()
 

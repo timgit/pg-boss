@@ -63,6 +63,8 @@ type ScheduledRequest = types.Request & { key?: string, slot?: string }
 // into SQL is shaped.
 type FiredSchedule = { name: string, key: string, jobId: string }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
 // How long an occurrence stays due, and the width of the throttle slot a forwarded job is filed in.
 // One value because the two have to agree: a window wider than the slot lets two slots claim the
 // same occurrence and send it twice, and a slot wider than the window collapses two occurrences a
@@ -1033,11 +1035,27 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     // millisecond past `until` to leave the upper bound included. That is where the due window's
     // own lower bound leaves off, and an occurrence exactly on it belongs to one range or the
     // other, never both.
-    const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(until.getTime() + 1) })
+    //
+    // prev() throws for up to a day after a time the clocks skipped, as `30 30 0 * * *` has in
+    // America/Havana, since it looks past the skipped occurrence for one that does not exist. That
+    // day holds no occurrence, so the read starts a day earlier, as far back as `after`.
+    for (let reference = until.getTime(); reference > after.getTime(); reference -= DAY_MS) {
+      const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(reference + 1) })
 
-    const occurrence = previousOccurrence(interval, tz)
+      let occurrence: Date
 
-    return occurrence.getTime() > after.getTime() ? occurrence : null
+      try {
+        occurrence = previousOccurrence(interval, tz)
+      } catch (err) {
+        if (reference - DAY_MS > after.getTime()) continue
+
+        throw err
+      }
+
+      return occurrence.getTime() > after.getTime() ? occurrence : null
+    }
+
+    return null
   }
 
   /**
