@@ -657,6 +657,38 @@ describe('schedule seconds', function () {
     expect(await sentAt('30 45 1 * * *', Date.parse('2026-04-04T15:15:40Z'), lordHowe)).toBe(0)
   })
 
+  // The minute schedules of the same night, as the cron pass files them through send-it. A pass every
+  // thirty seconds from 01:30:15 EDT to 01:31:15 EST files each occurrence twice, into one slot the
+  // insert collapses. The slots are compared once each.
+  it('files a minute schedule\'s repeated local time once unless the expression keeps running through that hour', async function () {
+    const zone = { timezone: 'America/New_York', options: {} }
+    // 01:29:45 EDT on 2026-11-01. 01:30 comes round at 05:30 and at 06:30 UTC.
+    const start = Date.parse('2026-11-01T05:29:45Z')
+
+    const slotsFiled = async (cron: string) => {
+      const slots = new Set<string>()
+
+      for (let now = start + 30 * SECOND; now <= start + 3660 * SECOND; now += 30 * SECOND) {
+        for (const slot of await pass(makeTk(), now, now - 30 * SECOND, [row(cron, zone)])) slots.add(slot.slice(11))
+      }
+
+      return [...slots]
+    }
+
+    expect(await slotsFiled('30 1 * * *')).toEqual(['05:30:00'])
+    expect(await slotsFiled('0,30 1 * * *')).toEqual(['05:30:00'])
+    expect(await slotsFiled('30 0-3 * * *')).toEqual(['05:30:00'])
+    expect(await slotsFiled('30 * * * *')).toEqual(['05:30:00', '06:30:00'])
+
+    // Multiple minutes across multiple hours make a run, which keeps sending through the repeated hour.
+    expect(await slotsFiled('*/30 0-3 * * *')).toEqual(['05:30:00', '06:00:00', '06:30:00'])
+
+    // previewSchedule() walks forwards past the repeated hour, and lists less than the passes send.
+    const listed = makeTk().previewSchedule('*/30 0-3 * * *', { tz: 'America/New_York', from: new Date(start), count: 2 })
+
+    expect(listed.map(d => d.toISOString())).toEqual(['2026-11-01T05:30:00.000Z', '2026-11-01T07:00:00.000Z'])
+  })
+
   it('releases the pending per-second tick on stop', async function () {
     const armed = new Set<ClockTimer>()
 

@@ -288,38 +288,18 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00', '12:02:00'])
   })
 
-  it('sends a daily occurrence once on the night the clocks go back', async function () {
-    // 01:29:45 EDT on 2026-11-01. At 02:00 EDT New York goes back to 01:00 EST, so 01:30 comes
-    // round twice, at 05:30 and at 06:30 UTC.
-    const start = Date.parse('2026-11-01T05:29:45Z')
-    const clock = new TestClock(start)
-    ctx.boss = await startScheduling(clock)
-
-    await until(async () => await lastPass(ctx.boss!) === start)
-
-    await ctx.boss.schedule(ctx.schema, '30 1 * * *', null, { tz: 'America/New_York' })
-
-    // 01:30:15 EDT, the first 01:30.
-    await passAt(clock, ctx.boss, start + 30 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['05:30:00'])
-
-    // On to 01:29:45 EST, then through the second 01:30, which cron runs once and so does the same
-    // schedule written as a rule.
-    await passAt(clock, ctx.boss, start + 3600 * SECOND, false)
-    await passAt(clock, ctx.boss, start + 3630 * SECOND, false)
-    await passAt(clock, ctx.boss, start + 3660 * SECOND, false)
-
-    const counts = passes.get(ctx.boss)!
-    await until(async () => counts.insertDone === counts.inserts - 1)
-    expect(await slotsFiled(ctx.boss)).toEqual(['05:30:00'])
-  })
-
   /**
-   * Passes over both 01:30s of the night New York goes back, as the test above walks them, for an
-   * expression holding that minute, answering with the slots filed. `sendsBetween` says whether
-   * it also holds the second 01:00, which the pass arriving at 01:29:45 EST reads.
+   * Passes over both 01:30s of the night New York goes back for an expression holding that minute,
+   * answering with the slots filed. At 02:00 EDT on 2026-11-01 New York goes back to 01:00 EST, and
+   * 01:30 comes round twice, at 05:30 and at 06:30 UTC. `sendsSecond` says whether the expression
+   * sends the second one.
+   *
+   * The hour between the two jumps with setTime(). Ticking through it costs a send-it poll a second
+   * and a pass every thirty, each a database round trip. The rule for every expression is covered
+   * over a mocked database in scheduleSecondTest, and these two run it through real passes.
    */
-  async function slotsOverRepeatedHour (expression: string, sendsSecond: boolean, sendsBetween = false): Promise<string[]> {
+  async function slotsOverRepeatedHour (expression: string, sendsSecond: boolean): Promise<string[]> {
+    // 01:29:45 EDT.
     const start = Date.parse('2026-11-01T05:29:45Z')
     const clock = new TestClock(start)
     ctx.boss = await startScheduling(clock)
@@ -328,8 +308,14 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     await ctx.boss.schedule(ctx.schema, expression, null, { tz: 'America/New_York' })
 
+    // 01:30:15 EDT, the first 01:30.
     await passAt(clock, ctx.boss, start + 30 * SECOND)
-    await passAt(clock, ctx.boss, start + 3600 * SECOND, sendsBetween)
+    expect(await slotsFiled(ctx.boss)).toEqual(['05:30:00'])
+
+    // On to 01:29:45 EST. The overdue timers fire once at the next tick, which runs the pass there
+    // before the one at the second 01:30. The gap since the last pass changes nothing for a minute
+    // schedule under the default `missed`.
+    await clock.setTime(start + 3600 * SECOND)
     await passAt(clock, ctx.boss, start + 3630 * SECOND, sendsSecond)
     await passAt(clock, ctx.boss, start + 3660 * SECOND, sendsSecond)
 
@@ -339,26 +325,11 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     return await slotsFiled(ctx.boss)
   }
 
-  it('keeps sending through the repeated hour for multiple minutes across multiple hours', async function () {
-    const expression = '*/30 0-3 * * *'
-
-    expect(await slotsOverRepeatedHour(expression, true, true)).toEqual(['05:30:00', '06:00:00', '06:30:00'])
-
-    // previewSchedule() walks forwards past the repeated hour, so it lists less than the passes sent.
-    const listed = ctx.boss!.previewSchedule(expression, { tz: 'America/New_York', from: new Date('2026-11-01T05:29:45Z'), count: 2 })
-
-    expect(listed.map(d => d.toISOString())).toEqual(['2026-11-01T05:30:00.000Z', '2026-11-01T07:00:00.000Z'])
+  it('sends a daily occurrence once on the night the clocks go back', async function () {
+    expect(await slotsOverRepeatedHour('30 1 * * *', false)).toEqual(['05:30:00'])
   })
 
   it('keeps sending through the repeated hour for an expression naming every hour', async function () {
     expect(await slotsOverRepeatedHour('30 * * * *', true)).toEqual(['05:30:00', '06:30:00'])
-  })
-
-  it('sends a repeated local time once for multiple minutes in one hour', async function () {
-    expect(await slotsOverRepeatedHour('0,30 1 * * *', false)).toEqual(['05:30:00'])
-  })
-
-  it('sends a repeated local time once for one minute across multiple hours', async function () {
-    expect(await slotsOverRepeatedHour('30 0-3 * * *', false)).toEqual(['05:30:00'])
   })
 })
