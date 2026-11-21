@@ -52,7 +52,7 @@ Do not write a test per migration. `test/migrationTest.ts` rolls back the newest
 
 - Doc comments on public types, options and methods are one or two sentences: what it does, its constraints, its default, and `@see https://pgboss.io/api/<page>#<anchor>` when there is more. Rationale, costs, benchmarks and design history go in `docs/api/*.md`, stated neutrally.
 - VitePress slugs headings its own way: `fetch(name, options)` becomes `#fetch-name-options`. `npm run docs:anchors` checks every anchor link in `docs/` and every `pgboss.io` link in `src/`, and CI runs it. Add `-- --fix` to rewrite a broken anchor that has a single matching heading.
-- Every comment, doc comment, docs page, commit message and PR follows the same style. Write short sentences that each make one claim, in US English (with `cancelled`, as the job state spells it).
+- Every comment, doc comment, docs page, commit message and PR follows the same style. Write short sentences that each make one claim, in US English (with `cancelled`, as the job state spells it). Tests are included. Fix an existing comment that breaks these rules when a change touches the code around it.
 - No em or en dashes. Write separate sentences, and don't swap the dash for a colon. A colon introduces a list, an example or a definition.
 - Don't tack a consequence on with `, so`. Give the consequence its own sentence, or use "because" when the cause is the point. "So" for a purpose ("set it so the job retries") is fine.
 - No antithesis ("not X but Y"), filler ("just", "simply", "in practice") or inflated adjectives ("robust", "crucial"). State the positive claim.
