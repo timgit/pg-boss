@@ -8,6 +8,27 @@ describe('queuePolicy', function () {
   // CockroachDB disables partitioning (noTablePartitioning), so only run the non-partitioned variant there
   const partitionCases = helper.isCockroachDb ? [{ partition: false }] : [{ partition: false }, { partition: true }]
   partitionCases.forEach(({ partition }) => {
+    it(`singleton policy claims each key's job in priority order using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton', partition })
+
+      // Each key holds a priority 10 job between two priority 0 ones, and a fetch takes one job a key.
+      const keys = Array.from({ length: 8 }, (_, i) => `key-${i}`)
+
+      for (const singletonKey of keys) {
+        await ctx.boss.insert(ctx.schema, [
+          { singletonKey, priority: 0 },
+          { singletonKey, priority: 10 },
+          { singletonKey, priority: 0 }
+        ])
+      }
+
+      const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 24, includeMetadata: true })
+
+      expect(jobs.map(job => job.priority)).toEqual(keys.map(() => 10))
+    })
+
     it(`short policy only allows 1 job in ctx.schema using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
