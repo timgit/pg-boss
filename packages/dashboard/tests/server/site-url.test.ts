@@ -17,7 +17,8 @@ const build = {
   routeDiscovery: { mode: 'initial' },
   assets: { url: '/assets/manifest-1.js', version: '1', entry: { module: '/assets/entry.client-1.js', imports: [], css: [] }, routes: {} },
   entry: { module: { default: async (_request: Request, status: number) => new Response('rendered', { status }) } },
-  routes: { root: { id: 'root', path: '', module: { default: () => null, action: () => ({ ok: true }) } } },
+  // The action reads its form, so a body the origin rewrite loses fails here rather than in production.
+  routes: { root: { id: 'root', path: '', module: { default: () => null, action: async ({ request }: { request: Request }) => ({ ok: (await request.formData()).get('intent') === 'retry' }) } } },
 } as unknown as ServerBuild
 
 // The embedded handler imports the production build from here; `npm run build` writes it.
@@ -54,10 +55,14 @@ describe('PGBOSS_DASHBOARD_SITE_URL', () => {
     expect(res.status).toBe(200)
   })
 
-  it('rejects the same action when unset', async () => {
+  it('rejects the same action when unset, and names the setting that fixes it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
     const res = await proxiedPost(app())
 
     expect(res.status).toBe(400)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('PGBOSS_DASHBOARD_SITE_URL'))
+    warn.mockRestore()
   })
 
   it('still rejects an action from another site', async () => {
