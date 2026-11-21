@@ -15,6 +15,12 @@ const bamConfig = {
   __test__bypass_bam_interval_check: true
 }
 
+// CockroachDB spells each indexed column with its direction, as in `(a ASC)`, where Postgres writes
+// `(a)`. Dropping the direction lets one assertion read both.
+function indexColumns (indexdef: string) {
+  return indexdef.replace(/ ASC\b/g, '')
+}
+
 async function insertBamCommand (schema: string, name: string, command: string) {
   const db = await helper.getDb()
   await db.executeSql(`
@@ -281,7 +287,8 @@ describe('bam', function () {
       expect(entry.status).toBe('completed')
     }, 10000)
 
-    it('should drop-then-rebuild a reclaimed index build so an invalid leftover is healed', async function () {
+    // Postgres only, since CockroachDB does not let a test mark an index INVALID.
+    helper.itPostgresOnly('should drop-then-rebuild a reclaimed index build so an invalid leftover is healed', async function () {
       const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
       boss.on('error', () => {})
 
@@ -291,8 +298,8 @@ describe('bam', function () {
       // skip, leaving the wrong index in place; healing must drop it and rebuild on the right column.
       await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
       await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
-      // Make it INVALID, as a crashed CREATE INDEX CONCURRENTLY leaves it, healing only drops an
-      // invalid leftover, so a valid same-named index would (correctly) be left alone and not rebuilt.
+      // Make it INVALID, as a crashed CREATE INDEX CONCURRENTLY leaves it. Healing only drops an
+      // invalid leftover, and leaves a valid index of the same name in place.
       await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.heal_idx'::regclass`)
 
       const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (b)`
@@ -309,22 +316,23 @@ describe('bam', function () {
 
       // Rebuilt on (b): healing dropped the stale (a) index first.
       expect(rows).toHaveLength(1)
-      expect(rows[0].indexdef).toContain('(b)')
-      expect(rows[0].indexdef).not.toContain('(a)')
+      expect(indexColumns(rows[0].indexdef)).toContain('(b)')
+      expect(indexColumns(rows[0].indexdef)).not.toContain('(a)')
     }, 10000)
 
-    it('should heal a prior failed index build on retry (e.g. rows left by older releases)', async function () {
+    // Postgres only, since CockroachDB does not let a test mark an index INVALID.
+    helper.itPostgresOnly('should heal a prior failed index build on retry (e.g. rows left by older releases)', async function () {
       const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
       boss.on('error', () => {})
 
       const db = await helper.getDb()
       await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
       await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
-      // Invalid leftover, as a crashed/failed CONCURRENTLY build leaves it (see note above).
+      // An invalid leftover, as a crashed or failed CONCURRENTLY build leaves it (see the note above).
       await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.heal_idx'::regclass`)
 
-      // A 'failed' row (as an older release, or a genuinely-failed CONCURRENTLY build, would leave)
-      // must also heal on retry, otherwise the command's IF NOT EXISTS skips the stale index forever.
+      // A 'failed' row, as an older release or a failed CONCURRENTLY build leaves it, heals on retry
+      // too. Otherwise the command's IF NOT EXISTS skips the stale index forever.
       const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (b)`
       await insertBamRow(ctx.schema, 'failed_cmd', 'failed', command)
 
@@ -338,8 +346,8 @@ describe('bam', function () {
       await db.close()
 
       expect(rows).toHaveLength(1)
-      expect(rows[0].indexdef).toContain('(b)')
-      expect(rows[0].indexdef).not.toContain('(a)')
+      expect(indexColumns(rows[0].indexdef)).toContain('(b)')
+      expect(indexColumns(rows[0].indexdef)).not.toContain('(a)')
     }, 10000)
 
     // A first attempt's IF NOT EXISTS skips an INVALID index of the same name and returns without
@@ -374,20 +382,20 @@ describe('bam', function () {
       await db.close()
 
       expect(rows).toHaveLength(1)
-      expect(rows[0].indexdef).toContain('(b)')
+      expect(indexColumns(rows[0].indexdef)).toContain('(b)')
     }, 10000)
 
     it('does NOT drop a VALID leftover index on reattempt (build succeeded but row was never marked)', async function () {
-      // The dangerous case: a CREATE INDEX CONCURRENTLY that actually succeeded (VALID index, in use)
-      // but whose bam row stayed in_progress because a graceful stop landed between the CREATE and
-      // markCompleted. On reattempt, healing must NOT drop this live index. It should skip the drop,
-      // let the command's IF NOT EXISTS no-op, and mark the row completed with the index intact.
+      // The dangerous case. A CREATE INDEX CONCURRENTLY succeeded (the index is VALID and in use),
+      // and its bam row stayed in_progress because a graceful stop landed between the CREATE and
+      // markCompleted. On reattempt, healing must not drop this live index. It skips the drop, lets
+      // the command's IF NOT EXISTS do nothing, and marks the row completed with the index intact.
       const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
       boss.on('error', () => {})
 
       const db = await helper.getDb()
       await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
-      // Valid index matching what the command builds, stands in for the already-succeeded build.
+      // A valid index matching what the command builds stands in for the build that succeeded.
       await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
 
       const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (a)`
@@ -406,10 +414,10 @@ describe('bam', function () {
       )
       await db.close()
 
-      // Index untouched: still valid, still on (a). It was never dropped.
+      // The index was never dropped. It is still valid and still on (a).
       expect(rows).toHaveLength(1)
       expect(rows[0].valid).toBe(true)
-      expect(rows[0].indexdef).toContain('(a)')
+      expect(indexColumns(rows[0].indexdef)).toContain('(a)')
     }, 10000)
 
     it('completes a reattempt whose command has no IF NOT EXISTS when its index is already valid', async function () {
@@ -472,10 +480,11 @@ describe('bam', function () {
       expect(errors).toHaveLength(0)
     }, 10000)
 
-    it('should leave an INVALID leftover alone on a timeout-only backend and just re-run', async function () {
-      // The drop is the only half that depends on liveness detection. CockroachDB/YugabyteDB roll an
-      // interrupted build back, so there is nothing to heal there and DROP ... CONCURRENTLY is not
-      // their model - the probe still runs, sees the INVALID index, and falls through to the command.
+    // Postgres only, since CockroachDB does not let a test mark an index INVALID.
+    helper.itPostgresOnly('should leave an INVALID leftover alone on a timeout-only backend and just re-run', async function () {
+      // The drop is the only half that depends on liveness detection. CockroachDB and YugabyteDB roll
+      // an interrupted build back, which leaves nothing to heal. The probe still runs, sees the
+      // INVALID index, and falls through to the command.
       const boss = ctx.boss = await helper.start({
         ...ctx.bossConfig,
         ...bamConfig,
@@ -500,15 +509,15 @@ describe('bam', function () {
       )
       await db.close()
 
-      // Never dropped: the command's own IF NOT EXISTS saw the name and skipped, so the (a) index
-      // is still there rather than rebuilt on (b).
+      // Never dropped. The command's own IF NOT EXISTS saw the name and skipped, which leaves the
+      // (a) index in place.
       expect(rows).toHaveLength(1)
-      expect(rows[0].indexdef).toContain('(a)')
+      expect(indexColumns(rows[0].indexdef)).toContain('(a)')
     }, 10000)
 
     it('should just run the command when a reattempt finds no index at all', async function () {
-      // The third probe outcome: a prior attempt failed before the index existed, so there is nothing
-      // to heal and nothing already built - the command simply runs.
+      // The third probe outcome. A prior attempt failed before the index existed. There is nothing to
+      // heal and nothing already built, and the command runs.
       const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, ...bamConfig })
       boss.on('error', () => {})
 
@@ -528,7 +537,7 @@ describe('bam', function () {
       await db.close()
 
       expect(rows).toHaveLength(1)
-      expect(rows[0].indexdef).toContain('(a)')
+      expect(indexColumns(rows[0].indexdef)).toContain('(a)')
     }, 10000)
 
     it('should recover the already-exists row on a timeout-only backend too', async function () {
@@ -573,9 +582,9 @@ describe('bam', function () {
       await db.executeSql(`CREATE TABLE ${ctx.schema}.heal_test (a int, b int)`)
       await db.executeSql(`CREATE INDEX heal_idx ON ${ctx.schema}.heal_test (a)`)
 
-      // Same reclaim, but no liveness backend → no drop-then-rebuild. The probe still runs (it only
-      // reads pg_index), finds a VALID index and short-circuits, so the pre-existing (a) index
-      // survives untouched. The (b) rebuild the liveness path would do never happens.
+      // The same reclaim with no liveness detection, which never drops and rebuilds. The probe still
+      // runs (it only reads pg_index), finds a VALID index and short-circuits. The existing (a) index
+      // survives, and the (b) rebuild the liveness path would do never happens.
       const command = `CREATE INDEX CONCURRENTLY IF NOT EXISTS heal_idx ON ${ctx.schema}.heal_test (b)`
       await insertBamRow(ctx.schema, 'heal_cmd', 'in_progress', command, 25 * 60 * 60)
 
@@ -589,7 +598,7 @@ describe('bam', function () {
       await db.close()
 
       expect(rows).toHaveLength(1)
-      expect(rows[0].indexdef).toContain('(a)')
+      expect(indexColumns(rows[0].indexdef)).toContain('(a)')
     }, 10000)
 
     it('should not reclaim a fresh in_progress command (guards against double-run)', async function () {
