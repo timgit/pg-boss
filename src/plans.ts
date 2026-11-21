@@ -103,6 +103,18 @@ export const SCHEDULE_MISSED_POLICIES = Object.freeze({
   once: 'once'
 } as const)
 
+// Stored in the options blob rather than a column of its own, like the missed policy: the pass
+// reads every schedule row anyway.
+/**
+ * How finely a schedule's occurrences are sent: `minute` sends at most one job a minute, and
+ * `second` a job for each occurrence of a cron expression with a seconds field.
+ * @see https://pgboss.io/api/scheduling#schedules-with-second-precision
+ */
+export const SCHEDULE_PRECISIONS = Object.freeze({
+  minute: 'minute',
+  second: 'second'
+} as const)
+
 const QUEUE_DEFAULTS = {
   expire_seconds: FIFTEEN_MINUTES,
   retention_seconds: FORTEEN_DAYS,
@@ -456,6 +468,11 @@ function createTableQueue (schema: string) {
 // release can write a null during a rolling upgrade, which is what the read-side COALESCE covers.
 /* eslint-enable no-restricted-syntax */
 
+// sent_on is the latest occurrence sent for this definition, not the time it was sent. Every
+// occurrence at or before it has been sent or is not owed. Never set it from job_now() in the send
+// statement: an occurrence after the holder's evaluated bound but before the statement ran would
+// be skipped. schedule() sets it to job_now() when a definition is created or changed, which marks
+// the time before it as not owed.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableSchedule (schema: string) {
   return `
@@ -470,6 +487,7 @@ function createTableSchedule (schema: string) {
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
       last_job_id uuid,
+      sent_on timestamp with time zone,
       PRIMARY KEY (name, key)
     )
   `
@@ -1638,7 +1656,9 @@ export function trySetCronTime (schema: string, seconds: number) {
     ), claim AS (
       ${trySetTimestamp(schema, 'cron_on', seconds)}
     )
-    SELECT prior.cron_on as "priorCronOn", prior.elapsed as "elapsed", EXISTS (SELECT 1 FROM claim) as "claimed" FROM prior
+    SELECT prior.cron_on as "priorCronOn", prior.elapsed as "elapsed", EXISTS (SELECT 1 FROM claim) as "claimed",
+      (SELECT claimed_on FROM claim) as "claimedOn"
+    FROM prior
   `
 }
 
@@ -1673,7 +1693,7 @@ function trySetTimestamp (schema: string, column: string, seconds: number) {
     UPDATE ${schema}.version
     SET ${column} = ${schema}.job_now()
     WHERE EXTRACT( EPOCH FROM (${schema}.job_now() - COALESCE(${column}, ${schema}.job_now() - interval '1 week') ) ) >= ${seconds}
-    RETURNING true
+    RETURNING ${column} as claimed_on
   `
 }
 
@@ -1953,17 +1973,27 @@ export function setScheduleKinds (schema: string) {
   `
 }
 
+// A new row, or a new expression, zone or precision, starts sent_on at job_now(): nothing before it
+// is owed under that definition. Anything else leaves it, which is what lets a deployment that
+// registers its schedules on every boot keep its place across restarts.
 export function schedule (schema: string) {
   return `
-    INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, created_on, updated_on)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, ${schema}.job_now(), ${schema}.job_now())
+    INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, created_on, updated_on, sent_on)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, ${schema}.job_now(), ${schema}.job_now(), ${schema}.job_now())
     ON CONFLICT (name, key) DO UPDATE SET
       kind = EXCLUDED.kind,
       cron = EXCLUDED.cron,
       timezone = EXCLUDED.timezone,
       data = EXCLUDED.data,
       options = EXCLUDED.options,
-      updated_on = ${schema}.job_now()
+      updated_on = ${schema}.job_now(),
+      sent_on = CASE
+        WHEN ${schema}.schedule.cron = EXCLUDED.cron
+          AND COALESCE(${schema}.schedule.timezone, 'UTC') = COALESCE(EXCLUDED.timezone, 'UTC')
+          AND COALESCE(${schema}.schedule.options->>'precision', '${SCHEDULE_PRECISIONS.minute}') = COALESCE(EXCLUDED.options->>'precision', '${SCHEDULE_PRECISIONS.minute}')
+        THEN ${schema}.schedule.sent_on
+        ELSE ${schema}.job_now()
+      END
   `
 }
 
@@ -1990,6 +2020,32 @@ export function unsubscribe (schema: string) {
   return `
     DELETE FROM ${schema}.subscription
     WHERE event = $1 and name = $2
+  `
+}
+
+const SUBSCRIPTION_COLUMNS = `
+  event,
+  name,
+  created_on as "createdOn",
+  updated_on as "updatedOn"
+`
+
+export function getSubscriptions (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SUBSCRIPTION_COLUMNS} FROM ${schema}.subscription
+    ${after ? 'WHERE (event, name) > ($1, $2)' : ''}
+    ORDER BY event, name
+    ${limited ? `LIMIT $${after ? 3 : 1}` : ''}
+  `
+}
+
+export function getSubscriptionsByEvent (schema: string, limited = false, after = false) {
+  return `
+    SELECT ${SUBSCRIPTION_COLUMNS} FROM ${schema}.subscription
+    WHERE event = $1
+      ${after ? 'AND (event, name) > ($2, $3)' : ''}
+    ORDER BY name
+    ${limited ? `LIMIT $${after ? 4 : 2}` : ''}
   `
 }
 
@@ -2634,6 +2690,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     'j.id',
     singletonFetch ? 'j.singleton_key' : '',
     hasGroupConcurrency ? 'j.group_id, j.group_tier' : '',
+    // singleton_ranking and group_ranking pick jobs within a key or group, so they need the order of next
+    singletonFetch || hasGroupConcurrency ? 'j.priority, j.created_on' : '',
     hasActiveGroupCounts ? `${activeGroupCountExpression} as active_cnt` : ''
   ].filter(Boolean).join(', ')
 
@@ -2759,8 +2817,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
-        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}${hasActiveGroupCounts ? 'active_cnt, ' : ''}
-          row_number() OVER (PARTITION BY singleton_key) as singleton_rn
+        SELECT id, ${hasGroupConcurrency ? 'priority, created_on, group_id, group_tier, ' : ''}${hasActiveGroupCounts ? 'active_cnt, ' : ''}
+          row_number() OVER (PARTITION BY singleton_key ORDER BY priority desc, created_on) as singleton_rn
         FROM next
       )`
     : ''
@@ -2772,7 +2830,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
           , t.group_id
           , t.group_tier
           ${singletonFetch ? ', singleton_rn' : ''}
-          , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.id) as group_rn
+          , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.priority desc, t.created_on) as group_rn
           , ${hasActiveGroupCounts ? 't.active_cnt' : '0'} as active_cnt
         FROM ${singletonFetch ? 'singleton_ranking' : 'next'} t
         ${singletonFetch ? 'WHERE singleton_rn = 1' : ''}
@@ -3081,40 +3139,10 @@ function isDateTimeString (expression: string) {
   return `(right(${expression}, 1) = 'Z' OR ${expression} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}')`
 }
 
-interface InsertJobsOptions {
-  table: string
-  name: string
-  returnId?: boolean
-  notify?: boolean
-  // Whether a job may name the throttle slot it is filed in. Only the cron pass asks for it, so the
-  // statement a public insert() builds does not declare the column and a caller naming it sets
-  // nothing.
-  slots?: boolean
-  // Marks the jobs as inserted by upsert() by singletonKey, for job_i13. Set by the statement, never
-  // read from the recordset, so insert() cannot mark a job.
-  upsertByKey?: boolean
-}
-
-// The queue is LEFT JOINed and every NOT NULL column it supplies falls back to the schema default, so
-// a job for a queue deleted after the caller cached it still reaches q_fkey and fails there (23503),
-// rather than producing no row, which would read the same as a singleton or throttle refusal. The
-// fallbacks never apply to a queue that exists, since its own columns are NOT NULL.
-export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false, upsertByKey = false }: InsertJobsOptions) {
-  // When notify is enabled we always RETURN start_after so the wrapper below can gate
-  // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
-  const returning = notify ? 'RETURNING id, start_after' : returnId ? 'RETURNING id' : ''
-
-  // A caller that knows the slot names it outright: the cron pass files an occurrence in the slot
-  // the occurrence falls in, and an offset off now() cannot pin that, since now() here is
-  // insert time. Only in the statement the pass asks for, because insert() stringifies caller
-  // objects straight into the recordset below, so a column declared for everyone would be a live,
-  // undeclared and unvalidated option on the public path, where a bad value surfaces as a raw
-  // postgres error. Prefixed as well, and not called singletonOn, which is a column fetching a job
-  // hands back, so a job read from one queue and inserted into another cannot fill it in by accident.
-  const slotClause = slots ? 'WHEN "__singletonSlot" IS NOT NULL THEN CAST("__singletonSlot" as timestamp)' : ''
-
-  const insert = `
-    INSERT INTO ${schema}.${table} (
+// The columns a job insert writes, and how each is read off a recordset row (`j`, with
+// start_after resolved by jobStartAfter()) and its queue (`q`). insertJobs() and the cron
+// statement share them, so a scheduled job is built exactly as one from send().
+const JOB_INSERT_COLUMNS = `
       id,
       name,
       data,
@@ -3138,11 +3166,11 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       blocked,
       blocking,
       pending_dependencies,
-      trace_context${upsertByKey ? ', upsert_by_key' : ''}
-    )
-    SELECT
-      COALESCE(id, gen_random_uuid()) as id,
-      '${name}' as name,
+      trace_context`
+
+function jobInsertValues (schema: string, name: string, slotClause = '') {
+  return `COALESCE(id, gen_random_uuid()) as id,
+      ${name} as name,
       data,
       COALESCE(priority, 0) as priority,
       j.start_after,
@@ -3168,15 +3196,18 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       COALESCE(blocked, false) as blocked,
       COALESCE(blocking, false) as blocking,
       COALESCE("pendingDependencies", 0) as pending_dependencies,
-      "__traceContext" as trace_context${upsertByKey ? ', true as upsert_by_key' : ''}
-    FROM (
-      SELECT *,
-        CASE
+      "__traceContext" as trace_context`
+}
+
+function jobStartAfter (schema: string) {
+  return `CASE
           WHEN ${isDateTimeString('"startAfter"')} THEN CAST("startAfter" as timestamp with time zone)
           ELSE ${schema}.job_now() + CAST(COALESCE("startAfter",'0') as interval)
-          END as start_after
-      FROM json_to_recordset($1::text::json) as x (
-        id uuid,
+          END as start_after`
+}
+
+function jobRecordsetColumns (extra = '') {
+  return `id uuid,
         priority integer,
         data jsonb,
         "startAfter" text,
@@ -3187,7 +3218,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         "singletonKey" text,
         "singletonSeconds" integer,
         "singletonOffset" integer,
-        ${slots ? '"__singletonSlot" text,' : ''}
+        ${extra}
         "groupId" text,
         "groupTier" text,
         "expireInSeconds" integer,
@@ -3198,10 +3229,59 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
         blocked boolean,
         blocking boolean,
         "pendingDependencies" integer,
-        "__traceContext" jsonb
+        "__traceContext" jsonb`
+}
+
+interface InsertJobsOptions {
+  table: string
+  name: string
+  returnId?: boolean
+  notify?: boolean
+  // Whether a job may name the throttle slot it is filed in. Only the cron pass asks for it, so the
+  // statement a public insert() builds does not declare the column and a caller naming it sets
+  // nothing.
+  slots?: boolean
+  // Marks the jobs as inserted by upsert() by singletonKey, for job_i13. Set by the statement, never
+  // read from the recordset, so insert() cannot mark a job.
+  upsertByKey?: boolean
+}
+
+// Rows go in sorted by singletonKey. An insert that meets another transaction's uncommitted row on a
+// unique key index waits for it, and two batches taking the same keys in opposite orders would each
+// wait on the other until Postgres aborted one as a deadlock (#1015).
+//
+// The queue is LEFT JOINed and every NOT NULL column it supplies falls back to the schema default, so
+// a job for a queue deleted after the caller cached it still reaches q_fkey and fails there (23503),
+// rather than producing no row, which would read the same as a singleton or throttle refusal. The
+// fallbacks never apply to a queue that exists, since its own columns are NOT NULL.
+export function insertJobs (schema: string, { table, name, returnId = true, notify = false, slots = false, upsertByKey = false }: InsertJobsOptions) {
+  // When notify is enabled we always RETURN start_after so the wrapper below can gate
+  // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
+  const returning = notify ? 'RETURNING id, start_after' : returnId ? 'RETURNING id' : ''
+
+  // A caller that knows the slot names it outright: the cron pass files an occurrence in the slot
+  // the occurrence falls in, and an offset off now() cannot pin that, since now() here is
+  // insert time. Only in the statement the pass asks for, because insert() stringifies caller
+  // objects straight into the recordset below, so a column declared for everyone would be a live,
+  // undeclared and unvalidated option on the public path, where a bad value surfaces as a raw
+  // postgres error. Prefixed as well, and not called singletonOn, which is a column fetching a job
+  // hands back, so a job read from one queue and inserted into another cannot fill it in by accident.
+  const slotClause = slots ? 'WHEN "__singletonSlot" IS NOT NULL THEN CAST("__singletonSlot" as timestamp)' : ''
+
+  const insert = `
+    INSERT INTO ${schema}.${table} (
+      ${JOB_INSERT_COLUMNS}${upsertByKey ? ', upsert_by_key' : ''}
+    )
+    SELECT
+      ${jobInsertValues(schema, `'${name}'`, slotClause)}${upsertByKey ? ', true as upsert_by_key' : ''}
+    FROM (
+      SELECT *, ${jobStartAfter(schema)}
+      FROM json_to_recordset($1::text::json) as x (
+        ${jobRecordsetColumns(slots ? '"__singletonSlot" text,' : '')}
       )
     ) j
     LEFT JOIN ${schema}.queue q ON q.name = '${name}'
+    ORDER BY "singletonKey"
     ON CONFLICT DO NOTHING
     ${returning}
   `
@@ -3226,6 +3306,87 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       FROM ins WHERE start_after <= ${schema}.job_now() LIMIT 1
     )
     SELECT id FROM ins WHERE (SELECT count(*) FROM notified) ${comparator}
+  `
+}
+
+// Sends schedules' jobs and moves their cursors in one statement. $1 is a recordset of schedules,
+// each with the definition it was read under and the cursor value it moves to (`through`). $2 is
+// their jobs, each naming its schedule by queue and `scheduleKey` and carrying the occurrence it is
+// for. A second recordset rather than one per schedule, since CockroachDB takes no column list on
+// a lateral json_to_recordset().
+//
+// `due` reads each cursor from the statement's snapshot, since RETURNING sees the row as the UPDATE
+// leaves it. `claimed` is a compare-and-set on that value. A writer that blocked on the row lock
+// re-checks it once the other commits and drops out, so two instances racing on one schedule cannot
+// both send an occurrence. Matching the definition as well means a schedule removed or changed
+// since it was read claims nothing. Only occurrences after the cursor it replaced are inserted.
+//
+// The insert goes to the job table's parent, which routes each job to its queue's partition. ON
+// CONFLICT DO NOTHING applies the job's own singleton options and its queue's policy, as for send().
+// Its jobs go in sorted by queue and key, for the reason insertJobs() sorts its rows.
+//
+// The result has a row per matched schedule (`prev`, and `claimed`), then a row per inserted job.
+// It reads the schedules through a join of its own: a second reader of `due` sees a row twice once
+// the UPDATE has waited on that row's lock and re-checked it.
+export function sendScheduledJobs (schema: string, notify: string[] = []) {
+  const ins = `
+    INSERT INTO ${schema}.job (
+      ${JOB_INSERT_COLUMNS}
+    )
+    SELECT
+      ${jobInsertValues(schema, 'j.name')}
+    FROM (
+      SELECT x.*, ${jobStartAfter(schema)}
+      FROM json_to_recordset($2::text::json) as x (
+        ${jobRecordsetColumns('name text, "scheduleKey" text, occurrence timestamptz,')}
+      )
+      JOIN claimed c ON c.name = x.name AND c.key = x."scheduleKey"
+      WHERE c.prev IS NULL OR x.occurrence > c.prev
+    ) j
+    LEFT JOIN ${schema}.queue q ON q.name = j.name
+    ORDER BY j.name, j."singletonKey"
+    ON CONFLICT DO NOTHING
+    RETURNING id, name, start_after
+  `
+
+  const notified = notify.length > 0
+    ? `, notified AS (
+      SELECT pg_notify(${notifyChannelSql(schema)}, n.name)
+      FROM (SELECT DISTINCT name FROM ins WHERE start_after <= ${schema}.job_now() AND name = ANY(${serializeArrayParam(notify)})) n
+    )`
+    : ''
+
+  const matched = `
+      SELECT d.*, s.sent_on as prev
+      FROM json_to_recordset($1::text::json) as d (name text, key text, cron text, timezone text, data jsonb, options jsonb, through timestamptz)
+      JOIN ${schema}.schedule s
+        ON s.name = d.name
+        AND s.key = d.key
+        AND s.cron = d.cron
+        AND COALESCE(s.timezone, 'UTC') = d.timezone
+        AND s.data IS NOT DISTINCT FROM d.data
+        AND s.options IS NOT DISTINCT FROM d.options
+  `
+
+  return `
+    WITH due AS (${matched}), report AS (${matched}), claimed AS (
+      UPDATE ${schema}.schedule s
+      SET sent_on = d.through
+      FROM due d
+      WHERE s.name = d.name
+        AND s.key = d.key
+        AND s.cron = d.cron
+        AND COALESCE(s.timezone, 'UTC') = d.timezone
+        AND s.options IS NOT DISTINCT FROM d.options
+        AND s.data IS NOT DISTINCT FROM d.data
+        AND s.sent_on IS NOT DISTINCT FROM d.prev
+        AND (d.prev IS NULL OR d.prev < d.through)
+      RETURNING d.name, d.key, d.prev
+    ), ins AS (${ins})${notified}
+    SELECT r.name, r.key, r.prev, EXISTS (SELECT 1 FROM claimed c WHERE c.name = r.name AND c.key = r.key) as claimed, NULL::uuid as id
+    FROM report r
+    UNION ALL
+    SELECT name, NULL, NULL, NULL, id FROM ins${notify.length > 0 ? ' WHERE (SELECT count(*) FROM notified) >= 0' : ''}
   `
 }
 

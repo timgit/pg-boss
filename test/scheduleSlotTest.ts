@@ -72,10 +72,13 @@ function watchPasses (boss: PgBoss): Passes {
   return counts
 }
 
-/** The throttle slots the send-it queue holds for a schedule, oldest first, as `HH:MM`. */
+/**
+ * The throttle slots the send-it queue holds, oldest first, as `HH:MM:SS`. A slot a minute wide
+ * reads as the minute's first second.
+ */
 async function slotsFiled (boss: PgBoss): Promise<string[]> {
   const { rows } = await boss.getDb().executeSql(
-    `SELECT to_char(singleton_on, 'HH24:MI') AS slot FROM ${ctx.schema}.job WHERE name = $1 ORDER BY singleton_on`,
+    `SELECT to_char(singleton_on, 'HH24:MI:SS') AS slot FROM ${ctx.schema}.job WHERE name = $1 ORDER BY singleton_on`,
     [QUEUES.SEND_IT]
   )
 
@@ -149,19 +152,19 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     // 12:00:45, a pass in the same minute as the occurrence at 12:00:30.
     await passAt(clock, ctx.boss, T0 + 30 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
     // 12:01:15, in the next minute, while the occurrence is still inside the 60-second window.
     // Filed from insert time this lands in a slot of its own and is sent a second time.
     await passAt(clock, ctx.boss, T0 + 60 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
     // On to the occurrence at 12:02:30, a tick at a time: a tick worth more than one interval runs
     // one pass all the same, and which instant that pass reads is the tick's race to lose.
     await passAt(clock, ctx.boss, T0 + 90 * SECOND, false)
     await passAt(clock, ctx.boss, T0 + 120 * SECOND, false)
     await passAt(clock, ctx.boss, T0 + 150 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00', '12:02'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:02:00'])
   })
 
   it('catches up on an occurrence in the middle of a minute', async function () {
@@ -178,7 +181,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     // Two passes either side of the minute boundary after 12:00:30, then nothing until 12:03:05.
     await passAt(clock, ctx.boss, T0 + 30 * SECOND)
     await passAt(clock, ctx.boss, T0 + 60 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
     // The pass that ends the gap owes the occurrence due now, 12:02:30, and the newest one the gap
     // held, 12:01:30, which the policy files under the minute it fell in. A repeat send of
@@ -186,7 +189,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     await clock.setTime(T0 + 170 * SECOND)
     await passAt(clock, ctx.boss, T0 + 180 * SECOND)
 
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00', '12:01', '12:02'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:01:00', '12:02:00'])
     expect(await filedSince(ctx.boss, T0 + 170 * SECOND)).toBe(2)
   })
 
@@ -207,13 +210,13 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     // than ticks, so no pass of this instance runs first.
     await clock.setTime(T0 + 35 * SECOND)
     await ctx.boss.insert(QUEUES.SEND_IT, [{ data: { name: 'q', key: '', data: null, options: {} }, singletonKey: 'q__', singletonSeconds: 60 }])
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
     // A pass of this instance in the next minute names the slot the occurrence falls in, which is
     // the one the older instance's insert computed, so the two agree and the occurrence is sent
     // once.
     await passAt(clock, ctx.boss, T0 + 65 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
   })
 
   it('sends no more beside an older instance filing after it than two older instances send', async function () {
@@ -229,7 +232,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     // 12:00:45, this instance files 12:00:30 under the minute it falls in.
     await passAt(clock, ctx.boss, T0 + 30 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00'])
 
     // 12:01:05, an instance on a release that files from insert time finds the same occurrence
     // still inside its window and files it under the minute it runs in. That is the second job two
@@ -238,12 +241,12 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
     // pass of this instance runs first.
     await clock.setTime(T0 + 50 * SECOND)
     await ctx.boss.insert(QUEUES.SEND_IT, [{ data: { name: 'q', key: '', data: null, options: {} }, singletonKey: 'q__', singletonSeconds: 60 }])
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00', '12:01'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:01:00'])
 
     // 12:01:15, this instance finds the occurrence again and names 12:00, which it already holds,
     // so the older instance's job is the only extra one.
     await passAt(clock, ctx.boss, T0 + 60 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:00', '12:01'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:00:00', '12:01:00'])
   })
 
   it('files each minute of an expression whose occurrences land either side of one', async function () {
@@ -265,24 +268,24 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     // 12:01:15, the first window to hold an occurrence, which is 12:01:00.
     await passAt(clock, ctx.boss, T0 + 60 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:01'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00'])
 
     // 12:01:45, answered with 12:01:00 again, in the minute already filed.
     await passAt(clock, ctx.boss, T0 + 90 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:01'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00'])
 
     // 12:02:15, a window holding 12:01:59 and 12:02:00, two occurrences a second apart in minutes
     // of their own. The read answers with 12:02:00 and passes over 12:01:59, whose minute the pass
     // at 12:01:15 filed.
     await passAt(clock, ctx.boss, T0 + 120 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:01', '12:02'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00', '12:02:00'])
 
     // 12:03:15, answered with 12:02:59, which adds nothing for the same reason. Four occurrences
     // in two minutes are two jobs, which is the resolution the docs promise, and neither minute
     // was skipped by a read that answered with one occurrence out of two.
     await passAt(clock, ctx.boss, T0 + 150 * SECOND)
     await passAt(clock, ctx.boss, T0 + 180 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['12:01', '12:02'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['12:01:00', '12:02:00'])
   })
 
   it('sends a daily occurrence once on the night the clocks go back', async function () {
@@ -298,7 +301,7 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     // 01:30:15 EDT, the first 01:30.
     await passAt(clock, ctx.boss, start + 30 * SECOND)
-    expect(await slotsFiled(ctx.boss)).toEqual(['05:30'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['05:30:00'])
 
     // On to 01:29:45 EST, then through the second 01:30, which cron runs once and so does the same
     // schedule written as a rule.
@@ -308,6 +311,54 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
 
     const counts = passes.get(ctx.boss)!
     await until(async () => counts.insertDone === counts.inserts - 1)
-    expect(await slotsFiled(ctx.boss)).toEqual(['05:30'])
+    expect(await slotsFiled(ctx.boss)).toEqual(['05:30:00'])
+  })
+
+  /**
+   * Passes over both 01:30s of the night New York goes back, as the test above walks them, for an
+   * expression holding that minute, answering with the slots filed. `sendsBetween` says whether
+   * it also holds the second 01:00, which the pass arriving at 01:29:45 EST reads.
+   */
+  async function slotsOverRepeatedHour (expression: string, sendsSecond: boolean, sendsBetween = false): Promise<string[]> {
+    const start = Date.parse('2026-11-01T05:29:45Z')
+    const clock = new TestClock(start)
+    ctx.boss = await startScheduling(clock)
+
+    await until(async () => await lastPass(ctx.boss!) === start)
+
+    await ctx.boss.schedule(ctx.schema, expression, null, { tz: 'America/New_York' })
+
+    await passAt(clock, ctx.boss, start + 30 * SECOND)
+    await passAt(clock, ctx.boss, start + 3600 * SECOND, sendsBetween)
+    await passAt(clock, ctx.boss, start + 3630 * SECOND, sendsSecond)
+    await passAt(clock, ctx.boss, start + 3660 * SECOND, sendsSecond)
+
+    const counts = passes.get(ctx.boss)!
+    await until(async () => counts.insertDone === counts.inserts - 1)
+
+    return await slotsFiled(ctx.boss)
+  }
+
+  it('keeps sending through the repeated hour for multiple minutes across multiple hours', async function () {
+    const expression = '*/30 0-3 * * *'
+
+    expect(await slotsOverRepeatedHour(expression, true, true)).toEqual(['05:30:00', '06:00:00', '06:30:00'])
+
+    // previewSchedule() walks forwards past the repeated hour, so it lists less than the passes sent.
+    const listed = ctx.boss!.previewSchedule(expression, { tz: 'America/New_York', from: new Date('2026-11-01T05:29:45Z'), count: 2 })
+
+    expect(listed.map(d => d.toISOString())).toEqual(['2026-11-01T05:30:00.000Z', '2026-11-01T07:00:00.000Z'])
+  })
+
+  it('keeps sending through the repeated hour for an expression naming every hour', async function () {
+    expect(await slotsOverRepeatedHour('30 * * * *', true)).toEqual(['05:30:00', '06:30:00'])
+  })
+
+  it('sends a repeated local time once for multiple minutes in one hour', async function () {
+    expect(await slotsOverRepeatedHour('0,30 1 * * *', false)).toEqual(['05:30:00'])
+  })
+
+  it('sends a repeated local time once for one minute across multiple hours', async function () {
+    expect(await slotsOverRepeatedHour('30 0-3 * * *', false)).toEqual(['05:30:00'])
   })
 })

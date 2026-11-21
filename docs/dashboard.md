@@ -153,6 +153,7 @@ Releases before 2.0 were each built for one schema version and only work against
 
 | Dashboard | pg-boss | Schema version |
 | - | - | - |
+| 1.14.x | 12.39.x | 47 |
 | 1.13.x | 12.38.x | 46 |
 | 1.12.x | 12.38.x | 46 |
 | 1.11.x | 12.37.x | 45 |
@@ -373,7 +374,7 @@ server {
 }
 ```
 
-Behind this proxy, pages load but every action fails with a 400 until you set the site URL. The browser sends `Origin: https://pgboss.example.com`. The dashboard sees a request for `http://pgboss.example.com`, because the proxy forwards plain HTTP. React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch. Set `PGBOSS_DASHBOARD_SITE_URL` to the URL your browser uses:
+Behind this proxy, pages load but every action fails with a 400 until you set the site URL. The browser sends `Origin: https://pgboss.example.com`. The dashboard sees a request for `http://pgboss.example.com`, because the proxy forwards plain HTTP. React Router rejects the action because the two origins differ. A proxy that rewrites `Host` causes the same 400 through a host mismatch. The server log has a warning for each refused action, with both origins. Set `PGBOSS_DASHBOARD_SITE_URL` to the URL your browser uses:
 
 ```bash
 PGBOSS_DASHBOARD_SITE_URL=https://pgboss.example.com npx @pg-boss/dashboard
@@ -381,7 +382,7 @@ PGBOSS_DASHBOARD_SITE_URL=https://pgboss.example.com npx @pg-boss/dashboard
 
 Every request then takes this scheme and host so that actions and redirects match what the browser sees. Give the origin only. A sub-path goes in `PGBOSS_DASHBOARD_BASE_PATH`. The dashboard stops at startup on a value with a path, a query or credentials.
 
-While `PGBOSS_DASHBOARD_SITE_URL` is set, actions work only from that site. Unset it to use the dashboard directly, for example at `http://localhost:3000`.
+While `PGBOSS_DASHBOARD_SITE_URL` is set, actions work only from that site. Unset it to use the dashboard directly, for example at `http://localhost:3000`. A 500 after the site URL is set means the action passed this check and then failed. The server log has its error.
 
 ### Connection poolers
 

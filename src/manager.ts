@@ -50,6 +50,8 @@ function overrunMessage (name: string, expireInSeconds: number) {
 
 const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
+const TRANSACTIONAL_LONG_EXPIRATION = 'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds'
+
 // The same refusal from inside a batch, where the queue passed work()'s check and the heartbeat
 // arrived afterwards: on the job itself (heartbeatSeconds on send()), or on the queue, through
 // updateQueue() or through a createQueue() that work() ran ahead of. Pointing at the queue's
@@ -110,6 +112,25 @@ interface OverrunTally {
   expireInSeconds: number
   jobs: string[]
   timer: types.ClockTimer
+}
+
+// One drain() call. `name` is the queue it drains, or null for every queue with a worker. closedAt
+// is the batch sequence number at the moment it stopped waiting, so a batch that started after that
+// is not counted.
+interface DrainRun {
+  name: string | null
+  processed: number
+  failed: number
+  timedOut: boolean
+  closedAt: number | null
+  close: (timedOut: boolean) => void
+}
+
+// What #processJobs reports back past its return value: a wait for a handler that outran its timeout,
+// and how many jobs of the batch were failed.
+interface BatchOutcome {
+  wait?: () => Promise<void>
+  failed?: number
 }
 
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
@@ -277,6 +298,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #telemetry: Telemetry
   // The trace context each fetched job was sent with, kept off the job object handed to the handler.
   #traceContexts: WeakMap<object, TraceCarrier>
+  // drain() bookkeeping. The epoch moves when a drain starts and after every batch handled while one
+  // runs, and a worker counts as idle only once a fetch it began in the current epoch came back
+  // empty. See drain().
+  #drains: Set<DrainRun>
+  #drainEpoch: number
+  #drainIdle: Map<string, number>
+  #batchSeq: number
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions, instanceId: string = randomUUID()) {
     super()
@@ -303,6 +331,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#overrunWrites = new Set()
     this.#telemetry = new Telemetry(config.openTelemetry, config.schema, () => this.queues)
     this.#traceContexts = new WeakMap()
+    this.#drains = new Set()
+    this.#drainEpoch = 0
+    this.#drainIdle = new Map()
+    this.#batchSeq = 0
   }
 
   // The id getInstances() reports, for the warnings other components write about this instance.
@@ -469,11 +501,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // count. Any batch job the handler omits (or returns with an invalid shape) is failed with a
   // descriptive error so it retries / dead-letters per queue config.
   // Resolves with the error the whole batch was failed with, or undefined.
-  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<Error | undefined> {
+  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown, outcome: BatchOutcome): Promise<Error | undefined> {
     if (!Array.isArray(result)) {
       // The handler opted into perJobResults but did not return an array: a contract violation.
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
+      outcome.failed = jobs.length
       await this.fail(name, jobs, err)
       await this.#trackJobsFailed(name, jobs, err)
       return err
@@ -506,6 +539,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         failed.push({ job, output: new Error('no disposition returned by handler') })
       }
     }
+
+    outcome.failed = failed.length + deadLettered.length
 
     const items = (entries: { job: types.Job<T>, output: unknown }[]) =>
       entries.map(({ job, output }) => ({ id: job.id, retryCount: job.retryCount, output }))
@@ -671,7 +706,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     perJobResults = false,
     transactional = false,
     transactionTimeoutSeconds?: number,
-    overrun: { wait?: () => Promise<void> } = {}
+    outcome: BatchOutcome = {}
   ): Promise<unknown> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -759,6 +794,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_ON_BATCH)
 
       if (transactional) {
+        assert(maxExpiration <= 86400 || transactionTimeoutSeconds !== undefined, TRANSACTIONAL_LONG_EXPIRATION)
         const timeoutMs = transactionTimeoutSeconds !== undefined
           ? transactionTimeoutSeconds * 1000
           : maxExpiration * 1000 + TRANSACTION_ROLLBACK_TIMEOUT_MS
@@ -813,7 +849,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // #settlePerJob settles each job individually and does its own (synchronous,
         // lookup-free) spy tracking via #trackJobsSettled, so the deferred tracker below
         // is skipped for this path.
-        perJobError = await this.#settlePerJob(name, jobs, result)
+        perJobError = await this.#settlePerJob(name, jobs, result, outcome)
       } else {
         // Read out before the completion below, which goes through the same complete() and would
         // otherwise record pg-boss's own settle as one the handler made.
@@ -846,6 +882,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       }
 
+      outcome.failed = jobs.length
       await this.fail(name, jobs, err)
       failedError = err
       didFail = true
@@ -861,7 +898,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // still holds the worker.
       if (handling && !handlerSettled) {
         const abandoned = handling
-        overrun.wait = async () => {
+        outcome.wait = async () => {
           if (handlerSettled) return
           await this.#awaitHandlerOverrun(name, jobIds, maxExpiration, abandoned, worker)
           if (worker && !handlerSettled) worker.abandonedHandler = abandoned
@@ -1366,6 +1403,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       await this.#assertTransactionalHeartbeatSupported(name)
 
+      if (transactionTimeoutSeconds === undefined) {
+        // The queue's expiration is the common source of a multi-day job, and checked here it fails
+        // the call rather than each job's attempts. A job's own expireInSeconds is checked per batch.
+        const queue = await this.getQueue(name).catch(() => null)
+
+        assert(!((queue?.expireInSeconds ?? 0) > 86400), TRANSACTIONAL_LONG_EXPIRATION)
+      }
+
       // A stop() during that await has already looked for workers, and would not see this one.
       if (this.stopped) {
         throw new Error('Workers are disabled. pg-boss is stopped')
@@ -1417,15 +1462,24 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       // Counted here rather than on fetch: jobs past localGroupConcurrency are restored, not delivered.
       // A handler that outran its timeout holds the worker after the span ends (see #processJobs).
+      // drain() counts the batch once it is settled, before that wait, so a drain that timed out does
+      // not wait on a handler that ignores its signal.
       const processBatch = async (batch: types.Job<ReqData>[], worker?: Worker) => {
         this.#telemetry.consumed(name, batch.length)
-        const overrun: { wait?: () => Promise<void> } = {}
+        const outcome: BatchOutcome = {}
+        const seq = this.#batchSeq++
+        // A batch whose settle threw left its jobs to expire, so it counts as failed.
+        let failed = batch.length
+
+        const processing = this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
+          this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds, outcome))
 
         try {
-          await this.#telemetry.process(name, batch, job => this.#traceContexts.get(job), () =>
-            this.#processJobs(name, batch, callback, worker, heartbeatRefreshSeconds, perJobResults, transactional, transactionTimeoutSeconds, overrun))
+          await processing
+          failed = outcome.failed ?? 0
         } finally {
-          await overrun.wait?.()
+          this.#countDrained(name, seq, batch.length, failed)
+          await outcome.wait?.()
         }
       }
 
@@ -1480,7 +1534,29 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<ReqData>({ id: workerId, workId, name, options, resolveInterval, fetch, onFetch, onError, clock: this.config.clock })
+      // An empty fetch is how drain() learns the worker found nothing ready, and a batch handled means
+      // every worker has to look again, since it may have sent jobs or freed a group slot.
+      //
+      // A fetch that returns jobs clears the worker's mark, whatever woke it: LISTEN/NOTIFY,
+      // notifyWorker() and its own polling interval all fetch outside the epoch. Left in place, a
+      // drain could close while that batch runs, before the jobs its handler sends are picked up.
+      const fetchForDrain = async () => {
+        const epoch = this.#drainEpoch
+        const jobs = await fetch()
+        if (jobs.length) this.#drainIdle.delete(workerId)
+        else this.#markDrainIdle(workerId, epoch)
+        return jobs
+      }
+
+      const onFetchForDrain = async (jobs: types.Job<ReqData>[]) => {
+        try {
+          await onFetch(jobs)
+        } finally {
+          if (jobs.length) this.#advanceDrain()
+        }
+      }
+
+      return new Worker<ReqData>({ id: workerId, workId, name, options, resolveInterval, fetch: fetchForDrain, onFetch: onFetchForDrain, onError, clock: this.config.clock })
     }
 
     // Spawn workers based on localConcurrency setting
@@ -1558,6 +1634,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   private removeWorker (worker: Worker<any>) {
     this.workers.delete(worker.id)
+    this.#drainIdle.delete(worker.id)
+    this.#checkDrained()
   }
 
   private getWorkers () {
@@ -1640,6 +1718,135 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.workers.get(workerId)?.notify()
   }
 
+  /**
+   * Runs the registered workers back to back until a pass over all of them finds nothing ready, then
+   * resolves with how many jobs they handled. With a queue name, only that queue's workers.
+   *
+   * The workers do the fetching and settling exactly as they do under work(). drain() only skips
+   * their polling delay and watches their fetches: a worker is idle once a fetch it began after the
+   * last handled batch comes back empty, and the drain ends when every worker it covers is idle at
+   * once. A batch handled by any of them sends the others back for another look, since its handler
+   * may have sent jobs to their queues. Deferred jobs, including retries waiting out a backoff, are
+   * not ready and are not waited for.
+   *
+   * Overlapping calls each wait for their own idle point and each count what their workers handled
+   * while they ran. With timeoutSeconds, the drain resolves at the deadline without waiting for the
+   * batches still running, which stop() waits for. The workers keep polling afterwards as usual
+   * until they are stopped.
+   */
+  async drain (nameOrOptions?: string | types.DrainOptions, maybeOptions?: types.DrainOptions): Promise<types.DrainResult> {
+    const name = typeof nameOrOptions === 'string' ? nameOrOptions : null
+    // drain(undefined, options) is the unnamed form with options, as from a caller passing an
+    // optional name through.
+    const options = (typeof nameOrOptions === 'string' || nameOrOptions === undefined ? maybeOptions : nameOrOptions) ?? {}
+    const { timeoutSeconds } = options
+
+    if (name !== null) Attorney.assertQueueName(name)
+
+    assert(timeoutSeconds === undefined || (typeof timeoutSeconds === 'number' && timeoutSeconds > 0), 'timeoutSeconds must be a number > 0')
+
+    let closed!: () => void
+    const done = new Promise<void>(resolve => { closed = resolve })
+
+    const run: DrainRun = {
+      name,
+      processed: 0,
+      failed: 0,
+      timedOut: false,
+      closedAt: null,
+      close: (timedOut: boolean) => {
+        if (run.closedAt !== null) return
+        run.closedAt = this.#batchSeq
+        run.timedOut = timedOut
+        closed()
+      }
+    }
+
+    this.#drains.add(run)
+
+    const timer = timeoutSeconds !== undefined
+      ? this.config.clock.setTimeout(() => run.close(true), timeoutSeconds * 1000)
+      : null
+
+    try {
+      this.#advanceDrain()
+      this.#checkDrained()
+
+      await done
+    } finally {
+      if (timer) this.config.clock.clearTimeout(timer)
+      this.#drains.delete(run)
+    }
+
+    return { processed: run.processed, failed: run.failed, timedOut: run.timedOut }
+  }
+
+  #isDraining (): boolean {
+    for (const run of this.#drains) {
+      if (run.closedAt === null) return true
+    }
+
+    return false
+  }
+
+  // Whether a run covers a queue: its own, or every queue but pg-boss's for a run with no name.
+  #drainCovers (run: DrainRun, queue: string): boolean {
+    return run.name === null ? !INTERNAL_QUEUES[queue] : run.name === queue
+  }
+
+  // The workers a run waits on: in its scope, and not stopping.
+  #drainWorkers (run: DrainRun): Worker<any>[] {
+    return this.getWorkers().filter(worker => this.#drainCovers(run, worker.name) && !worker.stopping && !worker.stopped)
+  }
+
+  // Invalidates every idle mark and sends the workers an open run covers to fetch now instead of
+  // after their delay. The epoch is shared: a batch outside a run's scope costs that run one extra
+  // empty fetch.
+  #advanceDrain (): void {
+    if (!this.#isDraining()) return
+
+    this.#drainEpoch++
+
+    const woken = new Set<Worker<any>>()
+
+    for (const run of this.#drains) {
+      if (run.closedAt !== null) continue
+
+      for (const worker of this.#drainWorkers(run)) woken.add(worker)
+    }
+
+    for (const worker of woken) {
+      worker.notify()
+    }
+  }
+
+  #markDrainIdle (workerId: string, epoch: number): void {
+    if (epoch !== this.#drainEpoch || !this.#isDraining()) return
+
+    this.#drainIdle.set(workerId, epoch)
+    this.#checkDrained()
+  }
+
+  // Closes each open run whose workers are all idle in the current epoch.
+  #checkDrained (): void {
+    for (const run of this.#drains) {
+      if (run.closedAt !== null) continue
+
+      const idle = this.#drainWorkers(run).every(worker => this.#drainIdle.get(worker.id) === this.#drainEpoch)
+
+      if (idle) run.close(false)
+    }
+  }
+
+  #countDrained (queue: string, seq: number, processed: number, failed: number): void {
+    for (const run of this.#drains) {
+      if ((run.closedAt === null || seq < run.closedAt) && this.#drainCovers(run, queue)) {
+        run.processed += processed
+        run.failed += failed
+      }
+    }
+  }
+
   // Whether a queue's `notify` opt-in actually emits a transactional pg_notify. Backends that
   // don't implement LISTEN/NOTIFY (noListenNotify, e.g. CockroachDB) would error on the inlined
   // pg_notify, so the producer falls back to polling-only delivery on those.
@@ -1679,6 +1886,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     assert(name, 'Missing required argument')
     const sql = plans.unsubscribe(this.config.schema)
     await this.db.executeSql(sql, [event, name])
+  }
+
+  async getSubscriptions (event?: string, limit?: number, after?: Pick<types.Subscription, 'event' | 'name'>): Promise<types.Subscription[]> {
+    const limited = limit !== undefined
+    const paging = [...(after ? [after.event, after.name] : []), ...(limited ? [limit] : [])]
+    const sql = event
+      ? plans.getSubscriptionsByEvent(this.config.schema, limited, !!after)
+      : plans.getSubscriptions(this.config.schema, limited, !!after)
+    const { rows } = await this.db.executeSql(sql, event ? [event, ...paging] : paging)
+    return rows
   }
 
   publish (event: string, data?: object, options?: types.SendOptions): Promise<void>
@@ -1793,6 +2010,36 @@ class Manager extends EventEmitter implements types.EventsMixin {
       heartbeatSeconds,
       deadLetter
     }
+  }
+
+  /**
+   * The job fields a schedule's jobs are inserted with, resolved from its data and options as
+   * send() resolves them. The cron statement inserts them for every occurrence it sends.
+   */
+  scheduledJobFields (name: string, data: unknown, options: types.SendOptions = {}) {
+    const request = Attorney.checkSendArgs([name, data ?? null, options])
+
+    return this.#toJobPayload(request.name, request.data ?? null, request.options ?? {})
+  }
+
+  /**
+   * Runs the cron statement that sends schedules' jobs, under the same telemetry as send(), and
+   * hands the jobs it inserted to the spies. `build` receives the trace context to store on each job.
+   */
+  async sendScheduled (count: number, build: (traceContext: TraceCarrier | null) => { text: string, values: unknown[], data: Map<string, unknown> }): Promise<any[]> {
+    return this.#telemetry.send('send', null, count, async carrier => {
+      const { text, values, data } = build(carrier)
+      const { rows } = await this.db.executeSql(text, values)
+
+      if (this.config.__test__enableSpies) {
+        for (const row of rows) {
+          const spy = row.id ? this.#spies.get(row.name) : undefined
+          spy?.addJob(row.id, row.name, (data.get(row.id) ?? {}) as object, 'created')
+        }
+      }
+
+      return rows
+    }, rows => rows.filter(row => row.id).map(row => row.id))
   }
 
   async createJob (request: types.Request): Promise<string | null> {

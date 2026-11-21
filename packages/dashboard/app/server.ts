@@ -253,6 +253,8 @@ export function createHonoApp ({
     const handler = productionHandler ?? createRequestHandler(await (build as () => ServerBuild | Promise<ServerBuild>)(), mode)
     const response = await handler(c.req.raw, getLoadContext(c, schemas ?? getSchemaConfigs(), overlay))
 
+    if (response.status === 400) warnOnRefusedAction(c.req.raw)
+
     // Pages carry job payloads.
     if (!response.headers.has('Cache-Control')) {
       response.headers.set('Cache-Control', 'no-store')
@@ -267,6 +269,29 @@ export function createHonoApp ({
   site.all('*', (c) => app.fetch(atSiteOrigin(c.req.raw, siteOrigin), c.env))
 
   return site
+}
+
+// React Router refuses an action whose Origin differs from the request URL's origin, with a bare
+// 400 and "Error: Bad Request" in the log. This names the setting that fixes the usual cause, a
+// proxy that ends HTTPS and forwards plain HTTP.
+function warnOnRefusedAction (request: Request): void {
+  if (request.method === 'GET' || request.method === 'HEAD') return
+
+  const origin = request.headers.get('origin')
+
+  if (!origin) return
+
+  let served: string
+
+  try {
+    served = new URL(request.url).origin
+  } catch {
+    return
+  }
+
+  if (origin.toLowerCase() === served.toLowerCase()) return
+
+  console.warn(`Refused an action from ${origin}, which does not match the dashboard's own origin, ${served}. Behind a proxy that ends HTTPS, set PGBOSS_DASHBOARD_SITE_URL, or the handler's siteUrl option, to the URL the browser uses.`)
 }
 
 // Set the path on the site URL rather than resolving it, so a request for `//other.host/`

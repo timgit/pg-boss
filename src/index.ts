@@ -22,6 +22,7 @@ export { JOB_STATES as states } from './plans.ts'
 export { QUEUE_POLICIES as policies } from './plans.ts'
 export { SCHEDULE_KINDS as scheduleKinds } from './plans.ts'
 export { SCHEDULE_MISSED_POLICIES as scheduleMissedPolicies } from './plans.ts'
+export { SCHEDULE_PRECISIONS as schedulePrecisions } from './plans.ts'
 export { PREVIEW_MAX_COUNT as previewScheduleMaxCount } from './timekeeper.ts'
 export { addBins, percentile } from './latency.ts'
 
@@ -509,12 +510,24 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.notifyWorker(workerId)
   }
 
+  drain (options?: types.DrainOptions): Promise<types.DrainResult>
+  drain (name: string, options?: types.DrainOptions): Promise<types.DrainResult>
+  drain (nameOrOptions?: string | types.DrainOptions, options?: types.DrainOptions): Promise<types.DrainResult> {
+    return this.#manager.drain(nameOrOptions, options)
+  }
+
   subscribe (event: string, name: string): Promise<void> {
     return this.#manager.subscribe(event, name)
   }
 
   unsubscribe (event: string, name: string): Promise<void> {
     return this.#manager.unsubscribe(event, name)
+  }
+
+  async getSubscriptions (event?: string, options?: types.ListOptions<Pick<types.Subscription, 'event' | 'name'>>): Promise<types.Subscription[]> {
+    const limit = Attorney.assertListLimit('getSubscriptions', options?.limit)
+    Attorney.assertListAfterRow('getSubscriptions', options?.after, ['event', 'name'])
+    return this.#manager.getSubscriptions(event, limit, options?.after)
   }
 
   publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
@@ -771,6 +784,8 @@ export type {
   DatabaseOptions,
   FetchGroupConcurrencyOptions,
   DependencyRef,
+  DrainOptions,
+  DrainResult,
   FetchOptions,
   FindJobsOptions,
   FlowJob,
@@ -833,6 +848,7 @@ export type {
   SchemaDriftReport,
   SendOptions,
   StopOptions,
+  Subscription,
   SuperviseOptions,
   UpdateOptions,
   UpdateQueueOptions,

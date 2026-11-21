@@ -153,6 +153,19 @@ describe('schedule missed', function () {
     expect(slots(inserted)).toEqual([slotOf(minute - MINUTE), slotOf(minute)])
   })
 
+  it('catches up on the second instant of a repeated hour an expression keeps running through', async function () {
+    const tk = makeTk()
+
+    // 01:45:30 EST on 2026-11-01, an hour after the clocks went back in New York.
+    const now = Date.parse('2026-11-01T06:45:30Z')
+
+    const inserted = await pass(tk, now, new Date(now - 3 * 60 * MINUTE), [
+      row('*/30 0-3 * * *', 'once', { timezone: 'America/New_York' })
+    ])
+
+    expect(slots(inserted)).toEqual([slotOf(Date.parse('2026-11-01T06:30:00Z'))])
+  })
+
   it('reads a recurrence rule backwards over the gap', async function () {
     const tk = makeTk()
 
@@ -237,10 +250,26 @@ describe('schedule missed', function () {
     // is never a gap between two passes to catch up on and the policy costs nothing: the due
     // occurrence, and nothing behind it.
     for (const seconds of [1, 30, 45, 60]) {
-      const inserted = await pass(tk, now, new Date(now - seconds * 1000), [row('* * * * * *', 'once')])
+      const inserted = await pass(tk, now, new Date(now - seconds * 1000), [row('* * * * *', 'once')])
 
       expect(slots(inserted)).toEqual([slotOf(minute)])
     }
+  })
+
+  it('catches up across the day after the clocks skipped the time an expression names', async function () {
+    const tk = makeTk()
+
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    // 00:30 was skipped in America/Havana on 2026-03-08. Read back from the due window on the 9th,
+    // prev() throws, since the occurrence before it does not exist. The gap still holds 00:30 on
+    // the 7th, sent beside the one due now.
+    const now = Date.parse('2026-03-09T04:30:40Z')
+    const inserted = await pass(tk, now, new Date(Date.parse('2026-03-06T12:00:00Z')), [row('30 0 * * *', 'once', { timezone: 'America/Havana' })])
+
+    expect(slots(inserted)).toEqual([slotOf(Date.parse('2026-03-07T05:30:00Z')), slotOf(Date.parse('2026-03-09T04:30:00Z'))])
+    expect(warnings).toEqual([])
   })
 
   it('does not reach back past the moment the schedule was created', async function () {

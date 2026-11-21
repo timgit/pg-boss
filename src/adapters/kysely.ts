@@ -9,6 +9,13 @@ export interface KyselyTransactionLike {
   }, queryId?: unknown): Promise<{ readonly rows: R[] }>
 }
 
+/**
+ * Wraps a Kysely transaction as an {@link IDatabase} for scoping job operations inside an existing transaction.
+ *
+ * Use as the per-call `db` option, not as the constructor `db` while `migrate` or `supervise` is on, since Kysely returns no rows from a multi-statement query.
+ *
+ * @see https://pgboss.io/api/adapters#kysely
+ */
 export function fromKysely (trx: KyselyTransactionLike): IDatabase {
   return {
     async executeSql (text: string, values?: unknown[]) {

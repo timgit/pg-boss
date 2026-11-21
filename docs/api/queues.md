@@ -143,7 +143,9 @@ Actual detection time is `heartbeatSeconds` plus up to the longer of [`monitorIn
 
 * **expireInSeconds**, number
 
-  How many seconds a job can stay active before pg-boss retries or fails it. Default: 15 minutes. Must be >=1 and <= 86400 (24 hours).
+  How many seconds a job can stay active before pg-boss retries or fails it. Default: 15 minutes. Must be >=1 and <= 1209600 (14 days).
+
+  The policy maximum leaves margin below Node.js's approximately 24.8-day timer limit. Heartbeats do not extend the deadline, and expiration does not stop external work. When tracking external work with `fetch()` and `complete()`, include its queueing time in the bound. Before retrying, check whether the external work from the last attempt is still running.
 
 **Retention options**
 

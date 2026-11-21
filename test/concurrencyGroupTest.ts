@@ -595,6 +595,22 @@ describe('groupConcurrency', function () {
     }
   })
 
+  it('should claim the jobs of a group in priority order when the batch has more of them than the limit', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // The ids are pinned so the low priority job sorts first by id
+    const high = 'ffffffff-ffff-4fff-bfff-ffffffffffff'
+    const low = '00000000-0000-4000-8000-000000000001'
+    const group = { id: 'tenant-1' }
+
+    await ctx.boss.send(ctx.schema, null, { id: high, group, priority: 10 })
+    await ctx.boss.send(ctx.schema, null, { id: low, group })
+
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 2, groupConcurrency: 1 })
+
+    expect(jobs.map(job => job.id)).toEqual([high])
+  })
+
   it('should validate groupConcurrency option in work', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

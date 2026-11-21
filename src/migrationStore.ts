@@ -2411,6 +2411,17 @@ AS $function$
             ]),
         `ALTER TABLE ${schema}.queue DROP COLUMN retained_on, DROP COLUMN retained_count`
       ]
+    },
+    {
+      release: '12.39.0',
+      version: 47,
+      previous: 46,
+      install: [
+        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS sent_on timestamp with time zone`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.schedule DROP COLUMN sent_on`
+      ]
     }
   ]
 }

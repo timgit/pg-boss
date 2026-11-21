@@ -39,6 +39,8 @@ await db.transaction().execute(async (trx) => {
 })
 ```
 
+`fromKysely` wraps a transaction for per-call operations. It can't be the constructor `db` in `new PgBoss({ db })` while `migrate: true` or `supervise: true` (both the default) is set, because Kysely's driver returns no rows from a multi-statement query. To run pg-boss on the same pool as Kysely, pass `{ executeSql: (text, values) => pool.query(text, values) }` or a connection string to `new PgBoss()` instead.
+
 ## Drizzle
 
 The Drizzle adapter requires the `sql` tagged-template function from `drizzle-orm` as its second argument. Because pg-boss builds parameterized queries with it through Drizzle's public API, pg-boss doesn't need `drizzle-orm` as a runtime dependency. The adapter supports the `node-postgres`, `postgres-js` and `bun-sql` drivers. For `bun-sql`, see [Bun](../database-backends.md#bun-driver), which covers running pg-boss on Bun's client as well as enqueueing through it.
@@ -67,6 +69,8 @@ await prisma.$transaction(async (tx) => {
   await boss.send('order-processing', { item: 'widget' }, { db: fromPrisma(tx) })
 })
 ```
+
+`fromPrisma` wraps a transaction for per-call operations. It can't be the constructor `db` in `new PgBoss({ db })` while `migrate: true` or `supervise: true` (both the default) is set, because Prisma rejects a multi-statement query.
 
 ## Rollback behavior
 

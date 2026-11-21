@@ -748,8 +748,8 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
  */
 export interface QueueOptions {
   /**
-   * How many seconds a job may be in active state before being retried or
-   * failed. Must be >=1. The default is 15 minutes.
+   * How many seconds a job may be active before being retried or failed, from 1 to 1209600 (14 days).
+   * The default is 15 minutes.
    * @default 900
    */
   expireInSeconds?: number;
@@ -1127,6 +1127,13 @@ export type ScheduleOptions = SendOptions & {
    * @default 'skip'
    */
   missed?: ScheduleMissedPolicy
+  /**
+   * `second` sends a job for every occurrence of a cron expression with a seconds field. `minute`
+   * sends at most one job a minute.
+   * @default 'minute'
+   * @see https://pgboss.io/api/scheduling#schedules-with-second-precision
+   */
+  precision?: SchedulePrecision
 }
 
 export interface PreviewScheduleOptions {
@@ -1283,8 +1290,9 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
    */
   transactional?: boolean;
   /**
-   * How long the database gives the handler's transaction before it ends it, in seconds. Only valid
-   * with `transactional`. `0` removes the bound. Defaults to `expireInSeconds` plus 5.
+   * How long the database gives the handler's transaction before it ends it, in seconds, up to
+   * 2147483. Only valid with `transactional`, required when a job's `expireInSeconds` is above 86400,
+   * and defaults to `expireInSeconds` plus 5; `0` removes the bound.
    * @see https://pgboss.io/api/workers#work-name-options-handler
    */
   transactionTimeoutSeconds?: number;
@@ -1376,6 +1384,21 @@ export type ScheduleKind = 'cron' | 'rrule'
 /** What a schedule does about occurrences that came due while no cron pass ran. */
 export type ScheduleMissedPolicy = 'skip' | 'once'
 
+/** How finely a schedule's occurrences are sent. */
+export type SchedulePrecision = 'minute' | 'second'
+
+/**
+ * A queue's subscription to an event, as returned by `getSubscriptions()`.
+ * @see https://pgboss.io/api/pubsub#getsubscriptions-event-options
+ */
+export interface Subscription {
+  event: string;
+  /** The queue that receives a job when the event is published. */
+  name: string;
+  createdOn: Date;
+  updatedOn: Date;
+}
+
 export interface Schedule {
   name: string;
   key: string;
@@ -1387,7 +1410,7 @@ export interface Schedule {
   data?: object;
   /**
    * The options blob `schedule()` stored, which is every option it was given: the `send()` options
-   * each job is created with, and `tz`, `key` and `missed` beside them.
+   * each job is created with, and `tz`, `key`, `missed` and `precision` beside them.
    */
   options?: ScheduleOptions;
   createdOn: Date;
@@ -1619,6 +1642,24 @@ export interface StopOptions {
 export interface OffWorkOptions {
   id?: string,
   wait?: boolean
+}
+
+export interface DrainOptions {
+  /**
+   * Seconds to keep draining before drain() resolves without waiting for batches still running.
+   * Default none.
+   * @see https://pgboss.io/api/workers#drain-name-options
+   */
+  timeoutSeconds?: number
+}
+
+export interface DrainResult {
+  /** Jobs handed to a handler while draining, whether they completed or failed. */
+  processed: number
+  /** How many of those failed. A failed job retries per its queue's policy as usual. */
+  failed: number
+  /** True when `timeoutSeconds` ran out before a pass found nothing ready. */
+  timedOut: boolean
 }
 
 export interface EventsMixin extends NodeJS.EventEmitter {

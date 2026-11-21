@@ -1,5 +1,5 @@
 import type * as types from './types.js'
-import { scheduleKinds, scheduleMissedPolicies } from 'pg-boss'
+import { scheduleKinds, scheduleMissedPolicies, schedulePrecisions } from 'pg-boss'
 import { z } from 'zod'
 
 // ============== Base Types ==============
@@ -86,12 +86,14 @@ export const updateOptionsSchema = z.object({
   match: z.enum(['newest', 'oldest', 'all']).optional(),
 }) satisfies z.ZodType<types.HttpUpdateOptions>
 
-// missed and the kind enum below both come from the core's own exported constants, so a policy or
-// kind added there widens the contract (and the generated OpenAPI enum) without an edit here.
+// missed, precision and the kind enum below come from the core's own exported constants. A policy,
+// precision or kind added there widens the contract (and the generated OpenAPI enum) without an edit
+// here.
 export const scheduleOptionsSchema = sendOptionsSchemaBase.extend({
   tz: z.string().optional(),
   key: z.string().optional(),
   missed: z.enum(scheduleMissedPolicies).optional(),
+  precision: z.enum(schedulePrecisions).optional(),
 }) satisfies z.ZodType<types.HttpScheduleOptions>
 
 export const fetchOptionsSchema = z.object({

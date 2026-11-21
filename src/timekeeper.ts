@@ -1,5 +1,6 @@
 import { CronDate, type CronExpression, CronExpressionParser } from 'cron-parser'
 import assert from 'node:assert'
+import { randomUUID } from 'node:crypto'
 import EventEmitter from 'node:events'
 
 import * as Attorney from './attorney.ts'
@@ -63,6 +64,19 @@ type ScheduledRequest = types.Request & { key?: string, slot?: string }
 // into SQL is shaped.
 type FiredSchedule = { name: string, key: string, jobId: string }
 
+// A schedule sent every second, as a lease caches it: the row, its expression parsed once, and the
+// job fields send() would resolve from its data and options.
+type SecondSchedule = { schedule: types.Schedule, id: string, interval: CronExpression, job: Record<string, unknown>, notify: boolean }
+
+// What one schedule sends in a cron statement: the jobs for `occurrences`, and the cursor value it
+// moves to, which is the newest of them unless a gap under `skip` moves it with none.
+type SecondSend = { entry: SecondSchedule, occurrences: Date[], through: number }
+
+// Schedules per cron statement, which bounds its size and the row locks it holds.
+const SECOND_SEND_CHUNK = 500
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
 // How long an occurrence stays due, and the width of the throttle slot a forwarded job is filed in.
 // One value because the two have to agree: a window wider than the slot lets two slots claim the
 // same occurrence and send it twice, and a slot wider than the window collapses two occurrences a
@@ -71,6 +85,7 @@ const OCCURRENCE_WINDOW_SECONDS = 60
 
 /** The policy names, for the check schedule() performs and the one the pass performs. */
 const MISSED_POLICIES = Object.values(plans.SCHEDULE_MISSED_POLICIES)
+const PRECISIONS = Object.values(plans.SCHEDULE_PRECISIONS)
 
 // __singletonSlot is an internal field of the pass's own insert rather than a documented send
 // option, so the forwarded job widens JobInsert here rather than the type widening for everyone.
@@ -110,34 +125,123 @@ type DueOccurrences = { kind: types.ScheduleKind, occurrences: Date[] }
  * slot expression computes from `now()` for a cron occurrence, so a slot measured here is rendered
  * in the same terms.
  */
-function throttleSlot (instant: Date): string {
-  const width = OCCURRENCE_WINDOW_SECONDS * 1000
+function throttleSlot (instant: Date, widthSeconds = OCCURRENCE_WINDOW_SECONDS): string {
+  const width = widthSeconds * 1000
 
   return new Date(Math.floor(instant.getTime() / width) * width).toISOString().replace('T', ' ').slice(0, 19)
 }
 
 /**
+ * Whether a schedule is evaluated every second rather than by the pass alone: it asks for
+ * `precision: 'second'`, and its expression's seconds field, as cron-parser reads it, names
+ * anything other than 0.
+ *
+ * Opt-in, because `schedule()` has always stored 6-placeholder expressions and sent them a job a
+ * minute. Reading the seconds field alone would turn a stored `* * * * * *` from 1,440 jobs a day
+ * into 86,400 on upgrade.
+ *
+ * Read off the parsed field rather than by counting placeholders, so an alias is judged by what it
+ * expands to (`@secondly` is every second) and a 6-placeholder expression whose seconds field is 0
+ * stays with the pass: every occurrence it has is on :00, where the minute slot and the second slot
+ * name the same instant, so the pass already sends it once. Keeping those with the pass keeps the
+ * per-second evaluation, and the rolling upgrade a second-wide slot is exposed to, to the
+ * expressions that need it. An expression that does not parse as cron stays with the pass, which
+ * is every rule, since no cron field contains `=`, `:` or `;`, and every row the pass warns about.
+ */
+function isSecondCron (expression: string, options: types.ScheduleOptions | undefined): boolean {
+  if (options?.precision !== plans.SCHEDULE_PRECISIONS.second) {
+    return false
+  }
+
+  try {
+    const seconds = CronExpressionParser.parse(expression, { strict: false }).fields.second.values
+
+    return !(seconds.length === 1 && seconds[0] === 0)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Every occurrence of a cron expression in (after, until], oldest first, passing over the second
+ * instant of a repeated local time as previousOccurrence does.
+ *
+ * Each second of the range is asked about rather than walked to with prev(), which looks past the
+ * oldest occurrence for the one before it. When that one is a time the clocks skipped, as
+ * `30 30 0 * * *` has in America/Havana, prev() throws for up to a day, and the occurrences found
+ * on the way would go with it. The cost follows the range, so a caller keeps it to the due window.
+ */
+function cronOccurrencesBetween (interval: CronExpression, tz: string, after: number, until: number): Date[] {
+  const found: Date[] = []
+
+  for (let second = Math.floor(after / 1000) + 1; second * 1000 <= until; second++) {
+    const instant = new Date(second * 1000)
+
+    if (interval.includesDate(instant) && !passedOver(interval, instant, tz)) {
+      found.push(instant)
+    }
+  }
+
+  return found
+}
+
+/**
  * The occurrence before an interval's cursor, passing over the second instant of a local time the
- * clocks went back over.
+ * clocks went back over, unless the expression keeps running through that hour.
  *
  * Walking forwards, cron-parser runs a repeated hour once unless the expression names every hour,
  * so `30 1 * * *` in America/New_York sends at the first 01:30 on the night the clocks go back and
  * `0 * * * *` stays hourly. Walking backwards it answers with both instants, an hour apart and so
  * in throttle slots of their own, and a pass reading backwards would send the daily job twice. This
- * reads backwards the way the forward walk, and previewSchedule() with it, reads forwards. A rule
- * gets the same answer from rrule-temporal, which resolves a repeated local time to its first
- * instant.
+ * reads backwards the way the forward walk, and previewSchedule() with it, reads forwards, and
+ * `FREQ=DAILY;BYHOUR=1;BYMINUTE=30` gets the same answer from rrule-temporal, which resolves a
+ * repeated local time to its first instant.
  */
 function previousOccurrence (interval: CronExpression, tz: string): Date {
-  const everyHour = interval.fields.hour.values.length === 24
-
   for (;;) {
     const occurrence = interval.prev().toDate()
 
-    if (everyHour || !repeatsLocalTime(occurrence, tz)) {
+    if (!passedOver(interval, occurrence, tz)) {
       return occurrence
     }
   }
+}
+
+/**
+ * The latest occurrence of a cron expression in (after, until], walking forwards, for a range that
+ * prev() cannot read back across. The forward walk moves a skipped time's occurrence into the hour
+ * the clocks landed on, which the expression does not name, so that one is left out as the
+ * backward read leaves it out.
+ */
+function latestOccurrenceForward (expression: string, tz: string, after: number, until: number): Date | null {
+  const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(after) })
+  let latest: Date | null = null
+
+  for (;;) {
+    const occurrence = interval.next().toDate()
+
+    if (occurrence.getTime() > until) return latest
+
+    if (interval.includesDate(occurrence) && !passedOver(interval, occurrence, tz)) {
+      latest = occurrence
+    }
+  }
+}
+
+/**
+ * Whether an occurrence is one a repeated local time holds no job for: the second instant, in an
+ * expression that names neither every hour nor multiple minutes across multiple hours.
+ *
+ * An expression naming multiple minutes across multiple hours is a run rather than a time of day,
+ * and passing over the repeated hour would leave `0,15,30,45 0-3 * * *` sending nothing for an hour
+ * and a quarter. It reads both instants, as a `FREQ=MINUTELY` rule does, and previewSchedule(),
+ * walking forwards, can list fewer than the pass sends.
+ */
+function passedOver (interval: CronExpression, instant: Date, tz: string): boolean {
+  const { hour, minute } = interval.fields
+  const keepsRepeatedHour = hour.values.length === 24 || (hour.values.length > 1 && minute.values.length > 1)
+
+  return !keepsRepeatedHour && repeatsLocalTime(instant, tz)
 }
 
 /**
@@ -170,6 +274,13 @@ function claimTaken (value: unknown): boolean {
   }
 
   return value === true || value === 1
+}
+
+// CockroachDB runs SERIALIZABLE, where two cron statements racing on one schedule fail one with a
+// retry error instead of leaving it zero rows. The winner sent the occurrences, so the loser drops
+// its statement as Postgres would.
+function lostRace (err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === '40001'
 }
 
 /**
@@ -250,6 +361,13 @@ function assertMissedPolicy (missed: unknown): void {
     `missed must be one of: ${MISSED_POLICIES.join(', ')}`)
 }
 
+// Nullish is the default, as for the missed policy. A value no pass recognizes would send a job a
+// minute, which is a schedule silently not doing what its caller asked.
+function assertPrecision (precision: unknown): void {
+  assert(precision === undefined || precision === null || PRECISIONS.includes(precision as types.SchedulePrecision),
+    `precision must be one of: ${PRECISIONS.join(', ')}`)
+}
+
 /**
  * Parses a cron expression the way the cron pass will evaluate it, mapping cron-parser's failures
  * onto messages that name the input actually at fault. Deliberately reuses cron-parser rather than
@@ -312,6 +430,25 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   // came back.
   private warnedSchedules = new Set<string>()
 
+  // A won cron claim is held as a lease of one cronMonitorIntervalSeconds from the moment it was
+  // won: the instance holding it keeps the cron expressions with a seconds field that its pass read,
+  // and evaluates them every second until the lease runs out. No other instance reads or evaluates
+  // them, so the per-second evaluation is serialized by the claim the way the pass is.
+  private secondCronCache: SecondSchedule[] = []
+  private leaseUntil = 0
+  private secondTickTimer: types.ClockTimer | null | undefined
+  private secondTickOrigin = 0
+  private _secondTicking = false
+
+  // Per schedule sent every second, keyed on [name, key], the cursor value this instance's own last
+  // successful statement moved it to. Never ahead of the row, since the cursor only moves forward,
+  // so occurrences at or before it need not be computed again. The statement trims anything at or
+  // before the live cursor, so a schedule with no hint is read from the due window.
+  private secondCronHint = new Map<string, number>()
+
+  // Schedules whose statement failed on its own, warned about once until one succeeds.
+  private sendWarned = new Set<string>()
+
   clockSkew = 0
   events = EVENTS
 
@@ -360,6 +497,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     this.stopped = false
     // A restart should re-surface a row nobody has fixed yet
     this.warnedSchedules.clear()
+    this.sendWarned.clear()
+    this.secondCronHint.clear()
 
     await this.cacheClockSkew()
     await this.manager.createQueue(QUEUES.SEND_IT)
@@ -376,6 +515,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     this.cronMonitorTimer = new ClaimTimer(this.config.clock, this.config.cronMonitorIntervalSeconds!, () => this.onCron())
     this.cronMonitorTimer.start()
     this.scheduleSkewMonitor()
+
+    // The grid the per-second evaluation ticks on, armed by a won claim.
+    this.secondTickOrigin = this.config.clock.now()
   }
 
   async stop () {
@@ -397,8 +539,77 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       this.cronMonitorTimer = null
     }
 
-    while (this._timekeeping || this._checkingSkew) {
+    if (this.secondTickTimer) {
+      this.config.clock.clearTimeout(this.secondTickTimer)
+      this.secondTickTimer = null
+    }
+
+    while (this._timekeeping || this._checkingSkew || this._secondTicking) {
       await delay(10)
+    }
+  }
+
+  // A tick on a one-second grid measured from start(), chained like the skew monitor so a slow
+  // evaluation delays the next one instead of overlapping it. Armed by a won claim and left to lapse
+  // once the lease has run out or nothing is cached, so an instance that does not hold the claim,
+  // or holds it with nothing cached, does not wake every second. Arming while a tick is pending
+  // does nothing, so a claim renewed beside a tick keeps one chain.
+  private scheduleSecondTick () {
+    if (this.stopped || this.secondTickTimer) return
+
+    const wait = 1000 - ((this.config.clock.now() - this.secondTickOrigin) % 1000)
+
+    this.secondTickTimer = this.config.clock.setTimeout(async () => {
+      this.secondTickTimer = null
+
+      try {
+        await this.onSecond()
+      } finally {
+        if (this.config.clock.now() < this.leaseUntil && this.secondCronCache.length > 0) this.scheduleSecondTick()
+      }
+    }, wait)
+  }
+
+  // Files every occurrence of the cached schedules since this instance last evaluated them, while
+  // the lease lasts.
+  async onSecond () {
+    // Outside the try, as in onCron().
+    if (this.stopped || this._secondTicking) return
+
+    this._secondTicking = true
+
+    try {
+      // A lapsed lease evaluates nothing. The next won claim runs a pass that reads on from where
+      // this instance left off, or from the claim of whoever held it last.
+      if (this.config.clock.now() >= this.leaseUntil || this.secondCronCache.length === 0) {
+        return
+      }
+
+      const databaseTime = this.databaseTime
+      const sends: SecondSend[] = []
+
+      for (const entry of this.secondCronCache) {
+        let send: SecondSend | null
+
+        try {
+          send = this.secondSend(entry, databaseTime, null)
+        } catch {
+          // The pass that cached the row read it the same way and warned about it.
+          continue
+        }
+
+        if (send !== null) {
+          sends.push(send)
+        }
+      }
+
+      if (sends.length > 0 && !this.stopped) {
+        await this.sendSeconds(sends)
+      }
+    } catch (err) {
+      this.emit(this.events.error, err)
+    } finally {
+      this._secondTicking = false
     }
   }
 
@@ -486,7 +697,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         await delay(this.config.__test__delay_cron_ms)
       }
 
-      const sql = plans.trySetCronTime(this.config.schema, this.config.cronMonitorIntervalSeconds)
+      const sql = plans.trySetCronTime(this.config.schema, this.config.cronMonitorIntervalSeconds!)
 
       if (!this.stopped) {
         const { rows } = await this.db.executeSql(sql)
@@ -514,7 +725,26 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
           // The claim answers with the timestamp it replaced, which is when an instance last ran a
           // pass. Anything older than the due window between then and now is a gap no pass covered,
           // and a schedule's `missed` policy decides what it owes for it.
-          await this.cron(rows[0].priorCronOn)
+          //
+          // The rows are read once for the lease: the pass evaluates them, and the per-second tick
+          // keeps evaluating the ones isSecondCron() accepts until the lease runs out.
+          const schedules = await this.getSchedules()
+
+          // From the stamp the claim wrote rather than from when its answer arrived, so the lease
+          // ends when another instance can claim, whatever the round trip took. In this instance's
+          // clock, which is what the tick reads.
+          const claimedOn = toTime(rows[0].claimedOn) ?? this.databaseTime
+          this.leaseUntil = claimedOn - this.clockSkew + this.config.cronMonitorIntervalSeconds! * 1000
+
+          try {
+            await this.cron(rows[0].priorCronOn, schedules)
+          } finally {
+            // Armed whatever the pass did after its sends, so a failed write after them does not
+            // leave the schedules sent every second silent for the lease.
+            if (this.secondCronCache.length > 0) {
+              this.scheduleSecondTick()
+            }
+          }
         }
       }
     } catch (err) {
@@ -558,9 +788,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * it advanced. Null on a database no pass has run against, and left null by a caller that does
    * not know: either way no schedule has a gap to catch up on and the pass sends the due window,
    * which is what every release before catch-up sent.
+   *
+   * `cached` is the rows onCron() read for the lease, and the pass reads them itself without it.
    */
-  async cron (priorCronOn: unknown = null) {
-    const schedules = await this.getSchedules()
+  async cron (priorCronOn: unknown = null, cached?: types.Schedule[]) {
+    const schedules: types.Schedule[] = cached ?? await this.getSchedules()
 
     const scheduled: ForwardedJob[] = []
     const stillBroken = new Set<string>()
@@ -581,6 +813,14 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     const lastPass = toTime(priorCronOn)
 
+    // No pass ran for longer than the due window, which is where a schedule's `missed` policy
+    // decides what it owes.
+    const gapSince = lastPass !== null && lastPass < windowStart ? lastPass : null
+
+    // The schedules sent every second, cached for the tick, and what this pass sends for them.
+    const entries = await this.cacheSecondSchedules(schedules)
+    const seconds: SecondSend[] = []
+
     for (const schedule of schedules) {
       const { name, key, data, options, kind, cron, timezone } = schedule
 
@@ -595,6 +835,26 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         if (!this.warnedSchedules.has(warned)) {
           await emitAndPersistWarning(this.warningContext, WARNING_TYPES.INVALID_SCHEDULE, message, { queue: name, key, cron, timezone })
         }
+      }
+
+      // Sent by the cron statement rather than through send-it. A row whose job fields could not be
+      // resolved was warned about when it was cached.
+      if (kind === plans.SCHEDULE_KINDS.cron && isSecondCron(cron, options)) {
+        const entry = entries.get(JSON.stringify([name, key]))
+
+        if (entry !== undefined) {
+          try {
+            const send = this.secondSend(entry, databaseTime, gapSince)
+
+            if (send !== null) {
+              seconds.push(send)
+            }
+          } catch (err) {
+            await warn(`Warning: schedule for queue "${name}" (key "${key}") could not be evaluated and was skipped: ${(err as Error).message}`)
+          }
+        }
+
+        continue
       }
 
       let due: DueOccurrences
@@ -633,6 +893,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         relabelled.push({ name, key, kind: due.kind, cron })
       }
 
+      const width = OCCURRENCE_WINDOW_SECONDS
+      const occurrences = due.occurrences
+
       // The payload carries the schedule's key beside its queue name, so the send-it handler knows
       // which row an occurrence came from and can record the job it produced.
       const forwarded = { data: { name, key, data, options }, singletonKey: occurrenceKey(name, key) }
@@ -657,19 +920,19 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       // older than the one insert time computes, so it cannot.
       //
       // One job per slot rather than one per occurrence, which is the resolution the docs promise:
-      // an expression finer than a slot sends a job a slot, and two occurrences inside one window
-      // that fall in slots of their own each send.
+      // a rule finer than a minute sends a job a minute, and two occurrences inside one window that
+      // fall in slots of their own each send.
       const slots = new Set<string>()
 
       if (missed !== null) {
-        slots.add(throttleSlot(missed))
+        slots.add(throttleSlot(missed, width))
       }
 
       // Through the set the missed occurrence went through, since the window's lower bound falls
       // inside a slot rather than on one: an occurrence on the bound is missed, one a millisecond
       // later is due, and both belong to the same slot and so to the same job.
-      for (const occurrence of due.occurrences) {
-        slots.add(throttleSlot(occurrence))
+      for (const occurrence of occurrences) {
+        slots.add(throttleSlot(occurrence, width))
       }
 
       for (const slot of slots) {
@@ -683,12 +946,246 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       await this.manager.insert(QUEUES.SEND_IT, scheduled, { __singletonSlots: true })
     }
 
+    if (seconds.length > 0 && !this.stopped) {
+      await this.sendSeconds(seconds)
+    }
+
     // After the sends, so a failed relabel cannot cost an occurrence. Nothing depends on the write:
     // the fallback in dueOccurrences fires the row either way. What it buys is getSchedules() no
     // longer reporting a format the expression is not in, and the row leaving that fallback path.
     if (relabelled.length > 0 && !this.stopped) {
       await this.db.executeSql(plans.setScheduleKinds(this.config.schema), [JSON.stringify(relabelled)])
     }
+  }
+
+  /**
+   * Caches the schedules sent every second for the lease, each with its expression parsed and its
+   * job fields resolved once. A row whose fields cannot be resolved, written by an earlier release
+   * or straight into the table, is warned about and left out. `replace` false answers with the
+   * entries and leaves the cache to the caller.
+   */
+  private async cacheSecondSchedules (schedules: types.Schedule[], replace = true): Promise<Map<string, SecondSchedule>> {
+    const entries = new Map<string, SecondSchedule>()
+
+    for (const schedule of schedules) {
+      const { name, key, data, options, kind, cron, timezone } = schedule
+
+      if (kind !== plans.SCHEDULE_KINDS.cron || !isSecondCron(cron, options)) {
+        continue
+      }
+
+      const id = JSON.stringify([name, key])
+
+      try {
+        const { db, missed, precision, ...sendOptions }: types.ScheduleOptions = options ?? {}
+        const interval = CronExpressionParser.parse(cron, { tz: timezone || 'UTC', strict: false })
+        const job = this.manager.scheduledJobFields(name, data, sendOptions)
+        const { notify, policy } = await this.manager.getQueueCache(name)
+
+        // send() refuses the job up front, where the cron statement would fail on the CHECK.
+        assert(policy !== plans.QUEUE_POLICIES.key_strict_fifo || job.singletonKey, `${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
+
+        entries.set(id, { schedule, id, interval, job, notify: !!notify && !this.config.noListenNotify })
+      } catch (err) {
+        await this.warnSend(schedule, `Warning: schedule for queue "${name}" (key "${key}") could not be evaluated and was skipped: ${(err as Error).message}`)
+      }
+    }
+
+    if (replace) {
+      this.secondCronCache = [...entries.values()]
+    }
+
+    return entries
+  }
+
+  /**
+   * What a schedule sent every second owes at `databaseTime`, or null when it owes nothing.
+   *
+   * Without a gap, every occurrence in the due window after this instance's hint. The statement
+   * trims what the live cursor has already passed, so a holder that stopped partway through its
+   * lease leaves the rest to the next, each occurrence a job of its own.
+   *
+   * After a gap, `missed` decides. `skip` sends nothing and moves the cursor to now, since nothing
+   * before it is owed. `once` sends the latest occurrence since the gap began, however many came
+   * due, where sending the window as well would be up to 60 more.
+   */
+  private secondSend (entry: SecondSchedule, databaseTime: number, gapSince: number | null): SecondSend | null {
+    const { schedule, interval } = entry
+    const tz = schedule.timezone || 'UTC'
+    const windowStart = databaseTime - OCCURRENCE_WINDOW_SECONDS * 1000
+
+    if (gapSince !== null) {
+      if (missedPolicy(schedule.options) === plans.SCHEDULE_MISSED_POLICIES.skip) {
+        return { entry, occurrences: [], through: databaseTime }
+      }
+
+      const from = Math.max(gapSince, toTime(schedule.createdOn) ?? gapSince)
+      const latest = this.latestOccurrenceBefore(schedule.cron, plans.SCHEDULE_KINDS.cron, tz, new Date(from), new Date(databaseTime))
+
+      return latest === null ? null : { entry, occurrences: [latest], through: latest.getTime() }
+    }
+
+    const after = Math.max(this.secondCronHint.get(entry.id) ?? windowStart, windowStart)
+    const occurrences = cronOccurrencesBetween(interval, tz, after, databaseTime)
+
+    return occurrences.length === 0 ? null : { entry, occurrences, through: occurrences[occurrences.length - 1].getTime() }
+  }
+
+  /**
+   * Sends schedules' jobs with the cron statement, in chunks. A chunk that fails is sent again a
+   * schedule at a time, so one bad row costs only its own jobs, and that row is warned about. A
+   * failed send moves nothing, and the next tick sends the same occurrences while they are due.
+   */
+  private async sendSeconds (sends: SecondSend[]): Promise<void> {
+    for (let i = 0; i < sends.length; i += SECOND_SEND_CHUNK) {
+      const chunk = sends.slice(i, i + SECOND_SEND_CHUNK)
+
+      try {
+        await this.sendSecondChunk(chunk)
+      } catch {
+        // Each schedule again, after a lost race as well: the race was on one of the chunk's rows,
+        // and the others have still sent nothing.
+        for (const send of chunk) {
+          try {
+            await this.sendSecondChunk([send])
+          } catch (err) {
+            if (lostRace(err)) continue
+
+            const { name, key } = send.entry.schedule
+            await this.warnSend(send.entry.schedule, `Warning: schedule for queue "${name}" (key "${key}") could not be sent: ${(err as Error).message}`)
+          }
+        }
+      }
+    }
+  }
+
+  private async sendSecondChunk (unsorted: SecondSend[]): Promise<void> {
+    // In key order, so two statements at a lease handoff take the schedules' row locks the same way.
+    const sends = [...unsorted].sort((a, b) => a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0)
+    const jobsOf = new Map<string, { entry: SecondSchedule, occurrence: number }>()
+    const data = new Map<string, unknown>()
+    const notify = new Set<string>()
+    const count = sends.reduce((sum, send) => sum + send.occurrences.length, 0)
+
+    for (const { entry } of sends) {
+      if (entry.notify) {
+        notify.add(entry.schedule.name)
+      }
+    }
+
+    const rows = await this.manager.sendScheduled(count, traceContext => {
+      const jobs: unknown[] = []
+
+      const payload = sends.map(({ entry, occurrences, through }) => {
+        const { name, key, cron, timezone, data: scheduleData, options } = entry.schedule
+
+        for (const occurrence of occurrences) {
+          const id = randomUUID()
+
+          jobsOf.set(id, { entry, occurrence: occurrence.getTime() })
+          data.set(id, entry.job.data ?? {})
+
+          jobs.push({ ...entry.job, id, name, scheduleKey: key, occurrence: occurrence.toISOString(), __traceContext: traceContext })
+        }
+
+        return {
+          name,
+          key,
+          cron,
+          timezone: timezone || 'UTC',
+          data: scheduleData ?? null,
+          options: options ?? null,
+          through: new Date(through).toISOString()
+        }
+      })
+
+      return { text: plans.sendScheduledJobs(this.config.schema, [...notify]), values: [JSON.stringify(payload), JSON.stringify(jobs)], data }
+    })
+
+    const byId = new Map(sends.map(send => [send.entry.id, send]))
+    const matched = new Set<string>()
+    const latest = new Map<string, { name: string, key: string, jobId: string, occurrence: number }>()
+
+    for (const row of rows) {
+      if (row.id) {
+        const job = jobsOf.get(row.id)
+
+        if (job !== undefined) {
+          const { name, key } = job.entry.schedule
+          const newest = latest.get(job.entry.id)
+
+          if (newest === undefined || newest.occurrence < job.occurrence) {
+            latest.set(job.entry.id, { name, key, jobId: row.id, occurrence: job.occurrence })
+          }
+        }
+
+        continue
+      }
+
+      const id = JSON.stringify([row.name, row.key])
+      const send = byId.get(id)
+
+      if (send === undefined) continue
+
+      matched.add(id)
+      this.sendWarned.delete(id)
+
+      // Claimed, or already past by a cursor someone else moved: either way every occurrence up to
+      // `through` has been sent. A race lost to a cursor still short of it leaves the hint, and the
+      // next tick sends the rest.
+      const prev = toTime(row.prev)
+
+      if (claimTaken(row.claimed) || (prev !== null && prev >= send.through)) {
+        this.secondCronHint.set(id, Math.max(this.secondCronHint.get(id) ?? send.through, send.through))
+      }
+    }
+
+    // A schedule removed or changed since the lease read it matches nothing. Its row is read again,
+    // so the next tick sends a changed one under its new definition and nothing for a removed one.
+    const unmatched = sends.filter(({ entry }) => !matched.has(entry.id)).map(({ entry }) => entry)
+
+    if (unmatched.length > 0 && !this.stopped) {
+      const reread: types.Schedule[] = []
+
+      for (const { schedule } of unmatched) {
+        reread.push(...await this.getSchedules(schedule.name, schedule.key))
+      }
+
+      const refreshed = await this.cacheSecondSchedules(reread, false)
+      const gone = new Set(unmatched.map(entry => entry.id))
+
+      this.secondCronCache = [
+        ...this.secondCronCache.filter(entry => !gone.has(entry.id)),
+        ...refreshed.values()
+      ]
+    }
+
+    if (latest.size > 0 && !this.stopped) {
+      const fired: FiredSchedule[] = [...latest.values()].map(({ name, key, jobId }) => ({ name, key, jobId }))
+
+      // Caught here, since the jobs are sent: a throw would send the chunk again a schedule at a
+      // time, and each of those statements inserts nothing.
+      try {
+        await this.db.executeSql(plans.setScheduleLastJobIds(this.config.schema), [JSON.stringify(fired)])
+      } catch (err) {
+        const schedules = fired.map(({ name, key }) => `"${name}" (key "${key}")`).join(', ')
+
+        this.emit(this.events.error, new Error(`Warning: schedules fired but their last job id could not be recorded for ${schedules}: ${(err as Error).message}`, { cause: err }))
+      }
+    }
+  }
+
+  // Warned once per schedule until one of its sends succeeds, since a row that cannot be sent fails
+  // the same way every second.
+  private async warnSend (schedule: types.Schedule, message: string): Promise<void> {
+    const { name, key, cron, timezone } = schedule
+    const id = JSON.stringify([name, key])
+
+    if (this.sendWarned.has(id)) return
+
+    this.sendWarned.add(id)
+
+    await emitAndPersistWarning(this.warningContext, WARNING_TYPES.INVALID_SCHEDULE, message, { queue: name, key, cron, timezone })
   }
 
   shouldSendIt (expression: string, tz: string, kind: types.ScheduleKind = plans.SCHEDULE_KINDS.cron) {
@@ -795,11 +1292,25 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     // millisecond past `until` to leave the upper bound included. That is where the due window's
     // own lower bound leaves off, and an occurrence exactly on it belongs to one range or the
     // other, never both.
-    const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(until.getTime() + 1) })
+    //
+    // prev() throws for up to a day after a time the clocks skipped, as `30 30 0 * * *` has in
+    // America/Havana, since it looks past the skipped occurrence for one that does not exist. That
+    // day is read forwards instead, and each day before it the same way, as far back as `after`.
+    for (let reference = until.getTime(); reference > after.getTime(); reference -= DAY_MS) {
+      const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(reference + 1) })
 
-    const occurrence = previousOccurrence(interval, tz)
+      try {
+        const occurrence = previousOccurrence(interval, tz)
 
-    return occurrence.getTime() > after.getTime() ? occurrence : null
+        return occurrence.getTime() > after.getTime() ? occurrence : null
+      } catch {
+        const latest = latestOccurrenceForward(expression, tz, Math.max(after.getTime(), reference - DAY_MS), reference)
+
+        if (latest !== null) return latest
+      }
+    }
+
+    return null
   }
 
   /**
@@ -858,8 +1369,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       // key and slot are the pass's own bookkeeping, read below rather than sent: send() takes the
       // request the schedule row described and nothing else.
       const { key, slot, ...request } = data
-      // A row written before 12.37.0 may still carry `db` from schedule(); it is never a send option here.
-      const { db, ...options } = request.options ?? {}
+      // A row written before 12.37.0 may still carry `db` from schedule(). It, `missed` and
+      // `precision` are never send options here.
+      const { db, missed, precision, ...options }: types.ScheduleOptions = request.options ?? {}
       return await this.manager.send({ ...request, options })
     }))
 
@@ -1045,9 +1557,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     // stored on the row, and later handed to send() by the cron pass, never carries a connection.
     const { db, ...persisted } = options
 
-    // `missed` comes out with tz and key: it tells the pass what to do about a gap and is no more a
-    // send option than they are, so the send-option check below is not handed it.
-    const { tz: requestedTz, key = '', missed, ...rest } = persisted
+    // `missed` and `precision` come out with tz and key: they tell the pass what to do about a gap
+    // and how finely to send, and are no more send options than they are, so the send-option check
+    // below is not handed them.
+    const { tz: requestedTz, key = '', missed, precision, ...rest } = persisted
 
     // Any falsy zone is "none specified", not a zone to be judged: a destructuring default only
     // covers `undefined`, and a value threaded out of a config object or read back off the nullable
@@ -1076,6 +1589,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     Attorney.checkSendArgs([name, data, { ...rest }])
     Attorney.assertKey(key)
     assertMissedPolicy(missed)
+    assertPrecision(precision)
+
+    // The cron statement inserts each occurrence once, where send() would try the next slot.
+    assert(!(precision === plans.SCHEDULE_PRECISIONS.second && rest.singletonNextSlot), "singletonNextSlot is not supported with precision: 'second'")
 
     try {
       const sql = plans.schedule(this.config.schema)

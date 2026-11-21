@@ -650,10 +650,22 @@ describeTransactional('transactional work', function () {
     expect(applied).toBe(35000)
   })
 
-  it('should honour an explicit transactionTimeoutSeconds', async function () {
+  it('should require an explicit transaction timeout for multi-day jobs', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const jobId = await ctx.boss.send(ctx.schema, null, { expireInSeconds: 86401, retryLimit: 0 })
+    helper.assertTruthy(jobId)
+    let called = false
+    await ctx.boss.work(ctx.schema, { transactional: true }, async () => { called = true })
+    await until(async () => (await ctx.boss!.getJobById(ctx.schema, jobId))?.state === 'failed')
+    expect(called).toBe(false)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect(job?.output).toMatchObject({ message: 'transactional jobs with expiration above 24 hours require transactionTimeoutSeconds' })
+  })
+
+  it('should honour an explicit transactionTimeoutSeconds for a multi-day job', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 30 })
+    const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 14 * 86400 })
     helper.assertTruthy(jobId)
 
     let applied: number | null | undefined
@@ -1091,7 +1103,30 @@ describe('transactional work options', function () {
 
     await expect(async () => {
       await ctx.boss!.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 1.5 } as any, async () => {})
-    }).rejects.toThrow(/transactionTimeoutSeconds must be an integer >= 0/)
+    }).rejects.toThrow(/transactionTimeoutSeconds must be an integer from 0 to 2147483/)
+  })
+
+  it('should reject a transactionTimeoutSeconds whose milliseconds the database cannot hold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 2147484 }, async () => {}))
+      .rejects.toThrow(/transactionTimeoutSeconds must be an integer from 0 to 2147483/)
+
+    // PGlite cannot open the transaction, so it refuses the worker for that instead.
+    if (!helper.isPglite) {
+      await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 2147483 }, async () => {})).resolves.toBeTypeOf('string')
+    }
+  })
+
+  it.skipIf(helper.isPglite)('should reject a transactional worker on a queue whose expiration is above a day without a transaction timeout', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.updateQueue(ctx.schema, { expireInSeconds: 86401 })
+
+    await expect(ctx.boss.work(ctx.schema, { transactional: true }, async () => {}))
+      .rejects.toThrow('transactional jobs with expiration above 24 hours require transactionTimeoutSeconds')
+
+    await expect(ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 90000 }, async () => {})).resolves.toBeTypeOf('string')
   })
 
   it('should reject transactionTimeoutSeconds without transactional', async function () {

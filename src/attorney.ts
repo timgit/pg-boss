@@ -5,6 +5,7 @@ import type * as types from './types.ts'
 
 const POLICY = {
   MAX_EXPIRATION_HOURS: 24,
+  MAX_JOB_EXPIRATION_DAYS: 14,
   MIN_POLLING_INTERVAL_MS: 500,
   MAX_RETENTION_DAYS: 365
 }
@@ -473,9 +474,12 @@ function checkWorkArgs (name: string, args: any[]): {
 // one of the two features. Everything else about a worker (fetching, batching, concurrency, group
 // limits, heartbeats) is untouched by the option, because the transaction covers only the handler
 // and the completion.
+const MAX_TRANSACTION_TIMEOUT_SECONDS = Math.floor((2 ** 31 - 1) / 1000)
+
 function validateTransactionalConfig (options: any) {
-  assert(!('transactionTimeoutSeconds' in options) || (Number.isInteger(options.transactionTimeoutSeconds) && options.transactionTimeoutSeconds >= 0),
-    'transactionTimeoutSeconds must be an integer >= 0')
+  // The bound is set in milliseconds, which Postgres holds in a 32-bit integer.
+  assert(!('transactionTimeoutSeconds' in options) || (Number.isInteger(options.transactionTimeoutSeconds) && options.transactionTimeoutSeconds >= 0 && options.transactionTimeoutSeconds <= MAX_TRANSACTION_TIMEOUT_SECONDS),
+    `transactionTimeoutSeconds must be an integer from 0 to ${MAX_TRANSACTION_TIMEOUT_SECONDS}`)
 
   if (!options.transactional) {
     // Rejected rather than ignored: the bound only exists for a transaction pg-boss opened.
@@ -774,10 +778,8 @@ function validateExpirationConfig (config: any) {
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
-  // inclusive, like every other option bounded by MAX_EXPIRATION_HOURS: an expiration of exactly
-  // the maximum does not "exceed" it. this is also the value the docs recommend for the longest
-  // jobs, and the value the maintenance interval defaults to.
-  assert(!config.expireInSeconds || config.expireInSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+  // Keep job deadlines below Node's timer limit without changing maintenance intervals.
+  assert(!config.expireInSeconds || config.expireInSeconds / 86400 <= POLICY.MAX_JOB_EXPIRATION_DAYS, `configuration assert: expiration cannot exceed ${POLICY.MAX_JOB_EXPIRATION_DAYS} days`)
 }
 
 function validateRetryConfig (config: any) {

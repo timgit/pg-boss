@@ -136,12 +136,13 @@ describe('expire', function () {
     expect(await failed()).toBe(true)
   })
 
-  it('should persist an expiration of exactly 24 hours', async function () {
-    const expireInSeconds = 24 * 60 * 60
+  it('should expire a fetched job at the maximum duration despite a fresh heartbeat', async function () {
+    const clock = new TestClock()
+    const expireInSeconds = 14 * 86400
 
-    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, noDefault: true })
 
-    await ctx.boss.createQueue(ctx.schema, { expireInSeconds })
+    await ctx.boss.createQueue(ctx.schema, { expireInSeconds, heartbeatSeconds: 60, retryLimit: 0 })
 
     const queue = await ctx.boss.getQueue(ctx.schema)
 
@@ -155,6 +156,42 @@ describe('expire', function () {
 
     assertTruthy(job)
     expect(job.expireInSeconds).toBe(expireInSeconds)
+
+    const [fetched] = await ctx.boss.fetch(ctx.schema)
+    await clock.setTime(clock.now() + expireInSeconds * 1000 + 1)
+    expect((await ctx.boss.touch(ctx.schema, fetched)).affected).toBe(1)
+    await ctx.boss.supervise(ctx.schema)
+    const expired = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect(expired?.state).toBe('failed')
+    expect(expired?.output).toMatchObject({ value: { message: 'job timed out' } })
+  })
+
+  it.each(['completed', 'failed'] as const)('should keep a multi-day handler active until %s', async function (state) {
+    const clock = new TestClock()
+    const startedOn = clock.now()
+    const expireInSeconds = 14 * 86400
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+    const jobId = await ctx.boss.send(ctx.schema, null, { expireInSeconds, heartbeatSeconds: 60, retryLimit: 0 })
+    assertTruthy(jobId)
+    let finish: (() => void) | undefined
+    await ctx.boss.work(ctx.schema, ([job]) => new Promise<void>(resolve => {
+      finish = resolve
+      job.signal.addEventListener('abort', () => resolve(), { once: true })
+    }))
+    await helper.until(() => finish !== undefined)
+    await clock.setTime(startedOn + 6 * 86400000)
+    await clock.tick(0)
+    await ctx.boss.supervise(ctx.schema)
+    expect(await ctx.boss.getJobById(ctx.schema, jobId)).toMatchObject({ state: 'active', retryCount: 0 })
+
+    if (state === 'completed') {
+      assertTruthy(finish)
+      finish()
+    } else {
+      await clock.setTime(startedOn + expireInSeconds * 1000)
+      await clock.tick(0)
+    }
+    await helper.until(async () => (await ctx.boss!.getJobById(ctx.schema, jobId))?.state === state)
   })
 
   it('should abort signal when job handler times out', async function () {

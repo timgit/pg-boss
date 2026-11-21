@@ -81,7 +81,9 @@ By default, a worker fetches 1 job every 2 seconds.
 
 * **transactionTimeoutSeconds**, int, *(default=`expireInSeconds` + 5)*
 
-  How long the handler's transaction may run before the database kills its connection. Only valid alongside `transactional`; `0` removes the bound.
+  How long the handler's transaction may run before the database kills its connection. Only valid alongside `transactional`; `0` removes the bound. The maximum is 2147483 (about 24.8 days).
+
+  Transactional jobs whose `expireInSeconds` exceeds 24 hours require an explicit `transactionTimeoutSeconds`. `work()` rejects the worker when its queue's `expireInSeconds` exceeds 24 hours. A job whose own `expireInSeconds` exceeds 24 hours fails when it is fetched. This keeps a multi-day job deadline from setting a multi-day transaction bound by default.
 
   `expireInSeconds` is the timer that ends a slow handler and fires first. This option covers what no timer inside the process can, which is the process itself failing under an open transaction (a starved event loop, or a driver stuck below the promise). Until something closes that transaction, it keeps advertising `backend_xmin` and holds vacuum off every table in the database. [`monitorVacuum`](./constructor.md#monitorvacuum) reports such a transaction as an `xmin_horizon` warning.
 
@@ -386,6 +388,44 @@ const workerId = await boss.work('email-welcome', { pollingIntervalSeconds: 60 }
 // waiting out the remainder of its polling interval
 await boss.send('email-welcome', { to: 'new@user.com' })
 boss.notifyWorker(workerId)
+```
+
+### `drain(name, options)`
+
+Runs the workers registered with `work()` until none of them finds a ready job, then resolves. With `name`, only the workers on that queue. This is for a process that should work the queues and exit, such as a cron job, a serverless function, an app that scales to zero, or a test.
+
+The workers fetch, retry and settle jobs the same way they do while polling. `drain()` skips their polling interval and resolves once every worker it covers has fetched nothing since the last batch any of them handled, since a handler may have sent jobs to another worker's queue. Jobs that are not ready yet are not waited for, including jobs sent with `startAfter` and retries waiting out `retryDelay`. A handler that throws fails its jobs as usual, and they are counted in `failed` rather than thrown. Jobs on queues with no registered worker, or outside a worker's `minPriority`/`maxPriority` range, are not counted.
+
+Without a name, `drain()` covers every queue with a registered worker, including the jobs a handler sends to another of those queues. With a name, it wakes, waits on and counts only that queue's workers. A job a handler sends to another queue waits for that queue's own worker. A process that also runs long-lived workers on other queues should name the queue. Otherwise every batch wakes those workers too.
+
+Workers keep polling after `drain()` resolves, so call [`stop()`](./ops.md#stop-options) or [`offWork()`](#offwork-name-options) afterwards when the process should exit. With no workers registered, or none on the named queue, it resolves at once. Overlapping calls each resolve once their own workers are idle, and each counts the jobs its workers handled while it was running. A fetch that fails is retried on the worker's polling interval, so set `timeoutSeconds` if the drain must end on its own.
+
+A deployment that scales to zero has no long-lived instance to run maintenance or cron schedules between runs. Call [`supervise()`](./ops.md#supervise-name-options) at the start of each run to expire the jobs a stopped run left active and to apply retention. Cron schedules need a trigger of their own.
+
+**Arguments**
+- `name`: string *(optional)*. The queue to drain. `drain(options)` drains every queue with a worker.
+- `options`: object *(optional)*
+
+**Options**
+
+* **timeoutSeconds**, number
+
+  How long to keep draining. When it runs out, `drain()` resolves without waiting for batches still running, and leaves them out of `processed`. [`stop()`](./ops.md#stop-options) waits for them. Default none.
+
+**Returns**: `{ processed: number, failed: number, timedOut: boolean }`
+
+* `processed`: jobs handed to a handler while draining, whether they completed or failed.
+* `failed`: how many of those failed.
+* `timedOut`: true if `timeoutSeconds` ran out before the workers found nothing ready.
+
+```js
+await boss.work('email', emailHandler)
+await boss.work('report', reportHandler)
+
+const { processed, failed, timedOut } = await boss.drain({ timeoutSeconds: 540 })
+
+// waits for any batch still running when the timeout ran out
+await boss.stop()
 ```
 
 ### `offWork(name, options)`
