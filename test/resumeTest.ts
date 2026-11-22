@@ -67,7 +67,9 @@ describe('cancel', function () {
     assertTruthy(jobId)
     await ctx.boss.cancel(ctx.schema, jobId)
 
-    await clock.tick(3_600_000)
+    // A jump rather than a tick: nothing in between needs its timers fired, and ticking an hour
+    // replays every interval timer of the instance, which outlasts the test timeout under load.
+    await clock.setTime(clock.now() + 3_600_000)
     await ctx.boss.resume(ctx.schema, jobId)
     await clock.tick(60_000)
     await ctx.boss.supervise(ctx.schema)
