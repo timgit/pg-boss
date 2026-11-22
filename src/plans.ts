@@ -2067,7 +2067,10 @@ export function insertWarning (schema: string) {
   `
 }
 
-export function getWarnings (schema: string): string {
+// Newest first. With `after`, $3 is the id of the previous page's last row, and the page continues
+// below that row's (created_on, id).
+export function getWarnings (schema: string, after = false): string {
+  const anchor = (column: string) => `(SELECT ${column} FROM ${schema}.warning WHERE id = $3::uuid)`
   return `
     SELECT
       id,
@@ -2077,9 +2080,14 @@ export function getWarnings (schema: string): string {
       created_on as "createdOn"
     FROM ${schema}.warning
     WHERE ($1::text IS NULL OR type = $1)
-    ORDER BY created_on DESC
-    LIMIT $2 OFFSET $3
+    ${after ? `AND (created_on, id) < (${anchor('created_on')}, $3::uuid)` : ''}
+    ORDER BY created_on DESC, id DESC
+    LIMIT $2
   `
+}
+
+export function warningExists (schema: string) {
+  return `SELECT 1 FROM ${schema}.warning WHERE id = $1::uuid`
 }
 
 export function getWarningsCount (schema: string): string {

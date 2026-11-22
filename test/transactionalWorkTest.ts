@@ -621,7 +621,7 @@ describeTransactional('transactional work', function () {
     const db = await helper.getDb()
 
     try {
-      const { rows } = await db.executeSql(plans.getWarnings(ctx.schema), [null, 10, 0])
+      const { rows } = await db.executeSql(plans.getWarnings(ctx.schema), [null, 10])
       expect(rows.some(row => row.type === 'transactional_pool_headroom')).toBe(false)
     } finally {
       await db.close()

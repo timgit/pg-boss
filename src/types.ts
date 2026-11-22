@@ -871,6 +871,11 @@ export interface ListOptions<After = string> {
   after?: After;
 }
 
+export interface GetWarningsOptions extends ListOptions {
+  /** Only return warnings of this type. */
+  type?: WarningType;
+}
+
 export interface FindJobsOptions extends ConnectionOptions {
   id?: string;
   key?: string;
@@ -1693,8 +1698,11 @@ export interface Warning { message: string, data: object }
 
 export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry' | 'handler_overrun'
 
+/**
+ * A warning written to the `warning` table, as returned by `getWarnings()`.
+ */
 export interface PersistedWarning {
-  id: number;
+  id: string;
   type: WarningType;
   message: string;
   data: object;

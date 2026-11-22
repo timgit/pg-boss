@@ -223,7 +223,7 @@ describe('pg-boss on Bun.SQL', () => {
       { elapsed: 3 }
     )
 
-    const { rows } = await db.executeSql(plans.getWarnings(schema), [type, 1, 0])
+    const { rows } = await db.executeSql(plans.getWarnings(schema), [type, 1])
     expect(errors.map(err => err.message)).toEqual([])
     expect(rows[0].data).toEqual({ elapsed: 3 })
   })

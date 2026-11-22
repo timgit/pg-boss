@@ -227,7 +227,7 @@ describe('monitoring', function () {
     // Verify warning was persisted to database
     const db = await helper.getDb()
     const sql = plans.getWarnings(ctx.schema)
-    const result = await db.executeSql(sql, [null, 10, 0])
+    const result = await db.executeSql(sql, [null, 10])
     await db.close()
 
     expect(result.rows.length).toBeGreaterThan(0)
