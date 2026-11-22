@@ -90,6 +90,12 @@ export type HttpBamStatusSummary = types.BamStatusSummary
 
 export type HttpSubscription = types.Subscription
 
+// The type is any string, so a proxy older than a warning type still returns its rows.
+export type HttpPersistedWarning = Omit<types.PersistedWarning, 'type' | 'data'> & {
+  type: string
+  data: HttpJsonRecord | null
+}
+
 export type HttpMetaResult = {
   states: Record<string, string>
   policies: Record<string, string>
@@ -449,4 +455,9 @@ export type HttpGetReindexCommandsResponse = {
 export type HttpGetBamStatusResponse = {
   ok: true
   result: HttpBamStatusSummary[]
+}
+
+export type HttpGetWarningsResponse = {
+  ok: true
+  result: HttpPersistedWarning[]
 }

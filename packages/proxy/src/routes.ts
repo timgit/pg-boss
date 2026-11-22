@@ -35,6 +35,7 @@ import {
   getScheduleResponseSchema,
   getSchedulesResponseSchema,
   getSubscriptionsResponseSchema,
+  getWarningsResponseSchema,
   previewScheduleResponseSchema,
   insertRequestSchema,
   insertResponseSchema,
@@ -200,6 +201,13 @@ const subscriptionsQuerySchema = z.object({
   message: 'afterEvent and afterName go together'
 })
 
+// Warnings page by id, newest first, optionally of one type.
+const warningsQuerySchema = z.object({
+  type: z.string().min(1).optional(),
+  limit: limitQuery,
+  after: afterIdQuery
+})
+
 // getSchedule reads one row by its primary key, so unlike getSchedules the name is required. The
 // key stays optional, since the method defaults it to the empty string schedule() writes.
 const scheduleQuerySchema = z.object({
@@ -317,6 +325,13 @@ export const getMethods: RouteEntry[] = [
   get('system', 'isInstalled', isInstalledResponseSchema),
   get('system', 'schemaVersion', schemaVersionResponseSchema),
   get('system', 'getBamStatus', getBamStatusResponseSchema),
+  get('system', 'getWarnings', getWarningsResponseSchema, warningsQuerySchema, (q) => {
+    const options: Record<string, unknown> = {}
+    if (q.type !== undefined) options.type = q.type
+    if (q.limit !== undefined) options.limit = q.limit
+    if (q.after !== undefined) options.after = q.after
+    return Object.keys(options).length > 0 ? [options] : []
+  }),
   get('system', 'getReindexCommands', getReindexCommandsResponseSchema, reindexCommandsQuerySchema, (q) => {
     const options: Record<string, unknown> = {}
     if (q.minPages !== undefined) options.minPages = q.minPages

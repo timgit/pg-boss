@@ -298,6 +298,14 @@ export const scheduleSchema = z.object({
   lastJobId: z.string().nullable(),
 }) satisfies z.ZodType<types.HttpSchedule>
 
+export const persistedWarningSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  message: z.string(),
+  data: jsonRecordSchema.nullable(),
+  createdOn: z.iso.datetime().transform((val) => new Date(val)),
+}) satisfies z.ZodType<types.HttpPersistedWarning>
+
 export const bamStatusSummarySchema = z.object({
   status: z.enum(['pending', 'in_progress', 'completed', 'failed']),
   count: z.number(),
@@ -789,4 +797,9 @@ export const previewScheduleResponseSchema: z.ZodType<types.HttpPreviewScheduleR
 export const getBamStatusResponseSchema: z.ZodType<types.HttpGetBamStatusResponse> = z.object({
   ok: z.literal(true),
   result: z.array(bamStatusSummarySchema)
+})
+
+export const getWarningsResponseSchema: z.ZodType<types.HttpGetWarningsResponse> = z.object({
+  ok: z.literal(true),
+  result: z.array(persistedWarningSchema)
 })

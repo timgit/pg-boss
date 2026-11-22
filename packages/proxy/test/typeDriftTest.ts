@@ -120,6 +120,10 @@ describe('Zod schema / HTTP type key drift', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.subscriptionSchema>, httpTypes.HttpSubscription>>()).toBe(true)
   })
 
+  it('persistedWarningSchema matches HttpPersistedWarning', () => {
+    expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.persistedWarningSchema>, httpTypes.HttpPersistedWarning>>()).toBe(true)
+  })
+
   it('bamStatusSummarySchema matches HttpBamStatusSummary', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.bamStatusSummarySchema>, httpTypes.HttpBamStatusSummary>>()).toBe(true)
   })

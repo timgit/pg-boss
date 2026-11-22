@@ -546,6 +546,8 @@ describe('proxy api routes', () => {
       { method: 'isInstalled', expected: [] },
       { method: 'schemaVersion', expected: [] },
       { method: 'getBamStatus', expected: [] },
+      { method: 'getWarnings', expected: [] },
+      { method: 'getWarnings', query: 'type=slow_query', expected: [{ type: 'slow_query' }] },
       { method: 'getQueue', query: 'name=queue', expected: ['queue'] },
       { method: 'getBlockedKeys', query: 'name=queue', expected: ['queue'] },
       { method: 'getDependencies', query: 'name=queue&id=1', expected: ['queue', '1'] },
@@ -621,7 +623,8 @@ describe('proxy api routes', () => {
       ['getSubscriptions', 'limit=5', [undefined, { limit: 5 }]],
       ['getSubscriptions', 'event=e&limit=5&afterEvent=e&afterName=q', ['e', { limit: 5, after: { event: 'e', name: 'q' } }]],
       ['getDependencies', 'name=q&id=1&afterName=p&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', '1', { after: { name: 'p', id: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' } }]],
-      ['findJobs', 'name=q&limit=5&after=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', { limit: 5, after: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]]
+      ['findJobs', 'name=q&limit=5&after=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', ['q', { limit: 5, after: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]],
+      ['getWarnings', 'type=slow_query&limit=5&after=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7', [{ type: 'slow_query', limit: 5, after: '0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7' }]]
     ]
 
     for (const [method, query, args] of cases) {
@@ -639,7 +642,7 @@ describe('proxy api routes', () => {
     const { boss } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
-    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0', 'getSchedules?afterName=q', 'getSubscriptions?afterEvent=e', 'getSubscriptions?limit=0', 'getDependents?name=q&id=1&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7']) {
+    for (const query of ['getQueues?limit=0', 'getSchedules?limit=100001', 'getBlockedKeys?name=q&limit=1.5', 'getDependents?name=q&id=1&limit=0', 'getSchedules?afterName=q', 'getSubscriptions?afterEvent=e', 'getSubscriptions?limit=0', 'getWarnings?limit=0', 'getWarnings?after=not-a-uuid', 'getWarnings?type=', 'getDependents?name=q&id=1&afterId=0193a1b2-c3d4-7e5f-8071-8293a4b5c6d7']) {
       const res = await app.fetch(new Request(`http://local/api/${query}`, { method: 'GET' }))
       expect(res.status, query).toBe(400)
     }
