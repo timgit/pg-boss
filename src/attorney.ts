@@ -946,8 +946,6 @@ function applyScheduleConfig (config: any) {
       'PGBOSS_DEP_CRON_WORKER_INTERVAL'
     )
   }
-
-  config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
 }
 
 // Once per process, as Node warns once for a deprecated API of its own.
