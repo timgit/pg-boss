@@ -167,7 +167,7 @@ describe('pg-boss on Bun.SQL', () => {
     const queue = 'fired'
 
     // a second boss so the cron pass runs every second for this test only
-    const firing = new PgBoss({ db, schema, cronMonitorIntervalSeconds: 1, cronWorkerIntervalSeconds: 1 })
+    const firing = new PgBoss({ db, schema, cronMonitorIntervalSeconds: 1 })
     const errors: Error[] = []
     firing.on('error', err => errors.push(err))
     await firing.start()
@@ -175,6 +175,9 @@ describe('pg-boss on Bun.SQL', () => {
     try {
       await firing.createQueue(queue)
       await firing.schedule(queue, '* * * * *')
+      // A schedule owes nothing from before it was stored, so its cursor goes back a minute for the
+      // occurrence due now to be owed and sent through Bun.SQL by the next pass.
+      await firing.getDb().executeSql(`UPDATE ${schema}.schedule SET sent_on = sent_on - interval '1 minute' WHERE name = $1`, [queue])
 
       const deadline = Date.now() + 20_000
       let lastJobId: string | null | undefined
