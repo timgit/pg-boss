@@ -18,6 +18,8 @@ Two ways the suite fails that are not regressions:
 - Under `--coverage`, timing-sensitive tests fail, and a different set on each run. Re-run the failed files without `--coverage` before treating one as broken.
 - `DB_TYPE=pglite` with file parallelism fails a rotating set with hook timeouts. Re-run with `--no-file-parallelism` before believing a red run.
 
+A test that moves a `TestClock` past a span whose timers it doesn't depend on jumps with `setTime()`. `tick()` fires every timer at each of its due times and waits for pg-boss after each one. Ticking an hour replays every interval timer of the instance, which can outlast the test timeout under load. Keep `tick()` for spans where the firings are what the test checks, such as worker polls or cron passes.
+
 ## Layout
 
 - `src/plans.ts` builds every SQL statement for the current schema.
