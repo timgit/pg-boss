@@ -17,7 +17,7 @@ A service account's role on the schema decides which methods its tokens can call
 
 | Methods | Viewer | Operator | Admin |
 | - | :-: | :-: | :-: |
-| `getQueue`, `getQueues`, `getQueueStats`, `findJobs`, `getSchedule`, `getSchedules`, `getDependencies`, `getDependents`, `getBlockedKeys`, `previewRedrive`, `previewSchedule`, `meta` | ✓ | ✓ | ✓ |
+| `getQueue`, `getQueues`, `getQueueStats`, `findJobs`, `getSchedule`, `getSchedules`, `getDependencies`, `getDependents`, `getBlockedKeys`, `getSubscriptions`, `getWarnings`, `previewRedrive`, `previewSchedule`, `meta` | ✓ | ✓ | ✓ |
 | `send`, `sendAfter`, `sendThrottled`, `sendDebounced`, `insert`, `upsert`, `update`, `flow`, `retry`, `redrive`, `cancel`, `resume`, `publish` | | ✓ | ✓ |
 | `deleteJob`, `createQueue`, `updateQueue`, `deleteQueue`, `schedule`, `unschedule`, `subscribe`, `unsubscribe` | | | ✓ |
 | `fetch`, `complete`, `fail`, `touch`, `deleteQueuedJobs`, `deleteStoredJobs`, `deleteAllJobs` | | | |
