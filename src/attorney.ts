@@ -252,6 +252,7 @@ function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
   validateRetryConfig(options)
   validateExpirationConfig(options)
   validateRetentionConfig(options)
+  validateDeletionConfig(options)
   validateGroupConfig(options)
   validateHeartbeatConfig(options)
 

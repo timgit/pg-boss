@@ -34,6 +34,11 @@ describe('upsert', function () {
     await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { id: SOME_UUID, singletonKey: 'k' })).rejects.toThrow(/exactly one/)
   })
 
+  it('should reject a negative deleteAfterSeconds', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k', deleteAfterSeconds: -1 })).rejects.toThrow(/deleteAfterSeconds must be at least 0/)
+  })
+
   it('should reject upsert by id on a key_strict_fifo queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo' })
