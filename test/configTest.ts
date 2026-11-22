@@ -226,7 +226,9 @@ describe('config', function () {
     expect((resolved as any).noTablePartitioning).toBe(false)
   })
 
-  it('should warn when YugabyteDB is detected without the yugabytedb backend', async function () {
+  // Both fake YugabyteDB's version() over a real database, which has to run what the default and
+  // the yugabytedb profiles emit. CockroachDB runs neither.
+  helper.itPostgresOnly('should warn when YugabyteDB is detected without the yugabytedb backend', async function () {
     const realDb = await helper.getDb()
     const warnings: any[] = []
 
@@ -256,7 +258,7 @@ describe('config', function () {
     }
   })
 
-  it('should not warn about YugabyteDB when the yugabytedb backend is selected', async function () {
+  helper.itPostgresOnly('should not warn about YugabyteDB when the yugabytedb backend is selected', async function () {
     const realDb = await helper.getDb()
     const warnings: any[] = []
 
@@ -287,7 +289,7 @@ describe('config', function () {
 
   helper.itPglite('should accept a connectionString property', async function () {
     const connectionString = helper.getConnectionString()
-    ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema })
+    ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema, backend: ctx.bossConfig.backend })
 
     await ctx.boss.start()
   })
