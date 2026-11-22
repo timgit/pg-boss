@@ -24,6 +24,9 @@ async function storedOverruns (schema: string) {
   }
 }
 
+// How long a handler that outruns a one-second timeout keeps going.
+const OUTRUN_MS = 2000
+
 function overrunWarnings (boss: PgBoss) {
   const warnings: any[] = []
   boss.on('warning', warning => {
@@ -295,8 +298,10 @@ describe('handler overrun', function () {
       await boss.send(ctx.schema, { n: 3 }, { retryLimit: 0, expireInSeconds: 1 })
     ]
 
-    // Ignores its signal and returns a little after its timeout.
-    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(1200) })
+    // Ignores its signal and returns a second after its timeout. The batch is failed before the
+    // handler returns only when that margin outlasts the fail() round trip, which on CockroachDB can
+    // take more than the 200ms these tests once allowed.
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(OUTRUN_MS) })
 
     await helper.until(() => warnings.length === 3, 15000)
 
@@ -325,7 +330,7 @@ describe('handler overrun', function () {
       await boss.send(ctx.schema, { n }, { retryLimit: 0, expireInSeconds: 1 })
     }
 
-    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(1200) })
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(OUTRUN_MS) })
 
     // The first row is written at once and the second by the window's timer, before any stop().
     await helper.until(async () => (await storedOverruns(ctx.schema)).length >= 2, 15000)
@@ -349,7 +354,7 @@ describe('handler overrun', function () {
 
     await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
       if (++calls === 1) await held.released
-      else await delay(1200)
+      else await delay(OUTRUN_MS)
     })
 
     await helper.until(async () => (await storedOverruns(ctx.schema)).length === 1, 10000)
@@ -373,7 +378,7 @@ describe('handler overrun', function () {
     const warnings = overrunWarnings(boss)
 
     await boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
-    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(1200) })
+    await boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => { await delay(OUTRUN_MS) })
 
     await helper.until(() => warnings.length === 1, 10000)
     await boss.stop({ graceful: false })
