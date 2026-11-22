@@ -3,13 +3,19 @@ import { execFile, spawnSync, type ExecFileException } from 'node:child_process'
 import { promisify } from 'node:util'
 import { resolve } from 'node:path'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
-import { getConnectionString, getDb, itPostgresOnly, describePglite } from './testHelper.ts'
+import { getConnectionString, getDb, itPostgresOnly, describePglite, isCockroachDb } from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
 const cliFile = resolve(import.meta.dirname, '../src/cli.ts')
 const execFileAsync = promisify(execFile)
+
+// The backend the suite runs against, as an operator would declare it to the CLI, for the commands
+// that reach a database. Without it the CLI emits stock-PostgreSQL schema, which CockroachDB rejects.
+// Offline commands keep the default, since some of them test it.
+const backendEnv = (args: string[]): NodeJS.ProcessEnv =>
+  isCockroachDb && args.includes('--connection-string') ? { PGBOSS_BACKEND: 'cockroachdb' } : {}
 
 // Pass paths and options as arguments so the shell cannot split or expand them.
 async function execCli (args: string[], options: {
@@ -19,7 +25,7 @@ async function execCli (args: string[], options: {
 } = {}) {
   const result = await execFileAsync(process.execPath, ['--import=tsx', cliFile, ...args], {
     encoding: 'utf8',
-    env: { ...process.env, ...options.env }
+    env: { ...process.env, ...backendEnv(args), ...options.env }
   }).then(
     result => ({ ...result, code: 0 }),
     (error: ExecFileException & { stdout: string, stderr: string }) => {
@@ -40,7 +46,7 @@ async function execCli (args: string[], options: {
 
 // Some commands report failure on stdout. Keep the exit code available for their assertions.
 function runCli (args: string[]): { stdout: string, stderr: string, code: number | null } {
-  const result = spawnSync(process.execPath, ['--import=tsx', cliFile, ...args], { encoding: 'utf-8' })
+  const result = spawnSync(process.execPath, ['--import=tsx', cliFile, ...args], { encoding: 'utf-8', env: { ...process.env, ...backendEnv(args) } })
   if (result.error) throw result.error
   return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status }
 }
@@ -496,7 +502,7 @@ describePglite('cli', function () {
         // Get version before
         const db = await getDb()
         const beforeResult = await db.executeSql(`SELECT version FROM ${schema}.version`)
-        const versionBefore = beforeResult.rows[0].version
+        const versionBefore = Number(beforeResult.rows[0].version)
 
         // Dry run rollback
         const result = await execCli(
@@ -506,7 +512,7 @@ describePglite('cli', function () {
 
         // Verify version unchanged
         const afterResult = await db.executeSql(`SELECT version FROM ${schema}.version`)
-        const versionAfter = afterResult.rows[0].version
+        const versionAfter = Number(afterResult.rows[0].version)
         await db.close()
 
         expect(versionBefore).toBe(versionAfter)
@@ -548,7 +554,15 @@ describePglite('cli', function () {
       it('should report nothing to do on a fresh schema', async function () {
         await createSchema()
 
-        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema])
+        const { stdout, stderr, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema])
+
+        // CockroachDB rejects REINDEX, which the declared backend answers without a round trip.
+        if (isCockroachDb) {
+          expect(stderr).toContain('Reindexing is not supported on the cockroachdb backend')
+          expect(code).toBe(1)
+          return
+        }
+
         expect(stdout).toContain('No bloated indexes found')
         expect(code).toBe(0)
       })
@@ -809,7 +823,8 @@ describePglite('cli', function () {
         expect(tables).toContain('version')
         expect(tables).toContain('queue')
         expect(tables).toContain('job')
-        expect(tables).toContain('job_common')
+        // CockroachDB has no table partitioning, so its job table holds every queue itself.
+        if (!isCockroachDb) expect(tables).toContain('job_common')
 
         // Check job_state enum exists with expected values
         const enumResult = await db.executeSql(`
@@ -846,7 +861,8 @@ describePglite('cli', function () {
         const result = await db.executeSql(`SELECT version FROM ${schema}.version`)
         await db.close()
 
-        expect(result.rows[0].version).toBe(currentSchemaVersion)
+        // CockroachDB hands an integer column back as a string.
+        expect(Number(result.rows[0].version)).toBe(currentSchemaVersion)
       })
 
       it('should decrement schema version after rollback', async function () {
@@ -857,7 +873,7 @@ describePglite('cli', function () {
 
         const db = await getDb()
         const beforeResult = await db.executeSql(`SELECT version FROM ${schema}.version`)
-        const versionBefore = beforeResult.rows[0].version
+        const versionBefore = Number(beforeResult.rows[0].version)
 
         await execCli(
           ['rollback', '--connection-string', connectionString, '--schema', schema],
@@ -865,7 +881,7 @@ describePglite('cli', function () {
         )
 
         const afterResult = await db.executeSql(`SELECT version FROM ${schema}.version`)
-        const versionAfter = afterResult.rows[0].version
+        const versionAfter = Number(afterResult.rows[0].version)
         await db.close()
 
         expect(versionAfter).toBe(versionBefore - 1)
