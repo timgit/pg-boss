@@ -114,12 +114,11 @@ export class ClaimTimer {
     this.#handle = undefined
     this.#anchored = false
 
-    // Deliberately not caught. Every pass this drives ends its own catch in an error event, so the
-    // only rejection that reaches here is one that could not be reported - an error event with
-    // nothing listening, which EventEmitter throws on. That belongs to the process, the way it did
-    // when these ran on setInterval; a timer that turned it into anything else would be inventing a
-    // failure mode for the host to handle. What the timer does owe is the chain, and finally pays
-    // that whether the pass resolved or not.
+    // Not caught. Every pass this drives ends its own catch in an error event, so the only rejection
+    // that reaches here is one that could not be reported (an error event with nothing listening,
+    // which EventEmitter throws on). That rejection belongs to the process, as it did when these ran
+    // on setInterval. A timer that turned it into anything else would invent a failure mode for the
+    // host to handle. The finally block arms the next attempt whether the pass resolved or not.
     try {
       await this.#fn()
     } finally {
