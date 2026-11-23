@@ -16,7 +16,7 @@ and the 6-placeholder format adds a seconds field in front, so this runs at 3:30
 
 To change how often schedules are checked, you can set `cronMonitorIntervalSeconds`. `cronWorkerIntervalSeconds` is deprecated and has no effect.
 
-A schedule owes nothing from before it was stored, or from before its expression, time zone or precision last changed. A `* * * * *` schedule stored at 12:00:30 sends its first job for 12:01. Storing the same definition again, as a deployment does on every boot, changes nothing.
+A schedule sends jobs only for occurrences after it was stored, or after its expression, time zone or precision last changed. A `* * * * *` schedule stored at 12:00:30 sends its first job for 12:01. Storing the same definition again, as a deployment does on every boot, changes nothing.
 
 In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Each schedule records the latest occurrence it has sent, and the statement that sends a job moves that record in the same step. Two instances therefore cannot send the same occurrence.
 
