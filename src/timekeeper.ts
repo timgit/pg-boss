@@ -719,18 +719,18 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
           // ClaimTimer.
           this.cronMonitorTimer?.anchor()
         } else {
-          // Another instance holds the claim, and the row it stamped is what the next pass is owed
-          // against - not this attempt. Measured from here the next attempt lands an interval after
-          // a failure that was already some way into the interval, so the moment the holder stops,
-          // the deployment's next pass is up to two intervals after its last one: wider than the
-          // 60-second due window, and the occurrences inside the excess are sent by nobody.
+          // Another instance holds the claim, and the next attempt is measured from the row it
+          // stamped. Measured from this failure, which came partway into the interval, the next
+          // attempt would land an interval later. When the holder stops, the deployment's next pass
+          // would then come up to two intervals after its last one. Two intervals are wider than the
+          // 60-second due window, and no pass would send the occurrences in between.
           this.cronMonitorTimer?.anchor(this.claimRetryDelay(rows[0]?.elapsed))
         }
 
         if (!this.stopped && claimed) {
           // The claim answers with the timestamp it replaced, which is when an instance last ran a
           // pass. Anything older than the due window between then and now is a gap no pass covered,
-          // and a schedule's `missed` policy decides what it owes for it.
+          // and a schedule's `missed` policy decides what it sends for it.
           //
           // The rows are read once for the lease: the pass evaluates them, and the per-second tick
           // keeps evaluating the ones isSecondCron() accepts until the lease runs out.
@@ -803,7 +803,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     const stillBroken = new Set<string>()
 
     // Rows whose stored kind disagrees with the expression on them, as found out by reading the
-    // expression the other way. Relabelled once the pass has sent what it owes, and each carries
+    // expression the other way. Relabelled once the pass has sent its jobs, and each carries
     // the expression the label was read off, since a schedule() upsert landing between this pass's
     // read and its write would otherwise be stamped with the previous expression's kind.
     const relabelled: Array<Pick<types.Schedule, 'name' | 'key' | 'kind' | 'cron'>> = []
@@ -818,8 +818,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     const lastPass = toTime(priorCronOn)
 
-    // No pass ran for longer than the due window, which is where a schedule's `missed` policy
-    // decides what it owes.
+    // No pass ran for longer than the due window. A schedule's `missed` policy decides what it sends
+    // for that gap.
     const gapSince = lastPass !== null && lastPass < windowStart ? lastPass : null
 
     // Every schedule cached for the lease, with the ones sent every second kept for the tick, and
@@ -918,8 +918,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     }
 
     // After the sends, so the occurrences older instances queued are forwarded once their own are
-    // skipped by the statement above. Reported rather than thrown, since the pass has sent what it
-    // owes and the next pass drains again.
+    // skipped by the statement above. A failure here is reported as an error event, because the pass
+    // has already sent its jobs and the next pass drains again.
     if (!this.stopped) {
       try {
         await this.drainSendIt()
@@ -995,15 +995,15 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   /**
-   * What a schedule sent every second owes at `databaseTime`, or null when it owes nothing.
+   * The jobs a schedule sent every second sends at `databaseTime`, or null when it sends none.
    *
    * Without a gap, every occurrence in the due window after this instance's hint. The statement
    * trims what the live cursor has already passed, so a holder that stopped partway through its
    * lease leaves the rest to the next, each occurrence a job of its own.
    *
-   * After a gap, `missed` decides. `skip` sends nothing and moves the cursor to now, since nothing
-   * before it is owed. `once` sends the latest occurrence since the gap began, however many came
-   * due, where sending the window as well would be up to 60 more.
+   * After a gap, `missed` decides. `skip` sends nothing and moves the cursor to now, because the
+   * gap's occurrences get no job. `once` sends the latest occurrence since the gap began, however
+   * many came due, where sending the window as well would be up to 60 more.
    */
   private secondSend (entry: CursorSchedule, databaseTime: number, gapSince: number | null): CursorSend | null {
     const { schedule, interval } = entry
@@ -1030,7 +1030,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   /**
-   * What a minute-precision schedule owes from the pass, or null when it owes nothing new.
+   * The jobs a minute-precision schedule sends from the pass, or null when it sends nothing new.
    *
    * One job per minute an occurrence falls in, which is the resolution the docs promise. The job is
    * compared with the cursor by the first occurrence of its minute. A cursor at or past that first
@@ -1337,8 +1337,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   /**
-   * The occurrence a schedule owes a job for from the gap since the last pass, or null when it owes
-   * none. Null for every schedule under the default policy, and for every schedule at all in a
+   * The occurrence in the gap since the last pass that a schedule sends a job for, or null when it
+   * sends none. Null for every schedule under the default policy, and for every schedule at all in a
    * deployment whose passes keep running.
    *
    * The gap is (lastPass, windowStart]: older than the due window, so no pass has sent it, and
@@ -1362,8 +1362,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * twelve identical jobs after a twelve-hour outage with no way for a handler to tell which hour
    * each was for. One job whose meaning is "catch up to now" needs no such identity.
    *
-   * Bounded below by the row's own `created_on` as well, so a schedule written during the gap does
-   * not start life owing an occurrence of an expression that was not in the table yet. Not by
+   * Bounded below by the row's own `created_on` as well, so a schedule written during the gap sends
+   * no job for an occurrence from before its expression was in the table. Not by
    * `updated_on`, which a deployment calling schedule() on every boot rewrites on the way up: that
    * would leave the policy with nothing to catch up on in precisely the case it exists for.
    */

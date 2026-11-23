@@ -469,10 +469,10 @@ function createTableQueue (schema: string) {
 /* eslint-enable no-restricted-syntax */
 
 // sent_on is the latest occurrence sent for this definition, not the time it was sent. Every
-// occurrence at or before it has been sent or is not owed. Never set it from job_now() in the send
+// occurrence at or before it has been sent or gets no job. Never set it from job_now() in the send
 // statement: an occurrence after the holder's evaluated bound but before the statement ran would
-// be skipped. schedule() sets it to job_now() when a definition is created or changed, which marks
-// the time before it as not owed.
+// be skipped. schedule() sets it to job_now() when a definition is created or changed, which leaves
+// every occurrence before it without a job.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableSchedule (schema: string) {
   return `
@@ -1973,9 +1973,9 @@ export function setScheduleKinds (schema: string) {
   `
 }
 
-// A new row, or a new expression, zone or precision, starts sent_on at job_now(): nothing before it
-// is owed under that definition. Anything else leaves it, which is what lets a deployment that
-// registers its schedules on every boot keep its place across restarts.
+// A new row, or a new expression, zone or precision, starts sent_on at job_now(), and that
+// definition sends no job for an occurrence before it. Anything else leaves it, which lets a
+// deployment that registers its schedules on every boot keep its place across restarts.
 export function schedule (schema: string) {
   return `
     INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, created_on, updated_on, sent_on)

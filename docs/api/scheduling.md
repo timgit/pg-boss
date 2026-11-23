@@ -16,7 +16,7 @@ The 6-placeholder format adds a seconds field in front. This expression runs at 
 
 Set `cronMonitorIntervalSeconds` to change how often schedules are checked. `cronWorkerIntervalSeconds` is deprecated and has no effect.
 
-A schedule owes nothing from before it was stored, or from before its expression, time zone or precision last changed. A `* * * * *` schedule stored at 12:00:30 sends its first job for 12:01. Storing the same definition again, as a deployment does on every boot, changes nothing.
+A schedule sends jobs only for occurrences after it was stored, or after its expression, time zone or precision last changed. A `* * * * *` schedule stored at 12:00:30 sends its first job for 12:01. Storing the same definition again, as a deployment does on every boot, changes nothing.
 
 To limit clock skew and drift, every 10 minutes each instance compares its clock to the database server's clock. pg-boss stores any skew and uses it as an offset during cron evaluation to keep all instances synchronized. Each schedule records the latest occurrence it has sent, and the statement that sends a job moves that record in the same step. Two instances therefore can't send the same occurrence.
 
