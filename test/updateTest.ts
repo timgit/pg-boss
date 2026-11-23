@@ -28,6 +28,11 @@ describe('update', function () {
     await expect(ctx.boss.update(ctx.schema, { v: 1 }, { singletonKey: 'k', match: 'bogus' })).rejects.toThrow(/match must be one of/)
   })
 
+  it('should reject a negative deleteAfterSeconds', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await expect(ctx.boss.update(ctx.schema, { v: 1 }, { id: MISSING_UUID, deleteAfterSeconds: -1 })).rejects.toThrow(/deleteAfterSeconds must be at least 0/)
+  })
+
   it('should update a created job by id and preserve its id', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
