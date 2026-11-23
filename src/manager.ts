@@ -499,9 +499,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  // Runs a worker's complete() or fail() again on a fresh pooled connection when the connection
-  // it ran on went away. Each one is fenced to the fetched attempt, so a retry after a statement
-  // that landed before the drop settles nothing. Any other error, or the last retry's, is thrown.
+  // Runs a worker's complete() or fail() again when the connection it ran on went away. A retry
+  // checks out a connection the same way the first run did. Each one is fenced to the fetched
+  // attempt. A retry after a statement that landed before the drop therefore settles nothing. Any
+  // other error, or the last retry's, is thrown.
   async #settleRetrying<R> (settle: () => Promise<R>): Promise<R> {
     for (let attempt = 0; ; attempt++) {
       try {
