@@ -370,4 +370,36 @@ describe('schedule slot', { timeout: blockTimeout }, function () {
   it('keeps sending through the repeated hour for an expression naming every hour', async function () {
     expect(await slotsOverRepeatedHour('30 * * * *', true)).toEqual(['05:30:00', '06:30:00'])
   })
+
+  /**
+   * Runs the pass at 03:30:15 EDT on the night New York springs forward, answering with the slots
+   * filed. At 02:00 EST on 2026-03-08 the clocks go to 03:00 EDT, and 02:30 doesn't exist.
+   * `previewSchedule()` lists `30 2 * * *` at 03:30 EDT (07:30 UTC), because cron-parser's next()
+   * moves a skipped time into the hour the clocks land on. The pass reads with prev(), which skips
+   * it. These tests pin the skip so a cron-parser release that changes either read fails here.
+   */
+  async function slotsOverSkippedHour (expression: string, inserts: boolean): Promise<string[]> {
+    // 01:59:45 EST.
+    const start = Date.parse('2026-03-08T06:59:45Z')
+    const clock = new TestClock(start)
+    ctx.boss = await startScheduling(clock)
+
+    await until(async () => await lastPass(ctx.boss!) === start)
+
+    await ctx.boss.schedule(ctx.schema, expression, null, { tz: 'America/New_York' })
+
+    // On to 03:29:45 EDT, then the pass at 03:30:15 EDT.
+    await clock.setTime(Date.parse('2026-03-08T07:29:45Z'))
+    await passAt(clock, ctx.boss, Date.parse('2026-03-08T07:30:15Z'), inserts)
+
+    return await slotsFiled(ctx.boss)
+  }
+
+  it('sends nothing on the night the clocks skip the time a daily expression names', async function () {
+    expect(await slotsOverSkippedHour('30 2 * * *', false)).toEqual([])
+  })
+
+  it('sends a daily occurrence after the clocks spring forward when its time exists', async function () {
+    expect(await slotsOverSkippedHour('30 3 * * *', true)).toEqual(['07:30:00'])
+  })
 })
