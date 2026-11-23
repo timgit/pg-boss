@@ -76,6 +76,44 @@ describe('settle retry', function () {
     expect(job?.state).toBe('completed')
   })
 
+  it('should complete a job once when its completion lands before the connection drops', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // The completion runs, and only its reply is lost. The retry finds no active attempt to settle.
+    const db = ctx.boss.getDb()
+    const executeSql = db.executeSql.bind(db)
+    let calls = 0
+
+    db.executeSql = async (sql: string, values?: unknown[]) => {
+      const result = await executeSql(sql, values)
+
+      if (isComplete(sql) && calls++ === 0) {
+        throw Object.assign(new Error('terminating connection due to administrator command'), { code: '57P01' })
+      }
+
+      return result
+    }
+
+    let handled = 0
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => {
+      handled++
+      return { run: handled }
+    })
+
+    const id = await ctx.boss.send(ctx.schema)
+    assertTruthy(id)
+
+    const result = await ctx.boss.drain()
+
+    expect(result).toEqual({ processed: 1, failed: 0, timedOut: false })
+    expect(handled).toBe(1)
+    expect(calls).toBe(2)
+
+    const job = await ctx.boss.getJobById(ctx.schema, id)
+    expect(job?.state).toBe('completed')
+    expect(job?.output).toEqual({ run: 1 })
+  })
+
   it('should fail the job after the last retry of its completion', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
