@@ -271,6 +271,18 @@ describe('schedule missed', function () {
     expect(missed?.toISOString()).toBe('2026-03-07T05:30:00.000Z')
   })
 
+  it('finds nothing to catch up on in a gap without an occurrence on the day the clocks skipped the time an expression names', async function () {
+    const tk = makeTk()
+
+    // 00:30 was skipped in America/Havana on 2026-03-08, and prev() throws from then until 00:30 on
+    // the 9th. The gap from 12:00 to 13:00 UTC on the 8th is read forwards instead, and holds no
+    // occurrence.
+    const schedule = row('30 0 * * *', 'once', { timezone: 'America/Havana' })
+    const missed = (tk as any).missedOccurrence(schedule, plans.SCHEDULE_KINDS.cron, Date.parse('2026-03-08T12:00:00Z'), Date.parse('2026-03-08T13:00:00Z'))
+
+    expect(missed).toBeNull()
+  })
+
   it('does not reach back past the moment the schedule was created', async function () {
     const tk = makeTk()
 

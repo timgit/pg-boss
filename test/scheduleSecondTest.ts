@@ -311,6 +311,129 @@ describe('schedule seconds', function () {
     expect(warnings[0].message).toMatch(/schedule for queue "broken" \(key ""\) could not be evaluated and was skipped: unreadable/)
   })
 
+  it('skips and warns about a minute schedule whose jobs cannot be filed, and sends the others', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    const minuteSend = (tk as any).minuteSend.bind(tk)
+    ;(tk as any).minuteSend = (entry: any, ...rest: unknown[]) => {
+      if (entry.schedule.name === 'broken') throw new Error('unfiled')
+
+      return minuteSend(entry, ...rest)
+    }
+
+    const filed = await pass(tk, now, now - 40 * SECOND, [row('* * * * *', { name: 'broken', options: {} }), row('* * * * *', { options: {} })])
+
+    expect(filed).toEqual([slotOf(minute)])
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].message).toMatch(/schedule for queue "broken" \(key ""\) could not be evaluated and was skipped: unfiled/)
+  })
+
+  it('passes over a schedule whose job fields cannot be resolved, warning once, and sends the others', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    const scheduledJobFields = (tk as any).manager.scheduledJobFields
+    ;(tk as any).manager.scheduledJobFields = (name: string, ...rest: unknown[]) => {
+      if (name === 'broken') throw new Error('unresolved')
+
+      return scheduledJobFields(name, ...rest)
+    }
+
+    const schedules = [row('* * * * *', { name: 'broken', options: {} }), row('* * * * *', { options: {} })]
+
+    expect(await pass(tk, now, now - 40 * SECOND, schedules)).toEqual([slotOf(minute)])
+    expect(await pass(tk, now + MINUTE, now, schedules)).toEqual([slotOf(minute + MINUTE)])
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].message).toMatch(/schedule for queue "broken" \(key ""\) could not be evaluated and was skipped: unresolved/)
+  })
+
+  it('leaves a schedule asking for second precision with an expression that is not cron to the pass, which warns about it', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    expect(await pass(tk, now, now - SECOND, [row('not a cron')])).toEqual([])
+    expect((tk as any).secondCronCache).toEqual([])
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].message).toMatch(/schedule for queue "q" \(key ""\) could not be evaluated and was skipped/)
+  })
+
+  it('emits an error when a warning listener throws during a tick, and the next tick runs', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    tk.clockSkew = now - Date.now()
+
+    await cache(tk, [row('* * * * * *')])
+    tk.cursors.set(JSON.stringify(['q', '']), now - 2 * SECOND)
+    ;(tk as any).leaseUntil = Date.now() + 10 * SECOND
+
+    const errors: Error[] = []
+    tk.on('error', err => errors.push(err))
+
+    // A failed statement is warned about, and the listener throws out of the emit.
+    const listener = () => { throw new Error('listener failed') }
+    tk.on('warning', listener)
+
+    const sendScheduled = (tk as any).manager.sendScheduled
+    ;(tk as any).manager.sendScheduled = async () => { throw new Error('statement failed') }
+
+    await tk.onSecond()
+
+    expect(errors.map(err => err.message)).toEqual(['listener failed'])
+    expect(tk.sent).toEqual([])
+
+    // The next tick runs, and sends what the failed one owed.
+    tk.off('warning', listener)
+    ;(tk as any).manager.sendScheduled = sendScheduled
+
+    await tk.onSecond()
+
+    expect(tk.sent).toEqual([now - SECOND, now])
+  })
+
+  it('emits an error when a singletonNextSlot job its slot dropped cannot be sent to the next slot', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    const errors: Error[] = []
+    tk.on('error', err => errors.push(err))
+
+    // The statement claims the schedule and drops each job on its slot's conflict.
+    ;(tk as any).manager.sendScheduled = async (_count: number, build: (traceContext: null) => { values: unknown[] }) => {
+      const jobs = JSON.parse(build(null).values[1] as string)
+
+      return [
+        { name: 'q', key: '', prev: null, claimed: true, id: null },
+        ...jobs.filter((job: any) => job.name === 'q').map((job: any) => ({ name: 'q', id: job.id, inserted: false }))
+      ]
+    }
+    ;(tk as any).manager.send = async () => { throw new Error('next slot failed') }
+
+    await pass(tk, now, now - SECOND, [row('* * * * *', { options: { singletonSeconds: 60, singletonNextSlot: true } })])
+
+    expect(errors.map(err => err.message)).toEqual(['next slot failed'])
+  })
+
   it('evaluates every second while the lease lasts and nothing once it has run out', async function () {
     const tk = makeTk()
 
