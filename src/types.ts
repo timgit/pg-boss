@@ -129,6 +129,10 @@ export interface DatabaseOptions {
 export interface SchedulingOptions {
   schedule?: boolean;
   clockMonitorIntervalSeconds?: number;
+  /**
+   * Does nothing since 12.40, which sends scheduled jobs without the send-it worker this polled for.
+   * @deprecated Rejected in the next major.
+   */
   cronWorkerIntervalSeconds?: number;
   cronMonitorIntervalSeconds?: number;
 }
@@ -865,6 +869,11 @@ export interface ListOptions<After = string> {
    * for schedules and dependencies.
    */
   after?: After;
+}
+
+export interface GetWarningsOptions extends ListOptions {
+  /** Only return warnings of this type. */
+  type?: WarningType;
 }
 
 export interface FindJobsOptions extends ConnectionOptions {
@@ -1689,6 +1698,9 @@ export interface Warning { message: string, data: object }
 
 export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe' | 'start_retry' | 'handler_overrun'
 
+/**
+ * A warning written to the `warning` table, as returned by `getWarnings()`.
+ */
 export interface PersistedWarning {
   id: string;
   type: WarningType;

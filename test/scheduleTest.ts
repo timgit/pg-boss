@@ -6,20 +6,21 @@ import { PgBoss, TestClock } from '../src/index.ts'
 import Timekeeper from '../src/timekeeper.ts'
 import { systemClock } from '../src/clock.ts'
 import { ctx } from './hooks.ts'
+import { cursorManager } from './cursorManager.ts'
 
 describe('schedule', function () {
   const cronConfig = () => ({
     ...ctx.bossConfig,
     clock: new TestClock(),
     cronMonitorIntervalSeconds: 1,
-    cronWorkerIntervalSeconds: 1,
     schedule: true
   })
 
   // Drives the cron chain on a TestClock until `expected` jobs reach the queue: each one-second tick
-  // fires the cron pass and the send-it worker's poll, and waits for the statements they start.
+  // fires the cron pass and waits for the statements it starts. A schedule owes nothing from before
+  // it was stored, so the first job can be up to a minute away.
   async function runCronCycle (clock: TestClock, expected = 1) {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 70; i++) {
       await clock.tick(1000)
       if ((await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])) >= expected) return
     }
@@ -56,6 +57,25 @@ describe('schedule', function () {
     expect(job.singletonOn).toBeTruthy()
   })
 
+  it('should send a job whose throttle slot is taken to the next slot under singletonNextSlot', async function () {
+    const config = cronConfig()
+
+    ctx.boss = await helper.start(config)
+
+    // A job already holds the current 10-minute slot, so the scheduled one conflicts with it and
+    // goes to the slot after, as send() sends it.
+    await ctx.boss.send(ctx.schema, null, { singletonSeconds: 600 })
+    await ctx.boss.schedule(ctx.schema, '* * * * *', null, { singletonSeconds: 600, singletonNextSlot: true })
+
+    await runCronCycle(config.clock, 2)
+
+    const jobs = await ctx.boss.findJobs(ctx.schema)
+    const [held, next] = jobs.map(job => job.singletonOn!.getTime()).sort((a, b) => a - b)
+
+    expect(jobs).toHaveLength(2)
+    expect(next - held).toBe(600_000)
+  })
+
   it('should fail to schedule a queue that does not exist', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
@@ -85,8 +105,7 @@ describe('schedule', function () {
 
   it('should remove previously scheduled job', async function () {
     const config = {
-      ...ctx.bossConfig,
-      cronWorkerIntervalSeconds: 1
+      ...ctx.bossConfig
     }
     ctx.boss = await helper.start(config)
 
@@ -434,7 +453,6 @@ describe('schedule', function () {
     const config = {
       ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
@@ -456,13 +474,15 @@ describe('schedule', function () {
          VALUES ($1, '', '* * * * *', 'Mars/Phobos', null, '{}'::jsonb)`,
         [broken]
       )
+      // A schedule owes nothing from before it was stored, so its cursor goes back a minute for the
+      // occurrence due now to be owed.
+      await db.executeSql(`UPDATE ${ctx.schema}.schedule SET sent_on = sent_on - interval '1 minute' WHERE name = $1`, [ctx.schema])
     } finally {
       await db.close()
     }
 
-    // Poll rather than sleeping a fixed 4s: the chain is cron pass -> send-it insert -> send-it
-    // worker -> fetch, and a fixed sleep is both slower in the common case and short on margin
-    // when CI is loaded.
+    // Poll rather than sleeping a fixed 4s: the chain is a cron pass and then a fetch, and a fixed
+    // sleep is both slower in the common case and short on margin when CI is loaded.
     const deadline = Date.now() + 20_000
     let job
 
@@ -915,7 +935,7 @@ describe('timekeeper clock domain', function () {
     ;(tk as any).stopped = false
 
     const inserted: any[] = []
-    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+    ;(tk as any).manager = cursorManager(inserted).manager
 
     // A row that predates validation (or was written straight to the table) carries a time zone
     // that throws once prev() computes a date. It must be skipped, not allowed to abort the pass:
@@ -952,7 +972,7 @@ describe('timekeeper clock domain', function () {
       ;(tk as any).stopped = false
 
       const inserted: any[] = []
-      ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+      ;(tk as any).manager = cursorManager(inserted).manager
       ;(tk as any).getSchedules = async () => ([
         { name: 'report', key: 'daily', data: null, options: {}, cron: '* * * * *', timezone: 'UTC' }
       ])
@@ -972,7 +992,7 @@ describe('timekeeper clock domain', function () {
     ;(tk as any).stopped = false
 
     const inserted: any[] = []
-    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+    ;(tk as any).manager = cursorManager(inserted).manager
 
     // Underscores are legal in both a queue name and a schedule key, so the raw `${name}__${key}`
     // handed these two rows the same singleton key and the 60s window dropped whichever lost the
@@ -999,7 +1019,7 @@ describe('timekeeper clock domain', function () {
   it('an unusable schedule row warns once, not on every pass', async function () {
     const tk = makeTk(0)
     ;(tk as any).stopped = false
-    ;(tk as any).manager = { insert: async () => {} }
+    ;(tk as any).manager = cursorManager().manager
     ;(tk as any).getSchedules = async () => ([
       { name: 'broken', key: '', data: null, options: {}, kind: 'cron', cron: '* * * * *', timezone: 'Mars/Phobos' }
     ])
@@ -1021,10 +1041,10 @@ describe('timekeeper clock domain', function () {
   // schedule() refuses an empty expression (#947), but a row stored before it did is still in the
   // table, and cron-parser reads one as every minute.
   it('a stored schedule with an empty expression is skipped with a warning instead of firing every minute', async function () {
-    const sent: string[] = []
+    const jobs: any[] = []
     const tk = makeTk(0)
     ;(tk as any).stopped = false
-    ;(tk as any).manager = { insert: async (_: string, jobs: any[]) => { sent.push(...jobs.map(job => job.data.name)) } }
+    ;(tk as any).manager = cursorManager([], jobs).manager
     ;(tk as any).getSchedules = async () => ([
       { name: 'empty', key: '', data: null, options: {}, kind: 'cron', cron: '', timezone: 'UTC' },
       { name: 'blank', key: '', data: null, options: {}, kind: 'cron', cron: '  ', timezone: 'UTC' },
@@ -1036,7 +1056,7 @@ describe('timekeeper clock domain', function () {
 
     await tk.cron()
 
-    expect(sent).toEqual(['healthy'])
+    expect(jobs.map(job => job.name)).toEqual(['healthy'])
     expect(warnings.map(w => w.data.queue).sort()).toEqual(['blank', 'empty'])
     expect(warnings.every(w => w.message.includes('cron expression must be a non-empty string'))).toBe(true)
   })
@@ -1044,7 +1064,7 @@ describe('timekeeper clock domain', function () {
   it('a repaired schedule row warns again if it breaks a second time', async function () {
     const tk = makeTk(0)
     ;(tk as any).stopped = false
-    ;(tk as any).manager = { insert: async () => {} }
+    ;(tk as any).manager = cursorManager().manager
 
     let timezone = 'Mars/Phobos'
     ;(tk as any).getSchedules = async () => ([
@@ -1072,7 +1092,7 @@ describe('timekeeper clock domain', function () {
   it('editing an unusable schedule row into a different unusable state warns again', async function () {
     const tk = makeTk(0)
     ;(tk as any).stopped = false
-    ;(tk as any).manager = { insert: async () => {} }
+    ;(tk as any).manager = cursorManager().manager
 
     let timezone = 'Mars/Phobos'
     ;(tk as any).getSchedules = async () => ([
@@ -1096,7 +1116,7 @@ describe('timekeeper clock domain', function () {
   it('start() re-surfaces a schedule row nobody has fixed', async function () {
     const tk = makeTk(0)
     ;(tk as any).stopped = false
-    ;(tk as any).manager = { insert: async () => {} }
+    ;(tk as any).manager = cursorManager().manager
     ;(tk as any).getSchedules = async () => ([
       { name: 'broken', key: '', data: null, options: {}, kind: 'cron', cron: '* * * * *', timezone: 'Mars/Phobos' }
     ])

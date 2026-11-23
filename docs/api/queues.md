@@ -36,7 +36,7 @@ Allowed policy values:
 | Policy | Description |
 | - | - |
 | `standard` | (Default) Supports all standard features such as deferral, priority, and throttling |
-| `short` | Only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
+| `short` | Only allows 1 job in `created`, unlimited active. Can be extended with `singletonKey` |
 | `singleton` | Only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
 | `stately` | Combines short and singleton. Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
 | `exclusive` | Only allows 1 job to be queued or active. Can be extended with `singletonKey` |
@@ -56,6 +56,26 @@ Allowed policy values:
 > **Fetch cost.** Each fetch selects one head per key across the whole queue before it applies priority and the batch limit. Its cost grows with the number of *distinct keys that have queued jobs* and doesn't depend on the `batchSize` or the total number of queued jobs. A few keys each holding a long backlog is the cheap case: 200 keys holding 1,000 jobs each means only 200 heads to rank. Many keys holding one job each is the expensive case, because every job is its own head. At 200,000 distinct keys with a single job each, a fetch takes roughly 1s, where a `standard` queue over the same rows takes 0.1s. If your keys are that numerous and don't build up a backlog, `standard` might be a better policy, because their jobs don't wait on each other.
 >
 > To unblock a key after a permanent failure, delete the failed job with `deleteJob()` or retry it with `retry()`. `getBlockedKeys()` lists the keys blocked by failed jobs.
+
+#### Job states that hold a key
+
+Each policy except `standard` has a unique index on the queue name and `singletonKey`, limited to some job states. A job can't enter one of those states while another job with the same key is in it. A send returns `null` when the state it would create is taken, and a fetch skips a job that can't become `active` yet.
+
+| Policy | States that hold a key |
+| - | - |
+| `standard` | None |
+| `short` | `created` |
+| `singleton` | `active` |
+| `stately` | `created`, `retry` and `active`, one job in each |
+| `exclusive` | `created`, `retry` and `active`, one job across the three |
+| `key_strict_fifo` | `active`, `retry` and `failed`, one job across the three |
+
+- In `short`, a job that fails into `retry` leaves `created`. A new job with the same key can then be sent beside it.
+- In `stately`, one key can hold three jobs at once, one each in `created`, `retry` and `active`.
+- In `key_strict_fifo`, a failed job keeps its key until it is deleted or retried. `getBlockedKeys()` lists those keys.
+- No other policy holds a key in `completed`, `cancelled` or `failed`.
+- A job sent without `singletonKey` counts as one shared empty key. A `short` queue then takes one keyless job in `created` at a time.
+- Throttling with `singletonSeconds` is a separate index that applies on every policy. It covers every state except `cancelled`. A job that has already completed still holds its time slot.
 
 **Options**
 
@@ -151,7 +171,7 @@ Actual detection time is `heartbeatSeconds` plus up to the longer of [`monitorIn
 
 * **retentionSeconds**, number
 
-  How many seconds a job can stay in the created or retry state before pg-boss deletes it, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. Default: 14 days. Must be >=1.
+  How many seconds a job can stay in the created or retry state before pg-boss deletes it, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. A job sent 30 days ahead with the default retention is kept until 14 days after its start time. Default: 14 days. Must be >=1.
 
 * **deleteAfterSeconds**, int
 

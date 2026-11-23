@@ -38,6 +38,20 @@ describe('pubsub', function () {
     expect(await ctx.boss.getSubscriptions('event')).toEqual([])
   })
 
+  it('getSubscriptions() drops the subscriptions of a deleted queue', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const departing = `${ctx.schema}_departing`
+    await ctx.boss.createQueue(departing)
+    await ctx.boss.subscribe('event', departing)
+    await ctx.boss.subscribe('event', ctx.schema)
+
+    await ctx.boss.deleteQueue(departing)
+
+    const subscriptions = await ctx.boss.getSubscriptions('event')
+    expect(subscriptions.map(s => s.name)).toEqual([ctx.schema])
+  })
+
   it('getSubscriptions() pages in its order, with or without an event', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

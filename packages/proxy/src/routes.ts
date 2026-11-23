@@ -34,6 +34,8 @@ import {
   getQueuesResponseSchema,
   getScheduleResponseSchema,
   getSchedulesResponseSchema,
+  getSubscriptionsResponseSchema,
+  getWarningsResponseSchema,
   previewScheduleResponseSchema,
   insertRequestSchema,
   insertResponseSchema,
@@ -189,6 +191,23 @@ const schedulesQuerySchema = z.object({
   message: 'afterName and afterKey go together'
 })
 
+// Subscriptions page by the pair they sort on, sent as afterEvent with afterName.
+const subscriptionsQuerySchema = z.object({
+  event: z.string().min(1).optional(),
+  limit: limitQuery,
+  afterEvent: afterQuery,
+  afterName: z.string().optional()
+}).refine((q) => (q.afterEvent === undefined) === (q.afterName === undefined), {
+  message: 'afterEvent and afterName go together'
+})
+
+// Warnings page by id, newest first, optionally of one type.
+const warningsQuerySchema = z.object({
+  type: z.string().min(1).optional(),
+  limit: limitQuery,
+  after: afterIdQuery
+})
+
 // getSchedule reads one row by its primary key, so unlike getSchedules the name is required. The
 // key stays optional, since the method defaults it to the empty string schedule() writes.
 const scheduleQuerySchema = z.object({
@@ -306,6 +325,13 @@ export const getMethods: RouteEntry[] = [
   get('system', 'isInstalled', isInstalledResponseSchema),
   get('system', 'schemaVersion', schemaVersionResponseSchema),
   get('system', 'getBamStatus', getBamStatusResponseSchema),
+  get('system', 'getWarnings', getWarningsResponseSchema, warningsQuerySchema, (q) => {
+    const options: Record<string, unknown> = {}
+    if (q.type !== undefined) options.type = q.type
+    if (q.limit !== undefined) options.limit = q.limit
+    if (q.after !== undefined) options.after = q.after
+    return Object.keys(options).length > 0 ? [options] : []
+  }),
   get('system', 'getReindexCommands', getReindexCommandsResponseSchema, reindexCommandsQuerySchema, (q) => {
     const options: Record<string, unknown> = {}
     if (q.minPages !== undefined) options.minPages = q.minPages
@@ -346,6 +372,12 @@ export const getMethods: RouteEntry[] = [
     if (q.from !== undefined) options.from = q.from
     if (q.count !== undefined) options.count = q.count
     return Object.keys(options).length > 0 ? [q.cron, options] : [q.cron]
+  }),
+  get('events', 'getSubscriptions', getSubscriptionsResponseSchema, subscriptionsQuerySchema, (q) => {
+    const after = q.afterEvent !== undefined && q.afterName !== undefined ? { event: q.afterEvent, name: q.afterName } : undefined
+    const options = listOptions(q, after)
+    if (q.event) return [q.event, ...options]
+    return options.length ? [undefined, ...options] : []
   }),
   get('jobs', 'getDependencies', getDependenciesResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q, afterPair(q.afterName, q.afterId, 'id'))]),
   get('jobs', 'getDependents', getDependentsResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id, ...listOptions(q, afterPair(q.afterName, q.afterId, 'id'))]),

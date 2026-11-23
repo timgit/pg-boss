@@ -77,6 +77,32 @@ describe('queuePolicy', function () {
       expect(jobId4).toBeTruthy()
     })
 
+    it(`short policy takes a new job beside one waiting in retry using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'short', partition, retryLimit: 1, retryDelay: 60 })
+
+      const jobId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
+      const [job] = await ctx.boss.fetch(ctx.schema)
+
+      expect(job.id).toBe(jobId)
+
+      await ctx.boss.fail(ctx.schema, job)
+
+      const retried = await ctx.boss.getJobById(ctx.schema, jobId!)
+
+      expect(retried?.state).toBe('retry')
+
+      // The key is held in created only, and the retry has left it.
+      const jobId2 = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
+
+      expect(jobId2).toBeTruthy()
+
+      const jobId3 = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
+
+      expect(jobId3).toBe(null)
+    })
+
     it(`singleton policy only allows 1 active job using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

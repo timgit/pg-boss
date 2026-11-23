@@ -35,7 +35,7 @@ const boss = new PgBoss({
 });
 ```
 
-With `persistWarnings` enabled, pg-boss writes warnings to the `warning` table, where you can query them directly or view them in the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard). See [SQL](/sql/warning-table) for the table schema.
+With `persistWarnings` enabled, pg-boss writes warnings to the `warning` table. Read them with [`getWarnings()`](#getwarnings-options), query the table directly, or view them in the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard). See [SQL](/sql/warning-table) for the table schema.
 
 pg-boss writes only the types under [Warning Types](#warning-types). It emits [startup and configuration warnings](#startup-and-configuration-warnings) as events only. `listen_notify_unavailable` appears in both tables because whether pg-boss writes it depends on the cause. pg-boss writes it when a listener fails to start, and only emits it when the backend or adapter has no `LISTEN`.
 
@@ -48,6 +48,27 @@ const boss = new PgBoss({
   warningRetentionDays: 30  // Auto-delete warnings older than 30 days
 });
 ```
+
+### `getWarnings(options)`
+
+Returns persisted warnings, newest first. `options.type` returns only warnings of that type. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last warning's `id` as `options.after` to read the next page. It rejects if that warning has been deleted since.
+
+```js
+const warnings = await boss.getWarnings({ type: 'slow_query', limit: 20 })
+// [
+//   {
+//     id: '6f1c2a3e-8d4b-4c1a-9e2f-3b5d7a9c1e20',
+//     type: 'slow_query',
+//     message: 'Warning: slow query. Your queues and/or database server should be reviewed',
+//     data: { elapsed: 42.1, sql: 'SELECT ...', values: [] },
+//     createdOn: 2026-11-22T10:30:00.000Z
+//   }
+// ]
+
+const next = await boss.getWarnings({ type: 'slow_query', limit: 20, after: warnings.at(-1).id })
+```
+
+It returns an empty array when `persistWarnings` is off, unless an earlier instance wrote warnings that are still within `warningRetentionDays`.
 
 ### Warning types
 

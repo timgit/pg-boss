@@ -34,11 +34,16 @@ function makeTk (clock: Clock = systemClock) {
 
   // The occurrences the cron statement inserted a job for, and every schedule it was handed.
   const sent: number[] = []
+  // The minute slot of each minute-precision job it inserted, beside the occurrence in `sent`.
+  const sentSlots: Array<string | null> = []
   const statements: any[][] = []
 
   const manager = {
     insert: async (_queue: string, jobs: any[]) => { inserted.push(...jobs) },
     offWork: async () => {},
+    // send-it holds nothing for the pass to drain.
+    fetch: async () => [],
+    complete: async () => {},
     getQueueCache: async () => ({ notify: false }),
     scheduledJobFields: (name: string, data: unknown, options: object) => ({ ...options, name, data }),
     // The statement's compare-and-set, over `cursors`: a schedule claims when its cursor is behind
@@ -68,7 +73,8 @@ function makeTk (clock: Clock = systemClock) {
 
           if (prev === null || occurrence > prev) {
             sent.push(occurrence)
-            rows.push({ name: schedule.name, id: job.id })
+            sentSlots.push(job.slot ?? null)
+            rows.push({ name: schedule.name, id: job.id, inserted: true })
           }
         }
       }
@@ -81,12 +87,12 @@ function makeTk (clock: Clock = systemClock) {
 
   ;(tk as any).stopped = false
 
-  return Object.assign(tk, { executed, inserted, cursors, sent, statements })
+  return Object.assign(tk, { executed, inserted, cursors, sent, sentSlots, statements })
 }
 
 /** Caches rows for the per-second tick as a won claim does, and answers with the cache. */
 async function cache (tk: ReturnType<typeof makeTk>, rows: unknown[]) {
-  await (tk as any).cacheSecondSchedules(rows)
+  await (tk as any).cacheSchedules(rows)
 
   return (tk as any).secondCronCache
 }
@@ -102,7 +108,6 @@ function row (cron: string, extra: Record<string, unknown> = {}) {
  * cursor is unset starts at the last pass, which is as far as the pass before this one sent.
  */
 async function pass (tk: ReturnType<typeof makeTk>, databaseTime: number, priorCronOn: number | null, schedules: any[]) {
-  const before = tk.inserted.length
   const sentBefore = tk.sent.length
 
   for (const schedule of schedules) {
@@ -115,10 +120,7 @@ async function pass (tk: ReturnType<typeof makeTk>, databaseTime: number, priorC
 
   await tk.cron(priorCronOn === null ? null : new Date(priorCronOn), schedules as any)
 
-  return [
-    ...tk.inserted.slice(before).map(job => job.__singletonSlot),
-    ...tk.sent.slice(sentBefore).map(occurrence => slotOf(occurrence))
-  ]
+  return tk.sent.slice(sentBefore).map((occurrence, i) => tk.sentSlots[sentBefore + i] ?? slotOf(occurrence))
 }
 
 /** A slot as the insert files it: UTC wall time, without a zone, `width` seconds wide. */
@@ -158,7 +160,7 @@ describe('schedule seconds', function () {
     // The options every schedule stored before `precision` existed, and the ones naming the default.
     for (const options of [{}, { precision: 'minute' }, { precision: 'unknown' }]) {
       for (const cron of ['* * * * * *', '*/15 * * * * *', '@secondly']) {
-        expect(await pass(makeTk(), now, now - 2 * SECOND, [row(cron, { options })]), `${cron} ${JSON.stringify(options)}`).toEqual([slotOf(minute, 60)])
+        expect(await pass(makeTk(), now, null, [row(cron, { options })]), `${cron} ${JSON.stringify(options)}`).toEqual([slotOf(minute, 60)])
       }
     }
   })
@@ -180,11 +182,13 @@ describe('schedule seconds', function () {
     const now = minute + 30 * SECOND
 
     const filed = async (cron: string) => await pass(makeTk(), now, now - 2 * SECOND, [row(cron)])
+    // No pass before, so no cursor: a minute already sent would send nothing more.
+    const filedFresh = async (cron: string) => await pass(makeTk(), now, null, [row(cron)])
 
     // Every occurrence of these is on :00, where a minute slot and a second slot name the same
     // instant, so they stay with the pass and file the newest occurrence in the window.
     for (const cron of ['0 * * * * *', '@minutely', '* * * * *']) {
-      expect(await filed(cron), cron).toEqual([slotOf(minute, 60)])
+      expect(await filedFresh(cron), cron).toEqual([slotOf(minute, 60)])
     }
 
     // These name seconds other than 0, the alias included.
@@ -194,7 +198,7 @@ describe('schedule seconds', function () {
     // A rule stays with the pass whatever its seconds: a job for each minute the window holds
     // an occurrence in, which for a rule every second is the two minutes the window spans.
     const rule = row('FREQ=SECONDLY', { kind: plans.SCHEDULE_KINDS.rrule })
-    expect(await pass(tk, now, now - 2 * SECOND, [rule])).toEqual([slotOf(minute - MINUTE, 60), slotOf(minute, 60)])
+    expect(await pass(tk, now, null, [rule])).toEqual([slotOf(minute - MINUTE, 60), slotOf(minute, 60)])
   })
 
   it('does not reach back past the due window or the cursor', async function () {
@@ -305,6 +309,129 @@ describe('schedule seconds', function () {
     expect(filed).toEqual([slotOf(now)])
     expect(warnings).toHaveLength(1)
     expect(warnings[0].message).toMatch(/schedule for queue "broken" \(key ""\) could not be evaluated and was skipped: unreadable/)
+  })
+
+  it('skips and warns about a minute schedule whose jobs cannot be filed, and sends the others', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    const minuteSend = (tk as any).minuteSend.bind(tk)
+    ;(tk as any).minuteSend = (entry: any, ...rest: unknown[]) => {
+      if (entry.schedule.name === 'broken') throw new Error('unfiled')
+
+      return minuteSend(entry, ...rest)
+    }
+
+    const filed = await pass(tk, now, now - 40 * SECOND, [row('* * * * *', { name: 'broken', options: {} }), row('* * * * *', { options: {} })])
+
+    expect(filed).toEqual([slotOf(minute)])
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].message).toMatch(/schedule for queue "broken" \(key ""\) could not be evaluated and was skipped: unfiled/)
+  })
+
+  it('passes over a schedule whose job fields cannot be resolved, warning once, and sends the others', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    const scheduledJobFields = (tk as any).manager.scheduledJobFields
+    ;(tk as any).manager.scheduledJobFields = (name: string, ...rest: unknown[]) => {
+      if (name === 'broken') throw new Error('unresolved')
+
+      return scheduledJobFields(name, ...rest)
+    }
+
+    const schedules = [row('* * * * *', { name: 'broken', options: {} }), row('* * * * *', { options: {} })]
+
+    expect(await pass(tk, now, now - 40 * SECOND, schedules)).toEqual([slotOf(minute)])
+    expect(await pass(tk, now + MINUTE, now, schedules)).toEqual([slotOf(minute + MINUTE)])
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].message).toMatch(/schedule for queue "broken" \(key ""\) could not be evaluated and was skipped: unresolved/)
+  })
+
+  it('leaves a schedule asking for second precision with an expression that is not cron to the pass, which warns about it', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    const warnings: any[] = []
+    tk.on('warning', warning => warnings.push(warning))
+
+    expect(await pass(tk, now, now - SECOND, [row('not a cron')])).toEqual([])
+    expect((tk as any).secondCronCache).toEqual([])
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].message).toMatch(/schedule for queue "q" \(key ""\) could not be evaluated and was skipped/)
+  })
+
+  it('emits an error when a warning listener throws during a tick, and the next tick runs', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    tk.clockSkew = now - Date.now()
+
+    await cache(tk, [row('* * * * * *')])
+    tk.cursors.set(JSON.stringify(['q', '']), now - 2 * SECOND)
+    ;(tk as any).leaseUntil = Date.now() + 10 * SECOND
+
+    const errors: Error[] = []
+    tk.on('error', err => errors.push(err))
+
+    // A failed statement is warned about, and the listener throws out of the emit.
+    const listener = () => { throw new Error('listener failed') }
+    tk.on('warning', listener)
+
+    const sendScheduled = (tk as any).manager.sendScheduled
+    ;(tk as any).manager.sendScheduled = async () => { throw new Error('statement failed') }
+
+    await tk.onSecond()
+
+    expect(errors.map(err => err.message)).toEqual(['listener failed'])
+    expect(tk.sent).toEqual([])
+
+    // The next tick runs, and sends what the failed one owed.
+    tk.off('warning', listener)
+    ;(tk as any).manager.sendScheduled = sendScheduled
+
+    await tk.onSecond()
+
+    expect(tk.sent).toEqual([now - SECOND, now])
+  })
+
+  it('emits an error when a singletonNextSlot job its slot dropped cannot be sent to the next slot', async function () {
+    const tk = makeTk()
+
+    const minute = Math.floor(Date.now() / MINUTE) * MINUTE
+    const now = minute + 30 * SECOND
+
+    const errors: Error[] = []
+    tk.on('error', err => errors.push(err))
+
+    // The statement claims the schedule and drops each job on its slot's conflict.
+    ;(tk as any).manager.sendScheduled = async (_count: number, build: (traceContext: null) => { values: unknown[] }) => {
+      const jobs = JSON.parse(build(null).values[1] as string)
+
+      return [
+        { name: 'q', key: '', prev: null, claimed: true, id: null },
+        ...jobs.filter((job: any) => job.name === 'q').map((job: any) => ({ name: 'q', id: job.id, inserted: false }))
+      ]
+    }
+    ;(tk as any).manager.send = async () => { throw new Error('next slot failed') }
+
+    await pass(tk, now, now - SECOND, [row('* * * * *', { options: { singletonSeconds: 60, singletonNextSlot: true } })])
+
+    expect(errors.map(err => err.message)).toEqual(['next slot failed'])
   })
 
   it('evaluates every second while the lease lasts and nothing once it has run out', async function () {
@@ -520,7 +647,7 @@ describe('schedule seconds', function () {
       : await executeSql(sql, params)
 
     ;(tk as any).getSchedules = async () => [row('* * * * * *')]
-    tk.cron = async () => { await (tk as any).cacheSecondSchedules([row('* * * * * *')]); throw new Error('relabel failed') }
+    tk.cron = async () => { await (tk as any).cacheSchedules([row('* * * * * *')]); throw new Error('relabel failed') }
 
     const errors: any[] = []
     tk.on('error', err => errors.push(err))
@@ -657,6 +784,38 @@ describe('schedule seconds', function () {
     expect(await sentAt('30 45 1 * * *', Date.parse('2026-04-04T15:15:40Z'), lordHowe)).toBe(0)
   })
 
+  // The minute schedules of the same night, as the cron pass files them through send-it. A pass every
+  // thirty seconds from 01:30:15 EDT to 01:31:15 EST files each occurrence twice, into one slot the
+  // insert collapses. The slots are compared once each.
+  it('files a minute schedule\'s repeated local time once unless the expression keeps running through that hour', async function () {
+    const zone = { timezone: 'America/New_York', options: {} }
+    // 01:29:45 EDT on 2026-11-01. 01:30 comes round at 05:30 and at 06:30 UTC.
+    const start = Date.parse('2026-11-01T05:29:45Z')
+
+    const slotsFiled = async (cron: string) => {
+      const slots = new Set<string>()
+
+      for (let now = start + 30 * SECOND; now <= start + 3660 * SECOND; now += 30 * SECOND) {
+        for (const slot of await pass(makeTk(), now, now - 30 * SECOND, [row(cron, zone)])) slots.add(slot.slice(11))
+      }
+
+      return [...slots]
+    }
+
+    expect(await slotsFiled('30 1 * * *')).toEqual(['05:30:00'])
+    expect(await slotsFiled('0,30 1 * * *')).toEqual(['05:30:00'])
+    expect(await slotsFiled('30 0-3 * * *')).toEqual(['05:30:00'])
+    expect(await slotsFiled('30 * * * *')).toEqual(['05:30:00', '06:30:00'])
+
+    // Multiple minutes across multiple hours make a run, which keeps sending through the repeated hour.
+    expect(await slotsFiled('*/30 0-3 * * *')).toEqual(['05:30:00', '06:00:00', '06:30:00'])
+
+    // previewSchedule() walks forwards past the repeated hour, and lists less than the passes send.
+    const listed = makeTk().previewSchedule('*/30 0-3 * * *', { tz: 'America/New_York', from: new Date(start), count: 2 })
+
+    expect(listed.map(d => d.toISOString())).toEqual(['2026-11-01T05:30:00.000Z', '2026-11-01T07:00:00.000Z'])
+  })
+
   it('releases the pending per-second tick on stop', async function () {
     const armed = new Set<ClockTimer>()
 
@@ -772,16 +931,18 @@ describe('schedule seconds on the database', { timeout: blockTimeout }, function
 
     // Every fifth second since the schedule was stored, each once, sent without the send-it queue.
     // The cursor holds the last occurrence sent, not the time it was sent.
-    // The expression whose seconds field is only 0 is filed by the minute as it always was, which
-    // includes the occurrence on the instant it was stored: the pass sends the newest occurrence in
-    // the window.
+    // The expression whose seconds field is only 0 is sent by the minute, from the pass. The
+    // occurrence on the instant it was stored is not owed, as for the others. Each minute's job
+    // leaves a completed send-it row in its slot for the rolling-upgrade bridge.
     const fives = every(T0, T0 + 150 * SECOND, 5 * SECOND)
     expect(await sentFor(ctx.boss, 'every5')).toEqual({ jobs: fives.length, sentOn: fives[fives.length - 1], sendIt: 0 })
-    expect(await slotsFiled(ctx.boss, 'minute')).toEqual([T0, T0 + MINUTE, T0 + 2 * MINUTE])
+    expect(await slotsFiled(ctx.boss, 'minute')).toEqual([T0 + MINUTE, T0 + 2 * MINUTE])
+    expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', ['minute'])).toBe(2)
 
     // Without `precision: 'second'`, a seconds field sends a job a minute, as every release before
     // per-second schedules did.
-    expect(await slotsFiled(ctx.boss, 'unprecise')).toEqual([T0, T0 + MINUTE, T0 + 2 * MINUTE])
+    expect(await slotsFiled(ctx.boss, 'unprecise')).toEqual([T0 + MINUTE, T0 + 2 * MINUTE])
+    expect(await helper.countJobs(ctx.schema, 'job', 'name = $1', ['unprecise'])).toBe(2)
   })
 
   it('starts the cursor when a definition is stored or changed, and keeps it otherwise', async function () {

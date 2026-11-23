@@ -133,6 +133,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const bam = new Bam(db, config)
 
     const navigator = new Navigator(db, manager, config)
+    manager.navigator = navigator
 
     const notifier = new Notifier(db, manager, config)
     manager.notifier = notifier
@@ -677,8 +678,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   // Force an immediate flow-resolution pass (unblock dependents of completed jobs) instead of
   // waiting for the next background poll. Mirrors supervise() for on-demand maintenance.
-  resolveFlow (): Promise<void> {
-    return this.#navigator.resolveNow()
+  async resolveFlow (): Promise<void> {
+    await this.#navigator.resolveNow()
   }
 
   getWipData (options?: { includeInternal?: boolean }): types.WipData[] {
@@ -752,6 +753,28 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return rows
   }
 
+  /**
+   * Returns persisted warnings, newest first, optionally of one type. Pass the last warning's `id` as `after` for the next page.
+   * @see https://pgboss.io/api/events#getwarnings-options
+   */
+  async getWarnings (options?: types.GetWarningsOptions): Promise<types.PersistedWarning[]> {
+    const limit = Attorney.assertListLimit('getWarnings', options?.limit)
+    const after = options?.after
+    Attorney.assertListAfter('getWarnings', after, true)
+    assert(options?.type === undefined || (typeof options.type === 'string' && options.type.length > 0),
+      'getWarnings: type must be a non-empty string')
+    const type = options?.type ?? null
+    const sql = plans.getWarnings(this.#config.schema, after !== undefined)
+    const { rows } = await this.#db.executeSql(sql, after !== undefined ? [type, limit, after] : [type, limit])
+
+    if (after !== undefined && rows.length === 0) {
+      const { rows: found } = await this.#db.executeSql(plans.warningExists(this.#config.schema), [after])
+      assert(found.length > 0, 'getWarnings: after names a row that no longer exists')
+    }
+
+    return rows
+  }
+
   getDb (): types.IDatabase {
     if (this.#db) {
       return this.#db
@@ -788,6 +811,7 @@ export type {
   DrainResult,
   FetchOptions,
   FindJobsOptions,
+  GetWarningsOptions,
   FlowJob,
   GroupConcurrencyConfig,
   GroupOptions,
@@ -856,6 +880,8 @@ export type {
   UpdateResponse,
   UpsertResponse,
   Warning,
+  WarningType,
+  PersistedWarning,
   WipData,
   WorkConcurrencyOptions,
   WorkerState,

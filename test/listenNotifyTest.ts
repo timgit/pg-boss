@@ -4,7 +4,7 @@ import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 import { delay } from '../src/tools.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 
 // Opens a raw pg connection LISTENing on this schema's pg-boss channel and collects
 // payloads. Returns the collected array plus a close function. Used to assert the
@@ -37,6 +37,25 @@ helper.describeListenNotify('listen/notify', function () {
 
     try {
       await ctx.boss.send(queue)
+      await delay(500)
+      expect(listener.received).toContain(queue)
+    } finally {
+      await listener.close()
+    }
+  })
+
+  helper.itPglite('emits a NOTIFY for a job the cron pass sends to a notify-enabled queue', async function () {
+    const clock = new TestClock(Date.parse('2026-01-01T12:00:50Z'))
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, clock, schedule: true, cronMonitorIntervalSeconds: 30 })
+    const queue = ctx.schema
+    await ctx.boss.createQueue(queue, { notify: true })
+    await ctx.boss.schedule(queue, '* * * * *')
+
+    const listener = await rawListener(ctx.schema)
+
+    try {
+      // The pass at 12:01:20 sends the 12:01 occurrence.
+      await clock.tick(30_000)
       await delay(500)
       expect(listener.received).toContain(queue)
     } finally {

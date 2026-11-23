@@ -3,6 +3,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import { TestClock } from '../src/index.ts'
 
 describe('spy', function () {
   it('should track job creation', async function () {
@@ -414,6 +415,25 @@ describe('spy', function () {
     for (const job of jobs) {
       expect(job.state).toBe('completed')
     }
+  })
+
+  it('should track a job the cron pass sends', async function () {
+    const clock = new TestClock(Date.parse('2026-01-01T12:00:50Z'))
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, schedule: true, cronMonitorIntervalSeconds: 30, __test__enableSpies: true })
+
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    await ctx.boss.schedule(ctx.schema, '* * * * *', { value: 'scheduled' })
+
+    const created = spy.waitForJob(() => true, 'created')
+
+    // The pass at 12:01:20 sends the 12:01 occurrence.
+    await clock.tick(30_000)
+
+    const job = await created
+
+    expect(job.name).toBe(ctx.schema)
+    expect(job.data).toEqual({ value: 'scheduled' })
   })
 
   it('should throw error when spy is not enabled', async function () {

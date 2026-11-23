@@ -7,6 +7,7 @@ import { systemClock } from '../src/clock.ts'
 import { PgBoss } from '../src/index.ts'
 import type { Job } from '../src/types.ts'
 import { ctx } from './hooks.ts'
+import { cursorManager } from './cursorManager.ts'
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -55,7 +56,7 @@ async function pass (tk: ReturnType<typeof makeTk>, databaseTime: number, priorC
   const inserted: any[] = []
 
   ;(tk as any).stopped = false
-  ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+  ;(tk as any).manager = cursorManager(inserted).manager
   ;(tk as any).getSchedules = async () => schedules
 
   tk.clockSkew = databaseTime - Date.now()
@@ -105,7 +106,6 @@ function firingConfig () {
   return {
     ...ctx.bossConfig,
     cronMonitorIntervalSeconds: 1,
-    cronWorkerIntervalSeconds: 1,
     schedule: true
   }
 }
@@ -118,7 +118,8 @@ async function openGap (gapStart: Date) {
   const db = await helper.getDb()
 
   try {
-    await db.executeSql(`UPDATE ${ctx.schema}.schedule SET created_on = $1`, [new Date(gapStart.getTime() - DAY).toISOString()])
+    // Stored a day before the gap opened, so the schedule's cursor starts there too.
+    await db.executeSql(`UPDATE ${ctx.schema}.schedule SET created_on = $1, sent_on = $1`, [new Date(gapStart.getTime() - DAY).toISOString()])
     await db.executeSql(`UPDATE ${ctx.schema}.version SET cron_on = $1`, [gapStart.toISOString()])
   } finally {
     await db.close()
@@ -149,8 +150,8 @@ describe('schedule missed', function () {
     const inserted = await pass(tk, now, new Date(now - 10 * MINUTE), [row('* * * * *', 'once')])
 
     // The most recent one, which for a schedule whose job reads the current state of the world is
-    // the only one worth running, and then the occurrence in the due window.
-    expect(slots(inserted)).toEqual([slotOf(minute - MINUTE), slotOf(minute)])
+    // the only one worth running. The occurrence in the due window is that one.
+    expect(slots(inserted)).toEqual([slotOf(minute)])
   })
 
   it('catches up on the second instant of a repeated hour an expression keeps running through', async function () {
@@ -176,12 +177,9 @@ describe('schedule missed', function () {
       row('FREQ=MINUTELY', 'once', { kind: plans.SCHEDULE_KINDS.rrule })
     ])
 
-    // Both formats catch up on the same range: the newest occurrence the gap held, then the due
-    // one, which a rule files in its own slot rather than the insert's.
-    expect(slots(inserted)).toEqual([
-      slotOf(minute - MINUTE),
-      slotOf(minute)
-    ])
+    // Both formats catch up on the same range, with one job for the newest occurrence, which is
+    // the one due now.
+    expect(slots(inserted)).toEqual([slotOf(minute)])
   })
 
   it('catches up on a rule carrying an RDATE', async function () {
@@ -204,11 +202,8 @@ describe('schedule missed', function () {
       row(cron, 'once', { kind: plans.SCHEDULE_KINDS.rrule })
     ])
 
-    // The last minute the gap held rather than the RDATE two minutes behind it, and the due one.
-    expect(slots(inserted)).toEqual([
-      slotOf(minute - MINUTE),
-      slotOf(minute)
-    ])
+    // One job, for the occurrence due now rather than the RDATE behind it.
+    expect(slots(inserted)).toEqual([slotOf(minute)])
   })
 
   it('catches up on a rule that stopped recurring partway through the gap', async function () {
@@ -239,8 +234,6 @@ describe('schedule missed', function () {
   })
 
   it('sends nothing when the last pass is inside the due window', async function () {
-    const tk = makeTk()
-
     const minute = Math.floor(Date.now() / MINUTE) * MINUTE
     const now = minute + 30_000
 
@@ -250,7 +243,7 @@ describe('schedule missed', function () {
     // is never a gap between two passes to catch up on and the policy costs nothing: the due
     // occurrence, and nothing behind it.
     for (const seconds of [1, 30, 45, 60]) {
-      const inserted = await pass(tk, now, new Date(now - seconds * 1000), [row('* * * * *', 'once')])
+      const inserted = await pass(makeTk(), now, new Date(now - seconds * 1000), [row('* * * * *', 'once')])
 
       expect(slots(inserted)).toEqual([slotOf(minute)])
     }
@@ -264,12 +257,30 @@ describe('schedule missed', function () {
 
     // 00:30 was skipped in America/Havana on 2026-03-08. Read back from the due window on the 9th,
     // prev() throws, since the occurrence before it does not exist. The gap still holds 00:30 on
-    // the 7th, sent beside the one due now.
+    // the 7th. Under `once` the one job goes to the newer occurrence due now, and the catch-up read
+    // still finds the 7th without a warning.
     const now = Date.parse('2026-03-09T04:30:40Z')
-    const inserted = await pass(tk, now, new Date(Date.parse('2026-03-06T12:00:00Z')), [row('30 0 * * *', 'once', { timezone: 'America/Havana' })])
+    const lastPass = Date.parse('2026-03-06T12:00:00Z')
+    const schedule = row('30 0 * * *', 'once', { timezone: 'America/Havana' })
+    const inserted = await pass(tk, now, new Date(lastPass), [schedule])
 
-    expect(slots(inserted)).toEqual([slotOf(Date.parse('2026-03-07T05:30:00Z')), slotOf(Date.parse('2026-03-09T04:30:00Z'))])
+    expect(slots(inserted)).toEqual([slotOf(Date.parse('2026-03-09T04:30:00Z'))])
     expect(warnings).toEqual([])
+
+    const missed = (tk as any).missedOccurrence(schedule, plans.SCHEDULE_KINDS.cron, lastPass, now - MINUTE)
+    expect(missed?.toISOString()).toBe('2026-03-07T05:30:00.000Z')
+  })
+
+  it('finds nothing to catch up on in a gap without an occurrence on the day the clocks skipped the time an expression names', async function () {
+    const tk = makeTk()
+
+    // 00:30 was skipped in America/Havana on 2026-03-08, and prev() throws from then until 00:30 on
+    // the 9th. The gap from 12:00 to 13:00 UTC on the 8th is read forwards instead, and holds no
+    // occurrence.
+    const schedule = row('30 0 * * *', 'once', { timezone: 'America/Havana' })
+    const missed = (tk as any).missedOccurrence(schedule, plans.SCHEDULE_KINDS.cron, Date.parse('2026-03-08T12:00:00Z'), Date.parse('2026-03-08T13:00:00Z'))
+
+    expect(missed).toBeNull()
   })
 
   it('does not reach back past the moment the schedule was created', async function () {
@@ -340,7 +351,7 @@ describe('schedule missed', function () {
         row('* * * * *', 'once', { createdOn: shape(lastPass - DAY) })
       ])
 
-      expect(slots(inserted)).toEqual([slotOf(minute - MINUTE), slotOf(minute)])
+      expect(slots(inserted)).toEqual([slotOf(minute)])
     }
   })
 

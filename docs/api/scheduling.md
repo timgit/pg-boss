@@ -14,9 +14,11 @@ The 6-placeholder format adds a seconds field in front. This expression runs at 
 30 30 3 * * *
 ```
 
-Set `cronMonitorIntervalSeconds` to change how often schedules are checked, and `cronWorkerIntervalSeconds` to change how often cron jobs run.
+Set `cronMonitorIntervalSeconds` to change how often schedules are checked. `cronWorkerIntervalSeconds` is deprecated and has no effect.
 
-To limit clock skew and drift, every 10 minutes each instance compares its clock to the database server's clock. pg-boss stores any skew and uses it as an offset during cron evaluation to keep all instances synchronized. pg-boss then uses job throttling internally so only 1 job is sent, even when several instances are running.
+A schedule owes nothing from before it was stored, or from before its expression, time zone or precision last changed. A `* * * * *` schedule stored at 12:00:30 sends its first job for 12:01. Storing the same definition again, as a deployment does on every boot, changes nothing.
+
+To limit clock skew and drift, every 10 minutes each instance compares its clock to the database server's clock. pg-boss stores any skew and uses it as an offset during cron evaluation to keep all instances synchronized. Each schedule records the latest occurrence it has sent, and the statement that sends a job moves that record in the same step. Two instances therefore can't send the same occurrence.
 
 Set `clockMonitorIntervalSeconds` to change the clock monitoring interval. Because cron evaluation reads the time from the instance's [`clock`](./constructor.md#clock) option, a [`TestClock`](./testing.md#controlling-time) can move a schedule to its next occurrence without waiting for it. To turn scheduling off on an instance, pass this in the constructor options.
 
@@ -117,7 +119,7 @@ A pass sends the occurrences of the preceding 60 seconds. An occurrence that cam
 | `missed` | What a schedule sends for a gap |
 | --- | --- |
 | `skip` | Nothing. The default |
-| `once` | One job, for the most recent missed occurrence, however many were missed |
+| `once` | One job, for the most recent occurrence since the gap opened, however many were missed |
 
 ```js
 // a nightly report reads the current state of the world, so three missed nights are one report
@@ -136,9 +138,13 @@ Consider these before choosing `once`:
 
 * **One job for the whole gap, which looks like any other scheduled job.** The job carries the schedule's `data` unchanged. A handler can't tell that the job is late or which occurrence the job stands for. Three days of downtime sends one job for last night's occurrence and nothing for the two nights before it.
 
-* **The catch-up job can arrive beside the occurrence that is due now.** The catch-up job and the due job are filed under different minutes, unless the missed occurrence happens to share a minute with the due occurrence. A schedule with second precision sends the one job only. A `singletonKey`, or a queue policy that allows one queued job (`short`, `stately`, `exclusive`), collapses them like any other pair.
+* **It includes the occurrence that is due now.** When an occurrence is due as the gap closes, the one job is for that occurrence.
 
 * **The pass that reads a gap closes it.** If a pass claims a gap and then fails, the next pass doesn't catch up on the occurrences it lost. An instance on a release without catch-up also closes gaps without catching up on them.
+
+## Rolling upgrades
+
+Releases before 12.40 send a schedule's jobs through an internal queue, `__pgboss__send-it`, with a worker on every instance. Later releases insert them directly. While both run, a later instance skips an occurrence an older one has already queued there, and forwards any queued occurrence left behind. It also leaves a completed row there for each occurrence it sends, which keeps an older instance from queuing it again. An upgrade from a release before 12.31.0 can still send an occurrence twice while both run.
 
 ## Managing schedules
 

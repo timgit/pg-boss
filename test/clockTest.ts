@@ -87,8 +87,7 @@ describe('clock option', function () {
       bamIntervalSeconds: PERIOD_SECONDS.bam,
       flowIntervalSeconds: PERIOD_SECONDS.flow,
       clockMonitorIntervalSeconds: PERIOD_SECONDS.skew,
-      queueCacheIntervalSeconds: PERIOD_SECONDS.queueCache,
-      cronWorkerIntervalSeconds: WORKER_POLL_SECONDS
+      queueCacheIntervalSeconds: PERIOD_SECONDS.queueCache
     })
 
     const queue = ctx.schema

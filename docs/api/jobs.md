@@ -66,7 +66,7 @@ Creates a new job and returns the job id.
 
 * **retentionSeconds**, number
 
-  Default: 14 days. How many seconds a job can stay in created or retry state before it's deleted, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. Must be >=1.
+  Default: 14 days. How many seconds a job can stay in created or retry state before it's deleted, counted from when it may start (`startAfter`). A retry, `retry()`, `resume()` and an `update()` that changes `startAfter` each start the count again from the job's new start time. A job sent 30 days ahead with the default retention is kept until 14 days after its start time. Must be >=1.
 
 * **deleteAfterSeconds**, int
 
@@ -812,22 +812,21 @@ await boss.complete('report-generation', job, { reportUrl: report.url })
 
 * **db**, object, see notes in `send()`
 
-The promise resolves with `{ jobs, requested, affected }`. `affected` is `1` when the job was completed and `0` when it couldn't be (for example, because it isn't active).
+Resolves with `{ jobs, requested, affected }`. A job that could not be completed does not reject the promise. That covers a job that is not active (with `includeQueued: true`, one that is already completed, cancelled or failed), an id with no job in this queue, and a fetched job whose claim lapsed (see [passing jobs instead of ids](#passing-jobs-instead-of-ids)). `affected` is then lower than `requested`. The promise rejects on errors such as a queue that does not exist or a failed query.
+
+When you complete a job inside your own transaction with `{ db }`, check `affected` before you commit. If it is short, roll back, or your other writes commit without the job being completed. Pass the job `fetch()` returned in place of its id. A lapsed claim then comes back short too. A [`transactional`](./workers.md#work-name-options-handler) worker runs this check for you.
 
 ### `complete(name, [ids], data, options)`
 
 Completes a set of active jobs (or queued jobs with `includeQueued: true`).
 
-The promise resolves with `{ jobs, requested, affected }`, where `jobs` holds the ids passed, `requested` their count, and `affected` how many were completed. `affected` can be lower than `requested`, because pg-boss leaves alone any job it can't complete.
-
-> [!NOTE]
-> See the note on `cancel([ids])` about batch calls, which can partly succeed.
+Like `cancel([ids])`, this is a best-effort batch. Jobs that cannot be completed are skipped, and `affected` counts the jobs that were. The promise resolves as it does for a single job.
 
 ### `fail(name, id, data, options)`
 
-Marks an active job as failed.
+Marks a job as failed. The job can be active or still queued (`created` or `retry`).
 
-The promise resolves with `{ jobs, requested, affected }`. `affected` is `1` when the job was marked as failed and `0` when it couldn't be (for example, because it already completed).
+Resolves with `{ jobs, requested, affected }`, as [`complete()`](#complete-name-id-data-options) does. A job that is already completed, cancelled or failed, an id with no job in this queue, or a fetched job whose claim lapsed does not reject the promise. `affected` is then lower than `requested`.
 
 `data` is stored as the job's output and accepts a value of any type, such as the error a `catch` block receives. An `Error` is stored with its name, message and stack. A plain object is stored as it is. An array, a string or a number is stored as `{ value }`. `null`, `undefined` or a function leaves the output empty.
 
@@ -845,7 +844,7 @@ try {
 
 ### `fail(name, [ids], data, options)`
 
-Fails a set of active jobs.
+Fails a set of jobs, active or still queued.
 
 ```js
 const jobs = await boss.fetch('email-send', { batchSize: 10 })
@@ -853,10 +852,7 @@ const jobs = await boss.fetch('email-send', { batchSize: 10 })
 await boss.fail('email-send', jobs, { message: 'smtp outage' })
 ```
 
-The promise resolves with `{ jobs, requested, affected }`, where `jobs` holds the ids passed, `requested` their count, and `affected` how many were marked as failed. `affected` can be lower than `requested`, because pg-boss leaves alone any job it can't fail.
-
-> [!NOTE]
-> See the note on `cancel([ids])` about batch calls, which can partly succeed.
+Like `cancel([ids])`, this is a best-effort batch. Jobs that cannot be marked as failed are skipped, and `affected` counts the jobs that were. The promise resolves as it does for a single job.
 
 
 ### `touch(name, id, options)`

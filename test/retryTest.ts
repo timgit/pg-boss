@@ -204,7 +204,7 @@ describe('retries', function () {
     const jobId = await ctx.boss.send(ctx.schema, null, { retentionSeconds: 600, retryLimit: 1, retryDelay: 300 })
     assertTruthy(jobId)
 
-    await clock.tick(540_000)
+    await clock.setTime(clock.now() + 540_000)
     await ctx.boss.fetch(ctx.schema)
     await clock.tick(60_000)
     await ctx.boss.fail(ctx.schema, jobId)
@@ -212,7 +212,7 @@ describe('retries', function () {
     await clock.tick(60_000)
     await ctx.boss.supervise(ctx.schema)
 
-    await clock.tick(240_000)
+    await clock.setTime(clock.now() + 240_000)
     const [job] = await ctx.boss.fetch(ctx.schema)
 
     expect(job?.id).toBe(jobId)
@@ -227,7 +227,9 @@ describe('retries', function () {
     await ctx.boss.fetch(ctx.schema)
     await ctx.boss.fail(ctx.schema, jobId)
 
-    await clock.tick(3_600_000)
+    // A jump rather than a tick: nothing in between needs its timers fired, and ticking an hour
+    // replays every interval timer of the instance, which outlasts the test timeout under load.
+    await clock.setTime(clock.now() + 3_600_000)
     await ctx.boss.retry(ctx.schema, jobId)
     await clock.tick(60_000)
     await ctx.boss.supervise(ctx.schema)

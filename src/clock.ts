@@ -170,15 +170,22 @@ export class TestClock implements AttachableClock {
     // literal because a parameterised statement cannot carry more than one command; it is derived
     // from this.#now, a number, so there is nothing here to inject.
     //
-    // Dropped and recreated rather than IF NOT EXISTS: adopting a table that is already there would
-    // mean wiping rows this clock did not write, and dropping it on release. The name is one nobody
-    // else would pick, so a table under it is always a leftover from a killed run and safe to take.
-    await db.executeSql(`
-      DROP TABLE IF EXISTS ${plans.clockTable(schema)};
-      CREATE TABLE ${plans.clockTable(schema)} (now timestamp with time zone NOT NULL);
-      ${plans.createClockFunction(schema, { replace: true, body: plans.clockOverrideBody(schema) })}
-      INSERT INTO ${plans.clockTable(schema)} (now) VALUES (to_timestamp(${this.#now / 1000}));
-    `)
+    // Dropped and recreated rather than created IF NOT EXISTS. Adopting a table that is already there
+    // would mean wiping rows this clock did not write, and dropping it on release. The name is one
+    // nobody else would pick. A table under it that this clock isn't driving is a leftover from a
+    // killed run, and safe to take.
+    //
+    // A second instance on a schema this clock already drives shares the table, which every push
+    // keeps current. Dropping it would also fail on CockroachDB, which records the override body's
+    // dependency on the table.
+    if (!this.#targets.some(t => t.schema === schema)) {
+      await db.executeSql(`
+        DROP TABLE IF EXISTS ${plans.clockTable(schema)};
+        CREATE TABLE ${plans.clockTable(schema)} (now timestamp with time zone NOT NULL);
+        ${plans.createClockFunction(schema, { replace: true, body: plans.clockOverrideBody(schema) })}
+        INSERT INTO ${plans.clockTable(schema)} (now) VALUES (to_timestamp(${this.#now / 1000}));
+      `)
+    }
     // The session opt-in is not issued here. attach() runs after the contractor has already opened
     // connections and migrated, so a SET on this one session would miss every other one. PgBoss
     // declares it through db.setSessionStatements() before anything opens; see #doStart.

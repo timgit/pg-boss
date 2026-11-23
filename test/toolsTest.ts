@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import { clockDelay, resolveWithinSeconds, unwrapSQLResult } from '../src/tools.ts'
+import { clockDelay, isConnectionError, resolveWithinSeconds, unwrapSQLResult } from '../src/tools.ts'
 import type { Clock, ClockTimer } from '../src/types.ts'
 
 // Fires nothing until told to; the test is the only source of time.
@@ -118,5 +118,39 @@ describe('tools.resolveWithinSeconds', function () {
     const race = resolveWithinSeconds(clock, pending, 5, 'handler execution exceeded 5s')
     clock.advance(5000)
     await expect(race).rejects.toThrow('handler execution exceeded 5s')
+  })
+
+  describe('isConnectionError', function () {
+    it('matches the errors of a connection that went away', function () {
+      const errors = [
+        Object.assign(new Error('terminating connection due to administrator command'), { code: '57P01' }),
+        Object.assign(new Error('the database system is starting up'), { code: '57P03' }),
+        Object.assign(new Error('connection failure'), { code: '08006' }),
+        Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+        Object.assign(new Error('write CONNECTION_CLOSED'), { code: 'CONNECTION_CLOSED' }),
+        Object.assign(new Error('Connection closed'), { code: 'ERR_POSTGRES_SERVER_ERROR', errno: '57P01' }),
+        new Error('Connection terminated unexpectedly'),
+        new Error('Client has encountered a connection error and is not queryable')
+      ]
+
+      for (const err of errors) {
+        expect(isConnectionError(err), err.message).toBe(true)
+      }
+    })
+
+    it('leaves out errors the statement itself raised', function () {
+      const errors = [
+        Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' }),
+        Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' }),
+        Object.assign(new Error('deadlock detected'), { code: '40P01' }),
+        new Error('Queue x does not exist'),
+        'Connection terminated',
+        null
+      ]
+
+      for (const err of errors) {
+        expect(isConnectionError(err)).toBe(false)
+      }
+    })
   })
 })

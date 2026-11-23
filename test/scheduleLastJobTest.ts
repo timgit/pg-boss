@@ -13,14 +13,12 @@ function firingConfig () {
   return {
     ...ctx.bossConfig,
     cronMonitorIntervalSeconds: 1,
-    cronWorkerIntervalSeconds: 1,
     schedule: true
   }
 }
 
-// Poll rather than sleeping a fixed 4s: the chain is cron pass -> send-it insert -> send-it worker
-// -> annotate, and a fixed sleep is both slower in the common case and short on margin when CI is
-// loaded.
+// Poll rather than sleeping a fixed 4s: the chain is a cron pass and then the annotation, and a
+// fixed sleep is both slower in the common case and short on margin when CI is loaded.
 async function waitForLastJobIds (boss: PgBoss, count: number) {
   const deadline = Date.now() + 20_000
 
@@ -35,6 +33,18 @@ async function waitForLastJobIds (boss: PgBoss, count: number) {
   }
 
   throw new Error(`${count} schedule(s) did not record a last job id before the deadline`)
+}
+
+// A schedule owes nothing from before it was stored, so its cursor goes back a minute for the
+// occurrence due now to be owed.
+async function owePresentOccurrence () {
+  const db = await helper.getDb()
+
+  try {
+    await db.executeSql(`UPDATE ${ctx.schema}.schedule SET sent_on = sent_on - interval '1 minute'`)
+  } finally {
+    await db.close()
+  }
 }
 
 async function setLastJobId (key: string, jobId: string) {
@@ -65,6 +75,7 @@ describe('schedule lastJobId', function () {
     ctx.boss = await helper.start(firingConfig())
 
     await ctx.boss.schedule(ctx.schema, '* * * * *')
+    await owePresentOccurrence()
 
     const [schedule] = await waitForLastJobIds(ctx.boss, 1)
 
@@ -81,6 +92,7 @@ describe('schedule lastJobId', function () {
 
     await ctx.boss.schedule(ctx.schema, '* * * * *', { region: 'us' }, { key: 'us' })
     await ctx.boss.schedule(ctx.schema, '* * * * *', { region: 'eu' }, { key: 'eu' })
+    await owePresentOccurrence()
 
     const schedules = await waitForLastJobIds(ctx.boss, 2)
 
@@ -116,6 +128,7 @@ describe('schedule lastJobId', function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, schedule: false })
 
     await ctx.boss.schedule(ctx.schema, '* * * * *')
+    await owePresentOccurrence()
 
     await setLastJobId('', ORPHAN_JOB_ID)
 
@@ -143,6 +156,7 @@ describe('schedule lastJobId', function () {
     ctx.boss = await helper.start(firingConfig())
 
     await ctx.boss.schedule(ctx.schema, '* * * * *')
+    await owePresentOccurrence()
 
     const [before] = await ctx.boss.getSchedules()
 

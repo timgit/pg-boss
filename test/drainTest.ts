@@ -3,6 +3,7 @@ import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
+import { TestClock } from '../src/index.ts'
 
 // A poll interval no test waits out, so a drain that finishes shows it skipped the delay.
 const pollingIntervalSeconds = 30
@@ -66,6 +67,75 @@ describe('drain', function () {
 
     expect(result).toEqual({ processed: 4, failed: 0, timedOut: false })
     expect(nextHandled).toBe(2)
+  })
+
+  it('should run the children of a flow parent it completes', async function () {
+    // The test config leaves supervise off, so no background flow pass releases the children.
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const next = ctx.schema + '_next'
+    await ctx.boss.createQueue(next)
+
+    const handled: string[] = []
+
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async ([job]) => { handled.push(job.id) })
+    await ctx.boss.work(next, { pollingIntervalSeconds }, async ([job]) => { handled.push(job.id) })
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: next, dependsOn: ['parent'] },
+      { ref: 'grandchild', name: ctx.schema, dependsOn: ['child'] }
+    ])
+
+    const result = await ctx.boss.drain()
+
+    expect(result).toEqual({ processed: 3, failed: 0, timedOut: false })
+    expect(handled).toEqual([flow.parent, flow.child, flow.grandchild])
+  })
+
+  it('should time out before the round for a flow child when the parent\'s round used up the time', async function () {
+    const clock = new TestClock(Date.parse('2026-01-01T12:00:00Z'))
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    const next = ctx.schema + '_next'
+    await ctx.boss.createQueue(next)
+
+    const handled: string[] = []
+
+    // The parent's handler moves the clock past the deadline. setTime() fires no timer, so the
+    // round ends as the parent completes, and the deadline is found passed before the next one.
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async ([job]) => {
+      handled.push(job.id)
+      await clock.setTime(clock.now() + 2_000)
+    })
+    await ctx.boss.work(next, { pollingIntervalSeconds }, async ([job]) => { handled.push(job.id) })
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: next, dependsOn: ['parent'] }
+    ])
+
+    expect(await ctx.boss.drain({ timeoutSeconds: 1 })).toEqual({ processed: 1, failed: 0, timedOut: true })
+    expect(handled).toEqual([flow.parent])
+  })
+
+  it('should leave a child blocked when its parent fails', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.updateQueue(ctx.schema, { retryLimit: 0 })
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => { throw new Error('parent fails') })
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+    ])
+
+    const result = await ctx.boss.drain()
+
+    expect(result).toEqual({ processed: 1, failed: 1, timedOut: false })
+
+    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    expect(child?.blocked).toBe(true)
   })
 
   it('should count failed jobs without throwing', async function () {

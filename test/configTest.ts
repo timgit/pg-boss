@@ -73,6 +73,37 @@ describe('config', function () {
     })
   })
 
+  describe('cronWorkerIntervalSeconds deprecation', function () {
+    async function deprecations (options: object) {
+      await new Promise(resolve => setImmediate(resolve))
+
+      const seen: NodeJS.ErrnoException[] = []
+      const listener = (w: Error) => seen.push(w as NodeJS.ErrnoException)
+
+      process.on('warning', listener)
+
+      try {
+        Attorney.getConfig({ connectionString: 'postgres://localhost/db', ...options })
+        await new Promise(resolve => setImmediate(resolve))
+      } finally {
+        process.off('warning', listener)
+      }
+
+      return seen.filter(w => w.name === 'DeprecationWarning' && w.code === 'PGBOSS_DEP_CRON_WORKER_INTERVAL')
+    }
+
+    // One test, because the warning is emitted once per process and the order of the checks matters.
+    it('warns once when the option is set, and never for a config resolved without it', async function () {
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db' })
+      expect(resolved).not.toHaveProperty('cronWorkerIntervalSeconds')
+      expect(await deprecations(resolved)).toHaveLength(0)
+
+      expect(await deprecations({ cronWorkerIntervalSeconds: 5 })).toHaveLength(1)
+      expect(await deprecations({ cronWorkerIntervalSeconds: 5 })).toHaveLength(0)
+      expect(() => Attorney.getConfig({ connectionString: 'postgres://localhost/db', cronWorkerIntervalSeconds: 46 })).toThrow('cronWorkerIntervalSeconds must be between 1 and 45 seconds')
+    })
+  })
+
   describe('expiration limit', function () {
     const MAX_EXPIRE_SECONDS = Attorney.POLICY.MAX_JOB_EXPIRATION_DAYS * 86400
 
@@ -226,7 +257,9 @@ describe('config', function () {
     expect((resolved as any).noTablePartitioning).toBe(false)
   })
 
-  it('should warn when YugabyteDB is detected without the yugabytedb backend', async function () {
+  // Both fake YugabyteDB's version() over a real database, which has to run what the default and
+  // the yugabytedb profiles emit. CockroachDB runs neither.
+  helper.itPostgresOnly('should warn when YugabyteDB is detected without the yugabytedb backend', async function () {
     const realDb = await helper.getDb()
     const warnings: any[] = []
 
@@ -256,7 +289,7 @@ describe('config', function () {
     }
   })
 
-  it('should not warn about YugabyteDB when the yugabytedb backend is selected', async function () {
+  helper.itPostgresOnly('should not warn about YugabyteDB when the yugabytedb backend is selected', async function () {
     const realDb = await helper.getDb()
     const warnings: any[] = []
 
@@ -287,7 +320,7 @@ describe('config', function () {
 
   helper.itPglite('should accept a connectionString property', async function () {
     const connectionString = helper.getConnectionString()
-    ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema })
+    ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema, backend: ctx.bossConfig.backend })
 
     await ctx.boss.start()
   })

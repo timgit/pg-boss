@@ -621,7 +621,7 @@ describeTransactional('transactional work', function () {
     const db = await helper.getDb()
 
     try {
-      const { rows } = await db.executeSql(plans.getWarnings(ctx.schema), [null, 10, 0])
+      const { rows } = await db.executeSql(plans.getWarnings(ctx.schema), [null, 10])
       expect(rows.some(row => row.type === 'transactional_pool_headroom')).toBe(false)
     } finally {
       await db.close()
@@ -1024,8 +1024,10 @@ helper.describeMultiConnectionOnly('transaction handle (connection loss)', funct
     const { rows } = await tx.db.executeSql('SELECT pg_backend_pid() AS pid')
     const other = await helper.getDb()
 
+    // The cast picks Postgres's own function. Citus adds a bigint overload for its global process
+    // ids, which makes an untyped parameter ambiguous.
     try {
-      await other.executeSql('SELECT pg_terminate_backend($1)', [rows[0].pid])
+      await other.executeSql('SELECT pg_terminate_backend($1::integer)', [rows[0].pid])
     } finally {
       await other.close()
     }
@@ -1066,7 +1068,7 @@ helper.describeMultiConnectionOnly('transaction handle (connection loss)', funct
       const other = await helper.getDb()
 
       try {
-        await other.executeSql('SELECT pg_terminate_backend($1)', [rows[0].pid])
+        await other.executeSql('SELECT pg_terminate_backend($1::integer)', [rows[0].pid])
       } finally {
         await other.close()
       }
