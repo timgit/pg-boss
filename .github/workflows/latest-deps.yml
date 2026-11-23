@@ -1,0 +1,68 @@
+# Actions are pinned to full commit SHAs; see .github/dependabot.yml for why and how they are updated.
+#
+# Runs the suite against the newest releases of the runtime dependencies. CI installs from the
+# lockfile, and Dependabot doesn't cover npm, so a dependency release reaches every fresh install of
+# pg-boss before any test here runs against it. This job installs without the lockfile, as an app
+# installing pg-boss does, and moves a dependency pinned to an exact version to the newest release of
+# its major. A failure names a release that changes how pg-boss behaves, such as a cron-parser change
+# to daylight saving time.
+on:
+  schedule:
+    # Mondays at 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+name: Latest dependencies
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: node:24
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Set up Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24
+
+    - name: Install without the lockfile
+      run: |
+        rm package-lock.json
+        npm install
+
+    - name: Move exact pins to the newest release of their major
+      run: |
+        pinned=$(node -e "
+          const deps = require('./package.json').dependencies
+          const specs = Object.entries(deps)
+            .filter(([, range]) => /^\d/.test(range))
+            .map(([name, range]) => name + '@^' + range.split('.')[0])
+          console.log(specs.join(' '))
+        ")
+        if [ -n "$pinned" ]; then npm install --no-save $pinned; fi
+
+    - name: Versions under test
+      run: npm ls --depth=0 --omit=dev
+
+    - name: Test
+      run: |
+        npx prisma generate --schema=test/prisma/schema.prisma
+        npx vitest run
+      env:
+        POSTGRES_HOST: postgres
