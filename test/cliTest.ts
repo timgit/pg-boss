@@ -798,6 +798,21 @@ describePglite('cli', function () {
       })
     })
 
+    describe('connection errors', function () {
+      const unreachable = 'postgres://postgres:postgres@127.0.0.1:1/pgboss'
+
+      for (const command of ['version', 'rollback', 'doctor', 'reindex']) {
+        it(`should report a connection error (${command})`, async function () {
+          const { stdout } = await execCli(
+            [command, '--connection-string', unreachable],
+            { expectedErrorMessage: 'ECONNREFUSED' }
+          )
+
+          expect(stdout).not.toContain('not installed')
+        })
+      }
+    })
+
     describe('schema structure validation', function () {
       let schema = ''
 

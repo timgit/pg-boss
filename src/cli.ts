@@ -249,16 +249,12 @@ async function getPartitionTables (db: types.IDatabase, schema: string): Promise
 }
 
 async function getSchemaVersion (db: types.IDatabase, schema: string): Promise<number | null> {
-  try {
-    const result = await db.executeSql(plans.versionTableExists(schema))
-    if (!result.rows[0].name) {
-      return null
-    }
-    const versionResult = await db.executeSql(plans.getVersion(schema))
-    return versionResult.rows.length ? parseInt(versionResult.rows[0].version) : null
-  } catch {
+  const result = await db.executeSql(plans.versionTableExists(schema))
+  if (!result.rows[0].name) {
     return null
   }
+  const versionResult = await db.executeSql(plans.getVersion(schema))
+  return versionResult.rows.length ? parseInt(versionResult.rows[0].version) : null
 }
 
 async function cmdVersion (args: ReturnType<typeof parseCliArgs>): Promise<void> {
