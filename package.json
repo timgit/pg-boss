@@ -85,7 +85,7 @@
     "test:browser": "vite --config test/browser/vite.config.mjs"
   },
   "pgboss": {
-    "schema": 47
+    "schema": 48
   },
   "repository": {
     "type": "git",

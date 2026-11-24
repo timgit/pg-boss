@@ -618,6 +618,14 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.deleteQueue(name)
   }
 
+  pauseQueue (name: string): Promise<void> {
+    return this.#manager.pauseQueue(name)
+  }
+
+  resumeQueue (name: string): Promise<void> {
+    return this.#manager.resumeQueue(name)
+  }
+
   async getQueues (names?: string[], options?: types.ListOptions): Promise<types.QueueResult[]> {
     const limit = Attorney.assertListLimit('getQueues', options?.limit)
     Attorney.assertListAfter('getQueues', options?.after)
