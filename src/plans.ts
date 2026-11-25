@@ -412,7 +412,8 @@ function createTableVersion (schema: string) {
 // Both are null until a queue's first maintenance pass after the columns were added (see
 // retainedAssignments).
 // paused_on is when pauseQueue() paused the queue, null while it runs. fetchNextJob() reads it live
-// rather than through the queue cache, so a pause applies on every instance from its next fetch.
+// instead of through the queue cache. A pause applies on every instance from that instance's next
+// fetch.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -2779,8 +2780,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       ), `
     : ''
 
-  // The pause gate reads the queue row live (see createTableQueue). It is uncorrelated, so Postgres
-  // plans it as a one-time filter: a paused queue's fetch never scans the job table.
+  // The pause gate reads the queue row live (see createTableQueue). Postgres plans the uncorrelated
+  // subquery as a one-time filter. A paused queue's fetch doesn't scan the job table.
   const whereConditions = [
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,

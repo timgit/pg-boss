@@ -3332,8 +3332,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  // Wakes this instance's workers on the queue, and with notify on, every other instance's too, so
-  // the backlog is fetched now rather than on the next poll.
+  // Wakes this instance's workers on the queue, and with notify on, every other instance's too. They
+  // fetch the backlog without waiting for their next poll.
   async resumeQueue (name: string) {
     Attorney.assertQueueName(name)
 

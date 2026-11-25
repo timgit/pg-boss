@@ -95,6 +95,7 @@ describe('queue pause', function () {
     { policy: 'standard', fetchOptions: {} },
     { policy: 'standard', fetchOptions: { groupConcurrency: 2 } },
     { policy: 'singleton', fetchOptions: { batchSize: 5 } },
+    { policy: 'stately', fetchOptions: { batchSize: 5 } },
     { policy: 'key_strict_fifo', fetchOptions: {} }
   ])('a paused $policy queue with fetch options $fetchOptions', function ({ policy, fetchOptions }) {
     it('should return no jobs', async function () {

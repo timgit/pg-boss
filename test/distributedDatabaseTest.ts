@@ -20,6 +20,8 @@ import { delay } from '../src/tools.ts'
 //   3. Flag-gated schema construction (noTablePartitioning / noDeferrableConstraints /
 //      noCoveringIndexes / noAdvisoryLocks). The ONLY Postgres-side coverage of that DDL, since the
 //      `DISTRIBUTED=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.
+//   4. The queue pause gate. The CockroachDB CI legs run only this file and migrationTest.ts, and
+//      test/queuePauseTest.ts covers the rest of the pause on Postgres.
 //
 // Every test here calls helper.start(), which on CockroachDB pays slow per-test DDL, leaving little
 // headroom under the 10s Postgres global. Raise the default for the whole block so startup jitter
@@ -396,6 +398,20 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     const completed = await ctx.boss.getJobById(ctx.schema, jobId)
     helper.assertTruthy(completed)
     expect(completed.state).toBe('completed')
+  })
+
+  it('should gate fetch on a paused queue', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+
+    const jobId = await ctx.boss.send(ctx.schema)
+    await ctx.boss.pauseQueue(ctx.schema)
+
+    expect(await ctx.boss.fetch(ctx.schema)).toEqual([])
+
+    await ctx.boss.resumeQueue(ctx.schema)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job?.id).toBe(jobId)
   })
 
   it('should return numeric stats counts under the cockroachdb backend', async function () {
