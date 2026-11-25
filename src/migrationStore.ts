@@ -2422,6 +2422,17 @@ AS $function$
       uninstall: [
         `ALTER TABLE ${schema}.schedule DROP COLUMN sent_on`
       ]
+    },
+    {
+      release: '12.40.0',
+      version: 48,
+      previous: 47,
+      install: [
+        `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS paused_on timestamp with time zone`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.queue DROP COLUMN paused_on`
+      ]
     }
   ]
 }

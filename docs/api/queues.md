@@ -213,6 +213,35 @@ Inside a transaction passed as `db`, with the default partitioned layout, the da
 
 If another instance deletes a queue and creates it again with a different `partition` setting, the first write from an instance that cached the queue fails with `relation ... does not exist` or a partition constraint violation. That instance writes to the new table from its next call.
 
+### `pauseQueue(name)`
+
+Pauses a queue. While it is paused, [`fetch()`](./jobs.md#fetch-name-options) returns no jobs from it, and its workers keep polling and get none.
+
+```js
+await boss.pauseQueue('email-send')
+```
+
+Every fetch reads the pause from the queue's row, without the queue cache. It applies on every instance from that instance's next fetch. An instance on a release before 12.40 doesn't read the pause and keeps fetching from the queue. Pause a queue once every instance runs 12.40 or later. Pausing a queue that is already paused keeps its first `pausedOn`. A queue that doesn't exist rejects with `Queue <name> does not exist`.
+
+A pause stops only fetching and moves no job. The rest keeps working:
+
+* `send()`, `insert()`, `publish()` and cron schedules keep adding jobs to a paused queue, which builds a backlog. While it holds jobs, the monitor emits a `queue_paused` [`warning`](./events.md#warning) once an hour. A backlog past `warningQueueSize` also emits `queue_backlog`.
+* Jobs already active run to completion. Expiration, heartbeat failure, retries and dead letter queues keep working.
+* Monitoring, queue stats and retention keep running.
+* [`drain()`](./workers.md#drain-name-options) resolves without waiting for the paused queue's backlog, because the queue has nothing to fetch.
+
+### `resumeQueue(name)`
+
+Resumes a paused queue. Fetches return its jobs again. Resuming a queue that isn't paused does nothing. A queue that doesn't exist rejects with `Queue <name> does not exist`.
+
+```js
+await boss.resumeQueue('email-send')
+```
+
+It wakes this instance's workers on the queue, which fetch the backlog without waiting for their next poll. With [`notify`](#createqueue-name-queue) on, it wakes the workers on every instance.
+
+[`resume(name, id)`](./jobs.md#resume-name-id-options) is a different method, which brings back cancelled jobs.
+
 ### `getQueues(names?, options)`
 
 Returns the queues sorted by name, or only the named queues when an array of names is provided. `options.limit` sets the most it returns, from 1 to 100,000, and defaults to 1000. Pass the last queue's name as `options.after` to read the next page.
@@ -242,6 +271,8 @@ interface QueueResult {
   heartbeatSeconds: number | null;
   warningQueueSize: number;
   notify: boolean;
+  paused: boolean;
+  pausedOn: Date | null;
   queuedCount: number;
   deferredCount: number;
   blockedCount: number;
@@ -306,6 +337,8 @@ In `queue_stats` the histograms are stored as the `int[]` columns `wait_bins` an
 **Other fields**
 
 * `singletonsActive`, **deprecated**: the `singletonKey` of each active job in a `singleton` or `stately` queue, as of the last monitor pass; `null` when there are none. Since 12.37.1 it's informational only, because `fetch()` checks a key's active job directly instead of reading this list. It will be removed in the next major.
+* `paused`: whether [`pauseQueue()`](#pausequeue-name) paused the queue
+* `pausedOn`: when it was paused, or `null` while it runs
 * `table`: the table the queue's jobs are stored in, `job_common` unless the queue is partitioned
 * `createdOn`: when the queue was created
 * `updatedOn`: when [`updateQueue()`](#updatequeue-name-options) last changed the queue, or the same as `createdOn` if the queue hasn't been updated

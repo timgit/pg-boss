@@ -411,6 +411,9 @@ function createTableVersion (schema: string) {
 // reduceRetainedCount).
 // Both are null until a queue's first maintenance pass after the columns were added (see
 // retainedAssignments).
+// paused_on is when pauseQueue() paused the queue, null while it runs. fetchNextJob() reads it live
+// instead of through the queue cache. A pause applies on every instance from that instance's next
+// fetch.
 /* eslint-disable no-restricted-syntax -- column defaults stay on the real clock: every pg-boss write names its timestamps through job_now() */
 function createTableQueue (schema: string) {
   return `
@@ -448,6 +451,7 @@ function createTableQueue (schema: string) {
       ready_history int[] NOT NULL default '{}',
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
+      paused_on timestamp with time zone,
       singletons_active text[],
       monitor_claim_on timestamp with time zone,
       monitor_on timestamp with time zone,
@@ -1516,6 +1520,9 @@ function createIndexJobQueuedKey (schema: string) {
 // A queue never claimed falls back to monitor_on, so a queue that crossed the v40 upgrade without
 // its seed (CockroachDB, see noAddColumnBackfill) is not due all at once. A new queue has neither
 // stamp and is due immediately.
+//
+// pausedOn feeds the queue_paused warning. queuedCount is the count from the previous pass, which
+// the warning uses when this pass skips the aggregate.
 export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number, skipLocked?: boolean): SqlQuery {
   return {
     text: `
@@ -1530,7 +1537,10 @@ export function trySetQueueMonitorTime (schema: string, queues: string[], second
     SET monitor_claim_on = ${schema}.job_now()
     FROM due
     WHERE queue.name = due.name
-    RETURNING queue.name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats"
+    RETURNING queue.name,
+      NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats",
+      queue.paused_on as "pausedOn",
+      queue.queued_count as "queuedCount"
   `,
     values: [queues]
   }
@@ -1765,6 +1775,23 @@ export function updateQueue (schema: string) {
   `
 }
 
+// COALESCE keeps the first pause's time when a paused queue is paused again.
+export function pauseQueue (schema: string) {
+  return `
+    UPDATE ${schema}.queue SET paused_on = COALESCE(paused_on, ${schema}.job_now())
+    WHERE name = $1
+    RETURNING name
+  `
+}
+
+export function resumeQueue (schema: string) {
+  return `
+    UPDATE ${schema}.queue SET paused_on = NULL
+    WHERE name = $1
+    RETURNING notify
+  `
+}
+
 export function currentDatabase () {
   return 'SELECT current_database() AS name'
 }
@@ -1795,6 +1822,8 @@ export function getQueues (schema: string, names?: string[], limit?: number, aft
       q.partition,
       q.heartbeat_seconds as "heartbeatSeconds",
       q.notify,
+      q.paused_on IS NOT NULL as paused,
+      q.paused_on as "pausedOn",
       q.dead_letter as "deadLetter",
       q.deferred_count as "deferredCount",
       q.blocked_count as "blockedCount",
@@ -2757,10 +2786,13 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       ), `
     : ''
 
+  // The pause gate reads the queue row live (see createTableQueue). Postgres plans the uncorrelated
+  // subquery as a one-time filter. A paused queue's fetch doesn't scan the job table.
   const whereConditions = [
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,
     'NOT j.blocked',
+    `NOT EXISTS (SELECT 1 FROM ${schema}.queue pq WHERE pq.name = '${name}' AND pq.paused_on IS NOT NULL)`,
     // `<=` (not `<`) so a job inserted with start_after = ${schema}.job_now() is immediately
     // fetchable in the next statement. `${schema}.job_now()` is transaction-scoped; on backends with coarse
     // clock resolution (notably PGlite) consecutive autocommit statements often share the same

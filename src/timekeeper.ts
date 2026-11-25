@@ -96,6 +96,10 @@ const SEND_IT_DRAIN_BATCHES = 20
 const DAY_MS = 24 * 60 * 60 * 1000
 const MINUTE_MS = 60 * 1000
 
+// How far a repeated local time can sit from the change that repeats it. No zone goes back by more
+// than two hours.
+const REPEAT_REACH_MS = 3 * 60 * 60 * 1000
+
 // How long an occurrence stays due, and the width of the throttle slot a forwarded job is filed in.
 // One value because the two have to agree: a window wider than the slot lets two slots claim the
 // same occurrence and send it twice, and a slot wider than the window collapses two occurrences a
@@ -175,21 +179,21 @@ function isSecondCron (expression: string, options: types.ScheduleOptions | unde
 }
 
 /**
- * Every occurrence of a cron expression in (after, until], oldest first, passing over the second
- * instant of a repeated local time as previousOccurrence does.
+ * Every occurrence of a cron expression in (after, until], oldest first, read with cronMatches().
  *
- * Each second of the range is asked about rather than walked to with prev(), which looks past the
- * oldest occurrence for the one before it. When that one is a time the clocks skipped, as
- * `30 30 0 * * *` has in America/Havana, prev() throws for up to a day, and the occurrences found
- * on the way would go with it. The cost follows the range, so a caller keeps it to the due window.
+ * Each second of the range is asked about. Walking with prev() looks past the oldest occurrence for
+ * the one before it. When that one is a time the clocks skipped, as `30 30 0 * * *` has in
+ * America/Havana, prev() throws for up to a day, and the occurrences found on the way go with it.
+ * The cost follows the range, and a caller keeps it to the due window.
  */
 function cronOccurrencesBetween (interval: CronExpression, tz: string, after: number, until: number): Date[] {
+  const span = repeatedSpan(tz, after - REPEAT_REACH_MS, until)
   const found: Date[] = []
 
   for (let second = Math.floor(after / 1000) + 1; second * 1000 <= until; second++) {
     const instant = new Date(second * 1000)
 
-    if (interval.includesDate(instant) && !passedOver(interval, instant, tz)) {
+    if (cronMatches(interval, instant, span)) {
       found.push(instant)
     }
   }
@@ -198,76 +202,151 @@ function cronOccurrencesBetween (interval: CronExpression, tz: string, after: nu
 }
 
 /**
- * The occurrence before an interval's cursor, passing over the second instant of a local time the
- * clocks went back over, unless the expression keeps running through that hour.
+ * The latest occurrence before `cursor`, the date the interval was parsed at, read with
+ * cronMatches().
  *
- * Walking forwards, cron-parser runs a repeated hour once unless the expression names every hour,
- * so `30 1 * * *` in America/New_York sends at the first 01:30 on the night the clocks go back and
- * `0 * * * *` stays hourly. Walking backwards it answers with both instants, an hour apart and so
- * in throttle slots of their own, and a pass reading backwards would send the daily job twice. This
- * reads backwards the way the forward walk, and previewSchedule() with it, reads forwards, and
- * `FREQ=DAILY;BYHOUR=1;BYMINUTE=30` gets the same answer from rrule-temporal, which resolves a
- * repeated local time to its first instant.
+ * prev() reads a repeated hour differently across cron-parser versions. 5.10.7 and later step over
+ * the second copy for an expression that restricts the hour. 5.10.6 steps from a second copy past
+ * its earlier twin when the clocks go back by other than an hour. The repeated span near each
+ * occurrence is therefore read here without prev(). A second copy the expression keeps sits within
+ * two hours after the occurrence prev() returns, because its earlier twin matches too. A second
+ * copy it sends once gives way to the latest match in the first copy, which holds at least its twin.
  */
-function previousOccurrence (interval: CronExpression, tz: string): Date {
+function previousOccurrence (interval: CronExpression, tz: string, cursor: number): Date {
   for (;;) {
     const occurrence = interval.prev().toDate()
+    const time = occurrence.getTime()
+    const span = repeatedSpan(tz, time - REPEAT_REACH_MS, Math.min(cursor, time + REPEAT_REACH_MS))
 
-    if (!passedOver(interval, occurrence, tz)) {
-      return occurrence
+    if (span !== null && keepsRepeatedHour(interval)) {
+      const later = latestMatchIn(interval, span, Math.max(span.start, time + 1), Math.min(span.end, cursor))
+
+      if (later !== null) return later
     }
+
+    if (cronMatches(interval, occurrence, span)) return occurrence
+
+    if (span !== null && time >= span.start && time < span.end) {
+      const first = latestMatchIn(interval, span, time - span.shift, Math.min(span.start, cursor))
+
+      if (first !== null) return first
+    }
+
+    cursor = time
   }
 }
 
 /**
  * The latest occurrence of a cron expression in (after, until], walking forwards, for a range that
  * prev() cannot read back across. The forward walk moves a skipped time's occurrence into the hour
- * the clocks landed on, which the expression does not name, so that one is left out as the
- * backward read leaves it out.
+ * the clocks landed on, which the expression does not name. cronMatches() leaves that one out, as
+ * the backward read does. next() returns a repeated local time once, and the second copy of a
+ * repeated hour in the range is scanned after the walk.
  */
 function latestOccurrenceForward (expression: string, tz: string, after: number, until: number): Date | null {
   const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(after) })
+  const span = repeatedSpan(tz, after - REPEAT_REACH_MS, until)
   let latest: Date | null = null
 
   for (;;) {
     const occurrence = interval.next().toDate()
 
-    if (occurrence.getTime() > until) return latest
+    if (occurrence.getTime() > until) break
 
-    if (interval.includesDate(occurrence) && !passedOver(interval, occurrence, tz)) {
+    if (cronMatches(interval, occurrence, span)) {
       latest = occurrence
     }
   }
+
+  if (span !== null && keepsRepeatedHour(interval)) {
+    const from = Math.max(span.start, (latest?.getTime() ?? after) + 1)
+
+    return latestMatchIn(interval, span, from, Math.min(span.end, until + 1)) ?? latest
+  }
+
+  return latest
 }
 
 /**
- * Whether an occurrence is one a repeated local time holds no job for: the second instant, in an
- * expression that names neither every hour nor multiple minutes across multiple hours.
- *
- * An expression naming multiple minutes across multiple hours is a run rather than a time of day,
- * and passing over the repeated hour would leave `0,15,30,45 0-3 * * *` sending nothing for an hour
- * and a quarter. It reads both instants, as a `FREQ=MINUTELY` rule does, and previewSchedule(),
- * walking forwards, can list fewer than the pass sends.
+ * The second copy of a local time span the clocks went back over: [start, end) shows the same
+ * local times as [start - shift, start).
  */
-function passedOver (interval: CronExpression, instant: Date, tz: string): boolean {
-  const { hour, minute } = interval.fields
-  const keepsRepeatedHour = hour.values.length === 24 || (hour.values.length > 1 && minute.values.length > 1)
-
-  return !keepsRepeatedHour && repeatsLocalTime(instant, tz)
-}
+type RepeatedSpan = { start: number, end: number, shift: number }
 
 /**
- * Whether the local time an instant shows in `tz` was already shown once, earlier, before the
- * clocks went back. The offset three hours before is the one in force before any change the instant
- * could be repeating, since no zone goes back by more than two.
+ * The repeated span of a change in (from, to] that sets the clocks back, or null when the offset
+ * in force at `to` is not lower than at `from`. The range is short enough to hold one change at
+ * most.
  */
-function repeatsLocalTime (instant: Date, tz: string): boolean {
+function repeatedSpan (tz: string, from: number, to: number): RepeatedSpan | null {
   const offset = (time: number) => new CronDate(time, tz).getUTCOffset()
+  const before = offset(from)
+  const after = offset(to)
 
+  if (before <= after) return null
+
+  let lo = Math.floor(from / 1000)
+  let hi = Math.ceil(to / 1000)
+
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2)
+
+    if (offset(mid * 1000) === before) lo = mid
+    else hi = mid
+  }
+
+  const shift = (before - after) * MINUTE_MS
+
+  return { start: hi * 1000, end: hi * 1000 + shift, shift }
+}
+
+/**
+ * Whether a cron expression sends at an instant. The second copy of a repeated local time is
+ * judged by its earlier twin, which shows the same local time, and only when the expression keeps
+ * the repeated hour. cron-parser reads that second copy differently across versions. Its earlier
+ * twin reads the same on all of them.
+ */
+function cronMatches (interval: CronExpression, instant: Date, span: RepeatedSpan | null): boolean {
   const time = instant.getTime()
-  const shift = offset(time - 3 * 60 * 60 * 1000) - offset(time)
 
-  return shift > 0 && offset(time - shift * 60 * 1000) - offset(time) === shift
+  if (span === null || time < span.start || time >= span.end) {
+    return interval.includesDate(instant)
+  }
+
+  return keepsRepeatedHour(interval) && interval.includesDate(new Date(time - span.shift))
+}
+
+/**
+ * The latest instant in [from, to) that cronMatches() keeps, or null. Instants are read a minute
+ * apart from the span's start, or a second apart for an expression that names seconds.
+ */
+function latestMatchIn (interval: CronExpression, span: RepeatedSpan, from: number, to: number): Date | null {
+  const { second } = interval.fields
+  const step = second.values.length === 1 && second.values[0] === 0 ? MINUTE_MS : 1000
+
+  for (let time = span.start + (Math.ceil((to - span.start) / step) - 1) * step; time >= from; time -= step) {
+    const instant = new Date(time)
+
+    if (cronMatches(interval, instant, span)) return instant
+  }
+
+  return null
+}
+
+/**
+ * Whether an expression sends at both copies of a repeated local time. It does when it names every
+ * hour, or names multiple minutes across multiple hours. Any other expression is a time of day,
+ * which sends at the first copy only.
+ *
+ * Multiple minutes across multiple hours make a run. Sending once would leave
+ * `0,15,30,45 0-3 * * *` sending nothing for an hour and a quarter. A run reads both copies, as a
+ * `FREQ=MINUTELY` rule does, and previewSchedule(), walking forwards, can list fewer than the pass
+ * sends.
+ */
+function keepsRepeatedHour (interval: CronExpression): boolean {
+  const { hour, minute } = interval.fields
+
+  return hour.values.length === 24 || (hour.values.length > 1 && minute.values.length > 1)
 }
 
 /**
@@ -1408,7 +1487,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(reference + 1) })
 
       try {
-        const occurrence = previousOccurrence(interval, tz)
+        const occurrence = previousOccurrence(interval, tz, reference + 1)
 
         return occurrence.getTime() > after.getTime() ? occurrence : null
       } catch {
@@ -1453,7 +1532,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     // whole minute is rare (`databaseTime % 60000 === 0`) and entirely real.
     const interval = CronExpressionParser.parse(expression, { tz, strict: false, currentDate: new Date(databaseTime + 1) })
 
-    const previous = previousOccurrence(interval, tz)
+    const previous = previousOccurrence(interval, tz, databaseTime + 1)
 
     return previous.getTime() > window.getTime() ? [previous] : []
   }

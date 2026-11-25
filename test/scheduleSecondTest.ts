@@ -784,6 +784,25 @@ describe('schedule seconds', function () {
     expect(await sentAt('30 45 1 * * *', Date.parse('2026-04-04T15:15:40Z'), lordHowe)).toBe(0)
   })
 
+  it('sends a run through the second copy of a repeated half hour and of two repeated hours', async function () {
+    const sentAt = async (cron: string, now: number, timezone: string) => (await pass(makeTk(), now, now - 30 * SECOND, [row(cron, { timezone })])).length
+
+    // Lord Howe Island shows 01:30 to 02:00 twice on 2026-04-05, from 14:30 and from 15:00 UTC.
+    const lordHowe = 'Australia/Lord_Howe'
+
+    expect(await sentAt('*/10 * 0-3 * * *', Date.parse('2026-04-04T14:45:40Z'), lordHowe)).toBe(3)
+    expect(await sentAt('*/10 * 0-3 * * *', Date.parse('2026-04-04T15:15:40Z'), lordHowe)).toBe(3)
+    expect(await sentAt('*/10 45 1 * * *', Date.parse('2026-04-04T15:15:40Z'), lordHowe)).toBe(0)
+
+    // Troll shows 01:00 to 03:00 twice on 2026-10-25, from 23:00 and from 01:00 UTC.
+    const troll = 'Antarctica/Troll'
+
+    expect(await sentAt('*/10 * 0-4 * * *', Date.parse('2026-10-25T00:15:40Z'), troll)).toBe(3)
+    expect(await sentAt('*/10 * 0-4 * * *', Date.parse('2026-10-25T02:15:40Z'), troll)).toBe(3)
+    expect(await sentAt('*/10 15 2 * * *', Date.parse('2026-10-25T00:15:40Z'), troll)).toBe(3)
+    expect(await sentAt('*/10 15 2 * * *', Date.parse('2026-10-25T02:15:40Z'), troll)).toBe(0)
+  })
+
   // The minute schedules of the same night, as the cron pass files them through send-it. A pass every
   // thirty seconds from 01:30:15 EDT to 01:31:15 EST files each occurrence twice, into one slot the
   // insert collapses. The slots are compared once each.

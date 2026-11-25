@@ -260,6 +260,7 @@ function coerceJsonScalar (value: string): string | number | boolean {
 export const WARNING_TYPES = [
   'slow_query',
   'queue_backlog',
+  'queue_paused',
   'clock_skew',
   'listen_notify_unavailable',
   'invalid_schedule',
@@ -284,6 +285,7 @@ export function isValidWarningType (value: string | null): value is WarningTypeV
 export const WARNING_TYPE_VARIANTS: Record<WarningTypeValue, BadgeVariant> = {
   slow_query: 'warning',
   queue_backlog: 'error',
+  queue_paused: 'warning',
   clock_skew: 'gray',
   listen_notify_unavailable: 'warning',
   invalid_schedule: 'error',
@@ -298,6 +300,7 @@ export const WARNING_TYPE_VARIANTS: Record<WarningTypeValue, BadgeVariant> = {
 export const WARNING_TYPE_LABELS: Record<WarningTypeValue, string> = {
   slow_query: 'Slow Query',
   queue_backlog: 'Queue Backlog',
+  queue_paused: 'Queue Paused',
   clock_skew: 'Clock Skew',
   listen_notify_unavailable: 'Listen/Notify Unavailable',
   invalid_schedule: 'Invalid Schedule',

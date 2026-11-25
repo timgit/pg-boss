@@ -507,6 +507,16 @@ describe('proxy api routes', () => {
         expected: ['queue']
       },
       {
+        method: 'pauseQueue',
+        body: { name: 'queue' },
+        expected: ['queue']
+      },
+      {
+        method: 'resumeQueue',
+        body: { name: 'queue' },
+        expected: ['queue']
+      },
+      {
         method: 'supervise',
         body: { name: 'queue' },
         expected: ['queue']

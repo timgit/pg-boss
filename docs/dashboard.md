@@ -153,6 +153,7 @@ Releases before 2.0 were each built for one schema version and only work against
 
 | Dashboard | pg-boss | Schema version |
 | - | - | - |
+| 1.15.x | 12.40.x | 48 |
 | 1.14.x | 12.39.x | 47 |
 | 1.13.x | 12.38.x | 46 |
 | 1.12.x | 12.38.x | 46 |
@@ -490,6 +491,7 @@ const boss = new PgBoss({
 Each warning matches a [`warning`](./api/events.md#warning) event that pg-boss emits:
 - `slow_query`: Queries taking longer than expected
 - `queue_backlog`: Queues exceeding their warning threshold
+- `queue_paused`: A paused queue holds jobs
 - `clock_skew`: Database clock drift detection
 - `listen_notify_unavailable`: `useListenNotify` is on but no listener could be established
 - `invalid_schedule`: A stored schedule could not be evaluated and was skipped

@@ -499,9 +499,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  // Runs a worker's complete() or fail() again on a fresh pooled connection when the connection
-  // it ran on went away. Each one is fenced to the fetched attempt, so a retry after a statement
-  // that landed before the drop settles nothing. Any other error, or the last retry's, is thrown.
+  // Runs a worker's complete() or fail() again when the connection it ran on went away. A retry
+  // checks out a connection the same way the first run did. Each one is fenced to the fetched
+  // attempt. A retry after a statement that landed before the drop therefore settles nothing. Any
+  // other error, or the last retry's, is thrown.
   async #settleRetrying<R> (settle: () => Promise<R>): Promise<R> {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -3318,6 +3319,35 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const sql = plans.updateQueue(this.config.schema)
     await this.db.executeSql(sql, [name, options])
     await this.#reloadQueueCache(name)
+  }
+
+  // No queue cache reload: fetchNextJob() reads paused_on live.
+  async pauseQueue (name: string) {
+    Attorney.assertQueueName(name)
+
+    const { rows } = await this.db.executeSql(plans.pauseQueue(this.config.schema), [name])
+
+    if (!rows.length) {
+      throw Object.assign(new Error(`Queue ${name} does not exist`), { code: QUEUE_NOT_FOUND })
+    }
+  }
+
+  // Wakes this instance's workers on the queue, and with notify on, every other instance's too. They
+  // fetch the backlog without waiting for their next poll.
+  async resumeQueue (name: string) {
+    Attorney.assertQueueName(name)
+
+    const { rows } = await this.db.executeSql(plans.resumeQueue(this.config.schema), [name])
+
+    if (!rows.length) {
+      throw Object.assign(new Error(`Queue ${name} does not exist`), { code: QUEUE_NOT_FOUND })
+    }
+
+    if (this.#notifyEnabled(rows[0].notify)) {
+      await this.db.executeSql(plans.notifyQueue(this.config.schema, name))
+    }
+
+    this.notifyQueue(name)
   }
 
   async getQueue (name: string) {

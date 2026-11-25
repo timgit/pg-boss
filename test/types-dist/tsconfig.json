@@ -1,7 +1,9 @@
 {
   // Typechecks the built declarations the way a strict consumer does. skipLibCheck is off so that
   // every .d.ts reachable from dist/index.d.ts is checked, which catches an @internal type that
-  // stripInternal removed while an emitted signature still names it (#988).
+  // stripInternal removed while an emitted signature still names it (#988). The paths entry maps pg to an
+  // empty module. pg ships no types, and @types/pg is a devDependency here, which consumers do not get.
+  // A declaration that names a pg type then fails here the way it fails for them (#1019).
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -9,7 +11,8 @@
     "strict": true,
     "skipLibCheck": false,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": { "pg": ["./pg-stub.d.ts"] }
   },
   "files": ["consumer.ts"]
 }

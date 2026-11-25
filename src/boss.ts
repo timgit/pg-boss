@@ -16,6 +16,7 @@ const events = {
 const WARNINGS = {
   SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
   LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog' },
+  PAUSED_QUEUE: { message: 'Warning: paused queue holds jobs' },
   // No threshold constant: the trigger is measured, not configured. See #checkVacuum.
   XMIN_HORIZON: { message: 'Warning: the database transaction horizon is pinned, so completed jobs cannot be cleaned up' },
   AUTOVACUUM_DISABLED: { message: 'Warning: autovacuum is disabled, so nothing is reclaiming completed jobs' },
@@ -28,9 +29,13 @@ const WARNINGS = {
   MONITOR_BACKOFF: { message: 'Warning: queue monitoring spent long enough scanning the job table to risk holding back autovacuum, so the next stats refresh is deferred' }
 }
 
+// How often #warnPaused repeats queue_paused for a queue that stays paused.
+const PAUSED_WARNING_INTERVAL_MS = 60 * 60 * 1000
+
 const WARNING_TYPES = {
   SLOW_QUERY: 'slow_query',
   QUEUE_BACKLOG: 'queue_backlog',
+  QUEUE_PAUSED: 'queue_paused',
   INDEX_BLOAT: 'index_bloat',
   XMIN_HORIZON: 'xmin_horizon',
   AUTOVACUUM_DISABLED: 'autovacuum_disabled',
@@ -150,6 +155,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // Warn once per bloated index rather than on every pass. An index leaves the set as soon as it
   // stops qualifying (rebuilt, dropped, or refilled) so a later episode warns again.
   #warnedBloat = new Set<string>()
+  // queue_paused, by queue: the pause it warned about and when. See #warnPaused.
+  #warnedPaused = new Map<string, { pausedOn: number, at: number }>()
   // Local rate limit for passes that only report bloat, which deliberately leave the shared interval
   // claim to whichever instance can act on it.
   #detectOnly = 0
@@ -441,6 +448,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
       // statement, not of a queue, so every row carries the same value.
       const refreshStats = rows[0].refreshStats !== false
 
+      // This pass's counts, by queue, when the aggregate ran. See #warnPaused.
+      const counted = new Map<string, number>()
+
       if (refreshStats) {
         // A pass needs both timers, so passes are as far apart as the longer of the two.
         const passSeconds = Math.max(this.#config.monitorIntervalSeconds!, this.#config.superviseIntervalSeconds!)
@@ -452,6 +462,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
         // a fallback for a backend or adapter that returns no rows to read it from.
         const statsStarted = Date.now()
         const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
+        for (const row of rowsCacheStats) counted.set(row.name, Number(row.queuedCount))
         const pinned = rowsCacheStats.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
 
         // Only when the aggregate actually ran. An empty result means another instance holds the
@@ -506,6 +517,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       if (this.#stopping) return
 
+      await this.#warnPaused(rows, counted)
+
+      if (this.#stopping) return
+
       // CockroachDB rejects the multi-mutation failJobs() CTE these use, so under noMultiMutationCte
       // route expiry through the manager's split select/delete/re-insert variants instead.
       const limit = this.#config.__test__expiry_batch_size ?? plans.EXPIRY_BATCH_SIZE
@@ -519,6 +534,38 @@ class Boss extends EventEmitter implements types.EventsMixin {
       await this.#repeatWhileFull(limit, () => this.#config.noMultiMutationCte
         ? this.#manager.failJobsByHeartbeatDistributed(table, queues, limit)
         : this.#expiryBatch(plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, limit)))
+    }
+  }
+
+  // Emits queue_paused for each claimed queue that is paused and holds jobs, at most once per
+  // PAUSED_WARNING_INTERVAL_MS on this instance, like the other monitor warnings. A new pause warns
+  // again at once. The count is this pass's when the aggregate ran, and the previous pass's otherwise.
+  async #warnPaused (rows: { name: string, pausedOn: Date | string | null, queuedCount: number | string }[], counted: Map<string, number>) {
+    const now = this.#config.clock.now()
+
+    for (const row of rows) {
+      if (this.#stopping) return
+
+      if (row.pausedOn === null) {
+        this.#warnedPaused.delete(row.name)
+        continue
+      }
+
+      const pausedOn = new Date(row.pausedOn)
+      const queuedCount = counted.get(row.name) ?? Number(row.queuedCount)
+      const warned = this.#warnedPaused.get(row.name)
+
+      if (!queuedCount) continue
+      if (warned && warned.pausedOn === pausedOn.getTime() && now - warned.at < PAUSED_WARNING_INTERVAL_MS) continue
+
+      this.#warnedPaused.set(row.name, { pausedOn: pausedOn.getTime(), at: now })
+
+      await emitAndPersistWarning(this.#warningContext,
+        WARNING_TYPES.QUEUE_PAUSED,
+        `${WARNINGS.PAUSED_QUEUE.message}: queue "${row.name}" has been paused since ${pausedOn.toISOString()} and has ` +
+        `${queuedCount} jobs in the created or retry state. Fetches return none of them until resumeQueue() is called`,
+        { name: row.name, pausedOn, queuedCount }
+      )
     }
   }
 

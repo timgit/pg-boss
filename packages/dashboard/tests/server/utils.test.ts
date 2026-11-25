@@ -201,12 +201,14 @@ describe('utils', () => {
 
   describe('WARNING_TYPES constant', () => {
     // Mirrors WarningType in the pg-boss core; index_bloat arrived with reindex maintenance in
-    // 12.29.0, xmin_horizon/autovacuum_disabled/monitor_backoff with vacuum monitoring in 12.30.0
-    // and handler_overrun in 12.38.0. The startup warnings are only emitted, never written
+    // 12.29.0, xmin_horizon/autovacuum_disabled/monitor_backoff with vacuum monitoring in 12.30.0,
+    // handler_overrun in 12.38.0 and queue_paused in 12.40.0. The startup warnings are only emitted,
+    // never written
     it('covers every warning type the core writes', () => {
       expect([...WARNING_TYPES]).toEqual([
         'slow_query',
         'queue_backlog',
+        'queue_paused',
         'clock_skew',
         'listen_notify_unavailable',
         'invalid_schedule',

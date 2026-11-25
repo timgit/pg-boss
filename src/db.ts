@@ -126,8 +126,10 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   // of returned to the pool, so a pg_cancel_backend aimed at the statement cannot reach whatever runs
   // on that connection next. Either one aborted before the statement starts keeps it from starting.
   // A connection whose statement failed is closed too, as pool.query does, so a failure inside an
-  // explicit transaction cannot hand the next query an aborted transaction.
-  async executeSql (text: string, values?: unknown[], { signal, retire }: { signal?: AbortSignal, retire?: AbortSignal } = {}) {
+  // explicit transaction cannot hand the next query an aborted transaction. The declared return type
+  // keeps pg's QueryResult out of the published declarations. Resolving it needs @types/pg, which
+  // pg-boss does not depend on (#776).
+  async executeSql (text: string, values?: unknown[], { signal, retire }: { signal?: AbortSignal, retire?: AbortSignal } = {}): Promise<{ rows: any[] }> {
     assert(this.opened, 'Database not opened. Call start() before using pg-boss, or again after stop().')
 
     if (signal || retire) {

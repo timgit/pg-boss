@@ -58,7 +58,9 @@ describe('schedule', function () {
   })
 
   it('should send a job whose throttle slot is taken to the next slot under singletonNextSlot', async function () {
-    const config = cronConfig()
+    // 30 seconds into a 10-minute slot. The next minute's occurrence falls in the same slot. A clock
+    // in the slot's last minute puts the occurrence in the next slot with no conflict to resolve.
+    const config = { ...cronConfig(), clock: new TestClock(Math.floor(Date.now() / 600_000) * 600_000 + 30_000) }
 
     ctx.boss = await helper.start(config)
 

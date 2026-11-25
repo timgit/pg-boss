@@ -1,4 +1,5 @@
-import { expect } from 'vitest'
+import { expect, vi } from 'vitest'
+import { CronExpression } from 'cron-parser'
 import { delay } from '../src/tools.ts'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
@@ -165,6 +166,37 @@ describe('schedule missed', function () {
     ])
 
     expect(slots(inserted)).toEqual([slotOf(Date.parse('2026-11-01T06:30:00Z'))])
+  })
+
+  it('catches up on the second copy of a repeated half hour and of two repeated hours', function () {
+    const tk = makeTk()
+    const missed = (cron: string, timezone: string, from: string, until: string) =>
+      (tk as any).missedOccurrence(row(cron, 'once', { timezone }), plans.SCHEDULE_KINDS.cron, Date.parse(from), Date.parse(until))?.toISOString()
+
+    // Lord Howe Island shows 01:50 at 14:50 and at 15:20 UTC on 2026-04-04.
+    expect(missed('*/10 0-3 * * *', 'Australia/Lord_Howe', '2026-04-04T14:00:00Z', '2026-04-04T15:24:30Z')).toBe('2026-04-04T15:20:00.000Z')
+    expect(missed('50 1 * * *', 'Australia/Lord_Howe', '2026-04-04T14:00:00Z', '2026-04-04T15:24:30Z')).toBe('2026-04-04T14:50:00.000Z')
+
+    // Troll shows 02:30 at 00:30 and at 02:30 UTC on 2026-10-25.
+    expect(missed('*/30 0-4 * * *', 'Antarctica/Troll', '2026-10-24T22:00:00Z', '2026-10-25T02:45:00Z')).toBe('2026-10-25T02:30:00.000Z')
+    expect(missed('30 2 * * *', 'Antarctica/Troll', '2026-10-24T22:00:00Z', '2026-10-25T02:45:00Z')).toBe('2026-10-25T00:30:00.000Z')
+  })
+
+  it('reads forwards through the second copy of a repeated hour when prev() cannot read back', function () {
+    const tk = makeTk()
+    const missed = (cron: string) =>
+      (tk as any).missedOccurrence(row(cron, 'once', { timezone: 'America/New_York' }), plans.SCHEDULE_KINDS.cron, Date.parse('2026-11-01T04:00:00Z'), Date.parse('2026-11-01T06:45:00Z'))?.toISOString()
+
+    // prev() throws after a time the clocks skipped, and the read goes forwards. Here it throws on
+    // every call. 01:30 comes round at 05:30 and at 06:30 UTC on 2026-11-01.
+    const prev = vi.spyOn(CronExpression.prototype, 'prev').mockImplementation(() => { throw new Error('prev() unavailable') })
+
+    try {
+      expect(missed('*/30 0-3 * * *')).toBe('2026-11-01T06:30:00.000Z')
+      expect(missed('30 1 * * *')).toBe('2026-11-01T05:30:00.000Z')
+    } finally {
+      prev.mockRestore()
+    }
   })
 
   it('reads a recurrence rule backwards over the gap', async function () {
