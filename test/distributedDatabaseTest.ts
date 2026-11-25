@@ -5,6 +5,7 @@ import { isDistributedBackend, distributedTimeout } from './timeouts.ts'
 import pg from 'pg'
 import { randomUUID } from 'node:crypto'
 import { delay } from '../src/tools.ts'
+import { TestClock } from '../src/index.ts'
 
 // This file holds ONLY the invariants the general suite structurally cannot express. General
 // behavioral coverage (fetch/complete/fail/retry/policies/flows/dead-letter/...) already runs in
@@ -20,8 +21,8 @@ import { delay } from '../src/tools.ts'
 //   3. Flag-gated schema construction (noTablePartitioning / noDeferrableConstraints /
 //      noCoveringIndexes / noAdvisoryLocks). The ONLY Postgres-side coverage of that DDL, since the
 //      `DISTRIBUTED=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.
-//   4. The queue pause gate. The CockroachDB CI legs run only this file and migrationTest.ts, and
-//      test/queuePauseTest.ts covers the rest of the pause on Postgres.
+//   4. The queue pause gate and the queue_paused claim. The CockroachDB CI legs run only this file
+//      and migrationTest.ts, and test/queuePauseTest.ts covers the rest of the pause on Postgres.
 //
 // Every test here calls helper.start(), which on CockroachDB pays slow per-test DDL, leaving little
 // headroom under the 10s Postgres global. Raise the default for the whole block so startup jitter
@@ -400,13 +401,25 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(completed.state).toBe('completed')
   })
 
-  it('should gate fetch on a paused queue', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+  it('should gate fetch on a paused queue and warn from the monitor claim', async function () {
+    const clock = new TestClock()
+    const monitorIntervalSeconds = 60
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, clock, monitorIntervalSeconds })
+
+    const warnings: any[] = []
+    ctx.boss.on('warning', ({ message, data }) => { if (message.includes('paused queue')) warnings.push(data) })
 
     const jobId = await ctx.boss.send(ctx.schema)
     await ctx.boss.pauseQueue(ctx.schema)
 
     expect(await ctx.boss.fetch(ctx.schema)).toEqual([])
+
+    await ctx.boss.supervise(ctx.schema)
+    await clock.setTime(clock.now() + (monitorIntervalSeconds + 1) * 1000)
+    await ctx.boss.supervise(ctx.schema)
+
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].queuedCount).toBe(1)
 
     await ctx.boss.resumeQueue(ctx.schema)
 

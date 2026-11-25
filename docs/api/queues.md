@@ -225,7 +225,7 @@ Every fetch reads the pause from the queue's row, without the queue cache. It ap
 
 A pause stops only fetching and moves no job. The rest keeps working:
 
-* `send()`, `insert()`, `publish()` and cron schedules keep adding jobs to a paused queue, which builds a backlog. On a long pause, the backlog can pass `warningQueueSize` and emit a `queue_backlog` [`warning`](./events.md#warning).
+* `send()`, `insert()`, `publish()` and cron schedules keep adding jobs to a paused queue, which builds a backlog. While it holds jobs, the monitor emits a `queue_paused` [`warning`](./events.md#warning) once an hour. A backlog past `warningQueueSize` also emits `queue_backlog`.
 * Jobs already active run to completion. Expiration, heartbeat failure, retries and dead letter queues keep working.
 * Monitoring, queue stats and retention keep running.
 * [`drain()`](./workers.md#drain-name-options) resolves without waiting for the paused queue's backlog, because the queue has nothing to fetch.

@@ -1520,6 +1520,9 @@ function createIndexJobQueuedKey (schema: string) {
 // A queue never claimed falls back to monitor_on, so a queue that crossed the v40 upgrade without
 // its seed (CockroachDB, see noAddColumnBackfill) is not due all at once. A new queue has neither
 // stamp and is due immediately.
+//
+// pausedOn feeds the queue_paused warning. queuedCount is the count from the previous pass, which
+// the warning uses when this pass skips the aggregate.
 export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number, skipLocked?: boolean): SqlQuery {
   return {
     text: `
@@ -1534,7 +1537,10 @@ export function trySetQueueMonitorTime (schema: string, queues: string[], second
     SET monitor_claim_on = ${schema}.job_now()
     FROM due
     WHERE queue.name = due.name
-    RETURNING queue.name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats"
+    RETURNING queue.name,
+      NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > ${schema}.job_now()) as "refreshStats",
+      queue.paused_on as "pausedOn",
+      queue.queued_count as "queuedCount"
   `,
     values: [queues]
   }

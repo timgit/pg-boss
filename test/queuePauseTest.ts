@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
+import { TestClock } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 // A poll interval no test waits out, so a job processed quickly shows the worker was woken.
@@ -111,6 +112,77 @@ describe('queue pause', function () {
 
       expect(await ctx.boss.fetch(ctx.schema, fetchOptions)).toHaveLength(1)
     })
+  })
+
+  it('should emit queue_paused once an hour while a paused queue holds jobs, and again for a new pause', async function () {
+    const clock = new TestClock()
+    const monitorIntervalSeconds = 60
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, monitorIntervalSeconds, persistWarnings: true })
+
+    const warnings: { name: string, pausedOn: Date, queuedCount: number }[] = []
+    ctx.boss.on('warning', ({ message, data }: { message: string, data: any }) => {
+      if (message.includes('paused queue') && data.name === ctx.schema) warnings.push(data)
+    })
+
+    const pass = async (seconds: number) => {
+      await clock.setTime(clock.now() + seconds * 1000)
+      await ctx.boss!.supervise(ctx.schema)
+    }
+
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.pauseQueue(ctx.schema)
+
+    await pass(0)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].queuedCount).toBe(1)
+    expect(new Date(warnings[0].pausedOn)).toEqual((await ctx.boss.getQueue(ctx.schema))?.pausedOn)
+
+    await pass(monitorIntervalSeconds + 1)
+    expect(warnings).toHaveLength(1)
+
+    await pass(3600)
+    expect(warnings).toHaveLength(2)
+
+    await ctx.boss.resumeQueue(ctx.schema)
+    await pass(monitorIntervalSeconds + 1)
+    expect(warnings).toHaveLength(2)
+
+    await ctx.boss.pauseQueue(ctx.schema)
+    await pass(monitorIntervalSeconds + 1)
+    expect(warnings).toHaveLength(3)
+
+    // A resume and a new pause between two passes still count as a new pause.
+    await ctx.boss.resumeQueue(ctx.schema)
+    await clock.setTime(clock.now() + 1000)
+    await ctx.boss.pauseQueue(ctx.schema)
+    await pass(monitorIntervalSeconds + 1)
+    expect(warnings).toHaveLength(4)
+
+    const db = await helper.getDb()
+    try {
+      const { rows } = await db.executeSql(`SELECT count(*) as count FROM ${ctx.schema}.warning WHERE type = 'queue_paused'`)
+      expect(Number(rows[0].count)).toBe(4)
+    } finally {
+      await db.close()
+    }
+  })
+
+  it('should not emit queue_paused for a paused queue with no jobs', async function () {
+    const clock = new TestClock()
+    const monitorIntervalSeconds = 60
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, monitorIntervalSeconds })
+
+    let warned = 0
+    ctx.boss.on('warning', ({ message }) => { if (message.includes('paused queue')) warned++ })
+
+    await ctx.boss.pauseQueue(ctx.schema)
+
+    for (let i = 0; i < 3; i++) {
+      await clock.setTime(clock.now() + 3600 * 1000)
+      await ctx.boss.supervise(ctx.schema)
+    }
+
+    expect(warned).toBe(0)
   })
 
   it('should let an active job complete while its queue is paused', async function () {
