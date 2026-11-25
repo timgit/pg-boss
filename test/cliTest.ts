@@ -3,7 +3,7 @@ import { execFile, spawnSync, type ExecFileException } from 'node:child_process'
 import { promisify } from 'node:util'
 import { resolve } from 'node:path'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
-import { getConnectionString, getDb, itPostgresOnly, describePglite, isCockroachDb } from './testHelper.ts'
+import { getConfig, getConnectionString, getDb, itPostgresOnly, describePglite, isCockroachDb } from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 import packageJson from '../package.json' with { type: 'json' }
@@ -784,15 +784,19 @@ describePglite('cli', function () {
       })
 
       it('should connect using individual connection parameters', async function () {
+        const { host, port, database, user, password } = getConfig()
+
         await execCli(
-          ['version', '--host', '127.0.0.1', '--port', '5432', '--database', 'pgboss', '--user', 'postgres', '--password', 'postgres', '--schema', schema],
+          ['version', `--host=${host}`, `--port=${port}`, `--database=${database}`, `--user=${user}`, `--password=${password}`, '--schema', schema],
           { expectedOutput: 'not installed' }
         )
       })
 
       it('should connect using short options', async function () {
+        const { host, port, database, user, password } = getConfig()
+
         await execCli(
-          ['version', '--host', '127.0.0.1', '-d', 'pgboss', '-u', 'postgres', '-p', 'postgres', '-s', schema],
+          ['version', `--host=${host}`, `--port=${port}`, '-d', `${database}`, '-u', `${user}`, '-p', `${password}`, '-s', schema],
           { expectedOutput: 'not installed' }
         )
       })
