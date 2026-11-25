@@ -29,7 +29,7 @@ npx pg-boss --help
 | `rollback` | Rollback the last migration |
 | `plans <subcommand>` | Output SQL without executing (subcommands: `create` (alias `construct`), `migrate`, `rollback`; defaults to `migrate`) |
 
-Every command reads its connection from the same sources (see [Connection Configuration](#connection-configuration)). Commands that touch the database exit `1` on error.
+Every command reads its connection from the same sources (see [Connection Configuration](#connection-configuration)). Commands that touch the database exit `1` on error. A failed connection or a missing permission is an error, and its message goes to stderr. A command reports pg-boss as not installed only when the schema or its `version` table does not exist.
 
 ### `migrate`
 
