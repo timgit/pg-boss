@@ -676,6 +676,24 @@ export const deleteQueueResponseSchema: z.ZodType<types.HttpDeleteQueueResponse>
   result: z.null()
 })
 
+export const pauseQueueRequestSchema: z.ZodType<types.HttpPauseQueueRequest> = z.object({
+  name: queueNameSchema
+})
+
+export const pauseQueueResponseSchema: z.ZodType<types.HttpPauseQueueResponse> = z.object({
+  ok: z.literal(true),
+  result: z.null()
+})
+
+export const resumeQueueRequestSchema: z.ZodType<types.HttpResumeQueueRequest> = z.object({
+  name: queueNameSchema
+})
+
+export const resumeQueueResponseSchema: z.ZodType<types.HttpResumeQueueResponse> = z.object({
+  ok: z.literal(true),
+  result: z.null()
+})
+
 export const getQueuesResponseSchema: z.ZodType<types.HttpGetQueuesResponse> = z.object({
   ok: z.literal(true),
   result: z.array(queueResultSchema)

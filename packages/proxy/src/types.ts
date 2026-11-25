@@ -376,6 +376,18 @@ export type HttpDeleteQueueRequest = {
 
 export type HttpDeleteQueueResponse = HttpSubscribeResponse
 
+export type HttpPauseQueueRequest = {
+  name: HttpQueueName
+}
+
+export type HttpPauseQueueResponse = HttpSubscribeResponse
+
+export type HttpResumeQueueRequest = {
+  name: HttpQueueName
+}
+
+export type HttpResumeQueueResponse = HttpSubscribeResponse
+
 export type HttpGetQueuesResponse = {
   ok: true
   result: HttpQueueResult[]
