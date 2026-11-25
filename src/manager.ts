@@ -3321,6 +3321,35 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.#reloadQueueCache(name)
   }
 
+  // No queue cache reload: fetchNextJob() reads paused_on live.
+  async pauseQueue (name: string) {
+    Attorney.assertQueueName(name)
+
+    const { rows } = await this.db.executeSql(plans.pauseQueue(this.config.schema), [name])
+
+    if (!rows.length) {
+      throw Object.assign(new Error(`Queue ${name} does not exist`), { code: QUEUE_NOT_FOUND })
+    }
+  }
+
+  // Wakes this instance's workers on the queue, and with notify on, every other instance's too, so
+  // the backlog is fetched now rather than on the next poll.
+  async resumeQueue (name: string) {
+    Attorney.assertQueueName(name)
+
+    const { rows } = await this.db.executeSql(plans.resumeQueue(this.config.schema), [name])
+
+    if (!rows.length) {
+      throw Object.assign(new Error(`Queue ${name} does not exist`), { code: QUEUE_NOT_FOUND })
+    }
+
+    if (this.#notifyEnabled(rows[0].notify)) {
+      await this.db.executeSql(plans.notifyQueue(this.config.schema, name))
+    }
+
+    this.notifyQueue(name)
+  }
+
   async getQueue (name: string) {
     const rows = await this.getQueues([name])
 

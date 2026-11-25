@@ -278,6 +278,8 @@ export const queueResultSchema = z.object({
   runBins: z.array(z.number()).nullable(),
   readyOldestSeconds: z.number().nullable(),
   table: z.string(),
+  paused: z.boolean(),
+  pausedOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
   createdOn: z.iso.datetime().transform((val) => new Date(val)),
   updatedOn: z.iso.datetime().transform((val) => new Date(val)),
   singletonsActive: z.array(z.string()).nullable(),

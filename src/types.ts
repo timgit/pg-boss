@@ -1115,6 +1115,13 @@ export interface QueueResult extends Queue {
   /** How long the oldest ready job had waited at the pass. See `QueueStats.readyOldestSeconds`. Null until a pass counts. */
   readyOldestSeconds: number | null;
   table: string;
+  /**
+   * Whether `pauseQueue()` paused the queue. A paused queue's fetches return no jobs.
+   * @see https://pgboss.io/api/queues#pausequeue-name
+   */
+  paused: boolean;
+  /** When the queue was paused, or null while it runs. */
+  pausedOn: Date | null;
   createdOn: Date;
   updatedOn: Date;
   /**
