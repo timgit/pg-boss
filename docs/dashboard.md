@@ -356,6 +356,7 @@ const boss = new PgBoss({
 Warnings correlate to [`warning`](./api/events.md#warning) events already emitted by pg-boss:
 - `slow_query`: Queries taking longer than expected
 - `queue_backlog`: Queues exceeding their warning threshold
+- `queue_paused`: A paused queue holds jobs
 - `clock_skew`: Database clock drift detection
 - `listen_notify_unavailable`: `useListenNotify` is on but no listener could be established
 - `invalid_schedule`: A stored schedule could not be evaluated and was skipped
@@ -363,6 +364,7 @@ Warnings correlate to [`warning`](./api/events.md#warning) events already emitte
 - `xmin_horizon`: Something is pinning the MVCC horizon, so vacuum reclaims nothing
 - `autovacuum_disabled`: Nothing is vacuuming a job table at all
 - `monitor_backoff`: The queue-stats aggregate was deferred to keep autovacuum moving
+- `handler_overrun`: A handler ran past `expireInSeconds` and was still running after its batch was failed
 
 A warning type written by a newer pg-boss core than the dashboard is displayed under its raw name.
 
