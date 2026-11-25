@@ -63,7 +63,7 @@
     "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
     "test:cockroachdb:single": "docker compose -f docker-compose.cockroach-single.yaml up -d --wait && cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
     "test:yugabytedb:full": "cross-env DB_TYPE=yugabytedb YUGABYTE_HOST=localhost npm test -- --no-file-parallelism",
-    "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
+    "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost CITUS_PORT=5434 npm test",
     "test:pglite": "cross-env DB_TYPE=pglite npm test",
     "test:bun": "tsc --noEmit -p tsconfig.bun.json && bun test test/bun",
     "test:types-dist": "npm run build && tsc -p test/types-dist/tsconfig.json",
