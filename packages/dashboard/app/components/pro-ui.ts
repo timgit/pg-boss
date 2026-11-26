@@ -30,6 +30,7 @@ export {
 export { CopyButton, FailurePanel, PayloadCard, StateBadge, TimelineCard } from '~/components/job-detail'
 export { type OverviewExtensions, OverviewHeader, OverviewSections } from '~/components/overview'
 export { type Parent, ParentLink } from '~/components/parent-link'
+export { PausedBadge } from '~/components/paused-badge'
 export { PublishForm } from '~/components/publish-form'
 export { QueueList, type QueueListExtensions } from '~/components/queue-list'
 export { QueueConfig, QueueCounts, QueueJobs, QueuePageHeader, QueueUpkeep } from '~/components/queue-page'
