@@ -13,7 +13,7 @@ collects metrics with Prometheus, or with another tool that reads the Prometheus
 | `pgboss_queue_finished_per_minute` | `schema`, `queue` | Jobs completed or failed per minute over the last hour. |
 | `pgboss_queue_wait_seconds` | `schema`, `queue`, `quantile` | Time from ready to started over the last hour, at 0.5, 0.95 and 0.99. |
 | `pgboss_queue_run_seconds` | `schema`, `queue`, `quantile` | Time from started to finished over the last hour. |
-| `pgboss_queue_health` | `schema`, `queue`, `verdict` | 1 for the queue's verdict: ok, recovering, absorbing, behind or stalled. |
+| `pgboss_queue_health` | `schema`, `queue`, `verdict` | 1 for the queue's verdict: ok, recovering, absorbing, behind or stalled. A queue with no verdict, such as a paused one, has no series. |
 | `pgboss_alerts_open` | `schema`, `severity`, `acknowledged` | Open alerts. |
 | `pgboss_instance_live` | `schema`, `instance`, `name`, `host` | 1 while an instance is live, 0 once it has gone quiet. |
 | `pgboss_instance_pool_connections` | `schema`, `instance`, `name`, `host`, `state` | Its pool at the last heartbeat: total, idle, waiting. |

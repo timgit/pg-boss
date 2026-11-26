@@ -14,7 +14,7 @@ Pro judges each queue over the last hour from the stats pg-boss records. Pro com
 | Falling behind | More arriving than finishing, and the backlog growing past what is usual. |
 | Stalled | Jobs ready and nothing finishing. |
 
-A queue with too little counted in the hour has no verdict. Health needs `persistQueueStats` on the pg-boss instances that run the monitor.
+A queue with too little counted in the hour has no verdict. A queue `pauseQueue()` paused has none either, because its backlog and silence would read as a stall. Health needs `persistQueueStats` on the pg-boss instances that run the monitor.
 
 ## Queues
 

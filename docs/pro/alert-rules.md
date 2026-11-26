@@ -110,6 +110,10 @@ A health alert stays open when a queue's stats stop because its supervisors
 are down or its stats are off. It resolves as deleted only when the queue is
 gone from pg-boss.
 
+A queue `pauseQueue()` paused gets no health verdict, and **Queue with no
+workers** skips it. Neither rule fires on it, and an alert already open stays
+open. Both judge the queue again once `resumeQueue()` runs.
+
 A threshold or check raises an alert only once it has held for the number of
 minutes the rule sets. Every rule has a severity, critical or watch.
 
