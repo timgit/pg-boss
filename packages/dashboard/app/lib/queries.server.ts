@@ -323,6 +323,40 @@ async function blockedCountColumn (dbUrl: string, schema: string): Promise<strin
   return (await hasLatencyColumns(dbUrl, schema)) ? ', blocked_count as "blockedCount"' : ', 0 as "blockedCount"'
 }
 
+// Whether queue.paused_on (schema v48, pg-boss 12.40) exists, cached per (db, schema). A missing
+// answer is kept for five minutes, as the latency probe's is, which picks the column up after an
+// upgrade without a restart.
+const pausedColumnCache = new Map<string, { exists: boolean, checkedAt: number }>()
+
+// Reset the paused_on capability cache (used by tests).
+export function clearPausedColumnCache (): void {
+  pausedColumnCache.clear()
+}
+
+async function hasPausedColumn (dbUrl: string, schema: string): Promise<boolean> {
+  const key = `${dbUrl}::${schema}`
+  const cached = pausedColumnCache.get(key)
+  if (cached && (cached.exists || Date.now() - cached.checkedAt < LATENCY_RECHECK_MS)) return cached.exists
+
+  validateIdentifier(schema)
+  const row = await queryOne<{ exists: boolean }>(dbUrl, `
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = $1 AND table_name = 'queue' AND column_name = 'paused_on'
+    ) as "exists"
+  `, [schema])
+  const exists = row?.exists ?? false
+  pausedColumnCache.set(key, { exists, checkedAt: Date.now() })
+  return exists
+}
+
+// The `paused` and `pausedOn` SELECT fragment. Before v48 no queue could be paused.
+async function pausedColumns (dbUrl: string, schema: string): Promise<string> {
+  return (await hasPausedColumn(dbUrl, schema))
+    ? ', paused_on IS NOT NULL as paused, paused_on as "pausedOn"'
+    : ', false as paused, null::timestamptz as "pausedOn"'
+}
+
 // Whether schedule.kind and schedule.last_job_id (both schema v41+) exist, cached per (db, schema)
 // like the ready_history probe above. One entry covers both columns because one migration added
 // them; a database without them reads as a table of cron schedules that have never recorded a job,
@@ -391,6 +425,7 @@ export async function getQueuePage (
   const s = validateIdentifier(schema)
   const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
   const blockedCol = await blockedCountColumn(dbUrl, schema)
+  const pausedCol = await pausedColumns(dbUrl, schema)
   const { limit, cursor = {}, filter = 'all', search, sort, dir } = options
   const keys = sortKeys({ sort, dir }, QUEUE_SORT_COLUMNS, QUEUE_KEYS, QUEUE_KEYS)
 
@@ -402,7 +437,7 @@ export async function getQueuePage (
     }
     params.push(limit + 1)
     const sql = `
-      SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}, ${cursorSelect(keys)}
+      SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}${pausedCol}, ${cursorSelect(keys)}
       FROM ${s}.queue
       ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
       ${keysetOrderBy(keys, plan.backward)}
@@ -456,8 +491,9 @@ export async function getProblemQueues (
 ): Promise<QueueResult[]> {
   const s = validateIdentifier(schema)
   const blockedCol = await blockedCountColumn(dbUrl, schema)
+  const pausedCol = await pausedColumns(dbUrl, schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}${blockedCol}
+    SELECT ${QUEUE_COLUMNS}${blockedCol}${pausedCol}
     FROM ${s}.queue
     WHERE warning_queued > 0 AND queued_count > warning_queued
     ORDER BY (queued_count - warning_queued) DESC
@@ -475,8 +511,9 @@ export async function getTopQueues (
   const s = validateIdentifier(schema)
   const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
   const blockedCol = await blockedCountColumn(dbUrl, schema)
+  const pausedCol = await pausedColumns(dbUrl, schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}
+    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}${pausedCol}
     FROM ${s}.queue
     ORDER BY total_count DESC
     LIMIT $1
@@ -493,8 +530,9 @@ export async function getQueue (
   const s = validateIdentifier(schema)
   const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
   const blockedCol = await blockedCountColumn(dbUrl, schema)
+  const pausedCol = await pausedColumns(dbUrl, schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}
+    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}${blockedCol}${pausedCol}
     FROM ${s}.queue
     WHERE name = $1
   `

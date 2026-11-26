@@ -57,6 +57,9 @@ export interface QueueResult extends PgBossQueueResult {
   // Sliding window of recent ready counts (newest first) maintained by pg-boss on every monitor
   // cycle for the dashboard sparkline. Present only on schema v35+; undefined on older databases.
   readyHistory?: number[] | null;
+  // Whether pauseQueue() paused the queue, and when. A schema before v48 reads as running.
+  paused: boolean;
+  pausedOn: Date | null;
 }
 
 // JobState is a union type extracted from JobWithMetadata

@@ -37,6 +37,7 @@ import {
   getScheduleCount,
   getSchedule,
   clearScheduleColumnsCache,
+  clearPausedColumnCache,
   isPgBossInstalled,
 } from '~/lib/queries.server'
 
@@ -176,6 +177,43 @@ describe('Queue Queries', () => {
 
       const queue = await getQueue(ctx.connectionString, ctx.schema, 'flow-queue')
       expect(queue!.blockedCount).toBe(3)
+    })
+
+    // The installed pg-boss can be older or newer than v48, so each case sets the column up itself.
+    it('says when pauseQueue() paused a queue, on the page and in the list', async () => {
+      await createTestQueue('held')
+      await createTestQueue('running')
+      const pausedOn = new Date('2026-11-25T12:00:00Z')
+      const pool = new pg.Pool({ connectionString: ctx.connectionString })
+      await pool.query(`ALTER TABLE ${ctx.schema}.queue ADD COLUMN IF NOT EXISTS paused_on timestamptz`)
+      await pool.query(`UPDATE ${ctx.schema}.queue SET paused_on = $1 WHERE name = 'held'`, [pausedOn])
+      await pool.end()
+      clearPausedColumnCache()
+
+      const held = await getQueue(ctx.connectionString, ctx.schema, 'held')
+      const running = await getQueue(ctx.connectionString, ctx.schema, 'running')
+      const listed = (await getQueuePage(ctx.connectionString, ctx.schema, { limit: 10 })).rows
+
+      expect(held!.paused).toBe(true)
+      expect(held!.pausedOn).toEqual(pausedOn)
+      expect(running!.paused).toBe(false)
+      expect(running!.pausedOn).toBeNull()
+      expect(listed.find((q) => q.name === 'held')!.paused).toBe(true)
+      expect(listed.find((q) => q.name === 'running')!.paused).toBe(false)
+      clearPausedColumnCache()
+    })
+
+    it('reads every queue as running on a schema before v48', async () => {
+      await createTestQueue('old-queue')
+      const pool = new pg.Pool({ connectionString: ctx.connectionString })
+      await pool.query(`ALTER TABLE ${ctx.schema}.queue DROP COLUMN IF EXISTS paused_on`)
+      await pool.end()
+      clearPausedColumnCache()
+
+      const queue = await getQueue(ctx.connectionString, ctx.schema, 'old-queue')
+      expect(queue!.paused).toBe(false)
+      expect(queue!.pausedOn).toBeNull()
+      clearPausedColumnCache()
     })
   })
 
