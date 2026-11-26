@@ -11,6 +11,7 @@ export {
   getInstanceRegistry,
   getJobById,
   getLatencyWindows,
+  getPausedQueues,
   getQueueNames,
   getQueuePage,
   getQueueStatsCollectionStatus,

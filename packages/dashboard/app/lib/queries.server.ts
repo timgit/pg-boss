@@ -357,6 +357,18 @@ async function pausedColumns (dbUrl: string, schema: string): Promise<string> {
     : ', false as paused, null::timestamptz as "pausedOn"'
 }
 
+// Every paused queue and when it was paused. Empty before v48. For Pro's health verdicts, which
+// read every queue with stats and not one page of the list.
+export async function getPausedQueues (dbUrl: string, schema: string): Promise<Map<string, Date>> {
+  const s = validateIdentifier(schema)
+  if (!(await hasPausedColumn(dbUrl, schema))) return new Map()
+  const rows = await query<{ name: string, pausedOn: Date }>(
+    dbUrl,
+    `SELECT name, paused_on as "pausedOn" FROM ${s}.queue WHERE paused_on IS NOT NULL`
+  )
+  return new Map(rows.map((row) => [row.name, row.pausedOn]))
+}
+
 // Whether schedule.kind and schedule.last_job_id (both schema v41+) exist, cached per (db, schema)
 // like the ready_history probe above. One entry covers both columns because one migration added
 // them; a database without them reads as a table of cron schedules that have never recorded a job,

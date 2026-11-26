@@ -17,6 +17,7 @@ import {
 import {
   getQueuePage,
   getQueue,
+  getPausedQueues,
   getQueueCount,
   getProblemQueues,
   getProblemQueuesCount,
@@ -200,6 +201,7 @@ describe('Queue Queries', () => {
       expect(running!.pausedOn).toBeNull()
       expect(listed.find((q) => q.name === 'held')!.paused).toBe(true)
       expect(listed.find((q) => q.name === 'running')!.paused).toBe(false)
+      expect(await getPausedQueues(ctx.connectionString, ctx.schema)).toEqual(new Map([['held', pausedOn]]))
       clearPausedColumnCache()
     })
 
@@ -213,6 +215,7 @@ describe('Queue Queries', () => {
       const queue = await getQueue(ctx.connectionString, ctx.schema, 'old-queue')
       expect(queue!.paused).toBe(false)
       expect(queue!.pausedOn).toBeNull()
+      expect(await getPausedQueues(ctx.connectionString, ctx.schema)).toEqual(new Map())
       clearPausedColumnCache()
     })
   })
