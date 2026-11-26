@@ -7,6 +7,7 @@ import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
 import { PolicyBadge } from '~/components/policy-badge'
+import { PausedBadge } from '~/components/paused-badge'
 import { FilterSelect } from '~/components/ui/filter-select'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { Sparkline } from '~/components/ui/sparkline'
@@ -328,7 +329,9 @@ export function QueueCard ({ queue, extension }: { queue: QueueResult, extension
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <span className="truncate font-medium text-[var(--text-primary)]">{queue.name}</span>
-        {extension?.badge}
+        {queue.paused || extension?.badge
+          ? <span className="flex shrink-0 items-center gap-1.5"><PausedBadge paused={queue.paused} />{extension?.badge}</span>
+          : null}
       </div>
       <div className="grid grid-cols-3 gap-1.5">
         {figures.map((f) => <Figure key={f.label} figure={f} />)}
@@ -416,6 +419,7 @@ export function QueueTable ({ queues, extensions }: { queues: QueueResult[], ext
                 <SchemaLink to={queueHref(queue.name)} className="font-medium text-[var(--primary-600)] dark:text-[var(--primary-400)] hover:text-[var(--primary-700)] dark:hover:text-[var(--primary-300)]">
                   {queue.name}
                 </SchemaLink>
+                {queue.paused && <span className="ml-2 align-middle"><PausedBadge paused /></span>}
               </TableCell>
               <ExtraCells columns={afterName} queue={queue} />
               <TableCell className={numCell}>{n(queue.readyCount)}</TableCell>

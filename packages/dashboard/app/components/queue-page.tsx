@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router'
 import { LineChart } from 'lucide-react'
 import { SchemaLink } from '~/components/schema-link'
 import { DeadLetterBadge } from '~/components/dead-letter-badge'
+import { PausedBadge } from '~/components/paused-badge'
 import { PolicyBadge } from '~/components/policy-badge'
 import { ConfigCard, type ConfigRow } from '~/components/job-detail'
 import { CountsCard, strong } from '~/components/stats-cards'
@@ -49,7 +50,7 @@ export interface QueuePageExtensions {
 
 const metricsPath = (name: string) => `/queues/${encodeURIComponent(name)}/metrics`
 
-/** The queue's name, with a badge when other queues send it their failed jobs, the overlay's actions and View metrics. */
+/** The queue's name, with a badge while it is paused and one when other queues send it their failed jobs, the overlay's actions and View metrics. */
 export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, extensions?: QueuePageExtensions }) {
   const { queue, isDeadLetter } = data
   return (
@@ -57,7 +58,7 @@ export function QueuePageHeader ({ data, extensions }: { data: QueuePageData, ex
       parent={{ to: '/queues', label: 'Queues' }}
       title={extensions?.title ?? `Queue: ${queue.name}`}
       subtitle={extensions?.subtitle}
-      badge={isDeadLetter ? <DeadLetterBadge /> : undefined}
+      badge={queue.paused || isDeadLetter ? <><PausedBadge paused={queue.paused} />{isDeadLetter && <DeadLetterBadge />}</> : undefined}
       action={
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -177,7 +178,7 @@ export function QueueConfig ({ queue, subscribedEvents = 0 }: { queue: QueueResu
   return <ConfigCard rows={rows} unset={[]} />
 }
 
-/** When the queue was made, and when pg-boss last counted and maintained it. */
+/** When the queue was made, when pg-boss last counted and maintained it, and when it was paused. */
 export function QueueUpkeep ({ queue }: { queue: QueueResult }) {
   const when = (date: Date | string | null | undefined) => (date ? formatDate(new Date(date)) : '—')
   return (
@@ -187,6 +188,7 @@ export function QueueUpkeep ({ queue }: { queue: QueueResult }) {
         { label: 'Created', value: when(queue.createdOn) },
         { label: 'Last monitored', value: when(queue.monitorOn) },
         { label: 'Last maintained', value: when(queue.maintainOn) },
+        ...(queue.pausedOn ? [{ label: 'Paused', value: when(queue.pausedOn) }] : []),
       ]}
       unset={[]}
     />

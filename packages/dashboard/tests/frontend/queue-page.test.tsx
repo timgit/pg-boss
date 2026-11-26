@@ -1,8 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { QueueConfig, QueueCounts } from "~/components/queue-page";
+import { QueueConfig, QueueCounts, QueuePageHeader, QueueUpkeep } from "~/components/queue-page";
+import type { QueuePageData } from "~/lib/queue-page.server";
 import type { QueueResult } from "~/lib/types";
+
+// The dashboard's page, whatever the build: a Pro build mounts its overlay at `~pro`.
+vi.mock("~pro", () => ({ default: { nav: [], slots: {} } }));
 
 // A line whose text matches, though its numbers are elements of their own.
 const line = (re: RegExp) => (_: string, el: Element | null) =>
@@ -74,5 +78,33 @@ describe("QueueConfig", () => {
     expect(screen.getByText("2, every 1 min, backing off to 10 min")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "dead-letters" })).toHaveAttribute("href", "/queues/dead-letters");
     expect(screen.getByRole("link", { name: "2 events" })).toHaveAttribute("href", "/subscriptions?queue=payments");
+  });
+});
+
+describe("QueuePageHeader", () => {
+  const header = (paused: boolean, isDeadLetter: boolean) =>
+    inRouter(<QueuePageHeader data={{ queue: { ...queue, paused }, isDeadLetter } as unknown as QueuePageData} />);
+
+  it("marks a paused queue beside its name, with the dead letter badge when it is one", () => {
+    header(true, true);
+    const heading = screen.getByRole("heading", { name: "Queue: payments" }).parentElement!;
+    expect(within(heading).getByText("Paused")).toBeInTheDocument();
+    expect(within(heading).getByText("Dead letter queue")).toBeInTheDocument();
+  });
+
+  it("marks nothing on a running queue", () => {
+    header(false, false);
+    expect(screen.queryByText("Paused")).toBeNull();
+  });
+});
+
+describe("QueueUpkeep", () => {
+  it("says when the queue was paused, and leaves the row out while it runs", () => {
+    const { unmount } = inRouter(<QueueUpkeep queue={{ ...queue, paused: true, pausedOn: new Date("2026-11-25T12:00:00Z") }} />);
+    expect(screen.getByText("Paused")).toBeInTheDocument();
+    unmount();
+
+    inRouter(<QueueUpkeep queue={{ ...queue, paused: false, pausedOn: null }} />);
+    expect(screen.queryByText("Paused")).toBeNull();
   });
 });

@@ -93,6 +93,20 @@ describe('QueueList', () => {
     expect(screen.getByText('No queues found')).toBeInTheDocument()
   })
 
+  it('marks a paused queue on its card and in the table, and leaves a running one unmarked', () => {
+    const queues = [{ ...queue('emails', 900), paused: true }, queue('reports', 40)]
+    const { unmount } = renderList(data('cards', queues))
+
+    expect(within(screen.getByRole('link', { name: /emails/ })).getByText('Paused')).toBeInTheDocument()
+    expect(within(screen.getByRole('link', { name: /reports/ })).queryByText('Paused')).toBeNull()
+    unmount()
+
+    renderList(data('table', queues))
+    const [emails, reports] = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+    expect(within(emails).getByText('Paused')).toBeInTheDocument()
+    expect(within(reports).queryByText('Paused')).toBeNull()
+  })
+
   it('offers no cards and no view toggle on its own', () => {
     renderList(data('table'))
 
