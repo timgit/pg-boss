@@ -221,7 +221,6 @@ export const OPTION_DEFAULTS: Readonly<Record<string, unknown>> = {
   monitorVacuum: true,
   clockMonitorIntervalSeconds: 600,
   cronMonitorIntervalSeconds: 30,
-  cronWorkerIntervalSeconds: 5,
   persistWarnings: false,
   warningRetentionDays: 365,
   persistQueueStats: false,
