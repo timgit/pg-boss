@@ -2,7 +2,7 @@
 
 ## 1.0.0
 
-The first release of pg-boss Pro, on pg-boss 12.39 and dashboard 2.0.
+The first release of pg-boss Pro, on pg-boss 12.40 and dashboard 2.0.
 
 - Pro keeps its accounts, rules, alerts and audit log in a database of its own. A global admin adds the [schemas](./schemas.md) Pro monitors in the Pro Console.
 - Alert rules set the conditions that open an alert: thresholds on a queue's counts, rates and waits, the built-in checks, pg-boss warnings and failed operations. Each rule is scoped to queues by name or pattern and edited in a builder or as JSON. Pro keeps every version of a rule, and every alert names its version.

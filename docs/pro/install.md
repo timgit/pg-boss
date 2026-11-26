@@ -490,5 +490,5 @@ License: ****-a1b2c3, from the user npm config
 ✓ Pro's tables: At version 1, which this Pro uses.
 ✓ Global admin: A global admin can sign in with a password.
 ✓ Stored secrets: They were saved with this PGBOSS_PRO_SECRET_KEY.
-✓ Schema Production: Connected to db.internal:5432/orders. pg-boss schema pgboss is at version 47, which this release makes changes on. The last alert pass finished 40 seconds ago.
+✓ Schema Production: Connected to db.internal:5432/orders. pg-boss schema pgboss is at version 48, which this release makes changes on. The last alert pass finished 40 seconds ago.
 ```
