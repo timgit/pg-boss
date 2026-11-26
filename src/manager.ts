@@ -257,10 +257,35 @@ function toJsonText (value: unknown): string | null {
   return value == null ? null : JSON.stringify(value)
 }
 
+interface LocalGroups {
+  maxLimit: number
+  active: ReadonlyMap<string, number> | undefined
+}
+
+// The group fetch statements return their status columns on every row, and one row with no job
+// when they claim nothing. This drops that row and the status columns.
+function withoutStatusColumns (rows: any[], columns: string[]): any[] {
+  return rows.filter(row => row.id != null).map(row => {
+    for (const column of columns) delete row[column]
+    return row
+  })
+}
+
+// A fetch with a group option reads at most this many waiting jobs, or 4 batches, in its first step.
+const GROUP_FETCH_MIN_WINDOW = 500
+// The most waiting groups one group hop visits.
+const GROUP_FETCH_MAX_GROUPS = 50
+// How often, per queue in this process, a short group fetch runs the full scan in place of the hop.
+// This bounds how long an ungrouped job behind a skipped group's backlog waits.
+const GROUP_FETCH_FULL_SCAN_MS = 60_000
+
 class Manager extends EventEmitter implements types.EventsMixin {
   events = events
   // Warn once per option per instance, not once per fetch.
   #warnedFetchOptions = new Set<string>()
+  // The last group the group hop visited on each queue, and when a group fetch on it last ran the full scan.
+  #groupHopCursors = new Map<string, string>()
+  #groupFullScanAt = new Map<string, number>()
   db: (types.IDatabase & { _pgbdb?: false }) | Db
   config: types.ResolvedConstructorOptions
   wipTs: number
@@ -1351,6 +1376,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Clean up local group config on full stop; active counts drop as their handlers settle
     this.#localGroupConfig.clear()
     this.#localGroupMaxLimit.clear()
+    this.#groupHopCursors.clear()
+    this.#groupFullScanAt.clear()
 
     await this.#flushOverruns()
   }
@@ -1483,7 +1510,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.#fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority })
+        const localGroups = localGroupConcurrency != null
+          ? { maxLimit: this.#localGroupMaxLimit.get(name)!, active: this.#localGroupActive.get(name) }
+          : undefined
+        return this.#fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority }, localGroups)
       }
 
       // Counted here rather than on fetch: jobs past localGroupConcurrency are restored, not delivered.
@@ -2580,7 +2610,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.#telemetry.receive(name, () => this.#fetch<T>(name, options), job => this.#traceContexts.get(job))
   }
 
-  async #fetch<T> (name: string, options: types.FetchOptions, attempt = 1): Promise<types.Job<T>[]> {
+  // `localGroups` comes from a worker with localGroupConcurrency. It carries the worker's highest local
+  // limit and the jobs the worker holds per group. The group hop needs both, and the database cannot count them.
+  async #fetch<T> (name: string, options: types.FetchOptions, localGroups?: LocalGroups, attempt = 1): Promise<types.Job<T>[]> {
     this.#warnDeprecatedFetchOptions(options)
 
     const db = this.assertDb(options)
@@ -2597,22 +2629,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
       includeTraceContext: this.#telemetry.enabled
     }
 
-    const query = plans.fetchNextJob(fetchOptions, this.config.noSkipLocked)
+    // key_strict_fifo reads its key heads from job_i10 before any group filter. A skipped group's
+    // backlog never slows that read. Inside a caller's db the fetch stays one statement. That keeps a
+    // caller's db from holding a committed claim after a failed second statement.
+    const grouped = policy !== plans.QUEUE_POLICIES.key_strict_fifo && !options.db &&
+      (options.groupConcurrency != null || (options.ignoreGroups?.length ?? 0) > 0)
 
-    let result
-
-    try {
-      result = await db.executeSql(query.text, query.values)
-    } catch (err: any) {
-      // The only fetch error we tolerate is a unique-constraint violation (SQLSTATE 23505) from a
-      // policy/singleton index when a concurrent fetch won the same slot, treat that as an empty
-      // fetch. Anything else (a DB outage, a malformed query) must surface: swallowing it turned
-      // every failed fetch into a silent [] with no error event, indistinguishable from an empty
-      // queue. Rethrowing routes it to the worker's onError (emits `error`) or to a direct caller.
-      if (err?.code !== '23505') throw err
-    }
-
-    let rows = result?.rows || []
+    let rows = grouped
+      ? await this.#fetchGrouped(db, fetchOptions, localGroups)
+      : await this.#runFetch(db, plans.fetchNextJob(fetchOptions, this.config.noSkipLocked))
 
     // The fetch statement cannot see a concurrent claim until it commits. This count runs after
     // ours committed, so of two racing fetches at least the later count sees both and gives back,
@@ -2640,7 +2665,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // Not inside the caller's db: the jobs just given back are its own, so it would claim them again.
         if (rows.length === 0 && attempt < 3 && !options.db) {
           await delay(Math.random() * 50)
-          return this.#fetch(name, options, attempt + 1)
+          return this.#fetch(name, options, localGroups, attempt + 1)
         }
       }
     }
@@ -2655,6 +2680,96 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Even a minimal fetch (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds and
     // heartbeatSeconds, so normalize regardless of includeMetadata.
     return this.#numericJobFields(rows) as types.Job<T>[]
+  }
+
+  async #runFetch (db: types.IDatabase, query: plans.SqlQuery): Promise<any[]> {
+    try {
+      const result = await db.executeSql(query.text, query.values)
+      return result?.rows || []
+    } catch (err: any) {
+      // The only fetch error we tolerate is a unique-constraint violation (SQLSTATE 23505) from a
+      // policy/singleton index when a concurrent fetch won the same slot, treat that as an empty
+      // fetch. Anything else (a DB outage, a malformed query) must surface: swallowing it turned
+      // every failed fetch into a silent [] with no error event, indistinguishable from an empty
+      // queue. Rethrowing routes it to the worker's onError (emits `error`) or to a direct caller.
+      if (err?.code !== '23505') throw err
+      return []
+    }
+  }
+
+  /**
+   * A fetch with a group option, on pg-boss's own pool. Step one claims from a bounded window of the
+   * waiting jobs. When the group filters left that window short, the group hop fetches the rest of the
+   * batch. The hop passes over a skipped group's backlog in one index seek. Once per
+   * GROUP_FETCH_FULL_SCAN_MS per queue, today's full scan runs in place of the hop. That claims an
+   * ungrouped job that sits past the window. The full scan also runs whenever the window fell short
+   * for another reason, or job_i18 is not valid yet on this table.
+   */
+  async #fetchGrouped (db: types.IDatabase, options: plans.FetchJobOptions, localGroups?: LocalGroups): Promise<any[]> {
+    const { limit } = options
+    const noSkipLocked = this.config.noSkipLocked === true
+    const windowSize = Math.max(GROUP_FETCH_MIN_WINDOW, 4 * limit)
+
+    const first = await this.#runFetch(db, plans.fetchGroupWindow(options, noSkipLocked, windowSize))
+    const status = first[0] && { ...first[0] }
+    const jobs = withoutStatusColumns(first, ['__locked', '__read', '__filtered', '__index_ready'])
+
+    // A full lock step means the batch filled or the group cap trimmed it, as in fetchNextJob. A
+    // window with fewer rows than its size held every waiting job.
+    if (!status || status.__locked >= limit || status.__read < windowSize) return jobs
+
+    const rest: plans.FetchJobOptions = { ...options, limit: limit - jobs.length }
+    let local: Pick<plans.GroupHopOptions, 'localMaxLimit' | 'localActive'> = {}
+
+    // Step one's claims are not in the worker's counts yet. Without them, the second step would
+    // claim jobs past a group's local limit that the worker then restores.
+    if (localGroups) {
+      const active = new Map(localGroups.active)
+
+      for (const job of jobs) {
+        if (job.groupId) active.set(job.groupId, (active.get(job.groupId) ?? 0) + 1)
+      }
+
+      rest.ignoreGroups = [...active].filter(([, count]) => count >= localGroups.maxLimit).map(([groupId]) => groupId)
+      local = { localMaxLimit: localGroups.maxLimit, localActive: Object.fromEntries(active) }
+    }
+
+    try {
+      return jobs.concat(await this.#fetchGroupedRest(db, rest, status, local))
+    } catch (err) {
+      if (!jobs.length) throw err
+
+      // Step one's claims have committed. Throwing here would leave them active with no worker until
+      // they expire. They are handed out instead, and the error is reported. Node throws an `error`
+      // event nobody listens for, which would strand them the same way.
+      try {
+        this.emit(events.error, { ...(err as Error), message: (err as Error).message, stack: (err as Error).stack, queue: options.name })
+      } catch {}
+
+      return jobs
+    }
+  }
+
+  // Runs the second statement of a group fetch. That is the group hop, or today's full scan.
+  async #fetchGroupedRest (db: types.IDatabase, rest: plans.FetchJobOptions, status: any, local: Pick<plans.GroupHopOptions, 'localMaxLimit' | 'localActive'>): Promise<any[]> {
+    const { name } = rest
+    const noSkipLocked = this.config.noSkipLocked === true
+    const now = this.config.clock.now()
+    const hop = status.__filtered > 0 && status.__index_ready === true
+    const fullScanDue = now - (this.#groupFullScanAt.get(name) ?? -Infinity) >= GROUP_FETCH_FULL_SCAN_MS
+
+    if (!hop || fullScanDue) {
+      this.#groupFullScanAt.set(name, now)
+      return this.#runFetch(db, plans.fetchNextJob(rest, noSkipLocked))
+    }
+
+    const cursor = this.#groupHopCursors.get(name) ?? null
+    const rows = await this.#runFetch(db, plans.fetchGroupHop(rest, noSkipLocked, { cursor, maxGroups: GROUP_FETCH_MAX_GROUPS, ...local }))
+    const nextCursor = rows[0]?.__cursor
+
+    if (nextCursor != null) this.#groupHopCursors.set(name, nextCursor)
+
+    return withoutStatusColumns(rows, ['__cursor'])
   }
 
   // Returns the ids that went back to created. A policy index can refuse a job its way back (a

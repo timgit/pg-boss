@@ -157,6 +157,8 @@ The default options for `work()` is 1 job every 2 seconds.
   > [!NOTE]
   > This is a per-node limit. In a distributed deployment, each node enforces its own limit independently. Use `groupConcurrency` instead if you need global coordination across nodes.
 
+  Fetch order behind a skipped group works as described in [Fetching past a busy group](#fetching-past-a-busy-group).
+
   ```js
   // Limit each tenant to 2 concurrent jobs on this node (no DB overhead)
   await boss.work('process-data', {
@@ -205,6 +207,8 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Concurrent fetches can briefly claim past the limit. Each fetch counts its groups again after claiming and gives the extra jobs back before any handler runs. The exception is `fetch()` with `db` inside your own transaction: other fetches cannot see its claim until that transaction commits, so the group can exceed the limit.
 
+  Fetch order behind a skipped group works as described in [Fetching past a busy group](#fetching-past-a-busy-group).
+
   ```js
   // Limit each tenant to 2 concurrent jobs globally across all nodes
   await boss.work('process-data', {
@@ -251,6 +255,18 @@ In this setup:
 - Use `localGroupConcurrency` when you only need per-node fairness and want zero database overhead
 - Use `groupConcurrency` when you need strict global limits across a distributed deployment
 - You cannot use both simultaneously - choose one based on your requirements
+
+#### Fetching past a busy group
+
+A group at its limit is skipped. With `localGroupConcurrency`, this applies once a group reaches its limit in the current process. A fetch that skips a group first reads at most 500 waiting jobs, or 4 batches if that is more, in priority and creation order. When that read fills the batch, the order is exact.
+
+When a skipped group's backlog fills that read, the rest of the batch comes from a second step. It visits up to 50 waiting groups and passes over each skipped group in one index seek, however deep its backlog. Each second step starts after the group the previous one in this process ended on, and wraps around. Every waiting group is visited within (waiting groups ÷ 50, rounded up) second steps. Priority and creation order hold among the jobs of the groups one second step visits. The second step reads only grouped jobs.
+
+Once a minute per queue in each process, the fetch runs the full scan in place of the second step. That full scan claims in exact order, including jobs without a group that sit behind the skipped group's backlog. Such a job is claimed by the first full scan whose batch reaches it. The full scan also runs in place of the second step whenever the first read comes up short for another reason, such as a singleton key that is already running.
+
+A `fetch()` given its own `db` keeps a single statement and reads the whole backlog as before. When the second step fails after the first one claimed jobs, the fetch returns those jobs and emits the error as an `error` event.
+
+The second step needs the `job_i18` index. After an upgrade, until that index finishes building, a fetch that the first read leaves short runs the full scan after it.
 
 **Handler function**
 
