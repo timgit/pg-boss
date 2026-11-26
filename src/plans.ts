@@ -1072,6 +1072,7 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobCreated(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobCompleted(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobQueuedKey(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobGroupFetch(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -1099,6 +1100,7 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobCreated(schema)};
     ${createIndexJobCompleted(schema)};
     ${createIndexJobQueuedKey(schema)};
+    ${createIndexJobGroupFetch(schema)};
   `
 }
 
@@ -1229,6 +1231,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobCreated(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobCompleted(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobQueuedKey(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobGroupFetch(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -1507,6 +1510,13 @@ function createIndexJobCompleted (schema: string) {
 // upsert_by_key, so job_i13 does not hold it, and a standard queue has no other index on the key.
 function createIndexJobQueuedKey (schema: string) {
   return `CREATE INDEX job_i17 ON ${schema}.job (name, singleton_key, created_on) WHERE state < '${JOB_STATES.active}' AND singleton_key IS NOT NULL`
+}
+
+// The waiting grouped jobs, by group and then in fetch order, for the group hop (fetchGroupHop). The
+// hop seeks from one group to the next, which passes over a group's whole backlog in one step.
+// Ungrouped jobs stay out. A queue that never sets group_id writes nothing to it.
+function createIndexJobGroupFetch (schema: string) {
+  return `CREATE INDEX job_i18 ON ${schema}.job (name, group_id, priority DESC, created_on, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked AND group_id IS NOT NULL`
 }
 
 // The interval claim for a monitor pass. It stamps monitor_claim_on, never monitor_on, which only
@@ -2601,7 +2611,7 @@ interface GroupConcurrencyConfig {
   tiers?: Record<string, number>
 }
 
-interface FetchJobOptions {
+export interface FetchJobOptions {
   schema: string
   table: string
   name: string
@@ -2697,6 +2707,308 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
  * exceeds fetch time.
  */
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
+  const { schema, table, limit } = options
+  const parts = fetchParts(options, noSkipLocked)
+
+  // Unconditional, and with no `id` tiebreak.
+  //
+  // The two conditionals this replaces existed only to serve the `priority` and `orderByCreatedOn`
+  // fetch options, which were requested as performance escapes from this sort. job_i11 now satisfies
+  // the ordering directly, so the escapes have nothing to escape. See the deprecation in
+  // manager.fetch(). Dropping them also deletes two branches from the hottest SQL builder here.
+  //
+  // `id` goes too. It is a random uuid, so it never provided creation order: a batch insert shares
+  // one ${schema}.job_now() and therefore ties on created_on, and those ties resolve today in random uuid order,
+  // not insertion order. Without it the index satisfies the ordering outright rather than through
+  // an Incremental Sort (0.097 -> 0.031 ms and 50 -> 5 buffers at limit=1) and ties fall back to
+  // index order, which tracks insertion order better than a uuid does.
+  //
+  // key_strict_fifo keeps its own id tiebreak in strict_fifo_heads, where DISTINCT ON does need a
+  // total order to pick a deterministic head per key.
+  const nextCte = `
+      next AS (
+        SELECT ${parts.selectCols}
+        FROM ${schema}.${table} j
+        WHERE ${parts.whereConditions}
+        ORDER BY j.priority desc, j.created_on
+        LIMIT ${limit}
+        ${parts.lockClause}
+      )`
+
+  return {
+    text: `
+      WITH
+      ${parts.strictFifoHeadsCte}
+      ${parts.activeGroupCountMapCte}
+      ${nextCte}
+      ${parts.claimCtes}
+      ${parts.claimUpdate}
+    `,
+    values: parts.values
+  }
+}
+
+/**
+ * Step one of a fetch with a group option (`groupConcurrency` or `ignoreGroups`), on any policy but
+ * key_strict_fifo. It claims like fetchNextJob, from at most `windowSize` waiting jobs in fetch
+ * order, which bounds what a skipped group's backlog costs the read. The filters run on the window's
+ * rows before the lock step looks any of them up.
+ *
+ * Every row carries `__locked`, the rows the lock step took. When that falls short of the batch, it
+ * also carries `__read` (the waiting jobs in the window), `__filtered` (those the group filters
+ * removed) and `__index_ready` (job_i18 is valid on this table). Manager reads them to pick the next
+ * step. With no job claimed, it returns one row with only these columns set.
+ */
+export function fetchGroupWindow (options: FetchJobOptions, noSkipLocked: boolean, windowSize: number): SqlQuery {
+  const { schema, table, limit } = options
+  const parts = fetchParts(options, noSkipLocked)
+
+  const scan = `
+          SELECT j.id, j.name, j.priority, j.created_on, j.group_id, j.group_tier, j.singleton_key
+          FROM ${schema}.${table} j
+          WHERE ${parts.baseConditions}
+          ORDER BY j.priority desc, j.created_on
+          LIMIT ${windowSize}`
+
+  const candidateFilters = [parts.singletonProbe, parts.groupFilters].filter(Boolean).join('\n          AND ')
+
+  // window_status is read only inside the CASE. A fetch that fills its batch never scans it. A short
+  // fetch has already read the whole window by then, and the reads find its pages cached. The
+  // filtered count is the read count less the rows that pass, because Postgres plans a filter in a
+  // WHERE as one hashed subplan and the same filter in an aggregate's FILTER as a probe per row.
+  return {
+    text: `
+      WITH
+      ${parts.activeGroupCountMapCte}
+      candidates AS (
+        SELECT j.id, j.priority, j.created_on
+        FROM (${scan}
+        ) j
+        ${candidateFilters ? `WHERE ${candidateFilters}` : ''}
+      ),
+      window_status AS MATERIALIZED (
+        SELECT w.read_cnt, w.read_cnt - p.passed_cnt as filtered_cnt
+        FROM (SELECT count(*)::int as read_cnt FROM (${scan}
+        ) j) w
+        CROSS JOIN (SELECT count(*)::int as passed_cnt FROM (${scan}
+        ) j WHERE ${parts.groupFilters}) p
+      ),
+      ${lockCandidates(parts, options)}
+      ${parts.claimCtes},
+      claimed AS (
+      ${parts.claimUpdate}
+      )
+      SELECT s.*, c.*
+      FROM (
+        SELECT l.locked as "__locked"
+          , CASE WHEN l.locked < ${limit} THEN (SELECT read_cnt FROM window_status) END as "__read"
+          , CASE WHEN l.locked < ${limit} THEN (SELECT filtered_cnt FROM window_status) END as "__filtered"
+          , CASE WHEN l.locked < ${limit} THEN COALESCE((
+              SELECT i.indisvalid FROM pg_catalog.pg_index i WHERE i.indexrelid = to_regclass('${schema}.${table}_i18')
+            ), false) END as "__index_ready"
+        FROM (SELECT count(*)::int as locked FROM next) l
+      ) s
+      LEFT JOIN claimed c ON true
+    `,
+    values: parts.values
+  }
+}
+
+export interface GroupHopOptions {
+  // The last group the previous hop on this queue visited. The hop starts after it and wraps around.
+  cursor: string | null
+  maxGroups: number
+  // Set with localGroupConcurrency. They carry the highest local limit and the jobs this process holds
+  // per group, step one's claims included. The database cannot count these.
+  localMaxLimit?: number
+  localActive?: Record<string, number>
+}
+
+/**
+ * Step two of a fetch with a group option, after step one's window came up short because the group
+ * filters removed jobs. It visits at most `maxGroups` waiting groups through job_i18, starting after
+ * `cursor`. A skipped group costs one index seek, however deep its backlog. Each other group gives
+ * its first jobs up to its remaining capacity, which comes from the tier of its first waiting job.
+ *
+ * Every row carries `__cursor`, the last group visited. With no job claimed, it returns one row with
+ * only `__cursor` set.
+ */
+export function fetchGroupHop (options: FetchJobOptions, noSkipLocked: boolean, hop: GroupHopOptions): SqlQuery {
+  const { schema, table, name, limit } = options
+  const parts = fetchParts(options, noSkipLocked)
+  const { values, params } = parts
+
+  const cursorParam = hop.cursor != null ? addParam(values, hop.cursor, 'text') : ''
+
+  const groupJobConditions = (alias: string) => `${parts.baseConditionsFor(alias)}
+            AND ${alias}.group_id = h.group_id`
+
+  // The group-level form of fetchParts' group filters, checked once per visited group.
+  const groupSkip = [
+    params.ignoreGroupsParam ? `h.group_id <> ALL(${params.ignoreGroupsParam})` : '',
+    parts.hasSingleGroupConcurrency
+      ? `NOT EXISTS (
+            SELECT 1
+            FROM ${schema}.${table} active_group_probe
+            WHERE active_group_probe.name = '${name}'
+              AND active_group_probe.state = '${JOB_STATES.active}'
+              AND active_group_probe.group_id IS NOT NULL
+              AND active_group_probe.group_id = h.group_id
+          )`
+      : '',
+    parts.hasActiveGroupCounts
+      ? `COALESCE(((SELECT counts FROM active_group_count_map) ->> h.group_id)::int, 0) < ${addParam(values, parts.maxGroupLimit, 'int')}`
+      : ''
+  ].filter(Boolean).join('\n          AND ')
+
+  const capacity = [`${limit}`]
+
+  if (parts.hasSingleGroupConcurrency) {
+    capacity.push('1')
+  } else if (parts.hasActiveGroupCounts) {
+    const firstTier = `(
+            SELECT f.group_tier
+            FROM ${schema}.${table} f
+            WHERE ${groupJobConditions('f')}
+            ORDER BY f.priority desc, f.created_on
+            LIMIT 1
+          )`
+    const groupLimit = params.tiersParam
+      ? `COALESCE((${params.tiersParam} ->> ${firstTier})::int, ${params.defaultGroupLimitParam})`
+      : params.defaultGroupLimitParam
+    capacity.push(`GREATEST(${groupLimit} - COALESCE(((SELECT counts FROM active_group_count_map) ->> h.group_id)::int, 0), 0)`)
+  }
+
+  if (hop.localMaxLimit != null) {
+    const localMaxParam = addParam(values, hop.localMaxLimit, 'int')
+    const localActiveParam = addParam(values, JSON.stringify(hop.localActive ?? {}), 'text::jsonb')
+    capacity.push(`GREATEST(${localMaxParam} - COALESCE((${localActiveParam} ->> h.group_id)::int, 0), 0)`)
+  }
+
+  const nextGroup = (after: string) => `
+          SELECT g.group_id
+          FROM ${schema}.${table} g
+          WHERE g.name = '${name}'
+            AND g.state < '${JOB_STATES.active}'
+            AND NOT g.blocked
+            AND g.group_id IS NOT NULL
+            ${after ? `AND g.group_id > ${after}` : ''}
+          ORDER BY g.group_id
+          LIMIT 1`
+
+  // hop_before wraps around to the groups up to the cursor once hop_after reaches the last group.
+  // Its first row is numbered after hop_after's groups. That keeps `ord` one sequence across both.
+  const wrapCtes = cursorParam
+    ? `
+      hop_before AS (
+        SELECT (${nextGroup('')}
+        ) as group_id, (SELECT count(*) FROM hop_after WHERE group_id IS NOT NULL)::int + 1 as ord
+        UNION ALL
+        SELECT (${nextGroup('h.group_id')}
+        ), h.ord + 1
+        FROM hop_before h
+        WHERE h.group_id IS NOT NULL AND h.group_id < ${cursorParam} AND h.ord < ${hop.maxGroups}
+      ),`
+    : ''
+
+  const wrapGroups = cursorParam
+    ? `
+        UNION ALL
+        SELECT group_id, ord FROM hop_before
+        WHERE group_id IS NOT NULL AND group_id <= ${cursorParam} AND ord <= ${hop.maxGroups}`
+    : ''
+
+  // The singleton probe runs inside the per-group read. A head job whose key is busy then leaves its
+  // group's capacity to the jobs behind it. The merged list is cut to 4 batches before the lock step
+  // looks any row up.
+  return {
+    text: `
+      WITH RECURSIVE
+      ${parts.activeGroupCountMapCte}
+      hop_after AS (
+        SELECT (${nextGroup(cursorParam)}
+        ) as group_id, 1 as ord
+        UNION ALL
+        SELECT (${nextGroup('h.group_id')}
+        ), h.ord + 1
+        FROM hop_after h
+        WHERE h.group_id IS NOT NULL AND h.ord < ${hop.maxGroups}
+      ),${wrapCtes}
+      hop_groups AS MATERIALIZED (
+        SELECT group_id, ord FROM hop_after WHERE group_id IS NOT NULL${wrapGroups}
+      ),
+      candidates AS (
+        SELECT c.id, c.priority, c.created_on
+        FROM hop_groups h
+        CROSS JOIN LATERAL (
+          SELECT j.id, j.priority, j.created_on
+          FROM ${schema}.${table} j
+          WHERE ${groupJobConditions('j')}
+            ${parts.singletonProbe ? `AND ${parts.singletonProbe}` : ''}
+          ORDER BY j.priority desc, j.created_on
+          LIMIT LEAST(${capacity.join(', ')})
+        ) c
+        ${groupSkip ? `WHERE ${groupSkip}` : ''}
+        ORDER BY c.priority desc, c.created_on
+        LIMIT ${4 * limit}
+      ),
+      ${lockCandidates(parts, options)}
+      ${parts.claimCtes},
+      claimed AS (
+      ${parts.claimUpdate}
+      )
+      SELECT s.*, c.*
+      FROM (SELECT (SELECT group_id FROM hop_groups ORDER BY ord DESC LIMIT 1) as "__cursor") s
+      LEFT JOIN claimed c ON true
+    `,
+    values
+  }
+}
+
+// The lock step of fetchGroupWindow and fetchGroupHop. The candidates were read and filtered without
+// a lock. A peer can claim one in between. FOR UPDATE rechecks only this step's own WHERE against the
+// newest row version. That is why it repeats the state, blocked, pause and start_after conditions.
+function lockCandidates (parts: FetchParts, options: FetchJobOptions) {
+  const { schema, table, name, limit } = options
+
+  return `next AS (
+        SELECT ${parts.selectCols}
+        FROM candidates c
+        JOIN ${schema}.${table} j ON j.name = '${name}' AND j.id = c.id
+        WHERE ${parts.baseConditions}
+        ORDER BY c.priority desc, c.created_on
+        LIMIT ${limit}
+        ${parts.lockClause}
+      )`
+}
+
+function addParam (values: unknown[], value: unknown, cast: string) {
+  values.push(value)
+  return `$${values.length}::${cast}`
+}
+
+interface FetchParts {
+  values: unknown[]
+  params: FetchQueryParams
+  hasSingleGroupConcurrency: boolean
+  hasActiveGroupCounts: boolean
+  maxGroupLimit: number
+  selectCols: string
+  activeGroupCountMapCte: string
+  strictFifoHeadsCte: string
+  baseConditions: string
+  baseConditionsFor: (alias: string) => string
+  singletonProbe: string
+  groupFilters: string
+  whereConditions: string
+  lockClause: string
+  claimCtes: string
+  claimUpdate: string
+}
+
+// The pieces fetchNextJob, fetchGroupWindow and fetchGroupHop share: the conditions a waiting job
+// must meet, and the ranking and UPDATE that claim the locked rows in `next`.
+function fetchParts (options: FetchJobOptions, noSkipLocked: boolean): FetchParts {
   const { schema, table, name, policy, limit, includeMetadata, includeTraceContext = false, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
@@ -2768,6 +3080,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
             OR ${activeGroupCountExpression} < ${groupLimit})`
     : ''
 
+  const ignoreGroupsFilter = hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : ''
+
   // state DESC (retry > created in the enum) makes a retry job its key's head. job_i8
   // guarantees at most one job per key in active/retry/failed, and the NOT EXISTS blocker
   // below rejects every sibling of a retry job, so if created_on picked the head, an older
@@ -2788,17 +3102,52 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   // The pause gate reads the queue row live (see createTableQueue). Postgres plans the uncorrelated
   // subquery as a one-time filter. A paused queue's fetch doesn't scan the job table.
+  const pauseGate = `NOT EXISTS (SELECT 1 FROM ${schema}.queue pq WHERE pq.name = '${name}' AND pq.paused_on IS NOT NULL)`
+
+  // `<=` (not `<`) so a job inserted with start_after = ${schema}.job_now() is immediately
+  // fetchable in the next statement. `${schema}.job_now()` is transaction-scoped; on backends with coarse
+  // clock resolution (notably PGlite) consecutive autocommit statements often share the same
+  // timestamp, so `<` would leave freshly-inserted jobs invisible until the clock ticks.
+  // NOTIFY gating already uses `start_after <= ${schema}.job_now()` for the same reason.
+  const startAfterCondition = !ignoreStartAfter ? `j.start_after <= ${schema}.job_now()` : ''
+  const minPriorityCondition = hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : ''
+  const maxPriorityCondition = hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : ''
+
+  // The conditions every waiting job meets, for the table alias `a`. The group steps read the same
+  // table under more than one alias.
+  const baseConditionsFor = (a: string) => [
+    `${a}.name = '${name}'`,
+    `${a}.state < '${JOB_STATES.active}'`,
+    `NOT ${a}.blocked`,
+    pauseGate,
+    !ignoreStartAfter ? `${a}.start_after <= ${schema}.job_now()` : '',
+    hasMinPriority ? `${a}.priority >= ${params.minPriorityParam}` : '',
+    hasMaxPriority ? `${a}.priority <= ${params.maxPriorityParam}` : ''
+  ].filter(Boolean).join('\n          AND ')
+  const baseConditions = baseConditionsFor('j')
+
+  // Skips a key whose active slot is taken, so its pending job does not lose the fetch to a
+  // job_i2/job_i3 conflict and block the keys behind it. Read live: queue stats can be one
+  // monitor interval old or more, and a stale active key would block the key with nothing active.
+  const singletonProbe = singletonPolicy
+    ? `NOT EXISTS (
+            SELECT 1
+            FROM ${schema}.${table} singleton_probe
+            WHERE singleton_probe.name = j.name
+              AND singleton_probe.state = '${JOB_STATES.active}'
+              AND singleton_probe.policy = '${policy}'
+              AND COALESCE(singleton_probe.singleton_key, '') = COALESCE(j.singleton_key, '')
+          )`
+    : ''
+
+  const groupFilters = [ignoreGroupsFilter, groupConcurrencyFilter].filter(Boolean).join('\n          AND ')
+
   const whereConditions = [
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,
     'NOT j.blocked',
-    `NOT EXISTS (SELECT 1 FROM ${schema}.queue pq WHERE pq.name = '${name}' AND pq.paused_on IS NOT NULL)`,
-    // `<=` (not `<`) so a job inserted with start_after = ${schema}.job_now() is immediately
-    // fetchable in the next statement. `${schema}.job_now()` is transaction-scoped; on backends with coarse
-    // clock resolution (notably PGlite) consecutive autocommit statements often share the same
-    // timestamp, so `<` would leave freshly-inserted jobs invisible until the clock ticks.
-    // NOTIFY gating already uses `start_after <= ${schema}.job_now()` for the same reason.
-    !ignoreStartAfter ? `j.start_after <= ${schema}.job_now()` : '',
+    pauseGate,
+    startAfterCondition,
     keyStrictFifo ? 'j.id IN (SELECT id FROM strict_fifo_heads)' : '',
     keyStrictFifo
       ? `NOT EXISTS (
@@ -2811,49 +3160,12 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
               AND b.id <> j.id
           )`
       : '',
-    // Skips a key whose active slot is taken, so its pending job does not lose the fetch to a
-    // job_i2/job_i3 conflict and block the keys behind it. Read live: queue stats can be one
-    // monitor interval old or more, and a stale active key would block the key with nothing active.
-    singletonPolicy
-      ? `NOT EXISTS (
-            SELECT 1
-            FROM ${schema}.${table} singleton_probe
-            WHERE singleton_probe.name = j.name
-              AND singleton_probe.state = '${JOB_STATES.active}'
-              AND singleton_probe.policy = '${policy}'
-              AND COALESCE(singleton_probe.singleton_key, '') = COALESCE(j.singleton_key, '')
-          )`
-      : '',
-    hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
-    hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
-    hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
+    singletonProbe,
+    ignoreGroupsFilter,
+    minPriorityCondition,
+    maxPriorityCondition,
     groupConcurrencyFilter
   ].filter(Boolean).join('\n          AND ')
-
-  // Unconditional, and with no `id` tiebreak.
-  //
-  // The two conditionals this replaces existed only to serve the `priority` and `orderByCreatedOn`
-  // fetch options, which were requested as performance escapes from this sort. job_i11 now satisfies
-  // the ordering directly, so the escapes have nothing to escape. See the deprecation in
-  // manager.fetch(). Dropping them also deletes two branches from the hottest SQL builder here.
-  //
-  // `id` goes too. It is a random uuid, so it never provided creation order: a batch insert shares
-  // one ${schema}.job_now() and therefore ties on created_on, and those ties resolve today in random uuid order,
-  // not insertion order. Without it the index satisfies the ordering outright rather than through
-  // an Incremental Sort (0.097 -> 0.031 ms and 50 -> 5 buffers at limit=1) and ties fall back to
-  // index order, which tracks insertion order better than a uuid does.
-  //
-  // key_strict_fifo keeps its own id tiebreak in strict_fifo_heads, where DISTINCT ON does need a
-  // total order to pick a deterministic head per key.
-  const nextCte = `
-      next AS (
-        SELECT ${selectCols}
-        FROM ${schema}.${table} j
-        WHERE ${whereConditions}
-        ORDER BY j.priority desc, j.created_on
-        LIMIT ${limit}
-        ${lockClause}
-      )`
 
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
@@ -2900,15 +3212,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   // when multiple workers try to claim the same jobs concurrently
   const distributedStateCheck = noSkipLocked ? `AND j.state < '${JOB_STATES.active}'` : ''
 
-  return {
-    text: `
-      WITH
-      ${strictFifoHeadsCte}
-      ${activeGroupCountMapCte}
-      ${nextCte}
-      ${singletonCte}
-      ${groupConcurrencyCtes}
-      UPDATE ${schema}.${table} j SET
+  const claimUpdate = `UPDATE ${schema}.${table} j SET
         state = '${JOB_STATES.active}',
         started_on = ${schema}.job_now(),
         heartbeat_on = ${schema}.job_now(),
@@ -2917,9 +3221,26 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       WHERE name = '${name}' AND ${updateMatch}
       ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
       ${distributedStateCheck}
-      RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}${includeTraceContext ? ', j.trace_context as "__traceContext"' : ''}
-    `,
-    values: params.values
+      RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}${includeTraceContext ? ', j.trace_context as "__traceContext"' : ''}`
+
+  return {
+    values: params.values,
+    params,
+    hasSingleGroupConcurrency,
+    hasActiveGroupCounts,
+    maxGroupLimit: groupConcurrencyConfig ? Math.max(groupConcurrencyConfig.default, ...Object.values(groupConcurrencyConfig.tiers ?? {})) : 0,
+    selectCols,
+    activeGroupCountMapCte,
+    strictFifoHeadsCte,
+    baseConditions,
+    baseConditionsFor,
+    singletonProbe,
+    groupFilters,
+    whereConditions,
+    lockClause,
+    claimCtes: `${singletonCte}
+      ${groupConcurrencyCtes}`,
+    claimUpdate
   }
 }
 
@@ -5767,9 +6088,9 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
 }
 // job_iN indexes with no policy gate, created on every job table regardless of policy
 // (throttle i4, fetch i11, group-concurrency i7, blocking i9, source root i12, upsert i13, live i14,
-// created i15, completed i16, queued key i17). 5 is absent, not missing: the fetch index was replaced
-// in v40 and the retired number is not reused. Keep in sync with createQueueFunction.
-const BASE_JOB_INDEXES = [4, 7, 9, 11, 12, 13, 14, 15, 16, 17]
+// created i15, completed i16, queued key i17, group fetch i18). 5 is absent, not missing: the fetch
+// index was replaced in v40 and the retired number is not reused. Keep in sync with createQueueFunction.
+const BASE_JOB_INDEXES = [4, 7, 9, 11, 12, 13, 14, 15, 16, 17, 18]
 
 // The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
 const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency', 'instance']
