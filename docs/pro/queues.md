@@ -35,7 +35,7 @@ Time to drain compares arrivals with finishing over the last 15 minutes, and the
 | Clears in | More is finishing than arriving, with more than 20 jobs ready above usual. It shows about how long until the backlog is back to usual. |
 | Keeping up | The backlog is within 20 jobs of usual, or arrivals and finishing are about even. |
 
-This **Keeping up** reads the last 15 minutes. It can differ from the health verdict of the same name, which reads the hour.
+This **Keeping up** reads the last 15 minutes. It can differ from the health verdict of the same name, which reads the hour. A paused queue shows no time to drain.
 
 ![The Table view](../images/pro/queues-table.webp){.light-only}
 ![The Table view](../images/pro/queues-table-dark.webp){.dark-only}
@@ -71,7 +71,7 @@ The sidebar lists each `work()` call on the queue, with its instance and its bus
 
 The backlog chart is the Waiting chart from the dashboard's [metrics page](../dashboard.md#queue-metrics), with ready, blocked and deferred jobs stacked and active jobs drawn over them. **View metrics** and the page's counts open this chart. Because Pro has one backlog chart, two charts on different ranges can't disagree.
 
-Under the charts, a row of changes marks users' changes through the Pro Console (from the audit log) and events from the instances working the queue. An instance mark shows the time the instance started, stopped, went quiet, or started on a new pg-boss version.
+Under the charts, a row of changes marks users' changes through the Pro Console (from the audit log) and events from the instances working the queue. An instance mark shows the time the instance started, stopped, went quiet, or started on a new pg-boss version. A bar marks each time the queue was paused, from `pauseQueue()` to `resumeQueue()`, whoever paused it. Pro's evaluator records a pause when its once-a-minute pass sees it. A pause that started and ended while Pro was stopped isn't recorded.
 
 ![A queue's page](../images/pro/queue.webp){.light-only}
 ![A queue's page](../images/pro/queue-dark.webp){.dark-only}
