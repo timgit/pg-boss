@@ -7,7 +7,7 @@ The **Status** page is laid out like a public status page and shows how each que
 
 ## Recording
 
-Pro's alert evaluator runs a pass on each schema once a minute. Each pass adds the time since the previous run to the verdict the queue was last given. A queue too quiet or too new to judge isn't recorded for that time, and neither is a paused queue. A queue paused now shows a Paused badge in place of its verdict, and its pauses show as bars under the charts on its [queue page](./queues.md).
+Pro's alert evaluator runs a pass on each schema once a minute. Each pass adds the time since the previous run to the verdict the queue was last given. A queue too quiet or too new to judge isn't recorded for that time, and neither is a paused queue. A queue paused now shows a Paused badge in place of its verdict, and its pauses show as bars under the charts on its [queue page](./queues.md) and in its [day details](#day-details).
 
 When more than 3 minutes go by without a pass, as when Pro was stopped, the next pass replays the gap a minute at a time from the stats pg-boss kept. Each minute is judged as the evaluator would have judged it live. Time pg-boss has no stats for stays unrecorded. The first pass against a schema replays as far back as those stats go. History starts with the stats pg-boss already holds (a week by default). Pro deletes history older than ninety days. The page header shows the time the schema's last pass finished.
 
@@ -33,6 +33,8 @@ Clicking a day on a queue's strip opens a drawer with its 24 hours as a band and
 ![A day's details on the status page](../images/pro/status-day-dark.webp){.dark-only}
 
 Each change made that day to an [alert](./alerts.md) on the queue is a row at the time it happened, linked to the alert. An alert opened on an earlier day and still open at 00:00 has a row at 00:00 with the day it opened. Alerts don't change a day's color or a queue's uptime, which come only from the recorded verdicts. A green day isn't clickable even when an alert changed that day.
+
+Under the band, a row of changes marks the same events as the row under a [queue's charts](./queues.md), with UTC times. It marks changes made through the Pro Console, events from the instances working the queue, and a bar for each pause. Each pause and resume that day is also a row in the timeline. A pause from an earlier day still on at 00:00 has a row at 00:00 with the day it began.
 
 ## Uptime
 
