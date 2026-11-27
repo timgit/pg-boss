@@ -2585,7 +2585,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const db = this.assertDb(options)
 
-    const { table, policy } = await this.getQueueCache(name)
+    const { table, policy, notify } = await this.getQueueCache(name)
 
     const fetchOptions = {
       ...options,
@@ -2641,6 +2641,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
         if (rows.length === 0 && attempt < 3 && !options.db) {
           await delay(Math.random() * 50)
           return this.#fetch(name, options, attempt + 1)
+        }
+
+        // Every racing fetch may have given its jobs back. Restoring them sends no NOTIFY.
+        // Ask for another round before the free slot waits out the polling interval.
+        if (rows.length === 0) {
+          if (this.#notifyEnabled(notify)) {
+            await db.executeSql(plans.notifyQueue(this.config.schema, name))
+          }
+
+          // A caller's transaction has not committed the restore. Skip the local wake.
+          // resumeQueue() notifies after its own statement has committed.
+          if (!options.db) {
+            this.notifyQueue(name)
+          }
         }
       }
     }

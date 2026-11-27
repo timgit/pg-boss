@@ -4,7 +4,67 @@ import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
+import * as plans from '../src/plans.ts'
+import type { PgBoss } from '../src/index.ts'
 import type { FetchOptions } from '../src/types.ts'
+
+async function rawListener (schema: string) {
+  const config = helper.getConfig()
+  const client = new pg.Client({
+    host: config.host,
+    port: config.port,
+    database: config.database,
+    user: config.user,
+    password: config.password
+  })
+  await client.connect()
+  const received: string[] = []
+  client.on('notification', msg => { if (msg.payload) received.push(msg.payload) })
+  const { rows } = await client.query(`SELECT ${plans.notifyChannelSql(schema)} AS channel`)
+  await client.query(`LISTEN "${rows[0].channel}"`)
+  return { received, close: () => client.end() }
+}
+
+// After the claim statement, marks the group's other job active so the recount gives the claim
+// back, then returns that job to created once the recount has read it. The slot is free again and
+// every attempt gives its job back.
+async function armGiveBack (boss: PgBoss, schema: string, name: string, ids: string[]) {
+  const queue = await boss.getQueue(name)
+  assertTruthy(queue)
+  const countSql = plans.getActiveGroupCounts(schema, queue.table)
+  const db = boss.getDb()
+  const executeSql = db.executeSql
+  let claims = 0
+  let armed = 0
+  let otherId: string | null = null
+
+  db.executeSql = async (text: string, values?: unknown[]) => {
+    const result = await executeSql.call(db, text, values)
+    const claimed = result.rows?.find((row: { id?: string }) => row.id != null && ids.includes(row.id))
+
+    if (claimed?.id && claims < 3 && text !== countSql) {
+      claims++
+      otherId = ids.find(id => id !== claimed.id) ?? null
+      assertTruthy(otherId)
+      armed++
+      await executeSql.call(db, `UPDATE ${schema}.${queue.table} SET state = 'active' WHERE id = $1`, [otherId])
+    }
+
+    if (text === countSql && armed > 0 && otherId) {
+      armed--
+      await executeSql.call(db, `UPDATE ${schema}.${queue.table} SET state = 'created', started_on = NULL WHERE id = $1`, [otherId])
+    }
+
+    return result
+  }
+
+  return {
+    claims: () => claims,
+    restore: () => {
+      db.executeSql = executeSql
+    }
+  }
+}
 
 describe('groupConcurrency', function () {
   it('should store group id and tier with job', async function () {
@@ -611,6 +671,71 @@ describe('groupConcurrency', function () {
     const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 2, groupConcurrency: 1 })
 
     expect(jobs.map(job => job.id)).toEqual([high])
+  })
+
+  it('should wake a worker after every racing fetch gives its job back', async function () {
+    const boss = ctx.boss = await helper.start(ctx.bossConfig)
+    const seen: string[] = []
+
+    await boss.work(ctx.schema, {
+      groupConcurrency: 1,
+      pollingIntervalSeconds: 30
+    }, async ([job]) => {
+      seen.push(job.id)
+    })
+
+    // The worker has polled an empty queue and is waiting out its interval.
+    await helper.until(() => boss.getWipData().some(worker => worker.name === ctx.schema && worker.lastFetchedOn != null))
+
+    const group = { id: 'tenant-123' }
+    const job1 = await boss.send(ctx.schema, {}, { group })
+    const job2 = await boss.send(ctx.schema, {}, { group })
+    assertTruthy(job1)
+    assertTruthy(job2)
+
+    const race = await armGiveBack(boss, ctx.schema, ctx.schema, [job1, job2])
+
+    try {
+      const jobs = await boss.fetch(ctx.schema, { groupConcurrency: 1 })
+      expect(jobs).toEqual([])
+      expect(race.claims()).toBe(3)
+    } finally {
+      race.restore()
+    }
+
+    // The slot is free and both jobs are created. The worker must not wait out the 30s poll.
+    await helper.until(() => seen.length > 0, 2000)
+  })
+
+  it.skipIf(helper.isPglite || helper.isCockroachDb || helper.isYugabyteDb)('should emit a NOTIFY when a fetch gives every claimed job back', async function () {
+    const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await boss.createQueue(ctx.schema, { notify: true })
+
+    const listener = await rawListener(ctx.schema)
+
+    try {
+      const group = { id: 'tenant-123' }
+      const job1 = await boss.send(ctx.schema, {}, { group })
+      const job2 = await boss.send(ctx.schema, {}, { group })
+      assertTruthy(job1)
+      assertTruthy(job2)
+      await helper.until(() => listener.received.includes(ctx.schema))
+      const before = listener.received.length
+
+      const race = await armGiveBack(boss, ctx.schema, ctx.schema, [job1, job2])
+
+      try {
+        const jobs = await boss.fetch(ctx.schema, { groupConcurrency: 1 })
+        expect(jobs).toEqual([])
+        expect(race.claims()).toBe(3)
+      } finally {
+        race.restore()
+      }
+
+      await helper.until(() => listener.received.length > before, 2000)
+    } finally {
+      await listener.close()
+    }
   })
 
   it('should validate groupConcurrency option in work', async function () {
